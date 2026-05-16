@@ -356,3 +356,6 @@ function GlobalProcessView() {
                             <div className={`px-6 py-4 border-b border-slate-200 flex justify-between items-center ${phase.bg}`}>
                                 <h3 className={`font-black text-lg ${phase.text}`}>{phase.id}. {phase.title}</h3>
                                 <span className="bg-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-200 shadow-sm flex items-center"><i className="fas fa-user-circle mr-2 opacity-50"></i> {phase.owner}</span>
+
+// Global window bindings for Babel Standalone scoping
+window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView;
