@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LATAM Cloud Delivery ERP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .sidebar-transition { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .step-active { @apply border-blue-600 text-blue-700 bg-blue-50; }
+        .step-completed { @apply border-emerald-500 text-emerald-700 bg-emerald-50; }
+        .step-pending { @apply border-slate-200 text-slate-400 bg-white; }
+        
+        .leaflet-container { background: #0f172a; font-family: inherit; z-index: 10; }
+        .leaflet-popup-content-wrapper { background: rgba(15, 23, 42, 0.95); color: white; border-radius: 0.75rem; border: 1px solid #334155; backdrop-filter: blur(8px); padding: 0; overflow: hidden;}
+        .leaflet-popup-tip { background: rgba(15, 23, 42, 0.95); border: 1px solid #334155; }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 overflow-hidden text-[11px]">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // ==========================================
+        // 🛡️ ERROR BOUNDARY (Catches React errors)
+        // ==========================================
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null, errorInfo: null };
+            }
+            
+            static getDerivedStateFromError(error) {
+                return { hasError: true };
+            }
+            
+            componentDidCatch(error, errorInfo) {
+                this.setState({
+                    error: error,
+                    errorInfo: errorInfo
+                });
+                console.error("React Error Boundary caught:", error, errorInfo);
+            }
+            
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-6 bg-rose-50 border border-rose-200 rounded-xl m-4">
+                            <h3 className="font-black text-rose-800 mb-2">⚠️ Component Error</h3>
+                            <p className="text-sm text-rose-700 mb-3">
+                                Something went wrong in this component. The error has been logged.
+                            </p>
+                            <button 
+                                onClick={() => this.setState({ hasError: false })}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg"
+                            >
+                                Try Again
+                            </button>
+                            {this.state.error && (
+                                <details className="mt-3 text-xs">
+                                    <summary className="cursor-pointer text-rose-600 font-bold">Error Details</summary>
+                                    <pre className="mt-2 p-3 bg-rose-100 rounded overflow-auto text-rose-800">
+                                        {this.state.error.toString()}
+                                        {this.state.errorInfo && this.state.errorInfo.componentStack}
+                                    </pre>
+                                </details>
+                            )}
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        // ==========================================
+        // 📝 GLOBAL DATA STORE & TEMPLATES
+        // ==========================================
+        const defaultPlaybooks = {
+            "default_vm": {
+                name: "Standard Generic Migration",
+                tasks: [
+                    { id: "1", name: "Phase 1: Architecture & Auth", prog: "0%", resp: "", start: "2026-03-01", end: "2026-03-05", isParent: true },
+                    { id: "1.1", name: "Provision IAM Service Account & API Keys", prog: "0%", resp: "Partner / Customer", start: "2026-03-01", end: "2026-03-02", isParent: false },
+                    { id: "1.2", name: "Deploy Target VPC & Core Network", prog: "0%", resp: "Partner", start: "2026-03-03", end: "2026-03-05", isParent: false },
+                    { id: "2", name: "Phase 2: Workload Sync", prog: "0%", resp: "", start: "2026-03-06", end: "2026-03-20", isParent: true },
+                    { id: "2.1", name: "Install Agents on Source VMs", prog: "0%", resp: "Customer IT", start: "2026-03-06", end: "2026-03-08", isParent: false },
+                    { id: "2.2", name: "Execute Initial Full Block Sync", prog: "0%", resp: "Partner", start: "2026-03-09", end: "2026-03-20", isParent: false }
+                ]
+            },
+            "sap_enterprise_cutover": {
+                name: "SAP Enterprise: Cutover & Hypercare",
+                tasks: [
+                    { id: "1", name: "PHASE 0: PRE-CUTOVER", prog: "0%", resp: "", start: "2026-04-02", end: "2026-04-02", isParent: true },
+                    { id: "1.1", name: "Purge & Export Logs/Backups to Cold VM", prog: "0%", resp: "Partner", start: "2026-04-02", end: "2026-04-02", isParent: false },
+                    { id: "1.2", name: "Fire Drill: On-Premise DB Restart", prog: "0%", resp: "Partner", start: "2026-04-02", end: "2026-04-02", isParent: false },
+                    { id: "1.3", name: "Full On-Premise Backup (Safe Point)", prog: "0%", resp: "Customer IT", start: "2026-04-02", end: "2026-04-02", isParent: false },
+                    { id: "2", name: "PHASE 1: CUTOVER (HOLY WEEK)", prog: "0%", resp: "", start: "2026-04-02", end: "2026-04-05", isParent: true },
+                    { id: "2.1", name: "Shutdown On-Premise SAP & Network Block", prog: "0%", resp: "Cust / Partner", start: "2026-04-02", end: "2026-04-02", isParent: false },
+                    { id: "2.2", name: "Final Sync (File-Level, Exclude Logs)", prog: "0%", resp: "Partner / HW", start: "2026-04-02", end: "2026-04-04", isParent: false },
+                    { id: "2.3", name: "Cloud Boot & Over-Provisioning (200% Compute)", prog: "0%", resp: "Partner", start: "2026-04-04", end: "2026-04-04", isParent: false },
+                    { id: "2.4", name: "Technical Validation (Basis & Network)", prog: "0%", resp: "Partner", start: "2026-04-04", end: "2026-04-05", isParent: false },
+                    { id: "3", name: "PHASE 2: GO-LIVE & ROLLBACK SAFETY", prog: "0%", resp: "", start: "2026-04-05", end: "2026-04-08", isParent: true },
+                    { id: "3.1", name: "DNS Update & SAP Logon Switch", prog: "0%", resp: "Partner / Cust", start: "2026-04-05", end: "2026-04-05", isParent: false },
+                    { id: "3.2", name: "Go-Live: 'Monday Avalanche'", prog: "0%", resp: "TAM / All", start: "2026-04-06", end: "2026-04-06", isParent: false },
+                    { id: "3.3", name: "Configure Reverse Replication", prog: "0%", resp: "Partner", start: "2026-04-06", end: "2026-04-07", isParent: false }
+                ]
+            }
+        };
+
+        const generateDefaultProject = (id, name, isWaiting, lifecycleState, health, mrr, kickoff, date) => ({
+            id, isWaiting, name, country: "TBD", health, progress: "0%", mrr, kickoff, date, sa: "John Doe", partner: "None", partnerType: "N/A", partnerLocation: "N/A", blocker: "Initial discovery.", complexity: "Medium", scope: "Advisory",
+            lifecycleState: lifecycleState, 
+            physics: null, physicsHistory: [], ora: null, oraHistory: [], budget: null, mapperCsv: "", mapperHistory: [], war: null,
+            migrationPlan: JSON.parse(JSON.stringify(defaultPlaybooks["default_vm"].tasks)),
+            apiConfig: { accessKey: "", secretKey: "", region: "la-south-2", automationEnabled: false },
+            comms: { bridge: "https://teams.microsoft.com/l/meetup-join/...", chat: "", notes: "" },
+            tamData: { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] }
+        });
+
+        const defaultProjects = [
+          { ...generateDefaultProject(1, "AWS Data Lake Exit", false, "4_execution", "Green", 12000, "2026-03-01", "2026-04-15"), country: "Mexico", progress: "65%", complexity: "High", scope: "Hands-On", blocker: "Syncing DBs." },
+          { ...generateDefaultProject(2, "Unicorn Corp SAP HANA", false, "3_planning", "Yellow", 83000, "2026-03-10", "2026-05-30"), country: "Panama", progress: "10%", complexity: "Ultra-High", scope: "Supervision", blocker: "Partner failed Dev gate. Triggering Rescue." },
+          { ...generateDefaultProject(3, "Logistics Hub", false, "3_planning", "Red", 22000, "2026-03-15", "2026-04-05"), country: "Guatemala", progress: "20%", scope: "Advisory", blocker: "Budget pending approval." },
+          { ...generateDefaultProject(5, "Retail POS Migration", false, "2_architecture", "Green", 34000, "2026-04-01", "2026-06-15"), country: "Chile", progress: "5%", complexity: "High", scope: "Supervision", blocker: "Discovery underway." },
+          generateDefaultProject(4, "Bank of Andes", true, "1_arb", "Yellow", 45000, "", "")
+        ];
+
+        const formatShortDate = (dateStr) => {
+            if (!dateStr || dateStr === 'Pending' || dateStr === 'TBD') return "TBD";
+            const d = new Date(dateStr); if (isNaN(d.getTime())) return dateStr;
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        };
+
+        // ==========================================
+        // 📝 REUSABLE UTILITIES & MODALS
+        // ==========================================
+        function EditableCell({ value, onSave, type = "text", className = "", placeholder = "" }) {
+          const [isEditing, setIsEditing] = useState(false); const [editValue, setEditValue] = useState(value);
+          useEffect(() => { setEditValue(value); }, [value]);
+          const handleSave = () => { setIsEditing(false); if (editValue !== value) onSave(editValue); };
+          const handleKeyDown = (e) => { if (e.key === 'Enter' && type !== 'textarea') handleSave(); if (e.key === 'Escape') { setIsEditing(false); setEditValue(value); } };
+
+          if (isEditing) {
+            if (type === 'textarea') return <textarea autoFocus value={editValue} onChange={e=>setEditValue(e.target.value)} onBlur={handleSave} onKeyDown={e=>{if(e.key==='Escape')handleSave()}} className={`w-full p-1 text-[10px] border border-blue-500 rounded outline-none shadow-sm ${className}`} rows={3} />
+            if (type === 'select') {
+                let options = placeholder === 'health' ? ['Green', 'Yellow', 'Red'] : ['Low', 'Medium', 'High', 'Ultra-High'];
+                return <select autoFocus value={editValue} onChange={e=>setEditValue(e.target.value)} onBlur={handleSave} className={`w-full p-0.5 text-[10px] border border-blue-500 rounded outline-none shadow-sm ${className}`}>{options.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select>
+            }
+            return <input autoFocus type={type} value={editValue} onChange={e=>setEditValue(e.target.value)} onBlur={handleSave} onKeyDown={handleKeyDown} className={`w-full p-0.5 text-[10px] border border-blue-500 rounded outline-none shadow-sm ${className}`} />
+          }
+          const displayValue = type === 'date' ? formatShortDate(value) : value;
+          return <div className={`cursor-pointer hover:bg-slate-200 rounded px-1 -ml-1 inline-flex items-center group relative min-h-[8px] max-h-[16px] w-full ${className}`} onClick={() => setIsEditing(true)} title="Click to edit">{displayValue || <span className="italic text-slate-400">{placeholder || 'Edit'}</span>}<i className="fas fa-pencil-alt text-[8px] text-slate-400 ml-1 opacity-0 group-hover:opacity-100 absolute right-0 bg-slate-200 pl-1"></i></div>;
+        }
+
+        function ConfigModal({ project, onClose, onSave }) {
+            const [config, setConfig] = useState(project?.apiConfig || { accessKey: "", secretKey: "", region: "la-south-2", automationEnabled: false });
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 flex flex-col">
+                        <div className="px-6 py-5 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl"><h3 className="font-black text-base text-slate-800"><i className="fas fa-cog text-blue-600 mr-2"></i>Project Configuration</h3><button onClick={onClose} className="text-slate-400 hover:text-rose-500 text-lg"><i className="fas fa-times"></i></button></div>
+                        <div className="p-6 space-y-5">
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex gap-3 items-start"><i className="fas fa-info-circle text-blue-500 mt-0.5"></i><p className="text-xs text-blue-900 leading-relaxed">Providing secure IAM credentials allows the Delivery Platform to query Destination Cloud APIs for live reconciliation.</p></div>
+                            <div><label className="block text-xs font-bold text-slate-700 mb-1">Target Cloud Region</label><select value={config.region} onChange={e=>setConfig({...config, region: e.target.value})} className="w-full p-2 border rounded bg-slate-50 outline-none focus:border-blue-500"><option value="la-south-2">la-south-2 (Mexico)</option><option value="la-north-2">la-north-2 (Lima)</option><option value="sa-brazil-1">sa-brazil-1 (Sao Paulo)</option><option value="na-mexico-1">na-mexico-1 (Querétaro)</option></select></div>
+                            <div><label className="block text-xs font-bold text-slate-700 mb-1">Service Account Access Key (AK)</label><input type="text" value={config.accessKey} onChange={e=>setConfig({...config, accessKey: e.target.value})} className="w-full p-2 border rounded bg-slate-50 font-mono text-xs outline-none focus:border-blue-500" placeholder="HW_XXXXXXXXXXXXXXXX" /></div>
+                            <div><label className="block text-xs font-bold text-slate-700 mb-1">Service Account Secret Key (SK)</label><input type="password" value={config.secretKey} onChange={e=>setConfig({...config, secretKey: e.target.value})} className="w-full p-2 border rounded bg-slate-50 font-mono text-xs outline-none focus:border-blue-500" placeholder="••••••••••••••••••••••••••••••••" /></div>
+                            <div className="pt-2"><label className="flex items-center gap-3 cursor-pointer p-3 border rounded-xl hover:bg-slate-50"><input type="checkbox" checked={config.automationEnabled} onChange={e=>setConfig({...config, automationEnabled: e.target.checked})} className="w-5 h-5 accent-emerald-500" /><div className="flex flex-col"><span className="font-bold text-sm text-slate-800">Enable Live API Reconciliation</span><span className="text-[10px] text-slate-500">Poll provider APIs to auto-update progress</span></div></label></div>
+                        </div>
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-end gap-3"><button onClick={onClose} className="px-5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-lg">Cancel</button><button onClick={()=>{onSave(config); onClose();}} className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md">Save Configuration</button></div>
+                    </div>
+                </div>
+            )
+        }
+
+        function ExcelUploader({ onUpdateData, onClose }) {
+            const [pasteData, setPasteData] = useState("");
+
+            const handleProcess = () => {
+                if (!pasteData.trim()) return;
+                const rows = pasteData.split('\n').filter(row => row.trim());
+                let startIndex = 0;
+                if (rows.length > 0) {
+                    const firstCol = rows[0].split(/[\t,]/)[0].toLowerCase().replace(/^"|"$/g, '').trim();
+                    if (firstCol === 'customer' || firstCol === 'customer name') startIndex = 1;
+                }
+                const newProjects = [];
+                for (let i = startIndex; i < rows.length; i++) {
+                    let cols = rows[i].includes('\t') ? rows[i].split('\t') : rows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                    cols = cols.map(c => c ? c.trim().replace(/^"|"$/g, '') : "");
+                    if (cols.length >= 2) {
+                        newProjects.push(generateDefaultProject(
+                            Date.now() + i, 
+                            cols[0] || "Unnamed Project", 
+                            false, 
+                            "3_planning", 
+                            cols[2] || "Yellow", 
+                            parseFloat((cols[4] || "0").replace(/[^0-9.-]+/g,"")) || 0,
+                            cols[5] || "",
+                            cols[6] || ""
+                        ));
+                    }
+                }
+                if (newProjects.length > 0) { onUpdateData(newProjects); } else { alert("Could not parse data. Check formatting."); }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full border border-slate-200 flex flex-col max-h-[90vh]">
+                        <div className="px-8 py-6 border-b border-slate-200 bg-slate-50 rounded-t-2xl flex justify-between items-center">
+                            <h3 className="font-black text-xl flex items-center gap-3 text-slate-800"><i className="fas fa-file-excel text-emerald-600"></i>Upload Excel / Paste Pipeline</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-rose-500 text-xsxl transition-colors"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="p-8 overflow-y-auto">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Paste Tab-Separated Data Here:</p>
+                            <textarea value={pasteData} onChange={(e) => setPasteData(e.target.value)} placeholder="Customer | Country | Health | Progress % | MRR | KICKOFF | Target Date | Phase | SA | Partner | Type | Location | Blocker | Complexity | Scope" className="w-full h-64 p-5 border-2 border-slate-200 rounded-xl focus:border-emerald-500 font-mono text-xs outline-none bg-slate-50 whitespace-pre text-slate-700"></textarea>
+                        </div>
+                        <div className="px-8 py-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-end gap-4">
+                            <button onClick={onClose} className="px-6 py-3 text-sm font-black text-slate-500 hover:text-slate-800 uppercase tracking-wider transition-colors">Cancel</button>
+                            <button onClick={handleProcess} className="px-6 py-3 text-sm font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl uppercase tracking-wider shadow-md transition-transform active:scale-95">Process Data & Update</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==========================================
+        // 🌍 GLOBAL VIEWS
+        // ==========================================
+        function GlobalDashboard({ projects, onNavigateToProject }) {
+            const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
+            const totalMRR = activeProjects.reduce((s, p) => s + (Number(p.mrr) || 0), 0);
+            const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
+
+            const [showLifecycle, setShowLifecycle] = useState(true);
+            const [selectedStage, setSelectedStage] = useState('all');
+
+            const stages = [
+                { id: '1_arb', name: 'ARB Intake', color: 'border-purple-500 text-purple-600 bg-purple-50', icon: 'fa-door-open', action: 'Approve Architecture SOW' },
+                { id: '2_architecture', name: 'Architecture', color: 'border-blue-500 text-blue-600 bg-blue-50', icon: 'fa-project-diagram', action: 'Calculate Physics Engine' },
+                { id: '3_planning', name: 'Planning', color: 'border-emerald-500 text-emerald-600 bg-emerald-50', icon: 'fa-tasks', action: 'Lock FinOps & WBS' },
+                { id: '4_execution', name: 'Execution', color: 'border-amber-500 text-amber-600 bg-amber-50', icon: 'fa-rocket', action: 'Monitor Sync & TAM Tickets' },
+                { id: '5_postlive', name: 'Post-Live', color: 'border-slate-500 text-slate-600 bg-slate-50', icon: 'fa-award', action: 'Execute WAR Sign-Off' }
+            ];
+
+            const filteredProjects = selectedStage === 'all' 
+                ? activeProjects 
+                : activeProjects.filter(p => p.lifecycleState === selectedStage);
+
+            return (
+                <div className="animate-fade-in max-w-[1600px] w-full mx-auto space-y-6 pb-12">
+                    <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-8 shadow-xl text-white flex flex-col md:flex-row justify-between items-center gap-6 border border-slate-700">
+                        <div>
+                            <h2 className="text-3xl font-black tracking-tight mb-2">Executive Overview</h2>
+                            <p className="text-sm text-slate-400 max-w-xl">Regional aggregate of delivery performance and financial forecasting.</p>
+                        </div>
+                        <div className="flex gap-4 items-center">
+                            <button onClick={()=>setShowLifecycle(!showLifecycle)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showLifecycle ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'}`}>
+                                <i className="fas fa-project-diagram mr-2"></i> Toggle Lifecycle Flow
+                            </button>
+                            <div className="bg-slate-800/80 backdrop-blur-sm border border-slate-600 px-8 py-4 rounded-xl shadow-inner text-center">
+                                <div className="text-[10px] text-slate-400 uppercase tracking-widest font-black mb-1">Active Pipeline MRR</div>
+                                <div className="text-3xl font-black text-emerald-400">{fm(totalMRR)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {showLifecycle && (
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 animate-fade-in">
+                            <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
+                                <h3 className="font-black text-lg text-slate-800"><i className="fas fa-route text-blue-500 mr-2"></i> Standard Delivery Methodology</h3>
+                                {selectedStage !== 'all' && <button onClick={()=>setSelectedStage('all')} className="text-xs font-bold text-slate-500 hover:text-blue-600"><i className="fas fa-times-circle mr-1"></i> Clear Filter</button>}
+                            </div>
+                            
+                            <div className="flex flex-col md:flex-row justify-between items-center relative gap-4 md:gap-0">
+                                <div className="hidden md:block absolute top-1/2 left-10 right-10 h-1 bg-slate-200 -translate-y-1/2 z-0"></div>
+                                
+                                {stages.map((stage, idx) => {
+                                    const stageProjects = activeProjects.filter(p => p.lifecycleState === stage.id);
+                                    const stageMRR = stageProjects.reduce((s, p) => s + (Number(p.mrr) || 0), 0);
+                                    const isSelected = selectedStage === stage.id;
+                                    
+                                    return (
+                                        <div key={stage.id} onClick={()=>setSelectedStage(stage.id)} className={`relative z-10 flex flex-col items-center cursor-pointer group transition-transform ${isSelected ? 'scale-110' : 'hover:scale-105'}`}>
+                                            <div className={`w-20 h-20 rounded-full flex items-center justify-center border-4 shadow-lg bg-white transition-colors ${isSelected ? stage.color : 'border-slate-200 text-slate-400 group-hover:border-slate-400'}`}>
+                                                <i className={`fas ${stage.icon} text-xsxl`}></i>
+                                            </div>
+                                            <div className="text-center mt-4">
+                                                <div className={`font-black text-sm uppercase tracking-widest ${isSelected ? 'text-slate-800' : 'text-slate-500'}`}>{stage.name}</div>
+                                                <div className="flex gap-2 justify-center mt-1.5">
+                                                    <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-600">{stageProjects.length} Proj</span>
+                                                    <span className="text-[10px] font-black bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">{fm(stageMRR)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            <div className="mt-10 pt-6 border-t border-slate-100 bg-slate-50 p-6 rounded-xl">
+                                <h4 className="font-black text-sm text-slate-800 mb-4 uppercase tracking-widest">
+                                    {selectedStage === 'all' ? 'All Active Projects' : `Projects currently in: ${stages.find(s=>s.id===selectedStage)?.name}`}
+                                </h4>
+                                {filteredProjects.length === 0 ? (
+                                    <div className="text-center p-8 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-bold">No projects currently in this stage.</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {filteredProjects.map(p => {
+                                            const stg = stages.find(s => s.id === p.lifecycleState) || stages[0];
+                                            return (
+                                                <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="font-black text-sm text-slate-800 truncate pr-2">{p.name}</div>
+                                                        <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{fm(p.mrr)}</div>
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 font-bold mb-3 flex items-center gap-2"><i className="fas fa-user-tie"></i> {p.sa} | <i className="fas fa-globe-americas ml-1"></i> {p.country}</div>
+                                                    
+                                                    <div className={`p-3 rounded-lg border bg-opacity-30 ${stg.color.split(' ')[0]} ${stg.color.split(' ')[2]}`}>
+                                                        <div className="text-[9px] uppercase tracking-widest font-bold mb-1 opacity-70">Next Automated Action</div>
+                                                        <div className="text-xs font-black flex items-center gap-2 cursor-pointer hover:underline" onClick={() => onNavigateToProject(p.id)}><i className="fas fa-play-circle"></i> {stg.action}</div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-5 flex items-center"><i className="fas fa-shield-halved text-rose-500 mr-3 text-xl"></i> Executive Escalations</h3>
+                            <div className="space-y-4">
+                                {activeProjects.filter(p=>p.health==='Red').map(p => (
+                                    <div key={p.id} className="p-5 bg-rose-50 border border-rose-200 rounded-xl flex justify-between items-center shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigateToProject(p.id)}>
+                                        <div><div className="font-black text-base text-rose-900">{p.name}</div><div className="text-xs text-rose-700 mt-1 font-medium">{p.blocker}</div></div>
+                                        <div className="font-black text-xl text-rose-800 bg-white px-3 py-1 rounded-lg border border-rose-100 shadow-sm">{fm(p.mrr)}</div>
+                                    </div>
+                                ))}
+                                {activeProjects.filter(p=>p.health==='Red').length===0 && <div className="text-slate-400 text-sm p-8 text-center border-2 border-dashed rounded-xl font-bold bg-slate-50">All regions operating within SLA.</div>}
+                            </div>
+                        </div>
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-5 flex items-center"><i className="fas fa-rocket text-emerald-500 mr-3 text-xl"></i> Imminent Go-Lives (30 Days)</h3>
+                            <div className="space-y-4">
+                                {activeProjects.filter(p=>p.date && p.date !== 'TBD').slice(0,5).map(p => (
+                                    <div key={p.id} className="p-5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center shadow-sm cursor-pointer hover:border-emerald-300 transition-colors" onClick={() => onNavigateToProject(p.id)}>
+                                        <div><div className="font-black text-base text-slate-800">{p.name}</div><div className="text-xs text-slate-500 mt-1 font-bold">Lead: {p.sa}</div></div>
+                                        <div className="font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-lg text-sm shadow-sm">{formatShortDate(p.date)}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function GeospatialMap({ projects }) {
+            const mapRef = useRef(null);
+            const mapInstance = useRef(null);
+            const markersLayer = useRef(null);
+
+            const countryCoords = {
+                'Mexico': [23.6345, -102.5528],
+                'Panama': [8.5379, -80.7821],
+                'Guatemala': [15.7834, -90.2307],
+                'Colombia': [4.5709, -74.2973],
+                'Chile': [-35.6751, -71.5429],
+                'Peru': [-9.1899, -75.0152],
+                'Argentina': [-38.4161, -63.6167],
+                'Brazil': [-14.2350, -51.9253],
+                'Costa Rica': [9.7489, -83.7534],
+                'Ecuador': [-1.8312, -78.1834]
+            };
+
+            const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
+
+            const getBusinessUnit = (country) => {
+                const multiCountry = ['Panama', 'Guatemala', 'Costa Rica', 'El Salvador', 'Honduras', 'Nicaragua', 'Dominican Republic', 'Puerto Rico'];
+                if (country === 'Mexico') return 'Mexico Region';
+                if (multiCountry.includes(country)) return 'Multi-Country Region';
+                if (country === 'Brazil') return 'Brazil Region';
+                return 'South America Region'; 
+            };
+
+            const mapData = useMemo(() => {
+                const active = (projects || []).filter(p => p && !p.isWaiting);
+                const aggregated = {};
+                let totalMrr = 0;
+                const buSet = new Set();
+                
+                active.forEach(p => {
+                    const c = p.country || 'Unknown';
+                    const bu = getBusinessUnit(c);
+                    buSet.add(bu);
+
+                    if (!countryCoords[c]) return; 
+                    if (!aggregated[c]) aggregated[c] = { name: c, bu: bu, coords: countryCoords[c], projects: [], totalMrr: 0, worstHealth: 'Green' };
+                    
+                    aggregated[c].projects.push(p);
+                    aggregated[c].totalMrr += Number(p.mrr) || 0;
+                    totalMrr += Number(p.mrr) || 0;
+                    
+                    if (p.health === 'Red') aggregated[c].worstHealth = 'Red';
+                    else if (p.health === 'Yellow' && aggregated[c].worstHealth !== 'Red') aggregated[c].worstHealth = 'Yellow';
+                });
+                
+                return { regions: Object.values(aggregated), totalMrr, count: active.length, buCount: buSet.size };
+            }, [projects]);
+
+            useEffect(() => {
+                if (typeof L === 'undefined') return;
+
+                if (mapRef.current && !mapInstance.current) {
+                    mapInstance.current = L.map(mapRef.current, { zoomControl: false, attributionControl: false }).setView([4.5709, -74.2973], 4); 
+                    
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
+                        maxZoom: 19,
+                        attribution: '&copy; CartoDB'
+                    }).addTo(mapInstance.current);
+                    
+                    L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current);
+                    markersLayer.current = L.featureGroup().addTo(mapInstance.current);
+
+                    setTimeout(() => { if(mapInstance.current) mapInstance.current.invalidateSize(); }, 250);
+                }
+
+                if (mapInstance.current && markersLayer.current) {
+                    markersLayer.current.clearLayers();
+                    mapData.regions.forEach(region => {
+                        let coreColor = "bg-cyan-500 shadow-[0_0_12px_#06b6d4]"; let pingColor = "bg-cyan-400";
+                        if (region.worstHealth === 'Red') { coreColor = "bg-rose-600 shadow-[0_0_12px_#e11d48]"; pingColor = "bg-rose-500"; }
+                        else if (region.worstHealth === 'Yellow') { coreColor = "bg-amber-400 shadow-[0_0_12px_#fbbf24]"; pingColor = "bg-amber-300"; }
+
+                        const htmlIcon = L.divIcon({
+                            className: 'custom-beacon',
+                            html: `<div class="relative flex items-center justify-center w-8 h-8"><span class="animate-ping absolute inline-flex h-full w-full rounded-full ${pingColor} opacity-75"></span><span class="relative inline-flex rounded-full h-3.5 w-3.5 ${coreColor} border-2 border-slate-900"></span></div>`,
+                            iconSize: [32, 32], iconAnchor: [16, 16]
+                        });
+
+                        let popupHTML = `<div class="p-4 w-64"><div class="border-b border-slate-700 pb-2 mb-3"><h4 class="font-black text-sm uppercase tracking-widest text-white">${region.name}</h4><div class="text-[9px] text-slate-400 uppercase tracking-widest font-bold mb-1">${region.bu}</div><div class="text-xs text-slate-400 font-bold mt-1">Aggregated MRR: <span class="text-cyan-400">${fm(region.totalMrr)}</span></div></div><div class="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">`;
+                        region.projects.forEach(p => {
+                            let dot = '#06b6d4'; if(p.health==='Red') dot = '#e11d48'; if(p.health==='Yellow') dot = '#fbbf24';
+                            popupHTML += `<div class="bg-slate-800/80 p-2 rounded border border-slate-700 flex justify-between items-center"><div class="truncate pr-2"><div class="text-[10px] font-bold text-white flex items-center"><span class="w-2 h-2 rounded-full inline-block mr-1.5" style="background:${dot}"></span>${p.name || 'Unknown'}</div><div class="text-[8px] text-slate-400 uppercase tracking-widest mt-0.5">${p.sa || ''}</div></div><div class="text-[10px] font-black text-slate-300">${p.progress || ''}</div></div>`;
+                        });
+                        popupHTML += `</div></div>`;
+
+                        L.marker(region.coords, { icon: htmlIcon }).bindPopup(popupHTML).addTo(markersLayer.current);
+                    });
+                }
+            }, [mapData]);
+
+            useEffect(() => {
+                return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
+            }, []);
+
+            return (
+                <div className="animate-fade-in max-w-[1800px] w-full mx-auto flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-140px)] min-max-h-[800px] pb-6">
+                    <div className="w-full lg:w-80 bg-slate-900 rounded-2xl shadow-xl border border-slate-800 p-6 flex flex-col text-white shrink-0 h-auto lg:h-full">
+                        <h2 className="font-black text-sm uppercase tracking-widest text-slate-300 flex items-center mb-6 border-b border-slate-800 pb-4"><i className="fas fa-globe-americas text-blue-400 mr-3 text-xl"></i> Operations Node</h2>
+                        <div className="space-y-6 flex-1">
+                            <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 shadow-inner"><div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-2">Total Network MRR</div><div className="text-4xl font-black text-cyan-400">{fm(mapData.totalMrr)}</div></div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 text-center shadow-inner"><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-2">Business Units</div><div className="text-3xl font-black text-blue-300">{mapData.buCount}</div></div>
+                                <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 text-center shadow-inner"><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-2">Geographies</div><div className="text-3xl font-black text-blue-300">{mapData.regions.length}</div></div>
+                            </div>
+                            <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 text-center shadow-inner"><div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-2">Active Projects</div><div className="text-3xl font-black text-blue-300">{mapData.count}</div></div>
+
+                            <div className="mt-6 pt-6 border-t border-slate-800 text-[10px] text-slate-400 uppercase tracking-widest font-bold flex flex-col gap-4">
+                                <div className="flex items-center gap-3"><span className="w-3 h-3 rounded-full bg-cyan-500 shadow-[0_0_10px_#06b6d4]"></span> Region Healthy</div>
+                                <div className="flex items-center gap-3"><span className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_10px_#fbbf24]"></span> Region at Risk</div>
+                                <div className="flex items-center gap-3"><span className="w-3 h-3 rounded-full bg-rose-600 shadow-[0_0_10px_#e11d48]"></span> Critical Blocker in Region</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 rounded-2xl shadow-xl overflow-hidden border border-slate-300 bg-slate-900 relative min-max-h-[500px] w-full flex flex-col">
+                        <div ref={mapRef} className="absolute inset-0 bg-slate-950"></div>
+                    </div>
+                </div>
+            )
+        }
+
+        function GlobalRadar({ projects, onUpdateProject, onAddProject }) {
+            const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
+            const [newLeadName, setNewLeadName] = useState(""); const [newLeadSA, setNewLeadSA] = useState(""); const [newLeadMRR, setNewLeadMRR] = useState("");
+            const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
+
+            const handleAddNewLead = () => { if(!newLeadName || !newLeadSA) return alert("Name and SA required."); onAddProject(generateDefaultProject(Date.now(), newLeadName, true, "1_arb", "Yellow", parseFloat(newLeadMRR)||0, "", "")); setNewLeadName(""); setNewLeadSA(""); setNewLeadMRR(""); };
+            const cols = [{ id: 'prospect', title: 'Early Prospect', color: 'border-slate-300 bg-slate-50' }, { id: 'sizing', title: 'Discovery & Sizing', color: 'border-blue-300 bg-blue-50/50' }, { id: 'ready', title: 'Ready for ARB Intake', color: 'border-purple-300 bg-purple-50/50' }];
+
+            return (
+                <div className="animate-fade-in max-w-[1800px] w-full mx-auto space-y-6 pb-12">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-end gap-5">
+                        <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Lead</label><input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-sm w-64 bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="GlobalCorp Migration" /></div>
+                        <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Sales Architect</label><input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-sm w-48 bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="SA Name" /></div>
+                        <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Est. MRR ($)</label><input type="number" value={newLeadMRR} onChange={e=>setNewLeadMRR(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-sm w-32 bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="0" /></div>
+                        <button onClick={handleAddNewLead} className="px-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl shadow-md text-xs transition-colors"><i className="fas fa-plus mr-2"></i> Add to Radar</button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {cols.map(col => {
+                            const colProjects = waitingProjects.filter(p => p.waitingStage === col.id || (col.id==='prospect' && !p.waitingStage));
+                            return (
+                                <div key={col.id} className={`rounded-2xl border-2 flex flex-col transition-all duration-300 overflow-hidden ${col.color} ${expanded[col.id] ? 'h-auto lg:max-h-[700px]' : 'h-16'}`}>
+                                    <div className="p-5 border-b-2 border-inherit font-black text-sm text-slate-800 uppercase tracking-widest bg-white/60 backdrop-blur-sm flex justify-between items-center cursor-pointer hover:bg-white/80 transition-colors" onClick={() => setExpanded(prev => ({...prev, [col.id]: !prev[col.id]}))}>
+                                        <div className="flex items-center">
+                                            {col.title} 
+                                            <span className="ml-3 bg-slate-800 text-white px-3 py-1 rounded-full text-[10px] shadow-sm">{colProjects.length}</span>
+                                        </div>
+                                        <i className={`fas fa-chevron-${expanded[col.id] ? 'up' : 'down'} text-slate-400 text-lg`}></i>
+                                    </div>
+                                    <div className={`p-5 space-y-5 overflow-y-auto flex-1 custom-scrollbar ${!expanded[col.id] ? 'hidden' : 'block'}`}>
+                                        {colProjects.map(p => (
+                                            <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:shadow-md transition-all">
+                                                <div className="font-black text-base text-slate-800 leading-tight mb-3"><EditableCell value={p.name} onSave={v=>onUpdateProject(p.id,'name',v)} /></div>
+                                                <div className="text-xs font-bold text-blue-600 uppercase tracking-widest flex items-center mb-4"><i className="fas fa-user-tie mr-2 opacity-50"></i> <EditableCell value={p.sa} onSave={v=>onUpdateProject(p.id,'sa',v)} /></div>
+                                                <div className="text-sm font-black bg-emerald-50 text-emerald-800 w-max px-4 py-1.5 rounded-lg border border-emerald-200 flex items-center shadow-sm"><span className="mr-1 text-emerald-500">$</span><EditableCell value={p.mrr} type="number" onSave={v=>onUpdateProject(p.id,'mrr',v)} /></div>
+                                                <div className="text-xs text-slate-600 mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 font-medium"><EditableCell type="textarea" value={p.blocker} onSave={v=>onUpdateProject(p.id,'blocker',v)} /></div>
+                                                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {col.id === 'prospect' && <button onClick={()=>onUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-lg transition-colors">Move <i className="fas fa-arrow-right ml-1"></i></button>}
+                                                    {col.id === 'sizing' && <button onClick={()=>onUpdateProject(p.id, 'waitingStage', 'ready')} className="text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-lg transition-colors">Ready <i className="fas fa-arrow-right ml-1"></i></button>}
+                                                    {col.id === 'ready' && <button onClick={()=>{onUpdateProject(p.id, 'isWaiting', false); alert("Moved to Pipeline!");}} className="text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg shadow-md transition-colors">Start ARB <i className="fas fa-door-open ml-1"></i></button>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {colProjects.length === 0 && <div className="text-center text-slate-400 text-xs font-bold py-12 border-2 border-dashed border-slate-300 rounded-2xl mx-2">No active leads</div>}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )
+        }
+
+        function GlobalPipeline({ projects, onUpdateProject, onExport, onImport }) {
+          const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
+          const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
+          
+          const [menuOpen, setMenuOpen] = useState(false);
+
+          const getHealthBadge = (h) => { if(h==='Green') return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[9px] font-bold border border-emerald-200"><i className="fas fa-check-circle"></i> On Track</span>; if(h==='Red') return <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[9px] font-bold border border-rose-200"><i className="fas fa-times-circle"></i> Blocked</span>; return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[9px] font-bold border border-amber-200"><i className="fas fa-clock"></i> At Risk</span>; };
+          const getStateLabel = (s) => { const map = {'1_arb':'1. ARB Intake', '2_architecture':'2. Architecture', '3_planning':'3. Planning', '4_execution':'4. Execution', '5_postlive':'5. Post-Live'}; return map[s] || s; };
+
+          // Executive Sales Report logic
+          const handleSalesExport = () => {
+              const headers = ["Customer", "Country", "Phase", "Go-Live Date", "Target MRR", "Overall Health", "Executive Summary"];
+              const csvContent = [headers.join(","), ...activeProjects.map(p => { 
+                  let execSummary = p.health === 'Green' ? "On track for standard delivery." : p.health === 'Yellow' ? "Minor delays, actively managed." : `Critical blocker escalated: ${(p.blocker || '').replace(/"/g, '""')}`;
+                  let status = getStateLabel(p.lifecycleState).replace(/[0-9]. /g, '');
+                  return [`"${(p.name || '').replace(/"/g, '""')}"`, `"${(p.country || '').replace(/"/g, '""')}"`, `"${status}"`, `"${formatShortDate(p.date)}"`, `"${fm(p.mrr)}"`, `"${p.health || ''}"`, `"${execSummary}"`].join(","); 
+              })].join("\n");
+              
+              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); 
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a"); 
+              link.setAttribute("href", url); 
+              link.setAttribute("download", `Sales_Exec_Pipeline_${new Date().toISOString().split('T')[0]}.csv`); 
+              document.body.appendChild(link); link.click(); document.body.removeChild(link);
+          };
+
+          return (
+            <div className="animate-fade-in max-w-[2000px] w-full mx-auto pb-12">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-max-h-[600px]">
+                <div className="px-6 py-5 border-b border-slate-200 bg-slate-900 text-white flex flex-wrap gap-4 justify-between items-center">
+                  <h3 className="font-black text-lg tracking-wide"><i className="fas fa-list-alt text-emerald-400 mr-2"></i> Master Execution Pipeline</h3>
+                  <div className="flex gap-3 items-center flex-wrap relative">
+                      <button onClick={()=>setMenuOpen(!menuOpen)} className="w-10 h-10 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-md transition-colors border border-slate-600 focus:outline-none">
+                          <i className="fas fa-ellipsis-v"></i>
+                      </button>
+                      {menuOpen && (
+                          <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-fade-in">
+                              <button onClick={()=>{onImport(); setMenuOpen(false);}} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 border-b border-slate-100 transition-colors">
+                                  <i className="fas fa-upload text-emerald-500 w-5 text-center"></i> Import Pipeline Data
+                              </button>
+                              <button onClick={()=>{onExport(); setMenuOpen(false);}} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 border-b border-slate-100 transition-colors">
+                                  <i className="fas fa-code text-slate-500 w-5 text-center"></i> Export Technical Schema
+                              </button>
+                              <button onClick={()=>{handleSalesExport(); setMenuOpen(false);}} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 hover:bg-blue-50 bg-blue-50/50 transition-colors">
+                                  <i className="fas fa-file-invoice text-blue-500 w-5 text-center"></i> Export Sales Summary
+                              </button>
+                          </div>
+                      )}
+                  </div>
+                </div>
+                <div className="overflow-x-auto w-full bg-slate-50 flex-1">
+                  <table className="w-full max-w-[1600px] w-full text-left border-collapse">
+                    <thead className="bg-slate-200 text-slate-600 text-[10px] uppercase border-b-2 border-slate-300 tracking-wider">
+                      <tr>
+                        <th className="px-6 py-4 w-[15%]">Customer / Phase</th>
+                        <th className="px-4 py-4 w-[8%]">Country</th>
+                        <th className="px-4 py-4 w-[10%]">Health & Prog</th>
+                        <th className="px-4 py-4 w-[8%]">MRR / Comp</th>
+                        <th className="px-4 py-4 w-[12%]">Timeline</th>
+                        <th className="px-4 py-4 w-[10%]">SA / Partner</th>
+                        <th className="px-4 py-4 w-[12%]">Scope</th>
+                        <th className="px-6 py-4">Blockers / Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white text-xs">
+                      {activeProjects.map((p) => (
+                        <tr key={p.id} className="hover:bg-blue-50/50 transition-colors">
+                          <td className="px-6 py-4 align-top">
+                            <div className="font-black text-sm text-slate-800"><EditableCell value={p.name} onSave={v=>onUpdateProject(p.id,'name',v)} /></div>
+                            <div className="text-[9px] font-black uppercase mt-1.5 bg-blue-100 text-blue-800 inline-block px-2 py-0.5 rounded border border-blue-200 tracking-widest">{getStateLabel(p.lifecycleState)}</div>
+                          </td>
+                          <td className="px-4 py-4 align-top"><div className="font-bold text-slate-700 flex items-center bg-slate-100 px-2 py-1 rounded w-max border border-slate-200"><i className="fas fa-globe-americas mr-1.5 text-slate-400"></i><EditableCell value={p.country} onSave={v=>onUpdateProject(p.id,'country',v)} placeholder="Country" /></div></td>
+                          <td className="px-4 py-4 align-top">
+                            <div className="mb-2"><EditableCell type="select" placeholder="health" value={p.health} onSave={v=>onUpdateProject(p.id,'health',v)} className="hidden" />{getHealthBadge(p.health)}</div>
+                            <div className="flex items-center gap-2"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className={`h-full transition-all ${p.health==='Green'?'bg-emerald-500':p.health==='Red'?'bg-rose-500':'bg-amber-500'}`} style={{width: `${parseInt(p.progress)||0}%`}}></div></div><span className="text-[10px] font-black">{p.progress}</span></div>
+                          </td>
+                          <td className="px-4 py-4 align-top">
+                            <div className="font-black text-sm bg-emerald-50 text-emerald-800 border border-emerald-200 rounded px-2 py-1 w-max shadow-sm">${p.mrr}</div>
+                            <div className="text-[9px] font-bold uppercase mt-2 text-slate-500 tracking-wider"><EditableCell type="select" placeholder="complexity" value={p.complexity} onSave={v=>onUpdateProject(p.id,'complexity',v)} /></div>
+                          </td>
+                          <td className="px-4 py-4 align-top">
+                              <div className="flex flex-col gap-1.5 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between border-b border-slate-200 pb-1.5"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-flag-checkered text-blue-500 mr-1.5"></i> Start:</span> <span className="font-mono font-bold"><EditableCell type="date" value={p.kickoff} onSave={v=>onUpdateProject(p.id,'kickoff',v)} /></span></div>
+                                <div className="flex items-center justify-between pt-1"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-rocket text-emerald-500 mr-1.5"></i> Live:</span> <span className="font-mono font-black text-emerald-700"><EditableCell type="date" value={p.date} onSave={v=>onUpdateProject(p.id,'date',v)} /></span></div>
+                              </div>
+                          </td>
+                          <td className="px-4 py-4 align-top">
+                            <div className="font-black text-blue-700 mb-1.5 truncate"><EditableCell value={p.sa} onSave={v=>onUpdateProject(p.id,'sa',v)} placeholder="SA Name" /></div>
+                            <div className="text-[10px] font-bold text-slate-600 bg-slate-100 p-1.5 rounded border border-slate-200">Partner: <EditableCell value={p.partner} onSave={v=>onUpdateProject(p.id,'partner',v)} placeholder="Partner" /></div>
+                          </td>
+                          <td className="px-4 py-4 align-top"><div className="text-[10px] font-bold text-slate-700 bg-purple-50 p-2 rounded-lg border border-purple-100 leading-relaxed"><EditableCell type="textarea" value={p.scope} onSave={v=>onUpdateProject(p.id,'scope',v)} /></div></td>
+                          <td className="px-6 py-4 align-top"><div className="text-[11px] font-medium text-slate-700 bg-amber-50 p-3 rounded-lg border border-amber-200 h-full min-h-[30px] max-h-[60px] leading-relaxed shadow-inner"><EditableCell type="textarea" value={p.blocker} onSave={v=>onUpdateProject(p.id,'blocker',v)} placeholder="Notes / Blocker" /></div></td>
+                        </tr>
+                      ))}
+                      {activeProjects.length === 0 && <tr><td colSpan="8" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">No active projects in pipeline.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        function GlobalSchedule({ projects }) {
+            const timelineProjects = useMemo(() => {
+                const valid = []; (projects||[]).filter(p => p && !p.isWaiting).forEach(p => { 
+                    const start = new Date(p.kickoff); const end = new Date(p.date); 
+                    if(!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) valid.push({ ...p, startObj: start, endObj: end }); 
+                });
+                return valid.sort((a,b) => a.startObj - b.startObj);
+            }, [projects]);
+
+            const bounds = useMemo(() => { if(timelineProjects.length === 0) return null; let min = timelineProjects[0].startObj.getTime(); let max = timelineProjects[0].endObj.getTime(); timelineProjects.forEach(p => { if(p.startObj.getTime() < min) min = p.startObj.getTime(); if(p.endObj.getTime() > max) max = p.endObj.getTime(); }); const pad = 15 * 24 * 60 * 60 * 1000; return { min: min - pad, max: max + pad, total: Math.max((max+pad) - (min-pad), 1) }; }, [timelineProjects]);
+            const getLeftPos = (d) => ((d.getTime() - bounds.min) / bounds.total) * 100;
+            const getWidth = (s, e) => ((e.getTime() - s.getTime()) / bounds.total) * 100;
+            
+            return (
+                <div className="animate-fade-in max-w-[1800px] w-full mx-auto space-y-6 pb-12">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col">
+                        <h3 className="font-black text-xl text-slate-800 mb-8 flex items-center"><i className="fas fa-stream text-emerald-500 mr-3"></i> Global Delivery Schedule (Gantt)</h3>
+                        {timelineProjects.length===0 ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50">No valid dates in pipeline. Ensure dates are chosen via calendar picker.</div> : (
+                            <div className="overflow-x-auto w-full">
+                                <div className="min-max-w-[1000px] w-full relative min-max-h-[400px]">
+                                    <div className="absolute inset-0 flex justify-between pl-64 opacity-20 pointer-events-none">{[...Array(8)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div>
+                                    <div className="space-y-6 relative z-10 pt-4">
+                                        {timelineProjects.map(p => (
+                                            <div key={p.id} className="flex items-center group">
+                                                <div className="w-64 shrink-0 pr-4 border-2 border-slate-200"><div className="font-black text-xs text-slate-800 truncate">{p.name}</div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">{p.sa}</div></div>
+                                                <div className="flex-1 h-10 relative bg-slate-50 border-y border-r border-transparent group-hover:bg-slate-100 transition-colors rounded-r-lg">
+                                                    <div className="absolute text-[10px] font-black text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-2" style={{ left: `${getLeftPos(p.startObj)}%` }}>{formatShortDate(p.kickoff)}</div>
+                                                    <div className={`absolute top-1 bottom-1 rounded-md shadow-md border-2 flex flex-col justify-center px-3 overflow-hidden transition-transform hover:scale-[1.02] cursor-pointer ${p.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : p.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${getLeftPos(p.startObj)}%`, width: `${getWidth(p.startObj, p.endObj)}%`, minWidth:'50px'}}>
+                                                        <div className="flex justify-between items-center w-full"><span className="text-[10px] font-black">{p.progress}</span></div>
+                                                    </div>
+                                                    <div className="absolute text-[10px] font-black text-slate-800 top-1/2 -translate-y-1/2 pl-2" style={{ left: `${getLeftPos(p.startObj) + getWidth(p.startObj, p.endObj)}%` }}>{formatShortDate(p.date)}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )
+        }
+
+        function PlaybookStudio({ customPlaybooks, setCustomPlaybooks }) {
+            const [selectedKey, setSelectedKey] = useState("sap_enterprise_cutover");
+            const safePlaybooks = customPlaybooks || {};
+            const activePlaybook = safePlaybooks[selectedKey] || { name: 'Unknown Playbook', tasks: [] };
+
+            const handleNewPlaybook = () => {
+                const name = prompt("Enter new Playbook Name:");
+                if(!name) return;
+                const key = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                setCustomPlaybooks({...safePlaybooks, [key]: { name, tasks: [] }});
+                setSelectedKey(key);
+            };
+
+            const handleTaskUpdate = (taskId, field, value) => {
+                const updatedTasks = (activePlaybook.tasks || []).map(t => t.id === taskId ? {...t, [field]: value} : t);
+                setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: updatedTasks}});
+            };
+
+            const handleAddTask = () => {
+                const newId = prompt("Enter WBS ID (e.g., 4.1):");
+                if(!newId) return;
+                const isParent = !newId.includes('.');
+                const newTask = { id: newId, name: "New Task", prog: "0%", resp: "Internal Delivery", start: "", end: "", isParent };
+                setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: [...(activePlaybook.tasks||[]), newTask]}});
+            };
+
+            return (
+                <div className="animate-fade-in max-w-[1800px] w-full mx-auto space-y-6 pb-12">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex justify-between items-center">
+                        <div>
+                            <h2 className="text-xsxl font-black text-slate-800"><i className="fas fa-book-open text-blue-600 mr-3"></i> Dynamic Playbook Studio</h2>
+                            <p className="text-sm text-slate-500 mt-2">Design, edit, and save standardized LATAM migration methodologies (WBS) to inject into projects.</p>
+                        </div>
+                        <button onClick={handleNewPlaybook} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-plus mr-2"></i> Create Playbook</button>
+                    </div>
+
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        <div className="w-full lg:w-80 space-y-3 shrink-0">
+                            {Object.entries(safePlaybooks).map(([key, pb]) => (
+                                <div key={key} onClick={()=>setSelectedKey(key)} className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedKey === key ? 'bg-blue-50 border-blue-500 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
+                                    <div className="font-black text-sm text-slate-800">{pb.name}</div>
+                                    <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">{(pb.tasks||[]).length} Tasks defined</div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-max-h-[600px]">
+                            <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                <h3 className="font-black text-lg text-slate-800">Editing: {activePlaybook?.name}</h3>
+                                <button onClick={handleAddTask} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shadow-sm"><i className="fas fa-plus mr-2"></i> Add Task Row</button>
+                            </div>
+                            <div className="flex-1 overflow-auto bg-slate-50 p-6 custom-scrollbar">
+                                <table className="w-full text-left min-max-w-[800px] w-full border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                                    <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 border-b-2 border-slate-300 tracking-wider">
+                                        <tr>
+                                            <th className="p-3 w-16 text-center font-black">WBS</th>
+                                            <th className="p-3 font-black">Template Task Name</th>
+                                            <th className="p-3 w-48 font-black">Default RACI Owner</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 text-xs">
+                                        {(activePlaybook?.tasks || []).map(task => (
+                                            <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
+                                                <td className="p-3 text-center font-mono text-slate-500 font-bold"><EditableCell value={task.id} onSave={v=>handleTaskUpdate(task.id, 'id', v)} /></td>
+                                                <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handleTaskUpdate(task.id, 'name', v)} /></td>
+                                                <td className="p-3 text-slate-700 font-bold"><EditableCell value={task.resp} onSave={v=>handleTaskUpdate(task.id, 'resp', v)} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function GlobalProcessView() {
+            const phases = [
+                {
+                    id: 1, title: "ARB Intake Gate", icon: "fa-door-open", 
+                    color: "bg-purple-500", shadow: "shadow-purple-500/30", text: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200", 
+                    owner: "Sales Architect (SA)", 
+                    desc: "Pre-sales transition phase. The Sales Architect uploads signed SOWs and valid architectural designs to trigger the delivery cycle. Projects cannot pass this gate without executive approval.", 
+                    artefacts: ["Present State HLD (As-Is)", "Target Architecture (To-Be)", "Signed Scope of Work (SOW)"]
+                },
+                {
+                    id: 2, title: "Architecture & Physics", icon: "fa-project-diagram", 
+                    color: "bg-blue-500", shadow: "shadow-blue-500/30", text: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", 
+                    owner: "Principal Architect", 
+                    desc: "Technical validation phase. Delivery architects mathematically model the migration. Expected sync speeds are calculated, and Operational Readiness (ORA) friction is scored.", 
+                    artefacts: ["IaC Topology Map", "Delivery Physics Calculation", "ORA Friction Profile"]
+                },
+                {
+                    id: 3, title: "Delivery Planning", icon: "fa-tasks", 
+                    color: "bg-emerald-500", shadow: "shadow-emerald-500/30", text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", 
+                    owner: "Delivery Manager", 
+                    desc: "Financial and scheduling phase. Project budgets are locked, resources (Partner vs Internal) are assigned, and the execution Work Breakdown Structure (WBS) is populated.", 
+                    artefacts: ["FinOps Commercial Model", "RACI Assignment Matrix", "Enterprise Playbook / WBS"]
+                },
+                {
+                    id: 4, title: "Active Execution", icon: "fa-rocket", 
+                    color: "bg-amber-500", shadow: "shadow-amber-500/30", text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200", 
+                    owner: "Delivery Pod / Partner", 
+                    desc: "The active migration phase. Workloads are actively syncing. Tickets and escalations are managed via the TAM hub, and project status is polled dynamically via Cloud APIs.", 
+                    artefacts: ["TAM Support Ticket Hub", "Active Comms Dashboard", "Live Progress Gantt"]
+                },
+                {
+                    id: 5, title: "Post-Live Handover", icon: "fa-award", 
+                    color: "bg-slate-700", shadow: "shadow-slate-700/30", text: "text-slate-800", bg: "bg-slate-100", border: "border-slate-300", 
+                    owner: "TAM / Principal Architect", 
+                    desc: "Final delivery milestone. The environment is verified against best practices. Temporary dual-run infrastructure is destroyed to optimize cloud spend, followed by a formal sign-off.", 
+                    artefacts: ["5-Pillar WAR Scorecard", "Cost Optimization Review", "Formal Project Sign-Off"]
+                }
+            ];
+
+            return (
+                <div className="animate-fade-in max-w-[1400px] w-full mx-auto pb-12">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+                        <div className="bg-slate-900 p-8 lg:p-12 text-center text-white relative overflow-hidden">
+                            <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay pointer-events-none"></div>
+                            <h2 className="text-3xl lg:text-4xl font-black mb-4 relative z-10"><i className="fas fa-route text-blue-400 mr-4"></i>Standard Delivery Methodology</h2>
+                            <p className="text-sm text-slate-400 max-w-2xl mx-auto relative z-10 leading-relaxed font-medium">
+                                The End-to-End lifecycle mapping for LATAM Cloud migrations. Every project ingested into the Delivery ERP must sequentially pass these validation gates to ensure strict financial, architectural, and operational governance.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6 relative before:absolute before:inset-0 before:ml-10 md:before:ml-[2.25rem] before:-translate-x-px before:w-1 before:bg-slate-200 before:z-0">
+                        {phases.map((phase, idx) => (
+                            <div key={phase.id} className="relative z-10 flex flex-col md:flex-row gap-6 lg:gap-8 items-start group">
+                                <div className="flex shrink-0 w-20 h-20 ml-2 md:ml-0 rounded-full border-4 border-white bg-white shadow-xl items-center justify-center relative">
+                                    <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${phase.color} ${phase.shadow}`}>
+                                        <i className={`fas ${phase.icon} text-white text-xl`}></i>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 w-full overflow-hidden hover:shadow-md transition-shadow">
+                                    <div className={`px-6 py-4 border-b border-slate-200 flex justify-between items-center ${phase.bg}`}>
+                                        <h3 className={`font-black text-lg ${phase.text}`}>{phase.id}. {phase.title}</h3>
+                                        <span className="bg-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-200 shadow-sm flex items-center">
+                                            <i className="fas fa-user-circle mr-2 opacity-50"></i> {phase.owner}
+                                        </span>
+                                    </div>
+                                    <div className="p-6 md:p-8 flex flex-col lg:flex-row gap-8">
+                                        <div className="flex-1">
+                                            <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-3">Phase Objective</h4>
+                                            <p className="text-sm font-medium text-slate-600 leading-relaxed">{phase.desc}</p>
+                                        </div>
+                                        <div className="lg:w-1/3 shrink-0">
+                                            <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-3 border-b border-slate-100 pb-2">Mandatory Gate Artefacts</h4>
+                                            <ul className="space-y-2">
+                                                {phase.artefacts.map((art, i) => (
+                                                    <li key={i} className="flex items-start text-xs font-bold text-slate-700">
+                                                        <i className="fas fa-check-circle text-emerald-500 mt-0.5 mr-2"></i>
+                                                        <span>{art}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )
+        }
+
+        // ==========================================
+        // 🏰 PROJECT COMMAND CENTER (THE WIZARD)
+        // ==========================================
+        function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
+            const states = ['1_arb', '2_architecture', '3_planning', '4_execution', '5_postlive'];
+            const stepLabels = ['ARB Intake', 'Architecture', 'Delivery Planning', 'Active Execution', 'Post-Live WAR'];
+            const currentIndex = Math.max(0, states.indexOf(project?.lifecycleState || '1_arb'));
+            const [viewIndex, setViewIndex] = useState(currentIndex);
+            useEffect(() => { setViewIndex(currentIndex); }, [currentIndex]);
+
+            const promoteState = () => {
+                if (currentIndex < states.length - 1) {
+                    const nextState = states[currentIndex + 1];
+                    onUpdateProject(project.id, 'lifecycleState', nextState);
+                    alert(`Project Promoted to: ${stepLabels[currentIndex + 1]}`);
+                }
+            };
+
+            if (!project) return null;
+
+            return (
+                <div className="animate-fade-in max-w-[1800px] w-full mx-auto flex flex-col">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6 flex items-center justify-between">
+                        <div className="flex items-center gap-5 flex-1">
+                            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center border-2 border-blue-200 shrink-0"><i className="fas fa-building text-blue-600 text-xsxl"></i></div>
+                            <div><h2 className="text-xl font-black text-slate-800 leading-tight">{project.name}</h2><p className="text-xs font-bold text-slate-500 mt-1 tracking-widest uppercase">Project Command Center</p></div>
+                        </div>
+                        <div className="hidden lg:flex items-center gap-2 flex-1 justify-end max-w-3xl">
+                            {states.map((s, idx) => {
+                                const isCompleted = idx < currentIndex;
+                                const isActive = idx === currentIndex;
+                                const isViewing = idx === viewIndex;
+                                let cssClass = "step-pending cursor-pointer hover:bg-slate-50";
+                                if (isActive) cssClass = "step-active shadow-md ring-2 ring-blue-200";
+                                else if (isCompleted) cssClass = "step-completed cursor-pointer hover:bg-emerald-100";
+                                if (isViewing && !isActive) cssClass += " ring-2 ring-slate-300";
+
+                                return (
+                        <>
+                                    <React.Fragment key={s}>
+                                        <div onClick={()=> idx <= currentIndex ? setViewIndex(idx) : null} className={`flex-1 text-center py-2 px-3 rounded-xl border-2 transition-all ${cssClass} ${idx > currentIndex ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                            <div className="text-[9px] font-black uppercase tracking-widest opacity-80">Step {idx+1}</div>
+                                            <div className="text-xs font-bold mt-0.5">{stepLabels[idx]}</div>
+                                        </div>
+                                        {idx < states.length - 1 && <div className="w-4 h-0.5 bg-slate-300 shrink-0"></div>}
+                                    </>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 pb-12">
+                        {viewIndex === 0 && <WizardStepARB project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===0} />}
+                        {viewIndex === 1 && <WizardStepArchitecture project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===1} />}
+                        {viewIndex === 2 && <WizardStepPlanning project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===2} customPlaybooks={customPlaybooks} />}
+                        {viewIndex === 3 && <WizardStepExecution project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===3} />}
+                        {viewIndex === 4 && <WizardStepPostLive project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===4} />}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Wizard Step 1: ARB ---
+        function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
+            return (
+                <div className="p-8">
+                    <div className="mb-8 border-b border-slate-200 pb-4 flex justify-between items-end">
+                        <div><h3 className="font-black text-xsxl text-slate-800"><i className="fas fa-door-open text-blue-600 mr-3"></i> Step 1: ARB Intake Gate</h3><p className="text-sm text-slate-500 mt-2">Validate the technical SOW and Architectures provided by the Sales Architect.</p></div>
+                        {isCurrent && <button onClick={onPromote} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95">Approve ARB & Advance <i className="fas fa-arrow-right ml-2"></i></button>}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+                        <div className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                            <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Kickoff Milestone</label><input type="date" value={project.kickoff} onChange={e=>onUpdateProject(project.id, 'kickoff', e.target.value)} className="w-full p-3 border-2 border-blue-200 rounded-xl bg-white outline-none font-bold text-blue-900 cursor-pointer"/></div>
+                            <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Go-Live Milestone</label><input type="date" value={project.date} onChange={e=>onUpdateProject(project.id, 'date', e.target.value)} className="w-full p-3 border-2 border-emerald-200 rounded-xl bg-white outline-none font-bold text-emerald-900 cursor-pointer"/></div>
+                            <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Target MRR ($)</label><input type="number" value={project.mrr} onChange={e=>onUpdateProject(project.id, 'mrr', e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl bg-white outline-none font-bold" /></div>
+                        </div>
+                        <div className="space-y-4">
+                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-2 border-b pb-2">Mandatory Architectural Artefacts</h4>
+                            <label className="flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl cursor-pointer bg-white hover:bg-slate-50 transition-colors"><input type="checkbox" className="w-5 h-5 accent-blue-600" /><span className="font-bold text-sm text-slate-700">Present State HLD (As-Is)</span></label>
+                            <label className="flex items-center gap-4 p-4 border-2 border-rose-200 rounded-xl cursor-pointer bg-rose-50/50 hover:bg-rose-50 transition-colors"><input type="checkbox" className="w-5 h-5 accent-rose-600" /><span className="font-bold text-sm text-rose-900">Target Architecture (To-Be)</span></label>
+                            <label className="flex items-center gap-4 p-4 border-2 border-purple-200 rounded-xl cursor-pointer bg-purple-50/50 hover:bg-purple-50 transition-colors"><input type="checkbox" className="w-5 h-5 accent-purple-600" /><span className="font-bold text-sm text-purple-900">SOW (Scope of Work) Signed</span></label>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        // --- Wizard Step 2: Architecture ---
+        function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
+            const [subTab, setSubTab] = useState('mapper');
+            const hasData = typeof project?.mapperCsv === 'string' && project.mapperCsv.trim().length > 0;
+
+            const loadSampleEnterprise = () => { 
+                const s = `Name,Type,IP_CIDR,Location,Notes\nHQ-Datacenter-VPN,VPN,10.0.0.0/16,External-Peering,IPsec\nROMA-Connect,ROMA,Global,Edge,API Integration\nHuawei-CCE-Cluster,CCE,10.0.4.0/24,Container-Subnet,Managed K8s 1.28\nWorker-Node-ECS-1,ECS,10.0.4.10,Container-Subnet,Ubuntu NodePool\nWorker-Node-ECS-2,ECS,10.0.4.11,Container-Subnet,Ubuntu NodePool\nHuawei-DMS,DMS,10.0.5.20,Data-Subnet,Kafka Message Bus\nGaussDB-Distributed,GaussDB,10.0.6.100,Data-Subnet,HTAP Database\nHuawei-OBS-Datalake,OBS,Global,Storage,100TB Data\nHuawei-SFS-Turbo,SFS,10.0.5.50,Data-Subnet,Shared NFS`; 
+                onUpdateProject(project.id, 'mapperCsv', s);
+            };
+
+            return (
+                <div>
+                    <div className="px-8 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <div className="flex gap-2">
+                            <button onClick={()=>setSubTab('mapper')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='mapper'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>1. Topology Auto-Mapper</button>
+                            <button onClick={()=>setSubTab('physics')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='physics'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>2. Delivery Physics & DB</button>
+                            <button onClick={()=>setSubTab('ora')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='ora'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>3. ORA Friction</button>
+                        </div>
+                        {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Complete Architecture <i className="fas fa-arrow-right ml-2"></i></button>}
+                    </div>
+                    <div className="p-8 bg-slate-100/50">
+                        {subTab === 'mapper' && (
+                            !hasData ? (
+                                <div className="max-h-[500px] flex flex-col items-center justify-center text-slate-500 bg-white border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center animate-fade-in">
+                                    <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                                        <i className="fas fa-project-diagram text-5xl text-indigo-400"></i>
+                                    </div>
+                                    <h3 className="text-xsxl font-black text-slate-800 mb-2">No Topology Data Detected</h3>
+                                    <p className="text-sm max-w-lg mx-auto mb-8 font-medium">This project recently passed the ARB Gate. You must map the target architecture before calculating Delivery Physics and Planning.</p>
+                                    <div className="flex gap-4">
+                                        <button onClick={loadSampleEnterprise} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md transition-all hover:scale-105"><i className="fas fa-lightbulb mr-2"></i> Load Sample PaaS Template</button>
+                                        <button onClick={()=>{const d = prompt("Paste CSV data here:"); if(d) onUpdateProject(project.id, 'mapperCsv', d);}} className="px-6 py-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 rounded-xl font-black uppercase tracking-widest shadow-sm transition-all"><i className="fas fa-paste mr-2"></i> Paste CSV Data</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} />
+                            )
+                        )}
+                        {subTab === 'physics' && <PhysicsEngineView activeProject={project} onUpdateProject={onUpdateProject} />}
+                        {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
+                    </div>
+                </div>
+            )
+        }
+
+        // ==========================================
+        // 🚧 ARCHITECTURE SUB-VIEWS (INTEGRATED)
+        // ==========================================
+        function TopologyMapperView({ activeProject, onUpdateProject }) {
+            const [csvText, setCsvText] = useState(activeProject?.mapperCsv || "");
+            const [nodes, setNodes] = useState([]); const [viewMode, setViewMode] = useState("all"); const [overlapRisks, setOverlapRisks] = useState([]);
+            const [isMaximized, setIsMaximized] = useState(false);
+            
+            useEffect(()=>{ setCsvText(activeProject?.mapperCsv || ""); setNodes([]); setOverlapRisks([]); },[activeProject]);
+            
+            const handleSaveSnapshot = () => { 
+                const desc = prompt("Enter description for this Topology Snapshot:"); 
+                if(!desc) return;
+                const hist = activeProject.mapperHistory || [];
+                onUpdateProject(activeProject.id, 'mapperHistory', [{id: Date.now(), desc, date: new Date().toLocaleDateString(), data: csvText}, ...hist]);
+                onUpdateProject(activeProject.id, 'mapperCsv', csvText); 
+                alert("Topology Snapshot Saved."); 
+            };
+
+            const loadSnapshot = (histId) => {
+                if(!histId) return;
+                const snap = (activeProject?.mapperHistory || []).find(h => h.id.toString() === histId);
+                if(snap) { setCsvText(snap.data); handleParse(snap.data); }
+            };
+            
+            const loadScenario = (type) => {
+                let s = "";
+                if (type === 'aws_oms') {
+                    s = `Name,Type,IP_CIDR,Location,Notes\nAWS-VPC,VPC,10.0.0.0/16,External-AWS,Source Network\nAWS-S3-Prod,S3,Global,External-AWS,50TB Images\nAWS-S3-Logs,S3,Global,External-AWS,200M Small Files\nHuawei-OBS-Prod,OBS,Global,PaaS,Target Data Lake\nHuawei-OMS-Service,OMS,Serverless,PaaS,API Migrator`;
+                } else if (type === 'onprem_sms_drs') {
+                    s = `Name,Type,IP_CIDR,Location,Notes\nOnPrem-DC-FW,VPN,192.168.1.1,On-Premise,IPsec Tunnel\nVMware-Web-01,VM,192.168.1.10,On-Premise,Source Web\nVMware-Web-02,VM,192.168.1.11,On-Premise,Source Web\nOracle-DB-OnPrem,DB,192.168.1.50,On-Premise,Legacy DB\nHuawei-VPC-Prod,VPC,10.0.0.0/16,Cloud-Network,Target Network\nECS-Web-01,ECS,10.0.1.10,Cloud-Compute,SMS Target\nECS-Web-02,ECS,10.0.1.11,Cloud-Compute,SMS Target\nRDS-PostgreSQL,RDS,10.0.2.50,Cloud-Database,DRS Target`;
+                } else if (type === 'azure_cce') {
+                    s = `Name,Type,IP_CIDR,Location,Notes\nAzure-VNet,VPC,172.16.0.0/16,External-Azure,Source Network\nAzure-AKS-Cluster,K8S,172.16.1.0/24,External-Azure,Source Containers\nHuawei-VPC-Prod,VPC,10.0.0.0/16,Cloud-Network,Target Network\nHuawei-CCE-Cluster,CCE,10.0.1.0/24,Cloud-Compute,Target K8s\nSWR-Registry,SWR,Global,PaaS,Container Images`;
+                }
+                setCsvText(s); handleParse(s);
+            };
+
+            const handleParse = (textToParse = csvText) => {
+                setOverlapRisks([]); 
+                if (!textToParse || typeof textToParse !== 'string' || !textToParse.trim()) { setNodes([]); return; }
+                try {
+                    const lines = textToParse.trim().split('\n'); const parsedNodes = []; const risks = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        if (!lines[i].trim()) continue; const cols = lines[i].split(',').map(c => c.trim());
+                        if (cols.length >= 4) {
+                            const ipCidr = String(cols[2] || "Unknown"); const location = String(cols[3] || "Unknown");
+                            parsedNodes.push({ id: i, name: cols[0], type: cols[1], ip: ipCidr, location: location, notes: cols[4]||'' });
+                        }
+                    }
+                    setNodes(parsedNodes); setOverlapRisks(risks);
+                } catch (e) {}
+            };
+
+            // Auto-Generate WBS feature
+            const handleAutoGenerateWBS = () => {
+                if (nodes.length === 0) { alert("Please load or draw a topology first."); return; }
+                
+                let newTasks = [
+                    { id: "1", name: "Phase 1: Landing Zone & Security", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+                    { id: "1.1", name: "Deploy Target VPC & Subnets", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+                    { id: "1.2", name: "Configure IAM & Security Groups", prog: "0%", resp: "Partner", start: "", end: "", isParent: false }
+                ];
+                
+                let phaseCount = 2;
+                const types = nodes.map(n => String(n.type).toUpperCase());
+                
+                if (types.includes('ECS') || types.includes('VM')) {
+                    newTasks.push({ id: `${phaseCount}`, name: `Phase ${phaseCount}: Compute Sync (SMS)`, prog: "0%", resp: "Partner", start: "", end: "", isParent: true });
+                    newTasks.push({ id: `${phaseCount}.1`, name: "Install SMS Agents on Source VMs", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false });
+                    newTasks.push({ id: `${phaseCount}.2`, name: "Execute Initial Block Sync via SMS", prog: "0%", resp: "Partner", start: "", end: "", isParent: false });
+                    phaseCount++;
+                }
+                
+                if (types.includes('RDS') || types.includes('GAUSSDB') || types.includes('DB')) {
+                    newTasks.push({ id: `${phaseCount}`, name: `Phase ${phaseCount}: Database Sync (DRS)`, prog: "0%", resp: "Partner", start: "", end: "", isParent: true });
+                    newTasks.push({ id: `${phaseCount}.1`, name: "Provision Target RDS/GaussDB Instances", prog: "0%", resp: "Partner", start: "", end: "", isParent: false });
+                    newTasks.push({ id: `${phaseCount}.2`, name: "Configure DRS Logical Replication Tasks", prog: "0%", resp: "Principal Arch", start: "", end: "", isParent: false });
+                    phaseCount++;
+                }
+                
+                if (types.includes('OBS') || types.includes('S3') || types.includes('OMS')) {
+                    newTasks.push({ id: `${phaseCount}`, name: `Phase ${phaseCount}: Object Sync (OMS)`, prog: "0%", resp: "Partner", start: "", end: "", isParent: true });
+                    newTasks.push({ id: `${phaseCount}.1`, name: "Create Target OBS Buckets & Policies", prog: "0%", resp: "Partner", start: "", end: "", isParent: false });
+                    newTasks.push({ id: `${phaseCount}.2`, name: "Execute Serverless OMS API Transfer", prog: "0%", resp: "Cloud Backend", start: "", end: "", isParent: false });
+                    phaseCount++;
+                }
+                
+                if (types.includes('CCE') || types.includes('K8S') || types.includes('SWR')) {
+                    newTasks.push({ id: `${phaseCount}`, name: `Phase ${phaseCount}: Container Workloads (CCE)`, prog: "0%", resp: "Partner", start: "", end: "", isParent: true });
+                    newTasks.push({ id: `${phaseCount}.1`, name: "Provision CCE Cluster & Node Pools", prog: "0%", resp: "Partner", start: "", end: "", isParent: false });
+                    newTasks.push({ id: `${phaseCount}.2`, name: "Deploy Helm Charts / Manifests to CCE", prog: "0%", resp: "DevOps", start: "", end: "", isParent: false });
+                    phaseCount++;
+                }
+
+                newTasks.push({ id: `${phaseCount}`, name: `Phase ${phaseCount}: Cutover & Post-Live`, prog: "0%", resp: "All", start: "", end: "", isParent: true });
+                newTasks.push({ id: `${phaseCount}.1`, name: "Final Delta Sync & App Switchover", prog: "0%", resp: "Partner / Cust", start: "", end: "", isParent: false });
+                newTasks.push({ id: `${phaseCount}.2`, name: "Post-Live WAR Sign-Off", prog: "0%", resp: "TAM", start: "", end: "", isParent: false });
+
+                if(confirm("This will overwrite the current Migration Plan based on the detected topology. Proceed?")) {
+                    onUpdateProject(activeProject.id, 'migrationPlan', newTasks);
+                    alert("Migration Plan auto-generated successfully! Check the Planning tab.");
+                }
+            };
+
+            const groups = useMemo(() => {
+                const grps = { Edge: [], External: [], Subnets: {}, Global: [] };
+                nodes.forEach(n => {
+                    const t = String(n.type || "").toLowerCase();
+                    if (viewMode === 'network' && !['waf','cdn','elb','nat','vpn','peering','directconnect','roma'].includes(t)) return;
+                    if (viewMode === 'compute' && ['waf','cdn','vpn','peering','directconnect','roma'].includes(t)) return;
+                    const loc = String(n.location || "");
+                    if (loc === 'Edge') grps.Edge.push(n); else if (loc.includes('External') || loc.includes('On-Premise')) grps.External.push(n);
+                    else if (loc === 'PaaS' || loc === 'Storage' || loc === 'Management' || loc === 'Serverless') grps.Global.push(n); else { if (!grps.Subnets[loc]) grps.Subnets[loc] = []; grps.Subnets[loc].push(n); }
+                });
+                return grps;
+            }, [nodes, viewMode]);
+
+            const getIcon = (type) => {
+                const t = String(type || "").toLowerCase();
+                if (t==='waf') return 'fa-shield-alt text-rose-500'; if (t==='elb' || t==='loadbalancer') return 'fa-sitemap text-blue-500'; 
+                if (t==='ecs' || t==='vm') return 'fa-server text-blue-600'; if (t==='onprem' || t==='aws-ec2') return 'fa-server text-slate-500';
+                if (t==='rds' || t==='gaussdb') return 'fa-database text-rose-600'; if (t==='obs' || t==='sfs') return 'fa-hdd text-emerald-600';
+                if (t==='vpn' || t==='peering' || t==='directconnect') return 'fa-network-wired text-amber-600';
+                if (t==='dcs') return 'fa-bolt text-red-500'; if (t==='cce' || t==='asg') return 'fa-cubes text-indigo-600';
+                if (t==='s3') return 'fa-bucket text-amber-500';
+                if (t==='oms' || t==='drs' || t==='sms') return 'fa-exchange-alt text-purple-500';
+                if (t==='swr') return 'fa-box-open text-pink-500';
+                if (t==='k8s') return 'fa-dharmachakra text-blue-500';
+                if (t==='db') return 'fa-database text-slate-500';
+                return 'fa-microchip text-slate-500';
+            };
+
+            return (
+                <div className={isMaximized ? "fixed inset-0 z-50 bg-[#f8fafc] p-4 md:p-8 flex flex-col overflow-auto animate-fade-in" : "max-w-[1800px] w-full mx-auto pb-6 animate-fade-in"}>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col max-h-[750px]">
+                        <div className="flex flex-wrap justify-between items-center mb-6 border-b border-slate-200 pb-4 gap-2">
+                            <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-project-diagram text-indigo-500"></i> IaC Auto-Mapper</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="ml-2 flex items-center bg-slate-50 rounded-xl border border-slate-200 p-1 hidden sm:flex">
+                                    <select onChange={e=>{if(e.target.value) loadScenario(e.target.value); e.target.value="";}} className="bg-transparent text-xs font-bold outline-none px-2 py-1 max-w-[200px] w-full text-blue-600 cursor-pointer">
+                                        <option value="">-- Load Cloud Scenario --</option>
+                                        <option value="onprem_sms_drs">On-Prem to ECS/RDS (SMS/DRS)</option>
+                                        <option value="aws_oms">AWS S3 to OBS Data Lake (OMS)</option>
+                                        <option value="azure_cce">Azure AKS to CCE Containers</option>
+                                    </select>
+                                </div>
+                                <button onClick={()=>setIsMaximized(!isMaximized)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black shadow-sm transition-colors"><i className={`fas ${isMaximized ? 'fa-compress' : 'fa-expand'} mr-2`}></i>{isMaximized ? 'Restore' : 'Full Screen'}</button>
+                                <div className="ml-2 flex items-center bg-slate-50 rounded-xl border border-slate-200 p-1">
+                                    <select onChange={e=>loadSnapshot(e.target.value)} className="bg-transparent text-xs font-bold outline-none px-2 py-1 max-w-[150px] w-full text-slate-600 cursor-pointer">
+                                        <option value="">-- History --</option>
+                                        {(activeProject.mapperHistory||[]).map(h => <option key={h.id} value={h.id}>{h.desc}</option>)}
+                                    </select>
+                                    <button onClick={handleSaveSnapshot} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm text-xs font-black transition-colors"><i className="fas fa-camera mr-2"></i>Snap</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+                            <div className="lg:w-1/4 flex flex-col bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                                <textarea value={csvText} onChange={e => setCsvText(e.target.value)} className="w-full h-48 lg:h-full p-4 text-xs font-mono border-2 border-slate-200 rounded-xl outline-none focus:border-indigo-500 whitespace-pre shadow-inner bg-white custom-scrollbar" placeholder="Name,Type,IP_CIDR,Location,Notes" />
+                                <button onClick={()=>handleParse()} className="w-full mt-4 py-3 bg-slate-800 hover:bg-slate-900 text-white font-black text-sm uppercase tracking-widest rounded-xl shadow-md transition-colors"><i className="fas fa-paint-brush mr-2"></i>Draw Diagram</button>
+                                <button onClick={handleAutoGenerateWBS} className="w-full mt-3 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm uppercase tracking-widest rounded-xl shadow-md transition-transform active:scale-95 border border-indigo-500">
+                                    ✨ Auto-Generate WBS
+                                </button>
+                            </div>
+                            <div className="flex-1 bg-[#f8fafc] p-6 overflow-auto border border-slate-200 rounded-2xl shadow-inner relative custom-scrollbar">
+                                {nodes.length === 0 ? (<div className="max-h-[400px] flex flex-col items-center justify-center text-slate-400"><i className="fas fa-network-wired text-6xl mb-4 opacity-50"></i><p className="font-black text-lg">Awaiting Topology Data</p></div>) : (
+                                    <div className="min-max-w-[800px] w-full">
+                                        <div className="flex gap-4 items-start mt-4">
+                                            <div className="w-56 shrink-0 space-y-6">
+                                                {groups.External.length > 0 && (<div className="p-4 border-2 border-dashed border-amber-300 bg-amber-50/50 rounded-xl relative pt-6"><span className="absolute -top-3 left-3 bg-amber-100 px-3 py-1 rounded-full text-[10px] font-black text-amber-800 uppercase tracking-wider border border-amber-200">External</span><div className="space-y-3">{groups.External.map(n => (<div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm"><div className="font-bold text-xs"><i className={`fas ${getIcon(n.type)} mr-2`}></i> {n.name}</div><div className="mt-2"><span className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-0.5 rounded">{n.ip}</span></div></div>))}</div></div>)}
+                                            </div>
+                                            <div className="flex-1 border-4 border-blue-200 bg-blue-50/30 rounded-2xl p-8 relative min-max-h-[400px]">
+                                                <span className="absolute -top-4 left-6 bg-blue-100 border border-blue-300 px-4 py-1.5 rounded-full text-sm font-black text-blue-800 uppercase tracking-widest shadow-sm"><i className="fas fa-cloud mr-2"></i> Target VPC</span>
+                                                <div className="grid grid-cols-2 xl:grid-cols-3 gap-6 mt-4">
+                                                    {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
+                                                        <div key={subName} className="border-2 border-dashed border-blue-300 bg-white/80 p-5 rounded-xl relative pt-8 shadow-sm">
+                                                            <span className="absolute top-2 left-3 text-[10px] font-black text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{subName}</span>
+                                                            <div className="space-y-3">
+                                                                {subNodes.map(n => (
+                                                                    <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-colors">
+                                                                        <div className="font-bold text-xs truncate" title={n.name}><i className={`fas ${getIcon(n.type)} mr-2 opacity-80`}></i>{n.name}</div>
+                                                                        <div className="text-[10px] font-mono text-slate-500 mt-1">{n.ip}</div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {groups.Global.length > 0 && (
+                                                <div className="w-48 shrink-0 border-2 border-emerald-200 bg-emerald-50/50 rounded-xl relative pt-6 p-4">
+                                                    <span className="absolute -top-3 left-3 bg-emerald-100 px-3 py-1 rounded-full text-[10px] font-black text-emerald-800 uppercase tracking-wider border border-emerald-200">PaaS / Global</span>
+                                                    <div className="space-y-4">
+                                                        {groups.Global.map(n => (
+                                                            <div key={n.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm text-center hover:border-emerald-300 transition-colors">
+                                                                <i className={`fas ${getIcon(n.type)} text-xsxl mb-2 opacity-90`}></i>
+                                                                <div className="font-bold text-xs truncate" title={n.name}>{n.name}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function AssessmentView({ activeProject, onUpdateProject }) {
+            const [infraControl, setInfraControl] = useState(activeProject?.ora?.infraControl || '0'); 
+            const [itSkills, setItSkills] = useState(activeProject?.ora?.itSkills || '0'); 
+            const [partnerCapability, setPartnerCapability] = useState(activeProject?.ora?.partnerCapability || '0'); 
+            const [downtime, setDowntime] = useState(activeProject?.ora?.downtime || '0'); 
+            const [appArch, setAppArch] = useState(activeProject?.ora?.appArch || '0'); 
+            const [security, setSecurity] = useState(activeProject?.ora?.security || '0');
+
+            useEffect(() => { if(activeProject?.ora) { const o = activeProject.ora; setInfraControl(o.infraControl||'0'); setItSkills(o.itSkills||'0'); setPartnerCapability(o.partnerCapability||'0'); setDowntime(o.downtime||'0'); setAppArch(o.appArch||'0'); setSecurity(o.security||'0'); } }, [activeProject]);
+            
+            const handleSave = () => { onUpdateProject(activeProject.id, 'ora', { infraControl, itSkills, partnerCapability, downtime, appArch, security }); alert("ORA Profile Saved."); };
+
+            const score = Math.round((parseInt(infraControl) + parseInt(itSkills) + parseInt(partnerCapability) + parseInt(downtime) + parseInt(appArch) + parseInt(security)) / 6);
+            let timeBuffer = "+80%"; let bgColor = "bg-rose-50 border-rose-300 text-rose-700";
+            if (score > 40 && score <= 75) { timeBuffer = "+30%"; bgColor = "bg-amber-50 border-amber-300 text-amber-700"; } else if (score > 75) { timeBuffer = "+10%"; bgColor = "bg-emerald-50 border-emerald-300 text-emerald-700"; }
+
+            return (
+                <div className="max-w-5xl mx-auto pb-12 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                        <div className="flex justify-between items-center mb-8 border-b border-slate-200 pb-6">
+                            <div>
+                                <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-clipboard-check text-purple-600"></i> Operational Readiness (ORA)</h3>
+                                <p className="text-xs text-slate-500 mt-1 font-medium">Calculate human and architectural friction constraints.</p>
+                            </div>
+                            <button onClick={handleSave} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i>Save ORA</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-8">
+                            <div className="space-y-8">
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">1. Infra Control</label><input type="range" min="0" max="100" step="50" value={infraControl} onChange={e=>setInfraControl(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>3rd Party</span><span>Partial</span><span>Full Root</span></div></div>
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">2. IT Skills</label><input type="range" min="0" max="100" step="50" value={itSkills} onChange={e=>setItSkills(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>None</span><span>Basic</span><span>Experts</span></div></div>
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">3. Partner RACI</label><input type="range" min="0" max="100" step="50" value={partnerCapability} onChange={e=>setPartnerCapability(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>Reseller</span><span>Partial</span><span>MSP</span></div></div>
+                            </div>
+                            <div className="space-y-8">
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">4. Downtime Tolerance</label><input type="range" min="0" max="100" step="50" value={downtime} onChange={e=>setDowntime(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>Zero (HA)</span><span>Weekend</span><span>Best Effort</span></div></div>
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">5. App Architecture</label><input type="range" min="0" max="100" step="50" value={appArch} onChange={e=>setAppArch(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>Legacy</span><span>Monolith</span><span>Cloud-Native</span></div></div>
+                                <div><label className="font-black text-sm text-slate-800 mb-2 block">6. Security/Compliance</label><input type="range" min="0" max="100" step="50" value={security} onChange={e=>setSecurity(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>Gov/PCI</span><span>PII</span><span>Standard</span></div></div>
+                            </div>
+                        </div>
+                        <div className={`p-8 rounded-2xl border-4 text-center shadow-inner ${bgColor}`}>
+                            <div className="text-xs font-black uppercase tracking-widest opacity-80 mb-2">Global Friction Score</div>
+                            <div className="text-6xl font-black">{score}/100</div>
+                            <div className="text-sm font-black mt-4 tracking-widest uppercase bg-white/50 inline-block px-4 py-2 rounded-xl shadow-sm">Mandatory Timeline Buffer: {timeBuffer}</div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        // --- Wizard Step 3: Planning ---
+        function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks }) {
+            const [subTab, setSubTab] = useState('budget');
+            return (
+                <div>
+                    <div className="px-8 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <div className="flex gap-2">
+                            <button onClick={()=>setSubTab('budget')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='budget'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-file-invoice-dollar mr-2"></i> FinOps Budget & Commercial Model</button>
+                            <button onClick={()=>setSubTab('plan')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='plan'?'bg-blue-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-tasks mr-2"></i> Migration Plan Builder</button>
+                        </div>
+                        {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Lock Plan & Start Delivery <i className="fas fa-arrow-right ml-2"></i></button>}
+                    </div>
+                    <div className="p-8 bg-slate-100/50">
+                        {subTab === 'budget' && <BudgetEstimatorView activeProject={project} onUpdateProject={onUpdateProject} />}
+                        {subTab === 'plan' && <DedicatedMigrationPlan project={project} onUpdateProject={onUpdateProject} customPlaybooks={customPlaybooks} />}
+                    </div>
+                </div>
+            )
+        }
+
+        function BudgetEstimatorView({ activeProject, onUpdateProject }) {
+            const [mrr, setMrr] = useState(5000); 
+            const [durationMonths, setDurationMonths] = useState(3); 
+            const [infraComplexity, setInfraComplexity] = useState('Medium'); 
+            const [penaltyRisk, setPenaltyRisk] = useState(0);
+            
+            const [commModel, setCommModel] = useState('Partner');
+            const [partnerHours, setPartnerHours] = useState(160); const [partnerRate, setPartnerRate] = useState(75); 
+            const [internalHours, setInternalHours] = useState(160); const [internalRate, setInternalRate] = useState(150);
+
+            useEffect(() => { 
+                if (activeProject?.budget) { 
+                    const b = activeProject.budget; 
+                    setMrr(b.mrr); setDurationMonths(b.durationMonths); setInfraComplexity(b.infraComplexity); setPenaltyRisk(b.penaltyRisk || 0);
+                    setCommModel(b.commModel || 'Partner');
+                    setPartnerHours(b.partnerHours || 160); setPartnerRate(b.partnerRate || 75);
+                    setInternalHours(b.internalHours || 160); setInternalRate(b.internalRate || 150);
+                } else if (activeProject) { setMrr(activeProject.mrr || 5000); } 
+            }, [activeProject]);
+
+            const saveContext = () => { onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); alert("FinOps & Commercial Model Saved."); };
+
+            const estimate = useMemo(() => { 
+                let baseLabor = 0; let activeRole = ""; let activeRate = 0;
+                if (commModel === 'Partner') { baseLabor = partnerHours * partnerRate; activeRole = "Partner-Led"; activeRate = partnerRate;}
+                else if (commModel === 'Internal') { baseLabor = internalHours * internalRate; activeRole = "Principal Architect Rescue"; activeRate = internalRate;}
+
+                const laborOverrun = baseLabor * 0.30; 
+                const dualRun = mrr * durationMonths; 
+                let tempInfra = 500; if (infraComplexity === 'Medium') tempInfra = 1500; if (infraComplexity === 'High') tempInfra = 4000; 
+                
+                return { baseLabor, laborOverrun, dualRun, tempInfra, tuningBuffer: (mrr * 12) * 0.15, totalTrueCost: baseLabor + laborOverrun + dualRun + tempInfra + ((mrr * 12) * 0.15) + Number(penaltyRisk), activeRole, activeRate }; 
+            }, [mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate]);
+
+            const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+
+            return (
+                <div className="max-w-[1400px] w-full mx-auto pb-12 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+                        <div className="px-8 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center">
+                            <h3 className="font-black text-lg tracking-wide"><i className="fas fa-handshake text-blue-400 mr-3"></i> Delivery Ownership & Commercial Model</h3>
+                            <button onClick={saveContext} className="px-6 py-2.5 bg-emerald-600 hover:emerald-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95">Save FinOps</button>
+                        </div>
+                        <div className="p-8 bg-slate-50 border-b border-slate-200">
+                            <div className="flex gap-6">
+                                <button onClick={()=>setCommModel('Partner')} className={`flex-1 p-5 rounded-2xl border-4 text-left transition-all ${commModel==='Partner' ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
+                                    <div className="font-black text-slate-800 text-lg"><i className="fas fa-users text-blue-500 mr-2"></i> Standard Partner-Led</div>
+                                    <div className="text-xs text-slate-600 mt-2 font-medium leading-relaxed">Customer pays Partner directly. Principal Architect provides oversight and governance.</div>
+                                </button>
+                                <button onClick={()=>setCommModel('Internal')} className={`flex-1 p-5 rounded-2xl border-4 text-left transition-all ${commModel==='Internal' ? 'border-purple-500 bg-purple-50 shadow-md' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
+                                    <div className="font-black text-purple-900 text-lg"><i className="fas fa-user-astronaut text-purple-600 mr-2"></i> Principal Architect Rescue</div>
+                                    <div className="text-xs text-purple-800 mt-2 font-bold leading-relaxed">Partner failed validation gate. Internal Delivery assumes direct execution. Partner labor fee is reclaimed as Internal Margin.</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+                            <div className="p-8 border-r border-slate-200 bg-white space-y-6">
+                                <div className="flex gap-6">
+                                    <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Target MRR ($)</label><input type="number" value={mrr} onChange={e=>setMrr(Number(e.target.value))} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-slate-50" /></div>
+                                    <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Dual-Run Timeline (Months)</label><input type="number" value={durationMonths} onChange={e=>setDurationMonths(Number(e.target.value))} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-slate-50" /></div>
+                                </div>
+                                
+                                {commModel === 'Partner' && (
+                                    <div className="flex gap-6 p-5 bg-slate-100 rounded-xl border border-slate-200 shadow-inner">
+                                        <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-600">Partner Labor (Hrs)</label><input type="number" value={partnerHours} onChange={e=>setPartnerHours(Number(e.target.value))} className="w-full p-3 border-2 border-slate-300 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-white" /></div>
+                                        <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-600">Partner Rate ($/hr)</label><input type="number" value={partnerRate} onChange={e=>setPartnerRate(Number(e.target.value))} className="w-full p-3 border-2 border-slate-300 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-white" /></div>
+                                    </div>
+                                )}
+                                {commModel === 'Internal' && (
+                                    <div className="flex gap-6 p-5 bg-purple-100 rounded-xl border border-purple-300 shadow-inner">
+                                        <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-purple-800">Architect Labor (Hrs)</label><input type="number" value={internalHours} onChange={e=>setInternalHours(Number(e.target.value))} className="w-full p-3 border-2 border-purple-300 rounded-xl text-sm font-bold outline-none focus:border-purple-500 bg-white" /></div>
+                                        <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-purple-800">Internal Margin Rate ($/hr)</label><input type="number" value={internalRate} onChange={e=>setInternalRate(Number(e.target.value))} className="w-full p-3 border-2 border-purple-300 rounded-xl text-sm font-bold outline-none focus:border-purple-500 bg-white" /></div>
+                                    </div>
+                                )}
+
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Temporary Transfer Infra Limit</label><select value={infraComplexity} onChange={e=>setInfraComplexity(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-slate-50"><option value="Low">Low (Internet)</option><option value="Medium">Medium (VPN)</option><option value="High">High (DirectConnect)</option></select></div>
+                                <div className="border-t-2 pt-6 border-rose-200"><label className="block text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Contract Penalty SLA Risk ($)</label><input type="number" value={penaltyRisk} onChange={e=>setPenaltyRisk(Number(e.target.value))} className="w-full p-3 border-2 border-rose-300 rounded-xl bg-rose-50 text-rose-900 text-lg font-black outline-none focus:border-rose-500 shadow-inner" /></div>
+                            </div>
+
+                            <div className="p-8 bg-slate-100 flex flex-col justify-center space-y-5">
+                                <div className={`flex justify-between p-5 border-2 rounded-2xl shadow-sm border-l-8 ${commModel==='Partner'?'bg-white border-slate-200 border-l-blue-500' : 'bg-purple-50 border-purple-200 border-l-purple-600'}`}>
+                                    <div>
+                                        <div className="font-black text-sm text-slate-800">Delivery Labor + 30% Buffer</div>
+                                        <div className="text-[10px] text-slate-600 mt-1 font-bold">Role: {estimate.activeRole} (@ ${estimate.activeRate}/hr)</div>
+                                    </div>
+                                    <div className="text-xl font-black text-slate-800">{fm(estimate.baseLabor + estimate.laborOverrun)}</div>
+                                </div>
+                                <div className="flex justify-between p-5 border-2 border-slate-200 rounded-2xl bg-white shadow-sm border-l-8 border-l-slate-400"><div><div className="font-black text-sm text-slate-800">Dual-Run Cloud Penalty</div><div className="text-[10px] text-slate-500 mt-1 font-medium">Cost of running Source & Target clouds during migration.</div></div><div className="text-xl font-black text-slate-700">{fm(estimate.dualRun)}</div></div>
+                                <div className="flex justify-between p-5 border-2 border-slate-200 rounded-2xl bg-white shadow-sm border-l-8 border-l-amber-400"><div><div className="font-black text-sm text-slate-800">Temp Infra & Day-2 Tuning Buffer</div><div className="text-[10px] text-slate-500 mt-1 font-medium">Reserved budget for right-sizing post go-live.</div></div><div className="text-xl font-black text-amber-700">{fm(estimate.tempInfra + estimate.tuningBuffer)}</div></div>
+                                <div className="mt-8 p-6 bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl text-white flex justify-between items-center shadow-xl border border-slate-700"><div className="text-xs font-black uppercase tracking-widest text-emerald-400">Total Journey Cost</div><div className="text-3xl font-black text-emerald-400">{fm(estimate.totalTrueCost)}</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function DedicatedMigrationPlan({ project, onUpdateProject, customPlaybooks }) {
+            const handlePlanUpdate = (taskId, field, value) => {
+                if(!project) return;
+                const newPlan = (project.migrationPlan || []).map(t => t.id === taskId ? {...t, [field]: value} : t);
+                onUpdateProject(project.id, 'migrationPlan', newPlan);
+            };
+
+            const injectPlaybook = (playbookKey) => {
+                if(!playbookKey || !customPlaybooks[playbookKey]) return;
+                if(confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
+                    onUpdateProject(project.id, 'migrationPlan', JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)));
+                }
+            };
+
+            return (
+                <div className="max-w-[1800px] w-full mx-auto pb-12 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                        <div className="px-8 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                            <div>
+                                <h3 className="font-black text-lg tracking-wide"><i className="fas fa-tasks text-blue-400 mr-2"></i> Migration Execution Plan</h3>
+                                {project.apiConfig?.automationEnabled && <div className="text-[10px] font-bold text-emerald-400 mt-1 uppercase tracking-widest"><i className="fas fa-robot mr-1"></i> Live API Reconciliation Active</div>}
+                            </div>
+                            <div className="flex gap-3 items-center">
+                                <div className="flex items-center bg-slate-800 rounded-lg p-1.5 border border-slate-600">
+                                    <select onChange={e=>{injectPlaybook(e.target.value); e.target.value="";}} className="bg-transparent text-xs font-bold text-blue-300 outline-none px-2 cursor-pointer w-64 truncate">
+                                        <option value="">-- Load Enterprise Playbook --</option>
+                                        {Object.entries(customPlaybooks || {}).map(([key, pb]) => (
+                                            <option key={key} value={key}>{pb.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex-1 bg-slate-50">
+                            <div className="overflow-x-auto w-full">
+                                <table className="w-full text-left min-max-w-[1200px] w-full">
+                                    <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 border-b-2 border-slate-300 tracking-wider">
+                                        <tr>
+                                            <th className="p-4 w-16 text-center font-black">WBS ID</th>
+                                            <th className="p-4 font-black">Task Name</th>
+                                            <th className="p-4 w-32 font-black">Progress</th>
+                                            <th className="p-4 w-64 font-black">RACI Responsible</th>
+                                            <th className="p-4 w-40 font-black">Start Date</th>
+                                            <th className="p-4 w-40 font-black">End Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 text-xs bg-white">
+                                        {(project.migrationPlan || []).map(task => (
+                                            <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
+                                                <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
+                                                <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
+                                                <td className="p-3">
+                                                    {!task.isParent && (
+                                                        <div className={`px-3 py-1.5 rounded-lg border-2 inline-flex items-center w-full max-w-[80px] w-full shadow-sm ${task.prog==='100%'?'bg-emerald-50 border-emerald-200 text-emerald-800 font-black':task.prog==='0%'?'bg-white border-slate-200 text-slate-500':'bg-blue-50 border-blue-200 text-blue-800 font-black'}`}>
+                                                            <EditableCell value={task.prog} onSave={v=>handlePlanUpdate(task.id, 'prog', v)} className="w-full text-center" />
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="p-3 text-slate-700 font-bold"><EditableCell value={task.resp} onSave={v=>handlePlanUpdate(task.id, 'resp', v)} /></td>
+                                                <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.start} onSave={v=>handlePlanUpdate(task.id, 'start', v)} /></td>
+                                                <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.end} onSave={v=>handlePlanUpdate(task.id, 'end', v)} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="p-6 text-center border-t border-slate-200 bg-white">
+                                <button className="px-6 py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 font-bold hover:bg-white hover:border-blue-400 hover:text-blue-600 transition-colors w-full max-w-md mx-auto" onClick={()=>alert("Mock: Add Row")}><i className="fas fa-plus mr-2"></i> Append Manual Task</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        // --- Wizard Step 4: Execution & TAM ---
+        function WizardStepExecution({ project, onUpdateProject, onPromote, isCurrent }) {
+            const [subTab, setSubTab] = useState('hub');
+            return (
+                <div>
+                    <div className="px-8 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <div className="flex gap-2">
+                            <button onClick={()=>setSubTab('hub')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='hub'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-stream mr-2"></i> Progress Tracking</button>
+                            <button onClick={()=>setSubTab('tam')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='tam'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-headset mr-2"></i> TAM & Service Hub</button>
+                        </div>
+                        {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Go-Live Complete <i className="fas fa-arrow-right ml-2"></i></button>}
+                    </div>
+                    <div className="p-8 bg-slate-100/50">
+                        {subTab === 'hub' && <ExecutionHubView project={project} onUpdateProject={onUpdateProject} />}
+                        {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} />}
+                    </div>
+                </div>
+            )
+        }
+
+        function TAMHubView({ project, onUpdateProject }) {
+            const safeTamData = project.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}, {id: 3, name: "Billing & Cost Center Setup", done: false}] };
+            const [tamData, setTamData] = useState(safeTamData);
+            
+            useEffect(() => { setTamData(project.tamData || safeTamData); }, [project]);
+            
+            const handleSave = () => { onUpdateProject(project.id, 'tamData', tamData); alert("TAM Operations Data Saved."); };
+            const toggleWorkshop = (id) => { const w = (tamData.workshops||[]).map(x => x.id === id ? {...x, done: !x.done} : x); setTamData({...tamData, workshops: w}); };
+            const addTicket = () => { const id = prompt("Ticket ID (e.g., SR-123):"); if(!id) return; const title = prompt("Issue Title:"); setTamData({...tamData, tickets: [...(tamData.tickets||[]), {id, title, sev: 'Medium', status: 'Open'}]}); };
+
+            return (
+                <div className="max-w-[1800px] w-full mx-auto space-y-6 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-8 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center">
+                            <div><h3 className="font-black text-lg tracking-wide"><i className="fas fa-headset text-blue-400 mr-2"></i> TAM Service Governance</h3><p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Customer Enablement & Escalation Routing</p></div>
+                            <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95">Save Operations Data</button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+                            <div className="p-8 bg-slate-50 space-y-6">
+                                <div><h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2"><i className="fas fa-sitemap text-slate-400 mr-2"></i> Escalation Pathways</h4></div>
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Contracted Support Plan</label><select value={tamData.supportPlan} onChange={e=>setTamData({...tamData, supportPlan: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 bg-white"><option>Developer</option><option>Business</option><option>Enterprise</option><option>Premier</option></select></div>
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Internal WeLink Group (NOC/Escalations)</label><div className="flex gap-2"><input type="text" value={tamData.welinkGroup} onChange={e=>setTamData({...tamData, welinkGroup: e.target.value})} className="flex-1 p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white" placeholder="welink://group/12345" /><a href={tamData.welinkGroup} target="_blank" className="px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-sm flex items-center justify-center transition-colors"><i className="fas fa-external-link-alt"></i></a></div></div>
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">External Customer Comms (WhatsApp/Teams)</label><input type="text" value={project.comms?.chat || ''} disabled className="w-full p-3 border border-slate-200 rounded-xl text-xs text-slate-500 bg-slate-100 cursor-not-allowed" title="Edit in Command Center tab" placeholder="No link provided" /></div>
+                            </div>
+
+                            <div className="p-8 bg-white space-y-6">
+                                <div><h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2"><i className="fas fa-graduation-cap text-blue-500 mr-2"></i> Cloud Enablement Tracker</h4><p className="text-[10px] text-slate-500 leading-relaxed mb-4">Tracking hands-on workshops prevents post-live churn and documents TAM educational effort.</p></div>
+                                <div className="space-y-3">
+                                    {(tamData.workshops||[]).map(w => (
+                                        <label key={w.id} className={`flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-colors ${w.done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
+                                            <input type="checkbox" checked={w.done} onChange={()=>toggleWorkshop(w.id)} className="w-5 h-5 accent-emerald-500" />
+                                            <span className={`font-bold text-sm ${w.done ? 'text-emerald-800 line-through opacity-75' : 'text-slate-700'}`}>{w.name}</span>
+                                        </label>
+                                    ))}
+                                    <button className="w-full p-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-bold hover:border-blue-400 hover:text-blue-600 text-xs" onClick={()=>alert("Mock: Add Custom Workshop")}><i className="fas fa-plus mr-1"></i> Add Workshop</button>
+                                </div>
+                            </div>
+
+                            <div className="p-8 bg-white flex flex-col h-full min-max-h-[400px]">
+                                <div className="flex justify-between items-end border-b border-slate-200 pb-2 mb-4 shrink-0">
+                                    <h4 className="font-black text-sm text-slate-800"><i className="fas fa-ticket-alt text-rose-500 mr-2"></i> Migration Support Tickets</h4>
+                                    <button onClick={addTicket} className="text-[10px] font-black uppercase text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"><i className="fas fa-plus"></i> Log Ticket</button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                                    {(!tamData.tickets || tamData.tickets.length === 0) ? <div className="p-6 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">No active escalations.</div> : 
+                                        tamData.tickets.map((t,i) => (
+                                            <div key={i} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-blue-300 transition-colors">
+                                                <div className="flex justify-between items-start mb-2"><div className="font-mono text-[10px] text-slate-500 font-bold">{t.id}</div><div className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200">{t.status}</div></div>
+                                                <div className="font-bold text-xs text-slate-800">{t.title}</div>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function ExecutionHubView({ project, onUpdateProject }) {
+            const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
+            const [apiState, setApiState] = useState({ deploying: false, destroying: false, logs: null, error: false });
+            const [currentResources, setCurrentResources] = useState(null);
+            const [deploymentHistory, setDeploymentHistory] = useState([]);
+            const [loadingResources, setLoadingResources] = useState(false);
+            const [loadingHistory, setLoadingHistory] = useState(false);
+            
+            useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
+            const handleSaveComms = () => { onUpdateProject(project.id, 'comms', comms); alert("Comms Hub Updated"); };
+
+            
+            
+            // Load resources on component mount
+            useEffect(() => {
+                loadCurrentResources();
+                loadDeploymentHistory();
+            }, []);
+            
+            const loadCurrentResources = async () => {
+                setLoadingResources(true);
+                try {
+                    const res = await fetch('/api/resources/current');
+                    const data = await res.json();
+                    if (data.success) {
+                        setCurrentResources(data);
+                    } else {
+                        setApiState(prev => ({ ...prev, logs: `Failed to load resources: ${data.error}` }));
+                    }
+                } catch (e) {
+                    setApiState(prev => ({ ...prev, logs: `Error loading resources: ${e.message}` }));
+                } finally {
+                    setLoadingResources(false);
+                }
+            };
+            
+            const loadDeploymentHistory = async () => {
+                setLoadingHistory(true);
+                try {
+                    const res = await fetch('/api/deployments');
+                    const data = await res.json();
+                    if (data.deployments) {
+                        setDeploymentHistory(data.deployments);
+                    }
+                } catch (e) {
+                    console.error('Failed to load deployment history:', e);
+                } finally {
+                    setLoadingHistory(false);
+                }
+            };
+
+            
+
+            // Load data on component mount
+            useEffect(() => {
+                loadCurrentResources();
+                loadDeploymentHistory();
+            }, []);
+        
+
+            const triggerAPI = async (endpoint, actionName) => {
+                const isDeploy = endpoint === '/api/deploy';
+                if(!confirm(`WARNING: You are about to execute a LIVE ${actionName} in Huawei Cloud. Proceed?`)) return;
+                
+                setApiState({ deploying: isDeploy, destroying: !isDeploy, logs: `Initiating ${actionName}...\nRunning Environment Audit...`, error: false });
+                
+                try {
+                    // Inject a sample blueprint based on the active project
+                    if (isDeploy) {
+                        const demoBlueprint = {
+                            customer: project.name,
+                            servers: [
+                                { server_name: `WEB-${project.id.toString().slice(-4)}`, flavor: "s6.large.2", is_public: "true", status: "OK" }
+                            ]
+                        };
+                        await fetch('/api/blueprint', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(demoBlueprint) });
+                    }
+
+                    const res = await fetch(endpoint, { method: 'POST' });
+                    const data = await res.json();
+                                    setApiState({ deploying: false, destroying: false, logs: data.output || data.error || "Execution Finished.", error: !data.success });
+                
+                // Refresh resources and history after deployment/destruction
+                if (data.success) {
+                    setTimeout(() => {
+                        loadCurrentResources();
+                        loadDeploymentHistory();
+                    }, 2000);
+                }
+                } catch(e) {
+                    setApiState({ deploying: false, destroying: false, logs: `API Connection Failed: ${e.message}`, error: true });
+                }
+            };
+
+            return (<>
+                <div className="max-w-[1600px] w-full mx-auto space-y-6 pb-12 animate-fade-in">
+                    
+                                        {/* CURRENT RESOURCES PANEL */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                            <h3 className="font-black text-sm tracking-wide text-slate-800">
+                                <i className="fas fa-cloud text-blue-500 mr-2"></i> Current Huawei Cloud Resources
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">Live resource tracking from Huawei Cloud API</p>
+                        </div>
+                        <div className="p-4 md:p-6">
+                                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                                    <div className="text-xl md:text-2xl font-black text-blue-700">
+                                        {currentResources ? currentResources.summary?.total_vpcs || '0' : <i className="fas fa-spinner fa-spin"></i>}
+                                    </div>
+                                    <div className="text-xs font-bold text-blue-600 uppercase tracking-wider">VPCs</div>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                                    <div className="text-xl md:text-2xl font-black text-emerald-700">
+                                        {currentResources ? currentResources.summary?.total_ecs || '0' : <i className="fas fa-spinner fa-spin"></i>}
+                                    </div>
+                                    <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider">ECS</div>
+                                </div>
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                                    <div className="text-xl md:text-2xl font-black text-amber-700">
+                                        {currentResources ? currentResources.summary?.total_eips || '0' : <i className="fas fa-spinner fa-spin"></i>}
+                                    </div>
+                                    <div className="text-xs font-bold text-amber-600 uppercase tracking-wider">EIPs</div>
+                                </div>
+                                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+                                    <div className="text-xl md:text-2xl font-black text-purple-700">
+                                        {currentResources ? currentResources.summary?.total_security_groups || '0' : <i className="fas fa-spinner fa-spin"></i>}
+                                    </div>
+                                    <div className="text-xs font-bold text-purple-600 uppercase tracking-wider">Security Groups</div>
+                                </div>
+                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-center">
+                                    <div className="text-xl md:text-2xl font-black text-rose-700">
+                                        {currentResources ? currentResources.summary?.total_load_balancers || '0' : <i className="fas fa-spinner fa-spin"></i>}
+                                    </div>
+                                    <div className="text-xs font-bold text-rose-600 uppercase tracking-wider">Load Balancers</div>
+                                </div>
+                            </div></div><div className="mt-4 text-center">
+                                <button 
+                                    onClick={loadCurrentResources} 
+                                    disabled={loadingResources}
+                                    className="px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1 md:gap-2 mx-auto"
+                                >
+                                    {loadingResources ? (
+                                        <><i className="fas fa-spinner fa-spin"></i> Loading...</>
+                                    ) : (
+                                        <><i className="fas fa-sync-alt"></i> Refresh Resources</>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-4 md:p-6">
+                            {deploymentHistory.length > 0 ? (
+                                <div className="space-y-3">
+                                    {deploymentHistory.slice(0, 5).map((deployment, index) => (
+                                        <div key={index} className="border border-slate-200 rounded-xl p-4 hover:bg-slate-50 transition-colors">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-slate-800">
+                                                        {deployment.tag || deployment.filename || `Deployment ${index + 1}`}
+                                                    </h4>
+                                                    <p className="text-xs text-slate-500 mt-1">
+                                                        <i className="fas fa-clock mr-1"></i> {deployment.time || 'Unknown time'}
+                                                        {deployment.region && <><i className="fas fa-globe ml-3 mr-1"></i> {deployment.region}</>}
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {deployment.resources?.vpc && (
+                                                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">VPC</span>
+                                                    )}
+                                                    {deployment.resources?.ecs && deployment.resources.ecs.length > 0 && (
+                                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded">
+                                                            {deployment.resources.ecs.length} ECS
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {deploymentHistory.length > 5 && (
+                                        <div className="text-center text-xs text-slate-500 mt-2">
+                                            +{deploymentHistory.length - 5} more deployments
+                                        </div>
+                                    )}
+                                </div>
+                            ) : loadingHistory ? (
+                                <div className="text-center py-8">
+                                    <i className="fas fa-spinner fa-spin text-purple-500 text-xsxl mb-2"></i>
+                                    <p className="text-sm text-slate-500">Loading deployment history...</p>
+                                </div>
+                            ) : (
+                                <div className="text-center py-8">
+                                    <p className="text-sm text-slate-500">No deployment history found. Run your first deployment to see history here.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+
+                    {/* DEPLOYMENT HISTORY */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                            <h3 className="font-black text-sm tracking-wide text-slate-800">
+                                <i className="fas fa-history text-purple-500 mr-2"></i> Deployment History
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">Past deployments with resource tracking</p>
+                        </div>
+                        <div className="p-4 md:p-6">
+                                                        <div className="space-y-3">
+                                {deploymentHistory.length === 0 ? (
+                                    loadingHistory ? (
+                                        <div className="text-center py-4 text-slate-400">
+                                            <i className="fas fa-spinner fa-spin mr-2"></i> Loading deployment history...
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-4 text-slate-400">
+                                            <i className="fas fa-history mr-2"></i> No deployment history found
+                                        </div>
+                                    )
+                                ) : (
+                                    <>
+                                        {deploymentHistory.slice(0, 5).map((deployment, index) => (
+                                            <div key={index} className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <div className="font-black text-sm text-slate-800">{deployment.tag || deployment.filename || `Deployment ${index + 1}`}</div>
+                                                        <div className="text-xs text-slate-500 mt-1">{deployment.time || 'Unknown time'}</div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        {deployment.vpc_count > 0 && (
+                                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-black rounded">VPC</span>
+                                                        )}
+                                                        {deployment.ecs_count > 0 && (
+                                                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded">ECS</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {deploymentHistory.length > 5 && (
+                                            <div className="text-center text-xs text-slate-500 mt-2">
+                                                +{deploymentHistory.length - 5} more deployments
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div></div>
+                            </div>
+                            <div className="mt-4 text-center">
+                                <button onClick={ loadDeploymentHistory } className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors">
+                                    <i className="fas fa-sync-alt mr-2"></i> Refresh History
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* NEW CLOUD EXECUTION ENGINE */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row">
+                        <div className="p-6 md:w-1/2 border-b md:border-b-0 md:border-r border-slate-200">
+                            <h3 className="font-black text-sm tracking-wide text-slate-800 mb-4"><i className="fas fa-server text-blue-500 mr-2"></i> Infrastructure Execution</h3>
+                            <p className="text-xs text-slate-500 mb-6">Fire Huawei Cloud provisioning pipelines directly from the ERP. Resources are billed immediately.</p>
+                            <div className="flex gap-4">
+                                <button onClick={() => triggerAPI('/api/deploy', 'Deployment')} disabled={apiState.deploying || apiState.destroying} className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md uppercase tracking-widest disabled:opacity-50 transition-colors">
+                                    {apiState.deploying ? <><i className="fas fa-spinner fa-spin mr-2"></i> Deploying...</> : <><i className="fas fa-rocket mr-2"></i> Deploy Cloud</>}
+                                </button>
+                                <button onClick={() => triggerAPI('/api/destroy', 'Teardown')} disabled={apiState.deploying || apiState.destroying} className="flex-1 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-black shadow-sm uppercase tracking-widest disabled:opacity-50 transition-colors">
+                                    {apiState.destroying ? <><i className="fas fa-spinner fa-spin mr-2"></i> Terminating...</> : <><i className="fas fa-fire mr-2"></i> Abort / Destroy</>}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-6 md:w-1/2 bg-slate-900 max-max-h-[200px] min-h-[100px] min-h-[100px] text-emerald-400 font-mono text-[10px] overflow-y-auto custom-scrollbar whitespace-pre-wrap">
+                            {apiState.logs || "// Terminal Output\n// Awaiting Execution Commands..."}
+                        </div>
+                    </div>
+
+                    {/* COMMS HUB (Existing) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-indigo-50 flex justify-between items-center">
+                            <h3 className="font-black text-sm tracking-wide text-indigo-900"><i className="fas fa-headset text-indigo-600 mr-2"></i> Live Communications</h3>
+                            <button onClick={handleSaveComms} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors">Save Links</button>
+                        </div>
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 bg-white">
+                            <div className="col-span-2 space-y-4">
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Persistent Bridge Link (Teams/Zoom/Meet)</label><div className="flex gap-2"><input type="text" value={comms.bridge} onChange={e=>setComms({...comms, bridge: e.target.value})} className="flex-1 p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 bg-slate-50" placeholder="https://teams.microsoft.com/..." /><a href={comms.bridge} target="_blank" className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-colors"><i className="fas fa-video"></i> Join</a></div></div>
+                                <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Group Chat / Slack / WhatsApp Link</label><div className="flex gap-2"><input type="text" value={comms.chat} onChange={e=>setComms({...comms, chat: e.target.value})} className="flex-1 p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 bg-slate-50" placeholder="https://chat.whatsapp.com/..." /><a href={comms.chat} target="_blank" className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-colors"><i className="fas fa-comment-dots"></i> Chat</a></div></div>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label>
+                                <textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full min-h-32 p-3 border-2 border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 bg-amber-50/50" placeholder="PM Name: Maria&#10;Escalation: CIO (john@corp.com)"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <SingleProjectGantt project={project} />
+                </div>
+            </>)
+        }
+
+        function SingleProjectGantt({ project }) {
+            const timelineData = useMemo(() => {
+                if(!project.kickoff || !project.date || project.kickoff==='Pending' || project.date==='TBD') return null;
+                const start = new Date(project.kickoff); const end = new Date(project.date);
+                if(isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+                const pad = 10 * 24 * 60 * 60 * 1000;
+                const min = start.getTime() - pad; const max = end.getTime() + pad; const total = max - min;
+                const pStart = ((start.getTime() - min) / total) * 100; const pWidth = ((end.getTime() - start.getTime()) / total) * 100;
+                return { pStart, pWidth, startStr: formatShortDate(project.kickoff), endStr: formatShortDate(project.date) };
+            }, [project]);
+
+            return (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 animate-fade-in">
+                    <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center"><i className="fas fa-stream text-emerald-500 mr-3"></i> Project Timeline Baseline</h3>
+                    {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">Valid Kickoff and Go-Live dates required to render timeline.</div> : (
+                        <div className="overflow-x-auto w-full">
+                            <div className="min-max-w-[600px] w-full relative min-h-[60px] max-h-[120px]">
+                                <div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div>
+                                <div className="relative z-10 pt-8">
+                                    <div className="h-12 relative bg-slate-50 border-y border-transparent transition-colors rounded-xl">
+                                        <div className="absolute text-xs font-black text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-3" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div>
+                                        <div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'60px'}}>
+                                            <span className="text-xs font-black truncate">{project.progress} Complete</span>
+                                        </div>
+                                        <div className="absolute text-xs font-black text-slate-800 top-1/2 -translate-y-1/2 pl-3" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )
+        }
+
+        function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
+            return (
+                <div className="p-8">
+                    <div className="mb-8 border-b border-slate-200 pb-4 flex justify-between items-end">
+                        <div><h3 className="font-black text-xsxl text-slate-800"><i className="fas fa-award text-amber-500 mr-3"></i> Step 5: Post-Live WAR Sign-Off</h3><p className="text-sm text-slate-500 mt-2">Evaluate the delivered architecture against the 5 Cloud Pillars for final handover.</p></div>
+                        {isCurrent && <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95">Archive Project <i className="fas fa-check-double ml-2"></i></button>}
+                    </div>
+                    <PhasePostLive activeProject={project} onUpdateProject={onUpdateProject} />
+                </div>
+            )
+        }
+
+        function PhasePostLive({ activeProject, onUpdateProject }) {
+            const [r, setR] = useState(activeProject?.war?.r || 50); const [s, setS] = useState(activeProject?.war?.s || 50); const [p, setP] = useState(activeProject?.war?.p || 50); const [c, setC] = useState(activeProject?.war?.c || 50); const [o, setO] = useState(activeProject?.war?.o || 50);
+            useEffect(()=>{ if(activeProject?.war) { setR(activeProject.war.r); setS(activeProject.war.s); setP(activeProject.war.p); setC(activeProject.war.c); setO(activeProject.war.o); } }, [activeProject]);
+            const score = Math.round((parseInt(r) + parseInt(s) + parseInt(p) + parseInt(c) + parseInt(o)) / 5); const isCertified = score >= 80;
+            const saveContext = () => { onUpdateProject(activeProject.id, 'war', { r, s, p, c, o }); alert("Sign-Off Saved"); };
+
+            return (
+                <div className="max-w-[1200px] w-full mx-auto space-y-6 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
+                        <h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-award text-amber-500"></i> Well-Architected Framework</h3>
+                        <button onClick={saveContext} className="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-xs shadow-md hover:bg-amber-600 transition-colors uppercase tracking-widest">Sign & Save</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-8">
+                            <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Resilience (HA/DR)</label><span className="text-blue-600 font-black text-sm">{r}%</span></div><input type="range" min="0" max="100" value={r} onChange={e=>setR(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-blue-600 cursor-pointer" /></div>
+                            <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Security & Compliance</label><span className="text-rose-600 font-black text-sm">{s}%</span></div><input type="range" min="0" max="100" value={s} onChange={e=>setS(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-rose-600 cursor-pointer" /></div>
+                            <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Performance Efficiency</label><span className="text-purple-600 font-black text-sm">{p}%</span></div><input type="range" min="0" max="100" value={p} onChange={e=>setP(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /></div>
+                            <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Cost Optimization</label><span className="text-emerald-600 font-black text-sm">{c}%</span></div><input type="range" min="0" max="100" value={c} onChange={e=>setC(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-emerald-600 cursor-pointer" /></div>
+                            <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Operational Excellence</label><span className="text-slate-600 font-black text-sm">{o}%</span></div><input type="range" min="0" max="100" value={o} onChange={e=>setO(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-slate-600 cursor-pointer" /></div>
+                        </div>
+                        <div className={`p-10 rounded-3xl border-4 flex flex-col items-center justify-center text-center ${isCertified ? 'bg-amber-50 border-amber-300 shadow-inner' : 'bg-slate-50 border-slate-300'}`}>
+                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4">Architecture Final Score</h4>
+                            <div className={`text-8xl font-black tracking-tighter ${isCertified ? 'text-amber-500' : 'text-slate-700'}`}>{score}</div>
+                            <div className={`mt-8 px-8 py-3 rounded-full font-black uppercase tracking-widest text-xs border-2 ${isCertified ? 'bg-amber-500 text-white border-amber-600 shadow-lg' : 'bg-slate-200 text-slate-500 border-slate-300'}`}>{isCertified ? 'Certified & Approved' : 'Remediation Required'}</div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        // ==========================================
+        // 🚀 MAIN APP ENTRY (The ERP Layout)
+        // ==========================================
+        function App() {
+          const [activePhase, setActivePhase] = useState('home'); 
+          const [projects, setProjects] = useState([]);
+          const [customPlaybooks, setCustomPlaybooks] = useState(defaultPlaybooks);
+          const [activeProjectId, setActiveProjectId] = useState("none");
+          const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
+          const [showConfig, setShowConfig] = useState(false);
+          const [showUploader, setShowUploader] = useState(false);
+
+          const ERP_DATA_KEY = 'cac_erp_data_v46';
+          const ERP_PLAYBOOK_KEY = 'cac_erp_playbooks_v46';
+
+          useEffect(() => {
+            try { 
+                const saved = localStorage.getItem(ERP_DATA_KEY); 
+                if (saved) { 
+                    const parsed = JSON.parse(saved); 
+                    if (Array.isArray(parsed)) setProjects(parsed); 
+                    else setProjects(defaultProjects); 
+                } else setProjects(defaultProjects); 
+
+                const savedPlaybooks = localStorage.getItem(ERP_PLAYBOOK_KEY);
+                if (savedPlaybooks) { 
+                    const parsed = JSON.parse(savedPlaybooks);
+                    setCustomPlaybooks(parsed || defaultPlaybooks); 
+                }
+            } catch(e) { setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); }
+            
+            const handleResize = () => { if(window.innerWidth > 1024) setSidebarOpen(true); else setSidebarOpen(false); };
+            window.addEventListener('resize', handleResize);
+            return () => window.removeEventListener('resize', handleResize);
+          }, []);
+
+          const handleUpdateProject = (id, field, value) => { const updated = projects.map(p => p.id === id ? { ...p, [field]: value } : p); setProjects(updated); localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated)); };
+          const handleAddProject = (p) => { const updated = [p, ...projects]; setProjects(updated); localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated)); };
+          const handleSavePlaybooks = (newPlaybooks) => { setCustomPlaybooks(newPlaybooks); localStorage.setItem(ERP_PLAYBOOK_KEY, JSON.stringify(newPlaybooks)); };
+          
+          const handleHardReset = () => { if(confirm("Are you sure you want to permanently delete all data and restore defaults?")) { localStorage.removeItem(ERP_DATA_KEY); localStorage.removeItem(ERP_PLAYBOOK_KEY); setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); setActiveProjectId("none"); setActivePhase('home'); } };
+
+          const handleExportCSV = () => {
+              const headers = ["Customer", "Country", "Health", "Progress", "MRR", "Kickoff", "Go-Live", "Phase", "SA", "Partner", "Type", "Location", "Blocker", "Complexity", "Scope"];
+              const csvContent = [headers.join(","), ...(projects||[]).filter(p=> p && !p.isWaiting).map(p => { return [`"${(p.name || '').replace(/"/g, '""')}"`, `"${(p.country || '').replace(/"/g, '""')}"`, `"${p.health || ''}"`, `"${p.progress || ''}"`, `"${p.mrr || ''}"`, `"${p.kickoff || ''}"`, `"${p.date || ''}"`, `"${p.phase || ''}"`, `"${p.sa || ''}"`, `"${p.partner || ''}"`, `"${p.partnerType || ''}"`, `"${p.partnerLocation || ''}"`, `"${(p.blocker||'').replace(/"/g, '""')}"`, `"${p.complexity || ''}"`, `"${p.scope || ''}"`].join(","); })].join("\n");
+              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
+              const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", "pipeline_technical_export.csv"); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+          };
+
+          const activeProjectObj = (projects || []).find(p => p && String(p.id) === String(activeProjectId));
+          const navToPhase = (phase) => { setActivePhase(phase); setActiveProjectId("none"); if(window.innerWidth < 1024) setSidebarOpen(false); };
+          const navToProject = (id) => { setActiveProjectId(String(id)); if(window.innerWidth < 1024) setSidebarOpen(false); };
+
+          return (
+            <div className="flex h-screen overflow-hidden bg-slate-100 font-sans text-slate-800 selection:bg-blue-200">
+              
+              {showConfig && activeProjectObj && <ConfigModal project={activeProjectObj} onClose={()=>setShowConfig(false)} onSave={(cfg)=>handleUpdateProject(activeProjectObj.id, 'apiConfig', cfg)} />}
+              {showUploader && <ExcelUploader onUpdateData={(newProjs) => { setProjects([...newProjs, ...projects]); localStorage.setItem(ERP_DATA_KEY, JSON.stringify([...newProjs, ...projects])); setShowUploader(false);}} onClose={() => setShowUploader(false)} />}
+
+              {/* SIDEBAR */}
+              <div className={`fixed lg:relative inset-y-0 left-0 z-50 bg-slate-900 text-white shadow-2xl flex flex-col sidebar-transition ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0 overflow-hidden'}`}>
+                 <div className="p-5 flex justify-between items-center border-b border-slate-800 w-64 shrink-0">
+                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => navToPhase('home')}>
+                         <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center border border-blue-400 shadow-lg shadow-blue-500/20"><i className="fas fa-cloud text-white text-lg"></i></div>
+                         <div><h1 className="text-base font-black text-white leading-tight">LATAM Cloud</h1><h2 className="text-[9px] text-blue-300 uppercase tracking-widest font-bold">Delivery ERP</h2></div>
+                     </div>
+                     <button onClick={()=>setSidebarOpen(false)} className="lg:hidden text-slate-400 p-2"><i className="fas fa-times text-lg"></i></button>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2 w-64 custom-scrollbar">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 mb-3">Global Overviews</p>
+                    <button onClick={()=>navToPhase('home')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='home' && activeProjectId==='none' ?'bg-blue-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5 text-center"></i> Executive Dash</button>
+                    <button onClick={()=>navToPhase('map')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='map' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-globe-americas w-5 text-center"></i> Regional Map</button>
+                    <button onClick={()=>navToPhase('pipeline')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='pipeline' && activeProjectId==='none' ?'bg-emerald-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-list-alt w-5 text-center"></i> Master Pipeline</button>
+                    <button onClick={()=>navToPhase('schedule')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='schedule' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-calendar-alt w-5 text-center"></i> Regional Schedule</button>
+                    <button onClick={()=>navToPhase('radar')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='radar' && activeProjectId==='none' ?'bg-purple-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-satellite-dish w-5 text-center"></i> Pre-Sales Radar</button>
+                    
+                    <div className="pt-4 mt-4 border-t border-slate-800">
+                        <button onClick={()=>navToPhase('process')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='process' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-route w-5 text-center"></i> Standard Process</button>
+                        <button onClick={()=>navToPhase('playbooks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='playbooks' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-book-open w-5 text-center"></i> Playbook Studio</button>
+                    </div>
+                 </div>
+
+                 <div className="p-5 border-t border-slate-800 bg-slate-950 w-64 shrink-0">
+                     <div className="flex items-center gap-3 bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-inner">
+                         <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center border border-slate-600"><i className="fas fa-user-astronaut text-sm text-slate-300"></i></div>
+                         <div className="flex-1 min-w-0">
+                             <div className="text-sm font-black text-white truncate">Ricardo L.</div>
+                             <div className="text-[9px] font-bold text-blue-400 uppercase tracking-wider truncate">Principal Architect</div>
+                         </div>
+                     </div>
+                 </div>
+              </div>
+
+              {/* MAIN CONTENT AREA */}
+              <div className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden relative">
+                 
+                 {/* TOP HEADER */}
+                 <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 lg:px-8 shadow-sm shrink-0 z-20 relative">
+                     <div className="flex items-center gap-4">
+                         <button onClick={()=>setSidebarOpen(!sidebarOpen)} className="text-slate-500 hover:text-slate-800 p-2 transition-colors rounded-lg hover:bg-slate-100"><i className="fas fa-bars text-xl"></i></button>
+                         <h2 className="font-black text-sm text-slate-800 uppercase tracking-widest hidden sm:block">
+                             {activeProjectId === 'none' || !activeProjectObj ? 'Regional Management' : 'Project Workspace'}
+                         </h2>
+                     </div>
+                     
+                     <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                         <div className="flex items-center gap-2">
+                             {activeProjectObj && <button onClick={()=>setShowConfig(true)} title="Project Configuration" className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-blue-100 hover:text-blue-600 border border-slate-300 transition-colors shadow-sm"><i className="fas fa-cog text-base"></i></button>}
+                             <div className="flex items-center bg-slate-100 rounded-xl px-4 py-2 border border-slate-300 w-full sm:w-72 shadow-inner">
+                                 <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest mr-2 hidden sm:block"><i className="fas fa-crosshairs mr-1"></i> Context:</span>
+                                 <select value={activeProjectId} onChange={e=>setActiveProjectId(e.target.value)} className="bg-transparent text-slate-800 text-xs font-bold outline-none cursor-pointer w-full truncate">
+                                     <option value="none">-- Global View (No Context) --</option>
+                                     <optgroup label="Active Pipeline">{(projects||[]).filter(p=> p && !p.isWaiting).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                                     <optgroup label="Radar (Waiting)">{(projects||[]).filter(p=> p && p.isWaiting).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                                 </select>
+                             </div>
+                         </div>
+                         <button onClick={handleHardReset} title="Factory Reset" className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-200 shrink-0 transition-colors ml-2 shadow-sm"><i className="fas fa-power-off text-sm"></i></button>
+                     </div>
+                 </header>
+
+                 {/* MASTER SCROLL CONTAINER */}
+                 <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f8fafc] relative custom-scrollbar">
+                       {activeProjectId === 'none' || !activeProjectObj ? (
+                           <>
+                               {activePhase === 'home' && <GlobalDashboard projects={projects} onNavigateToProject={navToProject} />}
+                               {activePhase === 'map' && <GeospatialMap projects={projects} />}
+                               {activePhase === 'radar' && <GlobalRadar projects={projects} onUpdateProject={handleUpdateProject} onAddProject={handleAddProject} />}
+                               {activePhase === 'pipeline' && <GlobalPipeline projects={projects} onUpdateProject={handleUpdateProject} onExport={handleExportCSV} onImport={()=>setShowUploader(true)} />}
+                               {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
+                               {activePhase === 'process' && <GlobalProcessView />}
+                               {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
+                           </>
+                       ) : (
+                           <ProjectCommandCenter project={activeProjectObj} onUpdateProject={handleUpdateProject} customPlaybooks={customPlaybooks} />
+                       )}
+                 </main>
+              </div>
+            </div>
+          );
+        }
+        
+        const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<ErrorBoundary><App /></ErrorBoundary>);
+    
+        </script>
+</body>
+</html>
