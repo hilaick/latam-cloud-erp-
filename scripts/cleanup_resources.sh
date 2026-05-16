@@ -4,12 +4,20 @@ set -e
 echo "🧹 HUAWEI CLOUD RESOURCE CLEANUP"
 echo "========================================"
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Load credentials
-if [ ! -f "/root/.huawei_credentials" ]; then
-    echo "❌ ERROR: Credentials file not found at /root/.huawei_credentials"
+if [ -f "$HOME/.huawei_credentials" ]; then
+    source "$HOME/.huawei_credentials"
+elif [ -f "$PROJECT_ROOT/config/.huawei_credentials" ]; then
+    source "$PROJECT_ROOT/config/.huawei_credentials"
+else
+    echo "❌ ERROR: Huawei Cloud credentials not found!"
+    echo "   Please create ~/.huawei_credentials or config/.huawei_credentials"
     exit 1
 fi
-source /root/.huawei_credentials
 
 REGION="la-north-2"
 PROJECT_ID=$HUAWEI_PROJECT_ID
@@ -22,7 +30,7 @@ if [ "$1" = "--force" ] || [ "$1" = "-f" ]; then
 fi
 
 # Find resource log files
-RESOURCE_LOGS=$(ls -t /root/huawei_resources_*.log 2>/dev/null | head -5)
+RESOURCE_LOGS=$(ls -t "$PROJECT_ROOT/deployments/huawei_resources_"*.log 2>/dev/null | head -5)
 
 if [ -z "$RESOURCE_LOGS" ]; then
     echo "ℹ️  No resource log files found. Looking for active resources..."

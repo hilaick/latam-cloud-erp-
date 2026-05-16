@@ -2,19 +2,25 @@ from flask import Flask, send_file, jsonify, request
 import subprocess
 import json
 import os
+from pathlib import Path
 
 app = Flask(__name__)
+
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.parent
 
 # 1. Serve the Enterprise HTML Frontend
 @app.route('/')
 def serve_html():
-    return send_file('regional_delivery-17.html')
+    html_path = PROJECT_ROOT / 'templates' / 'regional_delivery-17.html'
+    return send_file(str(html_path))
 
 # 2. Receive Blueprint from the UI
 @app.route('/api/blueprint', methods=['POST'])
 def update_blueprint():
     data = request.json
-    with open('blueprint.json', 'w') as f:
+    blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
+    with open(blueprint_path, 'w') as f:
         json.dump(data, f, indent=2)
     return jsonify({'success': True})
 
@@ -23,8 +29,11 @@ def update_blueprint():
 def deploy():
     try:
         # We run the self-healing audit first!
-        subprocess.run(['bash', './audit.sh'], check=True)
-        result = subprocess.run(['bash', './deploy_real.sh'], capture_output=True, text=True)
+        audit_script = PROJECT_ROOT / 'scripts' / 'audit.sh'
+        deploy_script = PROJECT_ROOT / 'scripts' / 'deploy_real.sh'
+        
+        subprocess.run(['bash', str(audit_script)], check=True, cwd=str(PROJECT_ROOT))
+        result = subprocess.run(['bash', str(deploy_script)], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
         return jsonify({'success': result.returncode == 0, 'output': result.stdout, 'error': result.stderr})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -33,7 +42,8 @@ def deploy():
 @app.route('/api/destroy', methods=['POST'])
 def destroy():
     try:
-        result = subprocess.run(['bash', './cleanup_resources.sh', '--force'], capture_output=True, text=True)
+        cleanup_script = PROJECT_ROOT / 'scripts' / 'cleanup_resources.sh'
+        result = subprocess.run(['bash', str(cleanup_script), '--force'], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
         return jsonify({'success': result.returncode == 0, 'output': result.stdout, 'error': result.stderr})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -43,7 +53,10 @@ def destroy():
 def status():
     try:
         # Check if we have resource logs
-        resource_logs = sorted([f for f in os.listdir('.') 
+        deployments_dir = PROJECT_ROOT / 'deployments'
+        deployments_dir.mkdir(exist_ok=True)
+        
+        resource_logs = sorted([f for f in os.listdir(str(deployments_dir)) 
                               if f.startswith('huawei_resources_') and f.endswith('.log')])
         
         if not resource_logs:
@@ -51,7 +64,8 @@ def status():
         
         # Read the latest log
         latest_log = resource_logs[-1]
-        with open(latest_log, 'r') as f:
+        log_path = deployments_dir / latest_log
+        with open(log_path, 'r') as f:
             content = f.read()
         
         # Parse basic info
@@ -73,5 +87,8 @@ def status():
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
-    print("🚀 Ghost API Active. Serving Enterprise ERP on port 9119...")
+    print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
+    print(f"📁 Project root: {PROJECT_ROOT}")
+    print(f"📊 Dashboard: http://localhost:9119")
+    print(f"📈 API Status: http://localhost:9119/api/status")
     app.run(host='0.0.0.0', port=9119, debug=True)

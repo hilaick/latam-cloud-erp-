@@ -5,12 +5,28 @@ set -e
 if ! command -v jq &> /dev/null; then echo "❌ ERROR: jq is required but not installed." && exit 1; fi
 if ! command -v hcloud &> /dev/null; then echo "❌ ERROR: hcloud CLI is not installed." && exit 1; fi
 
-source /root/.huawei_credentials
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Source credentials from home directory
+if [ -f "$HOME/.huawei_credentials" ]; then
+    source "$HOME/.huawei_credentials"
+elif [ -f "$PROJECT_ROOT/config/.huawei_credentials" ]; then
+    source "$PROJECT_ROOT/config/.huawei_credentials"
+else
+    echo "❌ ERROR: Huawei Cloud credentials not found!"
+    echo "   Please create ~/.huawei_credentials or config/.huawei_credentials"
+    exit 1
+fi
 
 REGION="la-north-2"
 PROJECT_ID=$HUAWEI_PROJECT_ID
 VPC_NAME="CAC-Prod-VPC-$(date +%Y%m%d-%H%M%S)"
-RESOURCE_LOG="/root/huawei_resources_$(date +%Y%m%d_%H%M%S).log"
+RESOURCE_LOG="$PROJECT_ROOT/deployments/huawei_resources_$(date +%Y%m%d_%H%M%S).log"
+
+# Create deployments directory if it doesn't exist
+mkdir -p "$PROJECT_ROOT/deployments"
 
 # Huawei proprietary Debian 11.7.0 image (non-marketplace, works with internal accounts)
 DEBIAN_IMAGE_ID="b6b51393-0309-4fbc-aff7-b24f39b38db9"

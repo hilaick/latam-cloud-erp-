@@ -4,12 +4,20 @@ set -e
 echo "🔍 LISTING HUAWEI CLOUD RESOURCES"
 echo "========================================"
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Load credentials
-if [ ! -f "/root/.huawei_credentials" ]; then
-    echo "❌ ERROR: Credentials file not found at /root/.huawei_credentials"
+if [ -f "$HOME/.huawei_credentials" ]; then
+    source "$HOME/.huawei_credentials"
+elif [ -f "$PROJECT_ROOT/config/.huawei_credentials" ]; then
+    source "$PROJECT_ROOT/config/.huawei_credentials"
+else
+    echo "❌ ERROR: Huawei Cloud credentials not found!"
+    echo "   Please create ~/.huawei_credentials or config/.huawei_credentials"
     exit 1
 fi
-source /root/.huawei_credentials
 
 REGION="la-north-2"
 PROJECT_ID=$HUAWEI_PROJECT_ID
