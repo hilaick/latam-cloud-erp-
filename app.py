@@ -92,6 +92,9 @@ def huawei_chat():
     """Proxy to Huawei ModelArts chat completion with load balancing"""
     try:
         data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'})
+        
         response = huawei_lb.chat_completion(data)
         return jsonify(response)
     except Exception as e:
@@ -100,11 +103,16 @@ def huawei_chat():
 @app.route('/api/huawei/keys/status', methods=['GET'])
 def huawei_keys_status():
     """Get status of Huawei API keys"""
-    return jsonify(huawei_lb.get_status())
+    try:
+        return jsonify(huawei_lb.get_status())
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
     print(f"📁 Project root: {PROJECT_ROOT}")
     print(f"📊 Dashboard: http://localhost:9119")
     print(f"📈 API Status: http://localhost:9119/api/status")
+    print(f"🤖 Huawei Chat API: http://localhost:9119/api/huawei/chat")
+    print(f"🔑 Huawei Keys Status: http://localhost:9119/api/huawei/keys/status")
     app.run(host='0.0.0.0', port=9119, debug=True)
