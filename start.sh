@@ -25,13 +25,13 @@ if [ ! -f ~/.huawei_credentials ]; then
 fi
 
 # Check if required files exist
-if [ ! -f "backend/api.py" ]; then
-    echo "❌ API file not found: backend/api.py"
+if [ ! -f "app.py" ]; then
+    echo "❌ Main app file not found: app.py"
     exit 1
 fi
 
-if [ ! -f "templates/regional_delivery-17.html" ]; then
-    echo "❌ Dashboard HTML not found: templates/regional_delivery-17.html"
+if [ ! -f "templates/index.html" ]; then
+    echo "❌ Dashboard HTML not found: templates/index.html"
     exit 1
 fi
 
@@ -42,5 +42,4 @@ echo ""
 echo "Press Ctrl+C to stop"
 
 # Start the Flask API
-cd backend
-python api.py
+python app.py

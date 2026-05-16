@@ -85,3 +85,6 @@ function ExcelUploader({ onUpdateData, onClose }) {
         </div>
     );
 }
+
+// Global window bindings for Babel Standalone scoping
+window.formatShortDate = formatShortDate; window.EditableCell = EditableCell; window.ConfigModal = ConfigModal; window.ExcelUploader = ExcelUploader;

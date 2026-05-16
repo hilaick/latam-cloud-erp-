@@ -22,7 +22,7 @@ const defaultPlaybooks = {
             { id: "2", name: "PHASE 1: CUTOVER (HOLY WEEK)", prog: "0%", resp: "", start: "2026-04-02", end: "2026-04-05", isParent: true },
             { id: "2.1", name: "Shutdown On-Premise SAP & Network Block", prog: "0%", resp: "Cust / Partner", start: "2026-04-02", end: "2026-04-02", isParent: false },
             { id: "2.2", name: "Final Sync (File-Level, Exclude Logs)", prog: "0%", resp: "Partner / HW", start: "2026-04-02", end: "2026-04-04", isParent: false },
-            { id: "2.3", name: "Cloud Boot & Over-Provisioning (200% Compute)", prog: "0%", resp: "Partner", start: "2026-04-04", end: "2026-04-04", isParent: false },
+            { id: "2.3", name: "Cloud Boot & Over-Provisioning (200% Compute)", prog: "0%", resp: "Partner", start: "2026-04-02", end: "2026-04-04", isParent: false },
             { id: "2.4", name: "Technical Validation (Basis & Network)", prog: "0%", resp: "Partner", start: "2026-04-04", end: "2026-04-05", isParent: false },
             { id: "3", name: "PHASE 2: GO-LIVE & ROLLBACK SAFETY", prog: "0%", resp: "", start: "2026-04-05", end: "2026-04-08", isParent: true },
             { id: "3.1", name: "DNS Update & SAP Logon Switch", prog: "0%", resp: "Partner / Cust", start: "2026-04-05", end: "2026-04-05", isParent: false },
@@ -49,3 +49,6 @@ const defaultProjects = [
   { ...generateDefaultProject(5, "Retail POS Migration", false, "2_architecture", "Green", 34000, "2026-04-01", "2026-06-15"), country: "Chile", progress: "5%", complexity: "High", scope: "Supervision", blocker: "Discovery underway." },
   generateDefaultProject(4, "Bank of Andes", true, "1_arb", "Yellow", 45000, "", "")
 ];
+
+// Global window bindings for Babel Standalone scoping
+window.useState = useState; window.useMemo = useMemo; window.useEffect = useEffect; window.useRef = useRef; window.defaultPlaybooks = defaultPlaybooks; window.generateDefaultProject = generateDefaultProject; window.defaultProjects = defaultProjects;

@@ -63,6 +63,7 @@ mkdir -p deployments
 
 # Make scripts executable
 chmod +x scripts/*.sh
+chmod +x start.sh test.sh
 
 echo ""
 echo "✅ Setup complete!"
@@ -71,8 +72,7 @@ echo "📋 Next steps:"
 echo "1. Copy config/.huawei_credentials.example to ~/.huawei_credentials"
 echo "2. Edit ~/.huawei_credentials with your actual credentials"
 echo "3. Start the Flask API:"
-echo "   source venv/bin/activate"
-echo "   python backend/api.py"
+echo "   ./start.sh"
 echo "4. Access dashboard at: http://localhost:9119"
 echo ""
 echo "🔧 For Huawei Cloud CLI setup, visit:"

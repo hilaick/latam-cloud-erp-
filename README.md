@@ -1,40 +1,51 @@
 # LATAM Cloud Delivery ERP - Huawei Cloud Infrastructure
 
-A comprehensive Huawei Cloud infrastructure management system with Flask API backend and React frontend.
+A comprehensive Huawei Cloud infrastructure management system with Flask API backend and modular React frontend.
+
+## 🏗️ Architecture
+
+```
+latam-cloud-erp/
+│
+├── .gitignore                  # Prevents pushing sensitive logs/keys to GitHub
+├── requirements.txt            # Python dependencies (flask, pandas)
+├── app.py                      # The Flask Backend (The Bridge)
+│
+├── services/                   # Business logic services
+│   ├── huawei_load_balancer.py # Huawei ModelArts API key rotation
+│   └── resource_parser.py      # Resource log parsing
+│
+├── config/                     # Configuration files
+│   ├── blueprint.json          # Infrastructure blueprint
+│   └── .huawei_credentials.example # Credentials template
+│
+├── scripts/                    # 🚀 The DevOps Zone (Hermes's Playground)
+│   ├── audit_quick.sh          # Huawei pre-flight checks
+│   ├── deploy_real_tagged.sh   # Huawei infrastructure execution
+│   └── cleanup_resources.sh    # Teardown and log cleanup
+│
+├── templates/                  # 🌐 The HTML Shell
+│   └── index.html              # Loads Tailwind, Babel, Leaflet, and JS modules
+│
+└── static/
+    └── js/                     # 🧩 The React Modules (Babel Standalone)
+        ├── 01_data.js          # Playbooks, mock projects, templates
+        ├── 02_utils.js         # Formatters, EditableCell, Modals
+        ├── 03_map.js           # The Leaflet GeospatialMap component
+        ├── 04_views.js         # Dashboard, Pipeline, Radar, Process
+        ├── 05_wizard.js        # Command Center, FinOps, Execution Hub
+        └── 06_app.js           # Main App() function and Router
+```
 
 ## 🚀 Features
 
+- **Modular React Frontend** - Zero-build-step Babel Standalone architecture
 - **Flask API Backend** - RESTful API for Huawei Cloud operations
-- **React Frontend** - Modern web interface for infrastructure management
 - **Huawei Cloud Integration** - Direct integration with Huawei Cloud services
-- **Load Balancer** - Intelligent API key rotation for Huawei ModelArts
+- **Load Balancer** - 6-API key rotation for Huawei ModelArts
 - **Infrastructure Management** - Deploy, monitor, and cleanup cloud resources
-- **Resource Tracking** - Log-based deployment history and tracking
-
-## 📁 Project Structure
-
-```
-latam-cloud-erp-/
-├── backend/              # Flask API backend
-│   ├── api.py           # Main Flask application
-│   ├── huawei_load_balancer.py  # API key load balancer
-│   └── resource_parser.py        # Resource log parser
-├── scripts/             # Deployment and management scripts
-│   ├── deploy_real.sh           # Main deployment script
-│   ├── audit.sh                 # Environment audit
-│   ├── cleanup_resources.sh     # Resource cleanup
-│   └── list_tagged_resources.sh # Tagged resource listing
-├── templates/           # HTML templates
-│   ├── index.html              # Original React template
-│   └── regional_delivery-17.html # Huawei Cloud dashboard
-├── static/             # Static assets (JS, CSS)
-│   └── js/            # React components
-├── config/             # Configuration files
-│   └── blueprint.json  # Infrastructure blueprint
-├── deployments/        # Deployment logs (gitignored)
-├── docs/              # Documentation
-└── .gitignore         # Git ignore rules
-```
+- **Geospatial Visualization** - Interactive Leaflet maps for regional tracking
+- **Dynamic Playbooks** - Customizable migration methodologies
 
 ## 🛠️ Setup
 
@@ -46,78 +57,61 @@ latam-cloud-erp-/
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/hilaick/latam-cloud-erp-.git
-cd latam-cloud-erp-
+git clone https://github.com/hilaick/latam-cloud-erp.git
+cd latam-cloud-erp
 
-# Install Python dependencies
-pip install flask
+# Run setup script
+./setup.sh
 
-# Set up Huawei Cloud credentials
+# Configure credentials
 cp config/.huawei_credentials.example ~/.huawei_credentials
-# Edit with your credentials
+# Edit with your Huawei Cloud credentials
 ```
 
-### Configuration
-1. Copy `.huawei_credentials.example` to `~/.huawei_credentials`
-2. Add your Huawei Cloud API keys and credentials
-3. Configure deployment settings in `config/blueprint.json`
-
-## 🚀 Usage
-
-### Start the Flask API
+### Quick Start
 ```bash
-cd backend
-python api.py
-# Server runs on http://localhost:9119
+# Start the dashboard
+./start.sh
+
+# Access at: http://localhost:9119
 ```
 
-### Access the Dashboard
-Open `http://localhost:9119` in your browser
+## 📦 Zero-Build Architecture
 
-### Deploy Infrastructure
-```bash
-./scripts/deploy_real.sh
-```
-
-### Run Environment Audit
-```bash
-./scripts/audit.sh
-```
-
-### Cleanup Resources
-```bash
-./scripts/cleanup_resources.sh
-```
+The frontend uses **Babel Standalone** with sequentially loaded JS modules:
+- No npm, webpack, or build tools required
+- ES6 JSX transpiled in the browser
+- Global `window` bindings for module communication
+- Fast iteration - just edit JS files and refresh
 
 ## 🔧 API Endpoints
 
 - `GET /` - Serve dashboard HTML
+- `GET /static/<path:filename>` - Serve JS/CSS assets
 - `GET /api/status` - Check deployment status
 - `POST /api/blueprint` - Update infrastructure blueprint
-- `POST /api/deploy` - Trigger deployment
-- `POST /api/destroy` - Trigger teardown
+- `POST /api/deploy` - Trigger deployment (`deploy_real_tagged.sh`)
+- `POST /api/destroy` - Trigger teardown (`cleanup_resources.sh`)
+- `POST /api/huawei/chat` - Huawei ModelArts chat completion (load balanced)
+- `GET /api/huawei/keys/status` - Huawei API key status
 
-## 📊 Features
+## 🎯 DevOps Scripts
 
-### Dashboard Features
-- Real-time infrastructure visualization
-- Deployment history tracking
-- Resource status monitoring
-- One-click deployment and cleanup
-- Blueprint management
+### `scripts/audit_quick.sh`
+- Huawei Cloud pre-flight checks
+- Environment validation
+- Resource quota verification
 
-### Huawei Cloud Integration
-- VPC and subnet management
-- ECS instance deployment
-- Security group configuration
-- Load balancer setup
-- Resource tagging and organization
+### `scripts/deploy_real_tagged.sh`
+- Huawei infrastructure execution
+- VPC, subnets, security groups
+- ECS instances with tagging
+- Load balancer configuration
 
-### Load Balancer
-- 6-API key rotation for Huawei ModelArts
-- 3 million TPM capacity
-- Automatic failover
-- Usage statistics and monitoring
+### `scripts/cleanup_resources.sh`
+- Teardown Huawei Cloud resources
+- Clean deployment logs
+- Resource cleanup with confirmation
 
 ## 🔒 Security
 
@@ -129,9 +123,19 @@ Open `http://localhost:9119` in your browser
 ## 📈 Monitoring
 
 - Deployment logs in `deployments/` directory
-- Resource tracking logs
+- Resource tracking with timestamps
 - API usage statistics
 - Error logging and alerting
+
+## 🧪 Testing
+
+```bash
+# Run comprehensive tests
+./test.sh
+
+# Check structure and dependencies
+python app.py --check
+```
 
 ## 🤝 Contributing
 
@@ -154,4 +158,5 @@ MIT License - see LICENSE file for details
 
 - Huawei Cloud for the robust infrastructure platform
 - Flask and React communities for excellent tools
+- Babel Standalone for zero-build frontend
 - Open source contributors

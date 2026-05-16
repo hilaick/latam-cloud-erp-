@@ -101,3 +101,6 @@ function GeospatialMap({ projects }) {
         </div>
     )
 }
+
+// Global window binding for Babel Standalone scoping
+window.GeospatialMap = GeospatialMap;

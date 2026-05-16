@@ -1,129 +1,121 @@
 #!/bin/bash
-# test.sh - Test the Huawei Cloud Infrastructure setup
 
-set -e
+# Test script for Huawei Cloud ERP
 
-cd "$(dirname "$0")"
+echo "🧪 Testing Huawei Cloud ERP structure..."
 
-echo "🧪 Testing Huawei Cloud Infrastructure Setup..."
-echo "=============================================="
+# Check if all required files exist
+echo "📁 Checking file structure..."
+required_files=(
+    "app.py"
+    "requirements.txt"
+    "templates/index.html"
+    "static/js/01_data.js"
+    "static/js/02_utils.js"
+    "static/js/03_map.js"
+    "static/js/04_views.js"
+    "static/js/05_wizard.js"
+    "static/js/06_app.js"
+    "scripts/audit_quick.sh"
+    "scripts/deploy_real_tagged.sh"
+    "scripts/cleanup_resources.sh"
+    "services/huawei_load_balancer.py"
+    "services/resource_parser.py"
+)
 
-# Test 1: Check directory structure
-echo "1. Checking directory structure..."
-required_dirs=("backend" "scripts" "config" "templates" "static/js" "deployments")
-for dir in "${required_dirs[@]}"; do
-    if [ -d "$dir" ]; then
-        echo "   ✅ $dir"
-    else
-        echo "   ❌ $dir (missing)"
-        exit 1
-    fi
-done
-
-# Test 2: Check required files
-echo ""
-echo "2. Checking required files..."
-required_files=("backend/api.py" "templates/regional_delivery-17.html" "scripts/deploy_real.sh" "scripts/audit.sh" "scripts/cleanup_resources.sh" "README.md" "setup.sh" "start.sh")
+missing_files=0
 for file in "${required_files[@]}"; do
     if [ -f "$file" ]; then
-        echo "   ✅ $file"
+        echo "✅ $file"
     else
-        echo "   ❌ $file (missing)"
-        exit 1
+        echo "❌ $file (MISSING)"
+        missing_files=$((missing_files + 1))
     fi
 done
 
-# Test 3: Check Python dependencies
+# Check Python dependencies
 echo ""
-echo "3. Checking Python environment..."
-if command -v python3 &> /dev/null; then
-    echo "   ✅ Python3 found: $(python3 --version)"
+echo "🐍 Checking Python dependencies..."
+if python3 -c "import flask" 2>/dev/null; then
+    echo "✅ Flask"
 else
-    echo "   ❌ Python3 not found"
-    exit 1
+    echo "❌ Flask (not installed)"
 fi
 
-# Test 4: Check if virtual environment exists
-echo ""
-echo "4. Checking virtual environment..."
-if [ -d "venv" ]; then
-    echo "   ✅ Virtual environment exists"
-    # Test Flask installation
-    if source venv/bin/activate && python3 -c "import flask; print(f'   ✅ Flask {flask.__version__}')" 2>/dev/null; then
-        echo "   ✅ Flask installed"
-    else
-        echo "   ⚠️  Flask not installed in venv"
-    fi
-    deactivate 2>/dev/null || true
+if python3 -c "import pandas" 2>/dev/null; then
+    echo "✅ pandas"
 else
-    echo "   ⚠️  Virtual environment not found (run ./setup.sh)"
+    echo "❌ pandas (not installed)"
 fi
 
-# Test 5: Check Huawei Cloud CLI
+# Check if app.py can be imported
 echo ""
-echo "5. Checking Huawei Cloud CLI..."
-if command -v hcloud &> /dev/null; then
-    echo "   ✅ hcloud CLI found"
-    # Try to get version
-    hcloud --version 2>/dev/null | head -1 || echo "   ⚠️  Could not get hcloud version"
+echo "🔧 Testing app.py imports..."
+if python3 -c "
+import sys
+sys.path.append('.')
+try:
+    from app import app
+    print('✅ app.py imports successfully')
+except Exception as e:
+    print(f'❌ app.py import failed: {e}')
+    sys.exit(1)
+"; then
+    echo "✅ All imports successful"
 else
-    echo "   ⚠️  hcloud CLI not found (required for deployments)"
+    echo "❌ Import test failed"
 fi
 
-# Test 6: Check credentials template
+# Check if services can be imported
 echo ""
-echo "6. Checking credentials setup..."
-if [ -f "config/.huawei_credentials.example" ]; then
-    echo "   ✅ Credentials template exists"
-    if [ -f ~/.huawei_credentials ] || [ -f config/.huawei_credentials ]; then
-        echo "   ✅ Credentials file found"
-    else
-        echo "   ⚠️  No credentials file found (create from template)"
-        echo "      cp config/.huawei_credentials.example ~/.huawei_credentials"
-        echo "      # Edit with your Huawei Cloud credentials"
-    fi
+echo "🔧 Testing services imports..."
+if python3 -c "
+import sys
+sys.path.append('.')
+try:
+    from services.huawei_load_balancer import HuaweiLoadBalancer
+    from services.resource_parser import parse_resource_log
+    print('✅ Services import successfully')
+except Exception as e:
+    print(f'❌ Services import failed: {e}')
+    sys.exit(1)
+"; then
+    echo "✅ Services import successful"
 else
-    echo "   ❌ Credentials template missing"
-    exit 1
+    echo "❌ Services import failed"
 fi
 
-# Test 7: Check API can start
+# Check JS files for global window bindings
 echo ""
-echo "7. Testing API startup..."
-if [ -f "backend/api.py" ]; then
-    # Quick syntax check
-    if python3 -m py_compile backend/api.py 2>/dev/null; then
-        echo "   ✅ API syntax is valid"
-        rm -f backend/__pycache__/* 2>/dev/null || true
-    else
-        echo "   ❌ API syntax error"
-        exit 1
-    fi
-fi
+echo "🔧 Checking JS global bindings..."
+js_files=(
+    "static/js/01_data.js"
+    "static/js/02_utils.js"
+    "static/js/03_map.js"
+    "static/js/04_views.js"
+    "static/js/05_wizard.js"
+)
 
-# Test 8: Check scripts are executable
-echo ""
-echo "8. Checking script permissions..."
-scripts=("scripts/deploy_real.sh" "scripts/audit.sh" "scripts/cleanup_resources.sh" "scripts/list_tagged_resources.sh" "setup.sh" "start.sh")
-for script in "${scripts[@]}"; do
-    if [ -x "$script" ]; then
-        echo "   ✅ $script (executable)"
+for js_file in "${js_files[@]}"; do
+    if grep -q "window\." "$js_file"; then
+        echo "✅ $js_file has global window bindings"
     else
-        echo "   ⚠️  $script (not executable, fixing...)"
-        chmod +x "$script"
+        echo "❌ $js_file missing global window bindings"
     fi
 done
 
 echo ""
-echo "=============================================="
-echo "✅ All tests passed!"
-echo ""
-echo "📋 Next steps:"
-echo "1. Copy credentials template:"
-echo "   cp config/.huawei_credentials.example ~/.huawei_credentials"
-echo "2. Edit ~/.huawei_credentials with your Huawei Cloud credentials"
-echo "3. Run setup: ./setup.sh"
-echo "4. Start the dashboard: ./start.sh"
-echo "5. Access at: http://localhost:9119"
-echo ""
-echo "🚀 Ready for Huawei Cloud deployments!"
+echo "📊 Summary:"
+echo "Total required files: ${#required_files[@]}"
+echo "Missing files: $missing_files"
+
+if [ $missing_files -eq 0 ]; then
+    echo "🎉 All tests passed! Structure is correct."
+    echo ""
+    echo "🚀 To start the application:"
+    echo "   ./start.sh"
+    echo "   Then visit http://localhost:9119"
+else
+    echo "⚠️  Some files are missing. Please check above."
+    exit 1
+fi

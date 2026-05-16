@@ -1,21 +1,30 @@
-from flask import Flask, send_file, jsonify, request
+from flask import Flask, send_file, jsonify, request, send_from_directory
 import subprocess
 import json
 import os
 from pathlib import Path
+from services.huawei_load_balancer import HuaweiLoadBalancer
+from services.resource_parser import parse_resource_log
 
 app = Flask(__name__)
 
 # Get the project root directory
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent
+
+# Initialize Huawei Load Balancer
+huawei_lb = HuaweiLoadBalancer()
 
 # 1. Serve the Enterprise HTML Frontend
 @app.route('/')
 def serve_html():
-    html_path = PROJECT_ROOT / 'templates' / 'regional_delivery-17.html'
-    return send_file(str(html_path))
+    return send_file(str(PROJECT_ROOT / 'templates' / 'index.html'))
 
-# 2. Receive Blueprint from the UI
+# 2. Serve static files (JS modules)
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('static', filename)
+
+# 3. Receive Blueprint from the UI
 @app.route('/api/blueprint', methods=['POST'])
 def update_blueprint():
     data = request.json
@@ -24,13 +33,13 @@ def update_blueprint():
         json.dump(data, f, indent=2)
     return jsonify({'success': True})
 
-# 3. Trigger Deployment
+# 4. Trigger Deployment
 @app.route('/api/deploy', methods=['POST'])
 def deploy():
     try:
-        # We run the self-healing audit first!
-        audit_script = PROJECT_ROOT / 'scripts' / 'audit.sh'
-        deploy_script = PROJECT_ROOT / 'scripts' / 'deploy_real.sh'
+        # Run the self-healing audit first
+        audit_script = PROJECT_ROOT / 'scripts' / 'audit_quick.sh'
+        deploy_script = PROJECT_ROOT / 'scripts' / 'deploy_real_tagged.sh'
         
         subprocess.run(['bash', str(audit_script)], check=True, cwd=str(PROJECT_ROOT))
         result = subprocess.run(['bash', str(deploy_script)], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
@@ -38,7 +47,7 @@ def deploy():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 4. Trigger Teardown
+# 5. Trigger Teardown
 @app.route('/api/destroy', methods=['POST'])
 def destroy():
     try:
@@ -48,7 +57,7 @@ def destroy():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 5. Check deployment status
+# 6. Check deployment status
 @app.route('/api/status', methods=['GET'])
 def status():
     try:
@@ -62,20 +71,11 @@ def status():
         if not resource_logs:
             return jsonify({'status': 'no_deployments', 'message': 'No deployments found'})
         
-        # Read the latest log
+        # Read and parse the latest log
         latest_log = resource_logs[-1]
         log_path = deployments_dir / latest_log
-        with open(log_path, 'r') as f:
-            content = f.read()
         
-        # Parse basic info
-        resources = {}
-        for line in content.strip().split('\n'):
-            if '=' in line and not line.startswith('#'):
-                key, value = line.split('=', 1)
-                key = key.strip()
-                value = value.strip().strip('"\'')
-                resources[key] = value
+        resources = parse_resource_log(str(log_path))
         
         return jsonify({
             'status': 'deployed',
@@ -85,6 +85,22 @@ def status():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+# 7. Huawei ModelArts API endpoints
+@app.route('/api/huawei/chat', methods=['POST'])
+def huawei_chat():
+    """Proxy to Huawei ModelArts chat completion with load balancing"""
+    try:
+        data = request.json
+        response = huawei_lb.chat_completion(data)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/huawei/keys/status', methods=['GET'])
+def huawei_keys_status():
+    """Get status of Huawei API keys"""
+    return jsonify(huawei_lb.get_status())
 
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
