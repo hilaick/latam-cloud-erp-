@@ -82,8 +82,8 @@ function App() {
              <div className="flex items-center gap-3 bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-inner">
                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center border border-slate-600"><i className="fas fa-user-astronaut text-sm text-slate-300"></i></div>
                  <div className="flex-1 min-w-0">
-                     <div className="text-sm font-black text-white truncate">Ricardo L.</div>
-                     <div className="text-[9px] font-bold text-blue-400 uppercase tracking-wider truncate">Principal Architect</div>
+                     <div className="text-sm font-black text-white truncate">Hilaick Y.</div>
+                     <div className="text-[9px] font-bold text-blue-400 uppercase tracking-wider truncate">Principal Architect & TAM</div>
                  </div>
              </div>
          </div>
