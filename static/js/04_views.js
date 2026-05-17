@@ -356,6 +356,23 @@ function GlobalProcessView() {
                             <div className={`px-6 py-4 border-b border-slate-200 flex justify-between items-center ${phase.bg}`}>
                                 <h3 className={`font-black text-lg ${phase.text}`}>{phase.id}. {phase.title}</h3>
                                 <span className="bg-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-200 shadow-sm flex items-center"><i className="fas fa-user-circle mr-2 opacity-50"></i> {phase.owner}</span>
+                            </div>
+                            <div className="p-6 md:p-8 flex flex-col lg:flex-row gap-8">
+                                <div className="flex-1"><h4 className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-3">Phase Objective</h4><p className="text-sm font-medium text-slate-600 leading-relaxed">{phase.desc}</p></div>
+                                <div className="lg:w-1/3 shrink-0">
+                                    <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-3 border-b border-slate-100 pb-2">Mandatory Gate Artefacts</h4>
+                                    <ul className="space-y-2">
+                                        {phase.artefacts.map((art, i) => <li key={i} className="flex items-start text-xs font-bold text-slate-700"><i className="fas fa-check-circle text-emerald-500 mt-0.5 mr-2"></i><span>{art}</span></li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
 
 // Global window bindings for Babel Standalone scoping
 window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView;
