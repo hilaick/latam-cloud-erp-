@@ -74,12 +74,15 @@ def parse_resource_log(filepath: str) -> Dict[str, Any]:
     return resources
 
 
-def get_all_deployments() -> List[Dict[str, Any]]:
+def get_all_deployments(log_dir: str) -> List[Dict[str, Any]]:
     """Get all deployment logs sorted newest first."""
     logs = []
-    for fname in os.listdir("/root"):
+    if not os.path.exists(log_dir):
+        return logs
+        
+    for fname in os.listdir(log_dir):
         if fname.startswith("huawei_resources_") and fname.endswith(".log"):
-            filepath = os.path.join("/root", fname)
+            filepath = os.path.join(log_dir, fname)
             try:
                 resources = parse_resource_log(filepath)
                 if resources.get("metadata"):
@@ -92,15 +95,15 @@ def get_all_deployments() -> List[Dict[str, Any]]:
     return logs
 
 
-def get_latest_deployment() -> Dict[str, Any]:
+def get_latest_deployment(log_dir: str = "/root") -> Dict[str, Any]:
     """Get the most recent deployment."""
-    deployments = get_all_deployments()
+    deployments = get_all_deployments(log_dir)
     return deployments[0] if deployments else {}
 
 
-def get_deployment_summary() -> Dict[str, Any]:
+def get_deployment_summary(log_dir: str = "/root") -> Dict[str, Any]:
     """Get summary statistics."""
-    deployments = get_all_deployments()
+    deployments = get_all_deployments(log_dir)
     
     summary = {
         "total_deployments": len(deployments),
