@@ -39,8 +39,8 @@ echo "✅ FORCED (Applied chmod +x to all .sh files)"
 # 2. Hard Requirements (Cannot auto-fix)
 echo ""
 echo "🔑 STEP 2: HARD REQUIREMENTS"
-echo -n "   🛡️ Checking for /root/.huawei_credentials... "
-if [ -f "/root/.huawei_credentials" ]; then 
+echo -n "   🛡️ Checking for Huawei credentials... "
+if [ -f "$HOME/.huawei_credentials" ] || [ -f "config/.huawei_credentials" ]; then 
     echo "✅ OK"
 else 
     echo "❌ MISSING (Cannot auto-fix. Please create credentials file.)"
@@ -50,7 +50,7 @@ fi
 # 3. Huawei Cloud Quota Check
 echo ""
 echo "☁️  STEP 3: HUAWEI CLOUD QUOTA CHECK"
-if command -v hcloud &> /dev/null && [ -f "/root/.huawei_credentials" ]; then
+if command -v hcloud &> /dev/null && { [ -f "$HOME/.huawei_credentials" ] || [ -f "config/.huawei_credentials" ]; }; then
     echo -n "   📊 Checking VPC quota... "
     VPC_COUNT=$(hcloud VPC ListVpcs --cli-region="la-north-2" 2>/dev/null | grep -c '"name"' || echo "0")
     if [ "$VPC_COUNT" -ge 3 ]; then
