@@ -48,8 +48,8 @@ def deploy():
         return jsonify({'success': False, 'error': str(e)})
 
 # 5. Trigger Teardown
-@app.route('/api/destroy', methods=['POST'])
-def destroy():
+@app.route('/api/cleanup', methods=['POST'])
+def cleanup():
     try:
         cleanup_script = PROJECT_ROOT / 'scripts' / 'cleanup_resources.sh'
         result = subprocess.run(['bash', str(cleanup_script), '--force'], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
