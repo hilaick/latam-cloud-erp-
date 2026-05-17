@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
-from services.resource_parser import parse_resource_log
+from services.resource_parser import parse_resource_log, get_all_deployments
 
 app = Flask(__name__)
 
@@ -86,7 +86,17 @@ def status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 7. Huawei ModelArts API endpoints
+# 7. Get deployment logs
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    try:
+        deployments_dir = str(PROJECT_ROOT / 'deployments')
+        deployments = get_all_deployments(deployments_dir)
+        return jsonify({'success': True, 'deployments': deployments})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# 8. Huawei ModelArts API endpoints
 @app.route('/api/huawei/chat', methods=['POST'])
 def huawei_chat():
     """Proxy to Huawei ModelArts chat completion with load balancing"""
