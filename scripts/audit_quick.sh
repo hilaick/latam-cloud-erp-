@@ -80,41 +80,41 @@ fi
 # 4. Self-Healing File Health
 echo ""
 echo "🧹 STEP 4: FILE SANITIZATION (SELF-HEALING)"
-if [ ! -f "blueprint.json" ]; then
-    echo "   ❌ MISSING: blueprint.json not found. (Cannot auto-fix)"
+if [ ! -f "config/blueprint.json" ]; then
+    echo "   ❌ MISSING: config/blueprint.json not found. (Cannot auto-fix)"
     ERRORS=$((ERRORS+1))
-elif [ ! -s "blueprint.json" ]; then
-    echo "   ❌ CORRUPTED: blueprint.json is 0 bytes. (Cannot auto-fix)"
+elif [ ! -s "config/blueprint.json" ]; then
+    echo "   ❌ CORRUPTED: config/blueprint.json is 0 bytes. (Cannot auto-fix)"
     ERRORS=$((ERRORS+1))
 else
     # Automatically strip UTF-8 BOM
     echo -n "   🧬 Checking for invisible UTF-8 BOM... "
-    sed -i '1s/^\xEF\xBB\xBF//' blueprint.json
+    sed -i '1s/^\xEF\xBB\xBF//' config/blueprint.json
     echo "✅ SANITIZED"
 
     # Automatically strip Windows CRLF
     echo -n "   📄 Checking for Windows CRLF... "
-    sed -i 's/\r//g' blueprint.json
+    sed -i 's/\r//g' config/blueprint.json
     echo "✅ SANITIZED"
 
     # 5. JSON Syntax & Schema Audit
     echo ""
     echo "🧩 STEP 5: JSON SCHEMA VALIDATION"
     echo -n "   🧱 Validating raw JSON structure... "
-    if jq empty blueprint.json >/dev/null 2>&1; then 
+    if jq empty config/blueprint.json >/dev/null 2>&1; then 
         echo "✅ VALID"
         
         echo -n "   🗂️ Checking for 'servers' array... "
-        if [ "$(jq '.servers | type' blueprint.json 2>/dev/null)" == '"array"' ]; then
+        if [ "$(jq '.servers | type' config/blueprint.json 2>/dev/null)" == '"array"' ]; then
             echo "✅ OK"
             
-            SERVER_COUNT=$(jq '.servers | length' blueprint.json)
+            SERVER_COUNT=$(jq '.servers | length' config/blueprint.json)
             echo "   📊 Found $SERVER_COUNT server(s) configured."
             
             # Check each server has required fields
             for i in $(seq 0 $((SERVER_COUNT - 1))); do
-                SERVER_NAME=$(jq -r ".servers[$i].server_name" blueprint.json 2>/dev/null)
-                FLAVOR=$(jq -r ".servers[$i].flavor" blueprint.json 2>/dev/null)
+                SERVER_NAME=$(jq -r ".servers[$i].server_name" config/blueprint.json 2>/dev/null)
+                FLAVOR=$(jq -r ".servers[$i].flavor" config/blueprint.json 2>/dev/null)
                 
                 if [ -z "$SERVER_NAME" ] || [ "$SERVER_NAME" = "null" ]; then
                     echo "   ❌ Server $((i+1)) missing 'server_name'"
@@ -140,7 +140,7 @@ else
         echo "❌ CORRUPTED"
         echo "----------------------------------------"
         echo "🚨 JQ SYNTAX ERROR REPORT:"
-        jq empty blueprint.json 2>&1
+        jq empty config/blueprint.json 2>&1
         echo "----------------------------------------"
         ERRORS=$((ERRORS+1))
     fi

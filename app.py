@@ -33,7 +33,22 @@ def update_blueprint():
         json.dump(data, f, indent=2)
     return jsonify({'success': True})
 
-# 4. Trigger Deployment
+# 5. Run Environment Audit
+@app.route('/api/audit', methods=['POST'])
+def run_audit():
+    try:
+        audit_script = PROJECT_ROOT / 'scripts' / 'audit_quick.sh'
+        result = subprocess.run(['bash', str(audit_script)], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+        return jsonify({
+            'success': result.returncode == 0,
+            'output': result.stdout,
+            'error': result.stderr,
+            'exit_code': result.returncode
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# 6. Trigger Deployment
 @app.route('/api/deploy', methods=['POST'])
 def deploy():
     try:
@@ -47,7 +62,7 @@ def deploy():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 5. Trigger Teardown
+# 7. Trigger Teardown
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup():
     try:
@@ -57,7 +72,7 @@ def cleanup():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 6. Check deployment status
+# 8. Check deployment status
 @app.route('/api/status', methods=['GET'])
 def status():
     try:
@@ -86,7 +101,7 @@ def status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 7. Get deployment logs
+# 9. Get deployment logs
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
     try:
@@ -96,7 +111,7 @@ def get_logs():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 8. Huawei ModelArts API endpoints
+# 10. Huawei ModelArts API endpoints
 @app.route('/api/huawei/chat', methods=['POST'])
 def huawei_chat():
     """Proxy to Huawei ModelArts chat completion with load balancing"""
@@ -122,6 +137,7 @@ if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
     print(f"📁 Project root: {PROJECT_ROOT}")
     print(f"📊 Dashboard: http://localhost:9119")
+    print(f"🔍 Environment Audit: http://localhost:9119/api/audit")
     print(f"📈 API Status: http://localhost:9119/api/status")
     print(f"🤖 Huawei Chat API: http://localhost:9119/api/huawei/chat")
     print(f"🔑 Huawei Keys Status: http://localhost:9119/api/huawei/keys/status")
