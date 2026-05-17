@@ -8,6 +8,11 @@ import random
 import time
 import requests
 import os
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class HuaweiLoadBalancer:
     def __init__(self):
@@ -22,24 +27,48 @@ class HuaweiLoadBalancer:
         ]
         self.key_usage = {key: 0 for key in self.keys}
         self.key_errors = {key: 0 for key in self.keys}
+        
+        # Log initialization
+        active_keys = sum(1 for key in self.keys if key and len(key) > 10)
+        logger.info(f"HuaweiLoadBalancer initialized with {active_keys} active API keys")
 
     def get_status(self):
         masked_key_usage = {f"{k[:8]}...": v for k, v in self.key_usage.items()}
         masked_key_errors = {f"{k[:8]}...": v for k, v in self.key_errors.items()}
+        
+        # Calculate health status
+        total_errors = sum(self.key_errors.values())
+        health = "healthy" if total_errors == 0 else "degraded" if total_errors < 3 else "unhealthy"
+        
         return {
             "status": "Huawei ModelArts Load Balancer Active",
+            "health": health,
             "total_keys": len(self.keys),
+            "active_keys": sum(1 for k, v in self.key_errors.items() if v < 5),
+            "total_requests": sum(self.key_usage.values()),
+            "total_errors": total_errors,
             "key_usage": masked_key_usage,
-            "key_errors": masked_key_errors
+            "key_errors": masked_key_errors,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
 
     def chat_completion(self, request_data):
+        if not self.keys:
+            logger.error("No API keys configured")
+            return {"error": "No API keys configured. Please set API_KEY_1 through API_KEY_6 environment variables.", "success": False}
+        
+        # Filter out keys with too many errors
         available_keys = [k for k in self.keys if self.key_errors.get(k, 0) < 5]
         if not available_keys:
             available_keys = self.keys  # Fall back to all keys
+            logger.warning("All keys have errors, falling back to all keys")
         
+        # Select key with least usage
         current_key = min(available_keys, key=lambda k: self.key_usage.get(k, 0))
+        key_mask = f"{current_key[:8]}..."
         self.key_usage[current_key] += 1
+        
+        logger.info(f"Using key {key_mask} for request (usage: {self.key_usage[current_key]}, errors: {self.key_errors.get(current_key, 0)})")
 
         try:
             response = requests.post(
@@ -52,11 +81,29 @@ class HuaweiLoadBalancer:
                 timeout=30
             )
             
-            if response.status_code != 200:
-                self.key_errors[current_key] += 1
+            if response.status_code == 200:
+                logger.info(f"Key {key_mask} succeeded with status {response.status_code}")
+                return response.json()
+            else:
+                self.key_errors[current_key] = self.key_errors.get(current_key, 0) + 1
+                logger.warning(f"Key {key_mask} failed with status {response.status_code}: {response.text[:100]}")
+                return {
+                    "error": f"Huawei API error: {response.status_code}",
+                    "details": response.text[:200] if response.text else "No error details",
+                    "success": False
+                }
+                
+        except requests.exceptions.Timeout:
+            self.key_errors[current_key] = self.key_errors.get(current_key, 0) + 1
+            logger.error(f"Key {key_mask} timeout after 30 seconds")
+            return {"error": "Request timeout after 30 seconds", "success": False}
             
-            return response.json()
+        except requests.exceptions.ConnectionError:
+            self.key_errors[current_key] = self.key_errors.get(current_key, 0) + 1
+            logger.error(f"Key {key_mask} connection error")
+            return {"error": "Connection error to Huawei API", "success": False}
             
         except Exception as e:
-            self.key_errors[current_key] += 1
+            self.key_errors[current_key] = self.key_errors.get(current_key, 0) + 1
+            logger.error(f"Key {key_mask} error: {str(e)}")
             return {"error": str(e), "success": False}
