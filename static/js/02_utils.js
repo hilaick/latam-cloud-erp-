@@ -75,7 +75,12 @@ function ExcelUploader({ onUpdateData, onClose }) {
         }
     };
 
-    const handleProcess = async () => {
+    const handleProcess = async (e) => {
+        if (e) {
+            e.preventDefault(); // Prevent any default form submission
+            e.stopPropagation();
+        }
+        
         if (!selectedFile) {
             alert("Please select a file to upload");
             return;
@@ -109,13 +114,18 @@ function ExcelUploader({ onUpdateData, onClose }) {
                       `Customer: ${result.blueprint.customer}\n` +
                       `Servers: ${result.stats.total_servers}\n` +
                       `Warnings: ${result.stats.warnings}\n\n` +
-                      `Blueprint has been updated. Close this window to see the changes.`);
+                      `Blueprint has been updated. All mandatory artefacts auto-approved.`);
                 
                 // Close the uploader after successful upload
                 setTimeout(() => {
                     onClose();
-                    // Refresh the page to show updated blueprint
-                    window.location.reload();
+                    // Call onUpdateData with the blueprint data to update React state
+                    console.log('ExcelUploader: Upload successful, calling onUpdateData with:', result.blueprint);
+                    if (onUpdateData) {
+                        onUpdateData(result.blueprint);
+                    } else {
+                        console.error('ExcelUploader: onUpdateData is undefined!');
+                    }
                 }, 1500);
             } else {
                 setUploadMessage(`❌ Error: ${result.error}`);
@@ -259,6 +269,7 @@ function ExcelUploader({ onUpdateData, onClose }) {
                     </button>
                     <button 
                         onClick={handleProcess}
+                        type="button"
                         disabled={!selectedFile || isUploading}
                         className={`px-6 py-3 text-sm font-black text-white rounded-xl uppercase tracking-wider shadow-md transition-all ${!selectedFile || isUploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'}`}
                     >
