@@ -57,48 +57,50 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
 }
 
 function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
+    console.log('WizardStepARB rendering with project:', project?.id, 'blueprintData:', project?.blueprintData);
     const [showUploader, setShowUploader] = useState(false);
     const [hasBlueprint, setHasBlueprint] = useState(false);
     const [artefactsComplete, setArtefactsComplete] = useState(false);
 
     // Check if project has blueprint data and artefacts are complete
     useEffect(() => {
+        console.log('WizardStepARB useEffect running with project:', project?.id);
         // Check if blueprint exists in project data
-        const hasBP = !!project.blueprintData;
+        const hasBP = !!project?.blueprintData;
+        console.log('Setting hasBlueprint to:', hasBP, 'from blueprintData:', project?.blueprintData);
         setHasBlueprint(hasBP);
         
         // Check if all artefacts are complete
-        const artefacts = project.arbArtefacts || {};
+        const artefacts = project?.arbArtefacts || {};
         const allComplete = artefacts.presentStateHLD && artefacts.targetArchitecture && artefacts.sowSigned;
+        console.log('Setting artefactsComplete to:', allComplete, 'from artefacts:', artefacts);
         setArtefactsComplete(allComplete);
         
         console.log('WizardStepARB useEffect:', { 
             hasBlueprint: hasBP, 
             artefacts, 
             allComplete,
-            projectId: project.id 
+            projectId: project?.id,
+            blueprintDataExists: !!project?.blueprintData,
+            blueprintData: project?.blueprintData
         });
-    }, [project, project.blueprintData, project.arbArtefacts]);
+    }, [project, project?.blueprintData, project?.arbArtefacts]);
 
     const handleBlueprintGenerated = (blueprintData) => {
-        console.log('handleBlueprintGenerated called for project:', project.id);
+        console.log('handleBlueprintGenerated called for project:', project.id, 'with data:', blueprintData);
         
-        // Update project with blueprint data
-        onUpdateProject(project.id, 'blueprintData', blueprintData);
-        
-        // Auto-check all mandatory artefacts when blueprint is generated
-        // This simulates that the Sales Architect has provided all required documents
-        onUpdateProject(project.id, 'arbArtefacts', {
-            presentStateHLD: true,
-            targetArchitecture: true,
-            sowSigned: true
+        // Update project with blueprint data AND artefacts in a single update
+        onUpdateProject(project.id, {
+            blueprintData: blueprintData,
+            arbArtefacts: {
+                presentStateHLD: true,
+                targetArchitecture: true,
+                sowSigned: true
+            }
         });
         
-        // Force immediate state update for better UX
-        setHasBlueprint(true);
-        setArtefactsComplete(true);
-        
-        alert(`✅ Blueprint generated successfully!\n\nCustomer: ${blueprintData.customer}\nServers: ${blueprintData.topology?.compute?.length || 0}\n\n✅ All mandatory artefacts auto-approved\n\nYou can now proceed to Architecture phase.`);
+        console.log('handleBlueprintGenerated: Updated project state with blueprint and artefacts');
+        // Alert removed - ExcelUploader already shows one
     };
 
     const areAllArtefactsComplete = () => {

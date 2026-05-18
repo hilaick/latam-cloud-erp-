@@ -31,7 +31,47 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleUpdateProject = (id, field, value) => { const updated = projects.map(p => p.id === id ? { ...p, [field]: value } : p); setProjects(updated); localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated)); };
+  const handleUpdateProject = (id, fieldOrUpdates, value) => { 
+    console.log('handleUpdateProject called:', { id, fieldOrUpdates, value, idType: typeof id });
+    
+    // Use functional update to ensure we have the latest state
+    setProjects(prevProjects => {
+      const updated = prevProjects.map(p => {
+        // Compare IDs as strings to handle both number and string IDs
+        if (String(p.id) === String(id)) {
+          // Handle both signatures: (id, field, value) and (id, updatesObject)
+          if (typeof fieldOrUpdates === 'string' && value !== undefined) {
+            // Signature: (id, field, value)
+            console.log(`Updating project ${id} (${typeof id}) field ${fieldOrUpdates} from:`, p[fieldOrUpdates]);
+            console.log(`Updating project ${id} (${typeof id}) field ${fieldOrUpdates} to:`, value);
+            const newProject = { ...p, [fieldOrUpdates]: value };
+            console.log(`Updated project ${id}:`, { 
+              id: newProject.id, 
+              name: newProject.name,
+              [fieldOrUpdates]: newProject[fieldOrUpdates],
+              blueprintData: newProject.blueprintData,
+              arbArtefacts: newProject.arbArtefacts
+            });
+            return newProject;
+          } else if (typeof fieldOrUpdates === 'object') {
+            // Signature: (id, updatesObject)
+            console.log(`Updating project ${id} (${typeof id}) with multiple fields:`, fieldOrUpdates);
+            const newProject = { ...p, ...fieldOrUpdates };
+            console.log(`Updated project ${id}:`, { 
+              id: newProject.id, 
+              name: newProject.name,
+              ...fieldOrUpdates
+            });
+            return newProject;
+          }
+        }
+        return p;
+      });
+      console.log('Projects after update in functional update:', updated.find(p => String(p.id) === String(id)));
+      localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
   const handleAddProject = (p) => { const updated = [p, ...projects]; setProjects(updated); localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated)); };
   const handleSavePlaybooks = (newPlaybooks) => { setCustomPlaybooks(newPlaybooks); localStorage.setItem(ERP_PLAYBOOK_KEY, JSON.stringify(newPlaybooks)); };
   
@@ -55,7 +95,14 @@ function App() {
       {showUploader && <ExcelUploader onUpdateData={(blueprintData) => { 
         // Store blueprint data in the active project
         if (activeProjectObj) {
-          handleUpdateProject(activeProjectObj.id, 'blueprintData', blueprintData);
+          handleUpdateProject(activeProjectObj.id, {
+            blueprintData: blueprintData,
+            arbArtefacts: {
+              presentStateHLD: true,
+              targetArchitecture: true,
+              sowSigned: true
+            }
+          });
         }
         setShowUploader(false);
       }} onClose={() => setShowUploader(false)} />}
