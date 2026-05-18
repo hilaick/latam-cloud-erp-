@@ -48,8 +48,9 @@ const defaultProjects = [
   { ...generateDefaultProject(1, "AWS Data Lake Exit", false, "4_execution", "Green", 12000, "2026-03-01", "2026-04-15"), country: "Mexico", progress: "65%", complexity: "High", scope: "Hands-On", blocker: "Syncing DBs." },
   { ...generateDefaultProject(2, "Unicorn Corp SAP HANA", false, "3_planning", "Yellow", 83000, "2026-03-10", "2026-05-30"), country: "Panama", progress: "10%", complexity: "Ultra-High", scope: "Supervision", blocker: "Partner failed Dev gate. Triggering Rescue." },
   { ...generateDefaultProject(3, "Logistics Hub", false, "3_planning", "Red", 22000, "2026-03-15", "2026-04-05"), country: "Guatemala", progress: "20%", scope: "Advisory", blocker: "Budget pending approval." },
-  { ...generateDefaultProject(5, "Retail POS Migration", false, "2_architecture", "Green", 34000, "2026-04-01", "2026-06-15"), country: "Chile", progress: "5%", complexity: "High", scope: "Supervision", blocker: "Discovery underway." },
-  generateDefaultProject(4, "Bank of Andes", true, "1_arb", "Yellow", 45000, "", "")
+  { ...generateDefaultProject(4, "Fast-Track PoC: E-Commerce Platform", false, "2_architecture", "Green", 5000, "2026-05-01", "2026-05-31"), country: "Brazil", progress: "40%", complexity: "Medium", scope: "Hands-On", blocker: "Waiting on PoC budget approval.", project_type: "poc", pocCap: 500, pocTtl: "2026-06-30" },
+  { ...generateDefaultProject(5, "Proof of Concept: AI Inference", false, "1_arb", "Green", 3000, "2026-05-10", "2026-06-10"), country: "Chile", progress: "5%", complexity: "Low", scope: "Advisory", blocker: "Initial architecture review.", project_type: "poc", pocCap: 300, pocTtl: "2026-07-15" },
+  generateDefaultProject(6, "Bank of Andes", true, "1_arb", "Yellow", 45000, "", "")
 ];
 
 // Global window bindings for Babel Standalone scoping
