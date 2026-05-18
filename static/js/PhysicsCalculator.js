@@ -1,5 +1,5 @@
 // Pure calculation logic for Physics Engine - no JSX, no React dependencies
-export function calculatePhysics(params) {
+function calculatePhysics(params) {
     const {
         computeCPU,
         computeRAM,
@@ -197,5 +197,5 @@ export function calculatePhysics(params) {
         riskMultiplier,
         smallFileHours: validSmallFiles > 0 ? validSmallFiles : 0,
         largePayloadTB: storageMode === 'Object' ? Math.max(0, osPayloadTB - ((validSmallFiles * 10) / (1024 * 1024 * 1024))) : 0
-    };
+   
 }

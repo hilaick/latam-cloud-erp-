@@ -1,7 +1,8 @@
 // Input components for Physics Engine
-import React from 'react';
 
-export function ComputeNode({ computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, onParamChange }) {
+
+function ComputeNode({ computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, onParamChange }) {
+    const { useState } = React;
     if (storageMode === 'Object') {
         return (
             <div className="bg-slate-50 p-6 rounded-2xl border-2 border-dashed border-slate-300 shadow-sm flex flex-col items-center justify-center text-center opacity-70 min-h-[200px]">
@@ -81,7 +82,8 @@ export function ComputeNode({ computeCPU, computeRAM, computeOS, sourceEncrypted
     );
 }
 
-export function PayloadInputs({ 
+function PayloadInputs({ 
+    const { useState } = React;
     storageSize, storageUnit, storageMode, diskType, targetKMS, 
     totalFiles, smallFiles, syncMethod, onParamChange, onTotalFilesChange, onSmallFilesChange 
 }) {
@@ -211,7 +213,8 @@ export function PayloadInputs({
     );
 }
 
-export function DatabaseRouting({ 
+function DatabaseRouting({ 
+    const { useState } = React;
     excludeDb, dbStorageSize, dbType, dbRowsM, dbRps, storageMode, storageUnit, onParamChange 
 }) {
     if (storageMode === 'Object') {

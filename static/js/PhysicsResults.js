@@ -1,7 +1,8 @@
 // Results display component for Physics Engine
-import React from 'react';
 
-export function PhysicsResults({ 
+
+function PhysicsResults({ 
+    const { useState } = React;
     results, 
     downtimeWindow, 
     storageUnit, 
@@ -119,7 +120,8 @@ export function PhysicsResults({
     );
 }
 
-export function FAQSection({ showFaq, setShowFaq }) {
+function FAQSection({ showFaq, setShowFaq }) {
+    const { useState } = React;
     return (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl shadow-sm mb-6 overflow-hidden">
             <button 

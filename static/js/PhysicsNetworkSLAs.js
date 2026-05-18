@@ -1,7 +1,8 @@
 // Network and SLA components for Physics Engine
-import React from 'react';
 
-export function NetworkRouting({ 
+
+function NetworkRouting({ 
+    const { useState } = React;
     storageMode, netSource, transitType, netTunnel, netTarget, 
     omsTasks, omsObjPerSec, omsBackbone, onParamChange 
 }) {
@@ -120,7 +121,8 @@ export function NetworkRouting({
     );
 }
 
-export function SLASection({ drBackupHrs, drStability, downtimeWindow, onParamChange }) {
+function SLASection({ drBackupHrs, drStability, downtimeWindow, onParamChange }) {
+    const { useState } = React;
     return (
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
             <h4 className="font-black text-sm mb-5 flex items-center gap-2 text-slate-800">
