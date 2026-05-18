@@ -199,3 +199,7 @@ function calculatePhysics(params) {
         largePayloadTB: storageMode === 'Object' ? Math.max(0, osPayloadTB - ((validSmallFiles * 10) / (1024 * 1024 * 1024))) : 0
    
 }
+}
+
+// Global binding for Babel Standalone
+window.calculatePhysics = calculatePhysics;

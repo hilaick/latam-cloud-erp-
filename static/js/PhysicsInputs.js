@@ -82,8 +82,7 @@ function ComputeNode({ computeCPU, computeRAM, computeOS, sourceEncrypted, stora
     );
 }
 
-function PayloadInputs({ 
-    const { useState } = React;
+function PayloadInputs({
     storageSize, storageUnit, storageMode, diskType, targetKMS, 
     totalFiles, smallFiles, syncMethod, onParamChange, onTotalFilesChange, onSmallFilesChange 
 }) {
@@ -213,8 +212,7 @@ function PayloadInputs({
     );
 }
 
-function DatabaseRouting({ 
-    const { useState } = React;
+function DatabaseRouting({
     excludeDb, dbStorageSize, dbType, dbRowsM, dbRps, storageMode, storageUnit, onParamChange 
 }) {
     if (storageMode === 'Object') {
@@ -316,3 +314,8 @@ function DatabaseRouting({
         </div>
     );
 }
+
+// Global bindings for Babel Standalone
+window.ComputeNode = ComputeNode;
+window.PayloadInputs = PayloadInputs;
+window.DatabaseRouting = DatabaseRouting;

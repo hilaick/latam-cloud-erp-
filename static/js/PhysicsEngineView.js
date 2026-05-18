@@ -31,3 +31,7 @@ function PhysicsEngineView({ activeProject, onUpdateProject }) {
     
     // 4. Network Routing (Standard)
     const [netSource, setNetSource] = useState(1000); 
+}
+
+// Global binding for Babel Standalone
+window.PhysicsEngineView = PhysicsEngineView;

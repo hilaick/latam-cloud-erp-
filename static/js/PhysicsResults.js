@@ -1,8 +1,7 @@
 // Results display component for Physics Engine
 
 
-function PhysicsResults({ 
-    const { useState } = React;
+function PhysicsResults({
     results, 
     downtimeWindow, 
     storageUnit, 
@@ -182,3 +181,7 @@ function FAQSection({ showFaq, setShowFaq }) {
         </div>
     );
 }
+
+// Global bindings for Babel Standalone
+window.PhysicsResults = PhysicsResults;
+window.FAQSection = FAQSection;

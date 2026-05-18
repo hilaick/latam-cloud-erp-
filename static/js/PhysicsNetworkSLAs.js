@@ -1,8 +1,7 @@
 // Network and SLA components for Physics Engine
 
 
-function NetworkRouting({ 
-    const { useState } = React;
+function NetworkRouting({
     storageMode, netSource, transitType, netTunnel, netTarget, 
     omsTasks, omsObjPerSec, omsBackbone, onParamChange 
 }) {
@@ -171,3 +170,7 @@ function SLASection({ drBackupHrs, drStability, downtimeWindow, onParamChange })
         </div>
     );
 }
+
+// Global bindings for Babel Standalone
+window.NetworkRouting = NetworkRouting;
+window.SLASection = SLASection;

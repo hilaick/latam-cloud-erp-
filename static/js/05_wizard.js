@@ -1182,7 +1182,16 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
             </div>
         </div>
     )
-}
+)
 
 // Global window binding for Babel Standalone scoping
 window.ProjectCommandCenter = ProjectCommandCenter;
+window.PhysicsEngineView = PhysicsEngineView;
+window.calculatePhysics = calculatePhysics;
+window.ComputeNode = ComputeNode;
+window.PayloadInputs = PayloadInputs;
+window.DatabaseRouting = DatabaseRouting;
+window.NetworkRouting = NetworkRouting;
+window.SLASection = SLASection;
+window.PhysicsResults = PhysicsResults;
+window.FAQSection = FAQSection;
