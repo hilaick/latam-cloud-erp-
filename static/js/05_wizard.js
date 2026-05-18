@@ -1182,7 +1182,7 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
             </div>
         </div>
     )
-)
+}
 
 // Global window binding for Babel Standalone scoping
 window.ProjectCommandCenter = ProjectCommandCenter;
