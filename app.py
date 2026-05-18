@@ -5,8 +5,73 @@ import os
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
+from services.excel_ingestor import process_quotation
+from functools import wraps
 
 app = Flask(__name__)
+
+# Basic Authentication Configuration
+# IMPORTANT: Set these environment variables for production:
+# export DASHBOARD_USERNAME="your_secure_username"
+# export DASHBOARD_PASSWORD="strong_random_password_here"
+USERNAME = os.environ.get('DASHBOARD_USERNAME', 'admin')
+PASSWORD = os.environ.get('DASHBOARD_PASSWORD', 'changeme123')
+
+# Allowed IPs (no authentication required for these)
+# Add your team's IPs, VPN IPs, or trusted networks here
+ALLOWED_IPS = [
+    '127.0.0.1',      # localhost
+    'localhost',       # localhost hostname
+    '::1',             # IPv6 localhost
+    '159.138.148.45',  # Your current IP
+    '154.47.28.240'    # IP you want to allow (previously blocked)
+]
+
+# Denied IPs (blocked immediately)
+DENIED_IPS = [
+    '1.94.223.28'      # Suspicious Chinese IP from security alert
+]
+
+def check_auth(username, password):
+    """Check if username/password combination is valid."""
+    return username == USERNAME and password == PASSWORD
+
+def authenticate():
+    """Send 401 response to enable basic auth."""
+    return jsonify({
+        'success': False,
+        'error': 'Authentication required',
+        'message': 'Please provide valid credentials'
+    }), 401, {'WWW-Authenticate': 'Basic realm="Dashboard Access"'}
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Get client IP, checking X-Forwarded-For for proxy scenarios
+        client_ip = request.remote_addr
+        forwarded_for = request.headers.get('X-Forwarded-For')
+        if forwarded_for:
+            # Take the first IP in X-Forwarded-For chain
+            client_ip = forwarded_for.split(',')[0].strip()
+        
+        # Check if IP is in denied list
+        if client_ip in DENIED_IPS:
+            return jsonify({
+                'success': False,
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }), 403
+        
+        # Check if IP is in allowed list
+        if client_ip in ALLOWED_IPS:
+            return f(*args, **kwargs)
+        
+        # Check for basic auth
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
 
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent
@@ -16,6 +81,7 @@ huawei_lb = HuaweiLoadBalancer()
 
 # 1. Serve the Enterprise HTML Frontend
 @app.route('/')
+@requires_auth
 def serve_html():
     return send_file(str(PROJECT_ROOT / 'templates' / 'index.html'))
 
@@ -26,6 +92,7 @@ def serve_static(filename):
 
 # 3. Receive Blueprint from the UI
 @app.route('/api/blueprint', methods=['POST'])
+@requires_auth
 def update_blueprint():
     data = request.json
     blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
@@ -33,8 +100,9 @@ def update_blueprint():
         json.dump(data, f, indent=2)
     return jsonify({'success': True})
 
-# 5. Run Environment Audit
+# 4. Run Environment Audit
 @app.route('/api/audit', methods=['POST'])
+@requires_auth
 def run_audit():
     try:
         audit_script = PROJECT_ROOT / 'scripts' / 'audit_quick.sh'
@@ -48,8 +116,9 @@ def run_audit():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 6. Trigger Deployment
+# 5. Trigger Deployment
 @app.route('/api/deploy', methods=['POST'])
+@requires_auth
 def deploy():
     try:
         # Run the self-healing audit first
@@ -62,8 +131,9 @@ def deploy():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 7. Trigger Teardown
+# 6. Trigger Teardown
 @app.route('/api/cleanup', methods=['POST'])
+@requires_auth
 def cleanup():
     try:
         cleanup_script = PROJECT_ROOT / 'scripts' / 'cleanup_resources.sh'
@@ -72,8 +142,9 @@ def cleanup():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 8. Check deployment status
+# 7. Check deployment status
 @app.route('/api/status', methods=['GET'])
+@requires_auth
 def status():
     try:
         # Check if we have resource logs
@@ -101,8 +172,9 @@ def status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 9. Get deployment logs
+# 8. Get deployment logs
 @app.route('/api/logs', methods=['GET'])
+@requires_auth
 def get_logs():
     try:
         deployments_dir = str(PROJECT_ROOT / 'deployments')
@@ -111,8 +183,9 @@ def get_logs():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# 10. Huawei ModelArts API endpoints
+# 9. Huawei ModelArts API endpoints
 @app.route('/api/huawei/chat', methods=['POST'])
+@requires_auth
 def huawei_chat():
     """Proxy to Huawei ModelArts chat completion with load balancing"""
     try:
@@ -126,10 +199,71 @@ def huawei_chat():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/huawei/keys/status', methods=['GET'])
+@requires_auth
 def huawei_keys_status():
     """Get status of Huawei API keys"""
     try:
         return jsonify(huawei_lb.get_status())
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# 10. Upload and process quotation files
+@app.route('/api/upload_quotation', methods=['POST'])
+@requires_auth
+def upload_quotation():
+    """Upload Excel/CSV quotation and normalize to blueprint.json"""
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'})
+        
+        file = request.files['file']
+        
+        # Check if file has a name
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'})
+        
+        # Check file extension
+        allowed_extensions = {'csv', 'xlsx', 'xls'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'success': False, 
+                'error': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
+            })
+        
+        # Get customer name from form data
+        customer_name = request.form.get('customer_name', 'Unknown Customer')
+        
+        # Save file temporarily
+        upload_dir = PROJECT_ROOT / 'uploads'
+        upload_dir.mkdir(exist_ok=True)
+        
+        temp_path = upload_dir / f'temp_quotation.{file_ext}'
+        file.save(str(temp_path))
+        
+        # Process the quotation
+        blueprint = process_quotation(str(temp_path), customer_name)
+        
+        # Save to blueprint.json
+        blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
+        with open(blueprint_path, 'w') as f:
+            json.dump(blueprint, f, indent=2)
+        
+        # Clean up temp file
+        temp_path.unlink(missing_ok=True)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Quotation processed successfully. Generated blueprint for {customer_name}',
+            'blueprint': blueprint,
+            'stats': {
+                'total_servers': len(blueprint['topology']['compute']),
+                'warnings': len([s for s in blueprint['topology']['compute'] if s['status'] == 'WARNING'])
+            }
+        })
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -139,6 +273,7 @@ if __name__ == '__main__':
     print(f"📊 Dashboard: http://localhost:9119")
     print(f"🔍 Environment Audit: http://localhost:9119/api/audit")
     print(f"📈 API Status: http://localhost:9119/api/status")
+    print(f"📤 Upload Quotation: http://localhost:9119/api/upload_quotation")
     print(f"🤖 Huawei Chat API: http://localhost:9119/api/huawei/chat")
     print(f"🔑 Huawei Keys Status: http://localhost:9119/api/huawei/keys/status")
     app.run(host='0.0.0.0', port=9119, debug=True)
