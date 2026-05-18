@@ -1,5 +1,5 @@
 {
-  "customer": "Test Customer Corp",
+  "customer": "Test Customer",
   "delivery_scope": "landing_zone_only",
   "governance": {
     "requires_hypercare": false,

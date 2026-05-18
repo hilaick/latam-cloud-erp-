@@ -52,7 +52,13 @@ function App() {
     <div className="flex h-screen overflow-hidden bg-slate-100 font-sans text-slate-800 selection:bg-blue-200">
       
       {showConfig && activeProjectObj && <ConfigModal project={activeProjectObj} onClose={()=>setShowConfig(false)} onSave={(cfg)=>handleUpdateProject(activeProjectObj.id, 'apiConfig', cfg)} />}
-      {showUploader && <ExcelUploader onUpdateData={(newProjs) => { setProjects([...newProjs, ...projects]); localStorage.setItem(ERP_DATA_KEY, JSON.stringify([...newProjs, ...projects])); setShowUploader(false);}} onClose={() => setShowUploader(false)} />}
+      {showUploader && <ExcelUploader onUpdateData={(blueprintData) => { 
+        // Store blueprint data in the active project
+        if (activeProjectObj) {
+          handleUpdateProject(activeProjectObj.id, 'blueprintData', blueprintData);
+        }
+        setShowUploader(false);
+      }} onClose={() => setShowUploader(false)} />}
 
       {/* SIDEBAR */}
       <div className={`fixed lg:relative inset-y-0 left-0 z-50 bg-slate-900 text-white shadow-2xl flex flex-col sidebar-transition ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0 overflow-hidden'}`}>
