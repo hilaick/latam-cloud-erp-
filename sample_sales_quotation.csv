@@ -1,0 +1,16 @@
+Server Name,VM Type,CPU Cores,Memory GB,Public IP,Tier,Operating System,Storage GB,Notes
+app-web-01,s6.large.2,2,4,Yes,Web Tier,Ubuntu 20.04,100,Production web server
+app-web-02,s6.large.2,2,4,Yes,Web Tier,Ubuntu 20.04,100,Load balanced web server
+app-api-01,s6.xlarge.2,4,8,Yes,Application Tier,Ubuntu 20.04,200,REST API services
+app-api-02,s6.xlarge.2,4,8,Yes,Application Tier,Ubuntu 20.04,200,Load balanced API
+db-primary-01,c6.2xlarge.4,8,16,No,Database Tier,CentOS 8,500,Primary PostgreSQL
+db-replica-01,c6.2xlarge.4,8,16,No,Database Tier,CentOS 8,500,Hot standby replica
+cache-01,redis.medium.2,2,4,No,Cache Tier,Ubuntu 20.04,50,Redis cache cluster
+cache-02,redis.medium.2,2,4,No,Cache Tier,Ubuntu 20.04,50,Redis cache cluster
+monitoring-01,s6.small.1,1,2,Yes,Monitoring,Ubuntu 20.04,100,Prometheus + Grafana
+backup-01,s6.large.2,2,4,No,Backup,Ubuntu 20.04,1000,Backup server
+bastion-01,s6.small.1,1,2,Yes,Bastion Host,Ubuntu 20.04,50,Jump host for SSH
+nfs-server-01,s6.large.2,2,4,No,Storage,Ubuntu 20.04,2000,NFS shared storage
+missing-flavor-server,,4,8,Yes,Application Tier,Ubuntu 20.04,200,Flavor TBD by architect
+legacy-app-01,old.flavor.type,2,4,No,Legacy,Windows Server 2019,100,To be migrated
+analytics-01,c6.4xlarge.8,16,32,Yes,Analytics,Ubuntu 22.04,500,Spark analytics cluster

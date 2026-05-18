@@ -23,7 +23,7 @@ COLUMN_MAP = {
     ],
     'flavor': [
         'flavor', 'target flavor', 'instance type', 'specification', 
-        'hw flavor', 'size', 'instance size', 'vm size'
+        'hw flavor', 'vm type', 'server type', 'instance', 'type'
     ],
     'cpu': [
         'cpu', 'vcpu', 'cores', 'vcpus', 'vcores', 'cpu cores'
@@ -34,7 +34,7 @@ COLUMN_MAP = {
     ],
     'is_public': [
         'is_public', 'public ip', 'eip', 'internet', 'public access',
-        'public', 'external ip', 'has public ip'
+        'public', 'has public ip', 'external ip', 'public ip required'
     ],
     'tier': [
         'tier', 'role', 'app tier', 'description', 'notes', 

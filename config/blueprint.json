@@ -1,5 +1,5 @@
 {
-  "customer": "Test Customer Corp",
+  "customer": "Acme Corporation",
   "delivery_scope": "landing_zone_only",
   "governance": {
     "requires_hypercare": false,
@@ -9,45 +9,171 @@
     "network": [],
     "compute": [
       {
-        "name": "web-server-1",
+        "name": "app-web-01",
         "flavor": "s6.large.2",
         "is_public": true,
         "status": "OK",
         "metadata": {
           "tier": "Web Tier",
-          "os_type": "Linux",
+          "os_type": "Ubuntu 20.04",
           "cpu_cores": 2,
           "ram_gb": 4,
-          "storage_gb": 50,
+          "storage_gb": 100,
           "original_row": 1
         }
       },
       {
-        "name": "db-server-1",
-        "flavor": "c6.2xlarge.4",
-        "is_public": false,
+        "name": "app-web-02",
+        "flavor": "s6.large.2",
+        "is_public": true,
         "status": "OK",
         "metadata": {
-          "tier": "Database",
-          "os_type": "Linux",
-          "cpu_cores": 8,
-          "ram_gb": 16,
-          "storage_gb": 200,
+          "tier": "Web Tier",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 100,
           "original_row": 2
         }
       },
       {
-        "name": "app-server-1",
+        "name": "app-api-01",
         "flavor": "s6.xlarge.2",
         "is_public": true,
         "status": "OK",
         "metadata": {
-          "tier": "Application",
-          "os_type": "Linux",
+          "tier": "Application Tier",
+          "os_type": "Ubuntu 20.04",
           "cpu_cores": 4,
           "ram_gb": 8,
-          "storage_gb": 100,
+          "storage_gb": 200,
           "original_row": 3
+        }
+      },
+      {
+        "name": "app-api-02",
+        "flavor": "s6.xlarge.2",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Application Tier",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 4,
+          "ram_gb": 8,
+          "storage_gb": 200,
+          "original_row": 4
+        }
+      },
+      {
+        "name": "db-primary-01",
+        "flavor": "c6.2xlarge.4",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Database Tier",
+          "os_type": "CentOS 8",
+          "cpu_cores": 8,
+          "ram_gb": 16,
+          "storage_gb": 500,
+          "original_row": 5
+        }
+      },
+      {
+        "name": "db-replica-01",
+        "flavor": "c6.2xlarge.4",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Database Tier",
+          "os_type": "CentOS 8",
+          "cpu_cores": 8,
+          "ram_gb": 16,
+          "storage_gb": 500,
+          "original_row": 6
+        }
+      },
+      {
+        "name": "cache-01",
+        "flavor": "redis.medium.2",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Cache Tier",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 50,
+          "original_row": 7
+        }
+      },
+      {
+        "name": "cache-02",
+        "flavor": "redis.medium.2",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Cache Tier",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 50,
+          "original_row": 8
+        }
+      },
+      {
+        "name": "monitoring-01",
+        "flavor": "s6.small.1",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Monitoring",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 1,
+          "ram_gb": 2,
+          "storage_gb": 100,
+          "original_row": 9
+        }
+      },
+      {
+        "name": "backup-01",
+        "flavor": "s6.large.2",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Backup",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 1000,
+          "original_row": 10
+        }
+      },
+      {
+        "name": "bastion-01",
+        "flavor": "s6.small.1",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Bastion Host",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 1,
+          "ram_gb": 2,
+          "storage_gb": 50,
+          "original_row": 11
+        }
+      },
+      {
+        "name": "nfs-server-01",
+        "flavor": "s6.large.2",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Storage",
+          "os_type": "Ubuntu 20.04",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 2000,
+          "original_row": 12
         }
       },
       {
@@ -56,30 +182,16 @@
         "is_public": true,
         "status": "WARNING",
         "metadata": {
-          "tier": "App Tier",
-          "os_type": "Linux",
+          "tier": "Application Tier",
+          "os_type": "Ubuntu 20.04",
           "cpu_cores": 4,
           "ram_gb": 8,
-          "storage_gb": 80,
-          "original_row": 4
+          "storage_gb": 200,
+          "original_row": 13
         }
       },
       {
-        "name": "analytics-server",
-        "flavor": "c6.4xlarge.8",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Analytics",
-          "os_type": "Linux",
-          "cpu_cores": 16,
-          "ram_gb": 32,
-          "storage_gb": 500,
-          "original_row": 5
-        }
-      },
-      {
-        "name": "legacy-server",
+        "name": "legacy-app-01",
         "flavor": "old.flavor.type",
         "is_public": false,
         "status": "OK",
@@ -89,7 +201,21 @@
           "cpu_cores": 2,
           "ram_gb": 4,
           "storage_gb": 100,
-          "original_row": 6
+          "original_row": 14
+        }
+      },
+      {
+        "name": "analytics-01",
+        "flavor": "c6.4xlarge.8",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Analytics",
+          "os_type": "Ubuntu 22.04",
+          "cpu_cores": 16,
+          "ram_gb": 32,
+          "storage_gb": 500,
+          "original_row": 15
         }
       }
     ],
