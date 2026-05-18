@@ -398,6 +398,37 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
         onUpdateProject(project.id, 'mapperCsv', s);
     };
 
+    const generateFromBlueprint = () => {
+        if (!project?.blueprintData?.topology?.compute || project.blueprintData.topology.compute.length === 0) {
+            alert('No blueprint data found. Please upload a quotation first.');
+            return;
+        }
+
+        const servers = project.blueprintData.topology.compute;
+        let csvLines = ['Name,Type,IP_CIDR,Location,Notes'];
+        
+        servers.forEach((server, index) => {
+            const name = server.name || `server-${index + 1}`;
+            const type = 'ECS'; // Default to ECS for compute
+            const ipCidr = `10.0.${Math.floor(index/256) + 1}.${(index % 256) + 10}/24`;
+            const location = server.metadata?.tier === 'Web Tier' ? 'Web-Subnet' : 
+                           server.metadata?.tier === 'Application Tier' ? 'App-Subnet' :
+                           server.metadata?.tier === 'Database' ? 'Data-Subnet' : 'Compute-Subnet';
+            const notes = `${server.flavor || 'Unknown'} - ${server.metadata?.os_type || 'Linux'}`;
+            
+            csvLines.push(`${name},${type},${ipCidr},${location},${notes}`);
+        });
+
+        // Add network components
+        csvLines.push('VPC-Main,VPC,10.0.0.0/16,Cloud-Network,Primary VPC');
+        csvLines.push('Internet-GW,Internet,0.0.0.0/0,Edge,Internet Gateway');
+        csvLines.push('NAT-Gateway,NAT,10.0.0.254/32,Edge,Outbound NAT');
+        
+        const csv = csvLines.join('\n');
+        onUpdateProject(project.id, 'mapperCsv', csv);
+        alert(`Generated topology from blueprint: ${servers.length} servers mapped`);
+    };
+
     return (
         <div>
             <div className="px-8 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -418,6 +449,11 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                             <div className="flex gap-4">
                                 <button onClick={loadSampleEnterprise} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md transition-all hover:scale-105"><i className="fas fa-lightbulb mr-2"></i> Load Sample PaaS Template</button>
                                 <button onClick={()=>{const d = prompt("Paste CSV data here:"); if(d) onUpdateProject(project.id, 'mapperCsv', d);}} className="px-6 py-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 rounded-xl font-black uppercase tracking-widest shadow-sm transition-all"><i className="fas fa-paste mr-2"></i> Paste CSV Data</button>
+                                {project?.blueprintData?.topology?.compute && project.blueprintData.topology.compute.length > 0 && (
+                                    <button onClick={generateFromBlueprint} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md transition-all hover:scale-105">
+                                        <i className="fas fa-magic mr-2"></i> Auto-Generate from Blueprint
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ) : (
