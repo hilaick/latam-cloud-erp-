@@ -59,16 +59,30 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
 function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
     const [showUploader, setShowUploader] = useState(false);
     const [hasBlueprint, setHasBlueprint] = useState(false);
+    const [artefactsComplete, setArtefactsComplete] = useState(false);
 
-    // Check if project has blueprint data
+    // Check if project has blueprint data and artefacts are complete
     useEffect(() => {
         // Check if blueprint exists in project data
-        if (project.blueprintData) {
-            setHasBlueprint(true);
-        }
-    }, [project]);
+        const hasBP = !!project.blueprintData;
+        setHasBlueprint(hasBP);
+        
+        // Check if all artefacts are complete
+        const artefacts = project.arbArtefacts || {};
+        const allComplete = artefacts.presentStateHLD && artefacts.targetArchitecture && artefacts.sowSigned;
+        setArtefactsComplete(allComplete);
+        
+        console.log('WizardStepARB useEffect:', { 
+            hasBlueprint: hasBP, 
+            artefacts, 
+            allComplete,
+            projectId: project.id 
+        });
+    }, [project, project.blueprintData, project.arbArtefacts]);
 
     const handleBlueprintGenerated = (blueprintData) => {
+        console.log('handleBlueprintGenerated called for project:', project.id);
+        
         // Update project with blueprint data
         onUpdateProject(project.id, 'blueprintData', blueprintData);
         
@@ -80,13 +94,15 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
             sowSigned: true
         });
         
+        // Force immediate state update for better UX
         setHasBlueprint(true);
+        setArtefactsComplete(true);
+        
         alert(`✅ Blueprint generated successfully!\n\nCustomer: ${blueprintData.customer}\nServers: ${blueprintData.topology?.compute?.length || 0}\n\n✅ All mandatory artefacts auto-approved\n\nYou can now proceed to Architecture phase.`);
     };
 
     const areAllArtefactsComplete = () => {
-        const artefacts = project.arbArtefacts || {};
-        return artefacts.presentStateHLD && artefacts.targetArchitecture && artefacts.sowSigned;
+        return artefactsComplete;
     };
 
     return (
@@ -106,7 +122,7 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
                         onClick={onPromote} 
                         className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={!hasBlueprint || !areAllArtefactsComplete()}
-                        title={!hasBlueprint ? "Upload quotation first" : !areAllArtefactsComplete() ? "Complete all mandatory artefacts" : "Approve ARB and advance to Architecture"}
+                        title={!hasBlueprint ? "Upload quotation first" : !artefactsComplete ? "Complete all mandatory artefacts" : "Approve ARB and advance to Architecture"}
                     >
                         {hasBlueprint && areAllArtefactsComplete() ? (
                             <>
@@ -256,9 +272,7 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
                             </div>
                             <div className="flex items-center justify-between">
                                 <div className="text-sm">
-                                    {project.arbArtefacts?.presentStateHLD && 
-                                     project.arbArtefacts?.targetArchitecture && 
-                                     project.arbArtefacts?.sowSigned ? (
+                                    {artefactsComplete ? (
                                         <span className="text-emerald-700 font-bold flex items-center gap-2">
                                             <i className="fas fa-check-circle"></i>
                                             All artefacts complete
@@ -347,12 +361,12 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
                         <div className="flex items-center justify-between">
                             <div>
                                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">ARB Status</div>
-                                <div className={`text-lg font-black ${hasBlueprint ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                    {hasBlueprint ? 'Ready for Approval' : 'Awaiting Quotation'}
+                                <div className={`text-lg font-black ${hasBlueprint && artefactsComplete ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                    {hasBlueprint && artefactsComplete ? 'Ready for Approval' : hasBlueprint ? 'Artefacts Pending' : 'Awaiting Quotation'}
                                 </div>
                             </div>
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold ${hasBlueprint ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
-                                {hasBlueprint ? 'Complete' : 'Pending'}
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold ${hasBlueprint && artefactsComplete ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+                                {hasBlueprint && artefactsComplete ? 'Complete' : 'Pending'}
                             </div>
                         </div>
                     </div>
