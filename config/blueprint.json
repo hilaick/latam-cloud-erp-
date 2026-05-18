@@ -1,58 +1,98 @@
 {
-  "servers": [
-    {
-      "server_name": "web-server-01",
-      "flavor": "c6.large.2",
-      "is_public": true,
-      "image_name": "Ubuntu 22.04 server 64bit",
-      "admin_pass": "Huawei@123",
-      "vpc_name": "CAC-Prod-VPC",
-      "subnet_name": "CAC-Prod-Subnet",
-      "security_group_name": "CAC-Prod-SG"
-    },
-    {
-      "server_name": "db-server-01",
-      "flavor": "c6.xlarge.2",
-      "is_public": false,
-      "image_name": "Ubuntu 22.04 server 64bit",
-      "admin_pass": "Huawei@123",
-      "vpc_name": "CAC-Prod-VPC",
-      "subnet_name": "CAC-Prod-Subnet",
-      "security_group_name": "CAC-Prod-SG"
-    }
-  ],
-  "vpc": {
-    "name": "CAC-Prod-VPC",
-    "cidr": "10.0.0.0/16"
+  "customer": "Test Customer Corp",
+  "delivery_scope": "landing_zone_only",
+  "governance": {
+    "requires_hypercare": false,
+    "maintenance_windows": []
   },
-  "subnet": {
-    "name": "CAC-Prod-Subnet",
-    "cidr": "10.0.1.0/24"
-  },
-  "security_group": {
-    "name": "CAC-Prod-SG",
-    "rules": [
+  "topology": {
+    "network": [],
+    "compute": [
       {
-        "direction": "ingress",
-        "protocol": "tcp",
-        "port_range_min": 22,
-        "port_range_max": 22,
-        "remote_ip_prefix": "0.0.0.0/0"
+        "name": "web-server-1",
+        "flavor": "s6.large.2",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Web Tier",
+          "os_type": "Linux",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 50,
+          "original_row": 1
+        }
       },
       {
-        "direction": "ingress",
-        "protocol": "tcp",
-        "port_range_min": 80,
-        "port_range_max": 80,
-        "remote_ip_prefix": "0.0.0.0/0"
+        "name": "db-server-1",
+        "flavor": "c6.2xlarge.4",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Database",
+          "os_type": "Linux",
+          "cpu_cores": 8,
+          "ram_gb": 16,
+          "storage_gb": 200,
+          "original_row": 2
+        }
       },
       {
-        "direction": "ingress",
-        "protocol": "tcp",
-        "port_range_min": 443,
-        "port_range_max": 443,
-        "remote_ip_prefix": "0.0.0.0/0"
+        "name": "app-server-1",
+        "flavor": "s6.xlarge.2",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Application",
+          "os_type": "Linux",
+          "cpu_cores": 4,
+          "ram_gb": 8,
+          "storage_gb": 100,
+          "original_row": 3
+        }
+      },
+      {
+        "name": "missing-flavor-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": true,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "App Tier",
+          "os_type": "Linux",
+          "cpu_cores": 4,
+          "ram_gb": 8,
+          "storage_gb": 80,
+          "original_row": 4
+        }
+      },
+      {
+        "name": "analytics-server",
+        "flavor": "c6.4xlarge.8",
+        "is_public": true,
+        "status": "OK",
+        "metadata": {
+          "tier": "Analytics",
+          "os_type": "Linux",
+          "cpu_cores": 16,
+          "ram_gb": 32,
+          "storage_gb": 500,
+          "original_row": 5
+        }
+      },
+      {
+        "name": "legacy-server",
+        "flavor": "old.flavor.type",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Legacy",
+          "os_type": "Windows",
+          "cpu_cores": 2,
+          "ram_gb": 4,
+          "storage_gb": 100,
+          "original_row": 6
+        }
       }
-    ]
+    ],
+    "databases": []
   }
 }

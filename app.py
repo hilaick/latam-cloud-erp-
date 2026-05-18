@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
+from services.excel_ingestor import process_quotation
 from functools import wraps
 
 app = Flask(__name__)
@@ -206,12 +207,73 @@ def huawei_keys_status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# 10. Upload and process quotation files
+@app.route('/api/upload_quotation', methods=['POST'])
+@requires_auth
+def upload_quotation():
+    """Upload Excel/CSV quotation and normalize to blueprint.json"""
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'})
+        
+        file = request.files['file']
+        
+        # Check if file has a name
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'})
+        
+        # Check file extension
+        allowed_extensions = {'csv', 'xlsx', 'xls'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'success': False, 
+                'error': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
+            })
+        
+        # Get customer name from form data
+        customer_name = request.form.get('customer_name', 'Unknown Customer')
+        
+        # Save file temporarily
+        upload_dir = PROJECT_ROOT / 'uploads'
+        upload_dir.mkdir(exist_ok=True)
+        
+        temp_path = upload_dir / f'temp_quotation.{file_ext}'
+        file.save(str(temp_path))
+        
+        # Process the quotation
+        blueprint = process_quotation(str(temp_path), customer_name)
+        
+        # Save to blueprint.json
+        blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
+        with open(blueprint_path, 'w') as f:
+            json.dump(blueprint, f, indent=2)
+        
+        # Clean up temp file
+        temp_path.unlink(missing_ok=True)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Quotation processed successfully. Generated blueprint for {customer_name}',
+            'blueprint': blueprint,
+            'stats': {
+                'total_servers': len(blueprint['topology']['compute']),
+                'warnings': len([s for s in blueprint['topology']['compute'] if s['status'] == 'WARNING'])
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
     print(f"📁 Project root: {PROJECT_ROOT}")
     print(f"📊 Dashboard: http://localhost:9119")
     print(f"🔍 Environment Audit: http://localhost:9119/api/audit")
     print(f"📈 API Status: http://localhost:9119/api/status")
+    print(f"📤 Upload Quotation: http://localhost:9119/api/upload_quotation")
     print(f"🤖 Huawei Chat API: http://localhost:9119/api/huawei/chat")
     print(f"🔑 Huawei Keys Status: http://localhost:9119/api/huawei/keys/status")
     app.run(host='0.0.0.0', port=9119, debug=True)

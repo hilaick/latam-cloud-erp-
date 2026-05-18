@@ -1,0 +1,7 @@
+server_name,flavor,cpu,ram,is_public,tier,os_type,storage_gb
+web-server-1,s6.large.2,2,4,Yes,Web Tier,Linux,50
+db-server-1,c6.2xlarge.4,8,16,No,Database,Linux,200
+app-server-1,s6.xlarge.2,4,8,Yes,Application,Linux,100
+missing-flavor-server,,4,8,Yes,App Tier,Linux,80
+analytics-server,c6.4xlarge.8,16,32,Yes,Analytics,Linux,500
+legacy-server,old.flavor.type,2,4,No,Legacy,Windows,100
