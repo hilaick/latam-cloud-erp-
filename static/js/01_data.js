@@ -39,7 +39,9 @@ const generateDefaultProject = (id, name, isWaiting, lifecycleState, health, mrr
     migrationPlan: JSON.parse(JSON.stringify(defaultPlaybooks["default_vm"].tasks)),
     apiConfig: { accessKey: "", secretKey: "", region: "la-south-2", automationEnabled: false },
     comms: { bridge: "https://teams.microsoft.com/l/meetup-join/...", chat: "", notes: "" },
-    tamData: { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] }
+    tamData: { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] },
+    blueprintData: null,
+    arbArtefacts: { presentStateHLD: false, targetArchitecture: false, sowSigned: false }
 });
 
 const defaultProjects = [

@@ -270,10 +270,12 @@ def upload_quotation():
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
     print(f"📁 Project root: {PROJECT_ROOT}")
-    print(f"📊 Dashboard: http://localhost:9119")
-    print(f"🔍 Environment Audit: http://localhost:9119/api/audit")
-    print(f"📈 API Status: http://localhost:9119/api/status")
-    print(f"📤 Upload Quotation: http://localhost:9119/api/upload_quotation")
-    print(f"🤖 Huawei Chat API: http://localhost:9119/api/huawei/chat")
-    print(f"🔑 Huawei Keys Status: http://localhost:9119/api/huawei/keys/status")
-    app.run(host='0.0.0.0', port=9119, debug=True)
+    print(f"📊 Dashboard: http://0.0.0.0:9119")
+    print(f"🔍 Environment Audit: http://0.0.0.0:9119/api/audit")
+    print(f"📈 API Status: http://0.0.0.0:9119/api/status")
+    print(f"📤 Upload Quotation: http://0.0.0.0:9119/api/upload_quotation")
+    print(f"🤖 Huawei Chat API: http://0.0.0.0:9119/api/huawei/chat")
+    print(f"🔑 Huawei Keys Status: http://0.0.0.0:9119/api/huawei/keys/status")
+    
+    # Run without debug mode to prevent redirect issues
+    app.run(host='0.0.0.0', port=9119, debug=False)
