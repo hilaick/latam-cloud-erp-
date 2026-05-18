@@ -71,8 +71,22 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
     const handleBlueprintGenerated = (blueprintData) => {
         // Update project with blueprint data
         onUpdateProject(project.id, 'blueprintData', blueprintData);
+        
+        // Auto-check all mandatory artefacts when blueprint is generated
+        // This simulates that the Sales Architect has provided all required documents
+        onUpdateProject(project.id, 'arbArtefacts', {
+            presentStateHLD: true,
+            targetArchitecture: true,
+            sowSigned: true
+        });
+        
         setHasBlueprint(true);
-        alert(`✅ Blueprint generated successfully!\n\nCustomer: ${blueprintData.customer}\nServers: ${blueprintData.topology?.compute?.length || 0}\n\nYou can now proceed to Architecture phase.`);
+        alert(`✅ Blueprint generated successfully!\n\nCustomer: ${blueprintData.customer}\nServers: ${blueprintData.topology?.compute?.length || 0}\n\n✅ All mandatory artefacts auto-approved\n\nYou can now proceed to Architecture phase.`);
+    };
+
+    const areAllArtefactsComplete = () => {
+        const artefacts = project.arbArtefacts || {};
+        return artefacts.presentStateHLD && artefacts.targetArchitecture && artefacts.sowSigned;
     };
 
     return (
@@ -90,16 +104,17 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
                 {isCurrent && (
                     <button 
                         onClick={onPromote} 
-                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95"
-                        disabled={!hasBlueprint}
+                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!hasBlueprint || !areAllArtefactsComplete()}
+                        title={!hasBlueprint ? "Upload quotation first" : !areAllArtefactsComplete() ? "Complete all mandatory artefacts" : "Approve ARB and advance to Architecture"}
                     >
-                        {hasBlueprint ? (
+                        {hasBlueprint && areAllArtefactsComplete() ? (
                             <>
                                 Approve ARB & Advance <i className="fas fa-arrow-right ml-2"></i>
                             </>
                         ) : (
                             <>
-                                Upload Quotation First <i className="fas fa-upload ml-2"></i>
+                                {!hasBlueprint ? "Upload Quotation to Begin" : "Complete Artefacts First"} <i className="fas fa-exclamation-circle ml-2"></i>
                             </>
                         )}
                     </button>
@@ -198,17 +213,68 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
                             Mandatory Architectural Artefacts
                         </h4>
                         <label className="flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl cursor-pointer bg-white hover:bg-slate-50 transition-colors">
-                            <input type="checkbox" className="w-5 h-5 accent-blue-600" />
+                            <input 
+                                type="checkbox" 
+                                className="w-5 h-5 accent-blue-600"
+                                checked={project.arbArtefacts?.presentStateHLD || false}
+                                onChange={e => onUpdateProject(project.id, 'arbArtefacts', {
+                                    ...project.arbArtefacts,
+                                    presentStateHLD: e.target.checked
+                                })}
+                            />
                             <span className="font-bold text-sm text-slate-700">Present State HLD (As-Is)</span>
                         </label>
                         <label className="flex items-center gap-4 p-4 border-2 border-rose-200 rounded-xl cursor-pointer bg-rose-50/50 hover:bg-rose-50 transition-colors">
-                            <input type="checkbox" className="w-5 h-5 accent-rose-600" />
+                            <input 
+                                type="checkbox" 
+                                className="w-5 h-5 accent-rose-600"
+                                checked={project.arbArtefacts?.targetArchitecture || false}
+                                onChange={e => onUpdateProject(project.id, 'arbArtefacts', {
+                                    ...project.arbArtefacts,
+                                    targetArchitecture: e.target.checked
+                                })}
+                            />
                             <span className="font-bold text-sm text-rose-900">Target Architecture (To-Be)</span>
                         </label>
                         <label className="flex items-center gap-4 p-4 border-2 border-purple-200 rounded-xl cursor-pointer bg-purple-50/50 hover:bg-purple-50 transition-colors">
-                            <input type="checkbox" className="w-5 h-5 accent-purple-600" />
+                            <input 
+                                type="checkbox" 
+                                className="w-5 h-5 accent-purple-600"
+                                checked={project.arbArtefacts?.sowSigned || false}
+                                onChange={e => onUpdateProject(project.id, 'arbArtefacts', {
+                                    ...project.arbArtefacts,
+                                    sowSigned: e.target.checked
+                                })}
+                            />
                             <span className="font-bold text-sm text-purple-900">SOW (Scope of Work) Signed</span>
                         </label>
+                        
+                        {/* Artefacts Status */}
+                        <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">
+                                Artefacts Status
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm">
+                                    {project.arbArtefacts?.presentStateHLD && 
+                                     project.arbArtefacts?.targetArchitecture && 
+                                     project.arbArtefacts?.sowSigned ? (
+                                        <span className="text-emerald-700 font-bold flex items-center gap-2">
+                                            <i className="fas fa-check-circle"></i>
+                                            All artefacts complete
+                                        </span>
+                                    ) : (
+                                        <span className="text-amber-700 font-bold flex items-center gap-2">
+                                            <i className="fas fa-exclamation-circle"></i>
+                                            {3 - (Object.values(project.arbArtefacts || {}).filter(Boolean).length)} remaining
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="text-xs font-bold text-slate-500">
+                                    {Object.values(project.arbArtefacts || {}).filter(Boolean).length}/3
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

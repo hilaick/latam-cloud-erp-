@@ -1,5 +1,5 @@
 {
-  "customer": "Acme Corporation",
+  "customer": "Sample Sales Quotation",
   "delivery_scope": "landing_zone_only",
   "governance": {
     "requires_hypercare": false,
