@@ -1,6 +1,15 @@
 function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
-    const states = ['1_arb', '2_architecture', '3_planning', '4_execution', '5_postlive'];
-    const stepLabels = ['ARB Intake', 'Architecture', 'Delivery Planning', 'Active Execution', 'Post-Live WAR'];
+    const isPoC = project?.project_type === "poc";
+    
+    // Dynamic Phase Arrays: Remove Post-Live if PoC
+    const states = isPoC 
+        ? ['1_arb', '2_architecture', '3_planning', '4_execution']
+        : ['1_arb', '2_architecture', '3_planning', '4_execution', '5_postlive'];
+        
+    const stepLabels = isPoC
+        ? ['ARB Intake', 'Architecture', 'PoC Budgeting', 'Active Execution']
+        : ['ARB Intake', 'Architecture', 'Delivery Planning', 'Active Execution', 'Post-Live WAR'];
+
     const currentIndex = Math.max(0, states.indexOf(project?.lifecycleState || '1_arb'));
     const [viewIndex, setViewIndex] = useState(currentIndex);
     useEffect(() => { setViewIndex(currentIndex); }, [currentIndex]);
@@ -10,6 +19,10 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
             const nextState = states[currentIndex + 1];
             onUpdateProject(project.id, 'lifecycleState', nextState);
             alert(`Project Promoted to: ${stepLabels[currentIndex + 1]}`);
+        } else if (isPoC && currentIndex === states.length - 1) {
+            // PoC finishes at Execution
+            onUpdateProject(project.id, 'lifecycleState', '6_completed');
+            alert("PoC Execution Complete. Project Archived.");
         }
     };
 
@@ -17,6 +30,16 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto flex flex-col">
+            {isPoC && (
+                <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-800 p-4 mb-4 rounded shadow-sm flex items-center">
+                    <i className="fas fa-bolt text-2xl mr-4"></i>
+                    <div>
+                        <p className="font-black">Fast-Track PoC Lifecycle Active</p>
+                        <p className="text-xs">Post-Live WAR phase disabled. Strict budget cap and Expiration TTL required.</p>
+                    </div>
+                </div>
+            )}
+            
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-5 flex-1">
                     <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center border-2 border-blue-200 shrink-0"><i className="fas fa-building text-blue-600 text-2xl"></i></div>
@@ -48,9 +71,9 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 pb-12">
                 {viewIndex === 0 && <WizardStepARB project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===0} />}
                 {viewIndex === 1 && <WizardStepArchitecture project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===1} />}
-                {viewIndex === 2 && <WizardStepPlanning project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===2} customPlaybooks={customPlaybooks} />}
+                {viewIndex === 2 && <WizardStepPlanning project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===2} customPlaybooks={customPlaybooks} isPoC={isPoC} />}
                 {viewIndex === 3 && <WizardStepExecution project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===3} />}
-                {viewIndex === 4 && <WizardStepPostLive project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===4} />}
+                {viewIndex === 4 && !isPoC && <WizardStepPostLive project={project} onUpdateProject={onUpdateProject} onPromote={promoteState} isCurrent={currentIndex===4} />}
             </div>
         </div>
     );
@@ -460,235 +483,11 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                         <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} />
                     )
                 )}
-                {subTab === 'physics' && <DeliveryPhysicsView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'physics' && <PhysicsEngineView activeProject={project} onUpdateProject={onUpdateProject} />}
                 {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     )
-}
-
-function DeliveryPhysicsView({ activeProject, onUpdateProject }) {
-    const [computeServers, setComputeServers] = useState([]);
-    const [databases, setDatabases] = useState([]);
-    const [networkComponents, setNetworkComponents] = useState([]);
-    const [totalDataGB, setTotalDataGB] = useState(0);
-    const [estimatedWeeks, setEstimatedWeeks] = useState(0);
-    
-    // Calculate physics from blueprint
-    useEffect(() => {
-        if (!activeProject?.blueprintData?.topology) return;
-        
-        const { compute = [], databases = [], network = [] } = activeProject.blueprintData.topology;
-        setComputeServers(compute);
-        setDatabases(databases);
-        setNetworkComponents(network);
-        
-        // Estimate data size based on compute servers
-        let totalGB = 0;
-        compute.forEach(server => {
-            // Rough estimate: 50GB per server (OS + apps + data)
-            // Could be improved with actual storage_gb field if available
-            totalGB += server.storage_gb || 50;
-        });
-        
-        // Add database storage
-        databases.forEach(db => {
-            totalGB += db.storage_gb || 100; // Default 100GB per DB
-        });
-        
-        setTotalDataGB(totalGB);
-        
-        // Calculate timeline: 1 week per 500GB + 1 week per 10 servers
-        const weeksFromData = Math.ceil(totalGB / 500);
-        const weeksFromServers = Math.ceil(compute.length / 10);
-        const networkComplexity = network.length > 5 ? 2 : 1;
-        
-        setEstimatedWeeks(Math.max(weeksFromData, weeksFromServers) * networkComplexity);
-        
-    }, [activeProject]);
-
-    const calculateBandwidthRequirements = () => {
-        // Mbps needed to transfer totalDataGB within estimatedWeeks
-        const weeks = Math.max(estimatedWeeks, 1);
-        const totalMB = totalDataGB * 1024;
-        const secondsPerWeek = 7 * 24 * 3600;
-        const totalSeconds = weeks * secondsPerWeek;
-        
-        // Mbps = (totalMB * 8) / totalSeconds
-        const mbps = totalMB > 0 ? (totalMB * 8) / totalSeconds : 0;
-        return Math.ceil(mbps);
-    };
-
-    const calculateParallelTasks = () => {
-        const tasks = [];
-        
-        // Network tasks
-        if (networkComponents.length > 0) {
-            tasks.push({ name: "VPC & Network Setup", duration: "1-2 weeks", parallel: true });
-        }
-        
-        // Compute tasks
-        if (computeServers.length > 0) {
-            const batches = Math.ceil(computeServers.length / 5);
-            tasks.push({ 
-                name: `Server Migration (${computeServers.length} servers in ${batches} batches)`, 
-                duration: `${Math.ceil(batches * 0.5)}-${batches} weeks`, 
-                parallel: true 
-            });
-        }
-        
-        // Database tasks  
-        if (databases.length > 0) {
-            tasks.push({ 
-                name: `Database Migration (${databases.length} DBs)`, 
-                duration: `${databases.length}-${databases.length * 2} weeks`, 
-                parallel: false // Usually sequential due to dependencies
-            });
-        }
-        
-        return tasks;
-    };
-
-    const bandwidthMbps = calculateBandwidthRequirements();
-    const parallelTasks = calculateParallelTasks();
-    const criticalPathWeeks = estimatedWeeks + (databases.length > 0 ? 1 : 0); // Add buffer for DBs
-
-    return (
-        <div className="max-w-5xl mx-auto pb-12 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-                <h3 className="font-black text-xl text-slate-800 mb-6 flex items-center">
-                    <i className="fas fa-rocket text-blue-500 mr-3"></i>
-                    Delivery Physics Calculator
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    <div className="space-y-6">
-                        <div className="p-5 bg-blue-50 rounded-xl border border-blue-200">
-                            <h4 className="font-black text-sm text-blue-800 mb-3 flex items-center">
-                                <i className="fas fa-server mr-2"></i> Infrastructure Summary
-                            </h4>
-                            <div className="space-y-3">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Compute Servers</span>
-                                    <span className="font-black">{computeServers.length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Databases</span>
-                                    <span className="font-black">{databases.length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Network Components</span>
-                                    <span className="font-black">{networkComponents.length}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-blue-200 pt-3 mt-3">
-                                    <span className="text-slate-600 font-bold">Estimated Data Volume</span>
-                                    <span className="font-black text-blue-700">{totalDataGB.toLocaleString()} GB</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-200">
-                            <h4 className="font-black text-sm text-emerald-800 mb-3 flex items-center">
-                                <i className="fas fa-bolt mr-2"></i> Bandwidth Requirements
-                            </h4>
-                            <div className="space-y-3">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Minimum Bandwidth</span>
-                                    <span className="font-black text-emerald-700">{bandwidthMbps} Mbps</span>
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                    Required to transfer {totalDataGB.toLocaleString()} GB within {estimatedWeeks} week{estimatedWeeks !== 1 ? 's' : ''}
-                                </div>
-                                <div className="mt-4">
-                                    <div className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Recommended Connection</div>
-                                    <div className={`px-4 py-2 rounded-lg font-bold text-sm ${bandwidthMbps < 50 ? 'bg-blue-100 text-blue-800 border border-blue-300' : bandwidthMbps < 200 ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
-                                        {bandwidthMbps < 50 ? 'Internet VPN (≤ 50 Mbps)' : 
-                                         bandwidthMbps < 200 ? 'Direct Connect Lite (50-200 Mbps)' : 
-                                         'Direct Connect Premium (200+ Mbps)'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="space-y-6">
-                        <div className="p-5 bg-purple-50 rounded-xl border border-purple-200">
-                            <h4 className="font-black text-sm text-purple-800 mb-3 flex items-center">
-                                <i className="fas fa-calendar-alt mr-2"></i> Timeline Estimates
-                            </h4>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-slate-600">Optimistic Timeline</span>
-                                    <span className="font-black text-purple-700">{estimatedWeeks} week{estimatedWeeks !== 1 ? 's' : ''}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-slate-600">Risk-Adjusted Timeline</span>
-                                    <span className="font-black text-amber-700">{criticalPathWeeks} week{criticalPathWeeks !== 1 ? 's' : ''}</span>
-                                </div>
-                                <div className="mt-4">
-                                    <div className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Critical Path Factors</div>
-                                    <ul className="space-y-2 text-sm">
-                                        {databases.length > 0 && <li className="flex items-center"><i className="fas fa-database text-rose-500 mr-2"></i> Database dependencies add 1-2 weeks</li>}
-                                        {computeServers.length > 20 && <li className="flex items-center"><i className="fas fa-server text-amber-500 mr-2"></i> Large server count requires batch processing</li>}
-                                        {bandwidthMbps >= 200 && <li className="flex items-center"><i className="fas fa-network-wired text-blue-500 mr-2"></i> Premium connectivity reduces timeline by 20%</li>}
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="p-5 bg-slate-50 rounded-xl border border-slate-200">
-                            <h4 className="font-black text-sm text-slate-800 mb-3 flex items-center">
-                                <i className="fas fa-tasks mr-2"></i> Parallel Task Analysis
-                            </h4>
-                            <div className="space-y-3">
-                                {parallelTasks.map((task, idx) => (
-                                    <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100">
-                                        <div>
-                                            <div className="font-bold text-sm">{task.name}</div>
-                                            <div className="text-xs text-slate-500">{task.duration}</div>
-                                        </div>
-                                        <div className={`px-3 py-1 rounded-full text-xs font-black ${task.parallel ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
-                                            {task.parallel ? 'Parallel' : 'Sequential'}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="p-5 bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl text-white">
-                    <h4 className="font-black text-sm uppercase tracking-wider text-slate-300 mb-4">Delivery Physics Recommendations</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <div className="text-xs font-black uppercase tracking-wider text-blue-400 mb-2">Migration Strategy</div>
-                            <div className="text-sm">
-                                {computeServers.length <= 10 ? 'Lift & Shift' : 
-                                 computeServers.length <= 30 ? 'Phased Migration' : 
-                                 'Wave Migration'}
-                            </div>
-                        </div>
-                        <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <div className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-2">Risk Level</div>
-                            <div className="text-sm">
-                                {criticalPathWeeks <= 4 ? 'Low' : 
-                                 criticalPathWeeks <= 8 ? 'Medium' : 
-                                 'High'}
-                            </div>
-                        </div>
-                        <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <div className="text-xs font-black uppercase tracking-wider text-amber-400 mb-2">Buffer Recommendation</div>
-                            <div className="text-sm">
-                                {criticalPathWeeks <= 4 ? '+20% timeline buffer' : 
-                                 criticalPathWeeks <= 8 ? '+35% timeline buffer' : 
-                                 '+50% timeline buffer'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
 }
 
 function TopologyMapperView({ activeProject, onUpdateProject }) {
@@ -932,7 +731,7 @@ function AssessmentView({ activeProject, onUpdateProject }) {
     )
 }
 
-function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks }) {
+function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks, isPoC }) {
     const [subTab, setSubTab] = useState('budget');
     return (
         <div>
@@ -944,7 +743,7 @@ function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, cu
                 {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Lock Plan & Start Delivery <i className="fas fa-arrow-right ml-2"></i></button>}
             </div>
             <div className="p-8 bg-slate-100/50">
-                {subTab === 'budget' && <BudgetEstimatorView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'budget' && (isPoC ? <PoCFinOpsView project={project} onUpdateProject={onUpdateProject} /> : <BudgetEstimatorView activeProject={project} onUpdateProject={onUpdateProject} />)}
                 {subTab === 'plan' && <DedicatedMigrationPlan project={project} onUpdateProject={onUpdateProject} customPlaybooks={customPlaybooks} />}
             </div>
         </div>
@@ -1042,6 +841,29 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             </div>
         </div>
     )
+}
+
+// New Lightweight Component for PoC Budget Governance
+function PoCFinOpsView({ project, onUpdateProject }) {
+    const [cap, setCap] = useState(project.pocCap || 500);
+    const [ttl, setTtl] = useState(project.pocTtl || '');
+    
+    return (
+        <div className="max-w-[800px] mx-auto bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="font-black text-xl text-slate-800 mb-6"><i className="fas fa-money-bill-wave text-emerald-500 mr-2"></i> PoC Budget Governance</h3>
+            <div className="space-y-6">
+                <div>
+                    <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Hard Budget Cap (USD)</label>
+                    <input type="number" value={cap} onChange={e=>setCap(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl font-black text-lg bg-slate-50" />
+                </div>
+                <div>
+                    <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Cloud Infrastructure TTL (Expiration Date)</label>
+                    <input type="date" value={ttl} onChange={e=>setTtl(e.target.value)} className="w-full p-4 border-2 border-rose-200 rounded-xl font-black text-lg bg-rose-50 text-rose-900" />
+                </div>
+                <button onClick={()=>onUpdateProject(project.id, 'pocCap', cap)} className="w-full py-4 bg-slate-800 text-white font-black rounded-xl uppercase tracking-widest">Authorize PoC Spend</button>
+            </div>
+        </div>
+    );
 }
 
 function DedicatedMigrationPlan({ project, onUpdateProject, customPlaybooks }) {
