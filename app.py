@@ -1,4 +1,5 @@
 from flask import Flask, send_file, jsonify, request, send_from_directory
+from flask_cors import CORS
 import subprocess
 import json
 import os
@@ -8,10 +9,16 @@ from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.excel_ingestor import process_quotation
-from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog
+from services.wbs_ingestor import parse_wbs_csv
+from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog, Customer, WBSTask
 from functools import wraps
 
 app = Flask(__name__)
+# Enable CORS for all routes with more permissive settings
+CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
+
+# Increase file upload size limit to 50MB
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 # Setup SQLite database
 setup_db(app)
@@ -84,6 +91,14 @@ PROJECT_ROOT = Path(__file__).parent
 
 # Initialize Huawei Load Balancer
 huawei_lb = HuaweiLoadBalancer()
+
+# 0. Test endpoint for CORS
+@app.route('/api/test-cors', methods=['GET', 'OPTIONS'])
+def test_cors():
+    """Test endpoint to verify CORS is working"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    return jsonify({'success': True, 'message': 'CORS test successful', 'timestamp': time.time()})
 
 # 1. Serve the Enterprise HTML Frontend
 @app.route('/')
@@ -214,10 +229,14 @@ def huawei_keys_status():
         return jsonify({'success': False, 'error': str(e)})
 
 # 10. Upload and process quotation files
-@app.route('/api/upload_quotation', methods=['POST'])
+@app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
 @requires_auth
 def upload_quotation():
     """Upload Excel/CSV quotation and normalize to blueprint.json"""
+    if request.method == 'OPTIONS':
+        # Handle preflight request
+        return '', 200
+    
     try:
         # Check if file is present
         if 'file' not in request.files:
@@ -271,7 +290,11 @@ def upload_quotation():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Error processing quotation: {str(e)}")
+        print(f"📋 Traceback: {error_trace}")
+        return jsonify({'success': False, 'error': str(e), 'trace': error_trace})
 
 # 11. Database-backed ERP state management
 @app.route('/api/erp/state', methods=['GET'])
@@ -338,6 +361,57 @@ def sms_sync():
 @requires_auth
 def sms_status():
     return jsonify({"success": True, "progress": random.randint(10, 100), "status_name": "Copying Disk Volumes..."})
+
+# 12. WBS and MgC Endpoints
+@app.route('/api/wbs/upload', methods=['POST'])
+@requires_auth
+def upload_wbs():
+    project_id = request.form.get('project_id')
+    file = request.files.get('file')
+    if not file or not project_id: 
+        return jsonify({"success": False, "error": "Missing file or project ID"})
+    
+    tasks = parse_wbs_csv(file.read())
+    # Delete old tasks for this project
+    WBSTask.query.filter_by(project_id=project_id).delete()
+    
+    for t in tasks:
+        db.session.add(WBSTask(
+            project_id=project_id, wbs_id=t['wbs_id'], name=t['name'],
+            progress=t['progress'], raci=t['raci'], start_date=t['start_date'], 
+            end_date=t['end_date'], is_parent=t['is_parent']
+        ))
+    db.session.commit()
+    return jsonify({"success": True, "tasks": tasks})
+
+@app.route('/api/wbs/global', methods=['GET'])
+@requires_auth
+def get_global_wbs():
+    tasks = WBSTask.query.all()
+    out = [{
+        "id": t.id, 
+        "project_id": t.project_id, 
+        "wbs_id": t.wbs_id, 
+        "name": t.name, 
+        "progress": t.progress, 
+        "raci": t.raci, 
+        "start_date": t.start_date, 
+        "end_date": t.end_date, 
+        "is_parent": t.is_parent
+    } for t in tasks]
+    return jsonify({"success": True, "tasks": out})
+
+@app.route('/api/mgc/discover', methods=['POST'])
+@requires_auth
+def mgc_discover():
+    # In a real environment, this polls Huawei MgC API. For MVP, we return a mock diff payload.
+    import time
+    time.sleep(2)
+    return jsonify({"success": True, "servers": [
+        {"hostname": "web-server-1", "cpu": 4, "ram": 8, "disk": 100},
+        {"hostname": "db-server-1", "cpu": 16, "ram": 64, "disk": 500}, # Intentional Sizing Creep
+        {"hostname": "legacy-ad-01", "cpu": 2, "ram": 4, "disk": 50}    # Intentional Unquoted Server
+    ]})
 
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")

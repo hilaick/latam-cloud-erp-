@@ -468,6 +468,7 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                     <button onClick={()=>setSubTab('mapper')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='mapper'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>1. Topology Auto-Mapper</button>
                     <button onClick={()=>setSubTab('physics')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='physics'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>2. Delivery Physics</button>
                     <button onClick={()=>setSubTab('ora')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='ora'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>3. ORA Friction</button>
+                    <button onClick={()=>setSubTab('mgc')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='mgc'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>4. MgC Reconciliation</button>
                 </div>
                 {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Complete Architecture <i className="fas fa-arrow-right ml-2"></i></button>}
             </div>
@@ -494,6 +495,7 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                 )}
                 {subTab === 'physics' && <PhysicsEngineView activeProject={project} onUpdateProject={onUpdateProject} />}
                 {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     )
@@ -1209,6 +1211,70 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
     )
 }
 
+function MgCReconciliationView({ activeProject, onUpdateProject }) {
+    const { useState } = React;
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [region, setRegion] = useState('la-south-2');
+    const [isPolling, setIsPolling] = useState(false); const [mgcData, setMgcData] = useState(activeProject?.mgcData || null);
+    const [acknowledged, setAcknowledged] = useState(activeProject?.scopeAcknowledged || false);
+
+    const blueprintCompute = activeProject?.blueprintData?.topology?.compute || [];
+
+    const handleLiveDiscovery = async () => {
+        setIsPolling(true);
+        try {
+            const res = await fetch('/api/mgc/discover', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ak, sk, region }) });
+            const data = await res.json();
+            if (data.success) { setMgcData(data.servers); onUpdateProject(activeProject.id, 'mgcData', data.servers); }
+        } catch (err) { alert("MgC API Error"); } finally { setIsPolling(false); }
+    };
+
+    const handleAcknowledge = () => {
+        onUpdateProject(activeProject.id, 'scopeAcknowledged', true);
+        setAcknowledged(true); alert("Scope Creep Acknowledged. FinOps parameters updated.");
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in max-w-[1400px] mx-auto pb-12">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+                <div><h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-id-card text-blue-500"></i> Customer Environment Profile</h3><p className="text-xs text-slate-500">Store AK/SK credentials to safely query MgC Agent.</p></div>
+                <div className="flex gap-4"><input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="p-2 border rounded text-xs font-mono w-32" /><input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="p-2 border rounded text-xs font-mono w-32" /><button className="px-4 py-2 bg-slate-800 text-white rounded text-xs font-bold">Save Context</button></div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex gap-4">
+                <button onClick={handleLiveDiscovery} disabled={isPolling} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-all">{isPolling ? <><i className="fas fa-spinner fa-spin mr-2"></i> Polling MgC...</> : <><i className="fas fa-satellite-dish mr-2"></i> Trigger Live MgC Discovery</>}</button>
+                <button className="px-6 py-3 bg-slate-100 text-slate-600 border border-slate-300 font-black uppercase tracking-widest text-xs rounded-xl shadow-sm"><i className="fas fa-file-csv mr-2"></i> Upload MgC Export (CSV)</button>
+            </div>
+
+            {mgcData && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-black tracking-widest uppercase text-sm"><i className="fas fa-balance-scale text-purple-400 mr-2"></i> Reality vs. Quote (Diff Engine)</h3>
+                        {acknowledged ? <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 px-3 py-1 rounded text-[10px] font-black uppercase">Scope Acknowledged</span> : <button onClick={handleAcknowledge} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase rounded shadow-sm">Acknowledge Scope Creep</button>}
+                    </div>
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-600"><tr><th className="p-3">Hostname</th><th className="p-3 border-l-2 border-blue-200 bg-blue-50/50">Quoted (Blueprint)</th><th className="p-3 border-l-2 border-purple-200 bg-purple-50/50">Discovered (MgC)</th><th className="p-3">Variance Status</th></tr></thead>
+                        <tbody className="text-xs divide-y divide-slate-100">
+                            {mgcData.map((server, i) => {
+                                const quote = blueprintCompute.find(s => s.name?.toLowerCase().includes(server.hostname.toLowerCase()) || server.hostname.toLowerCase().includes(s.name?.toLowerCase()));
+                                let status = "Match"; let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"; let isWarn = false;
+                                if (!quote) { status = "Unquoted (Creep)"; statusColor = "bg-rose-100 text-rose-800 border-rose-200"; isWarn = true; }
+                                else if (parseInt(quote.cpu || 0) < server.cpu || parseInt(quote.ram || 0) < server.ram) { status = "Undersized"; statusColor = "bg-rose-100 text-rose-800 border-rose-200"; isWarn = true; }
+                                return (
+                                    <tr key={i} className={isWarn ? "bg-rose-50/30" : ""}>
+                                        <td className="p-3 font-bold text-slate-800">{server.hostname}</td>
+                                        <td className="p-3 border-l-2 border-blue-100">{quote ? <span className="font-mono text-slate-600">{quote.cpu}vCPU / {quote.ram}GB</span> : <span className="text-slate-400 italic">Not in Quote</span>}</td>
+                                        <td className="p-3 border-l-2 border-purple-100"><span className="font-mono font-bold text-slate-800">{server.cpu}vCPU / {server.ram}GB / {server.disk}GB</span></td>
+                                        <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase border ${statusColor}`}>{status}</span></td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // Global window binding for Babel Standalone scoping
 window.ProjectCommandCenter = ProjectCommandCenter;
 window.PhysicsEngineView = PhysicsEngineView;
@@ -1220,3 +1286,4 @@ window.NetworkRouting = NetworkRouting;
 window.SLASection = SLASection;
 window.PhysicsResults = PhysicsResults;
 window.FAQSection = FAQSection;
+window.MgCReconciliationView = MgCReconciliationView;

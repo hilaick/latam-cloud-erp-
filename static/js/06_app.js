@@ -156,6 +156,7 @@ function App() {
             <button onClick={()=>navToPhase('home')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='home' && activeProjectId==='none' ?'bg-blue-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5 text-center"></i> Executive Dash</button>
             <button onClick={()=>navToPhase('map')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='map' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-globe-americas w-5 text-center"></i> Regional Map</button>
             <button onClick={()=>navToPhase('pipeline')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='pipeline' && activeProjectId==='none' ?'bg-emerald-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-list-alt w-5 text-center"></i> Master Pipeline</button>
+            <button onClick={()=>navToPhase('master_hub')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='master_hub' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-chess-board w-5 text-center"></i> Master Execution Hub</button>
             <button onClick={()=>navToPhase('schedule')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='schedule' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-calendar-alt w-5 text-center"></i> Regional Schedule</button>
             <button onClick={()=>navToPhase('radar')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='radar' && activeProjectId==='none' ?'bg-purple-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-satellite-dish w-5 text-center"></i> Pre-Sales Radar</button>
             
@@ -216,6 +217,7 @@ function App() {
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
                        {activePhase === 'adhoc_sms' && <GlobalAdHocWizard />}
+                       {activePhase === 'master_hub' && <MasterExecutionHub projects={projects} />}
                    </>
                ) : (
                    <ProjectCommandCenter project={activeProjectObj} onUpdateProject={handleUpdateProject} customPlaybooks={customPlaybooks} />

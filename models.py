@@ -32,3 +32,24 @@ class AdHocMigrationLog(db.Model):
     target_subnet = db.Column(db.String(255))
     status = db.Column(db.String(50), default="Initiated")
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id = db.Column(db.String(50), primary_key=True)
+    name = db.Column(db.String(100))
+    ak = db.Column(db.String(100))
+    sk = db.Column(db.String(100))
+    region = db.Column(db.String(50))
+    target_vpc = db.Column(db.String(100))
+
+class WBSTask(db.Model):
+    __tablename__ = 'wbs_tasks'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'))
+    wbs_id = db.Column(db.String(20))
+    name = db.Column(db.String(200))
+    progress = db.Column(db.String(20), default="0%")
+    raci = db.Column(db.String(100))
+    start_date = db.Column(db.String(50))
+    end_date = db.Column(db.String(50))
+    is_parent = db.Column(db.Boolean, default=False)

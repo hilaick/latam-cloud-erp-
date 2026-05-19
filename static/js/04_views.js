@@ -492,5 +492,46 @@ function GlobalAdHocWizard() {
     );
 }
 
+function MasterExecutionHub({ projects }) {
+    const { useState, useEffect } = React;
+    const [globalTasks, setGlobalTasks] = useState([]);
+
+    useEffect(() => {
+        fetch('/api/wbs/global').then(r=>r.json()).then(d=> { if(d.success) setGlobalTasks(d.tasks); });
+    }, []);
+
+    return (
+        <div className="max-w-[1800px] mx-auto space-y-6 pb-12 animate-fade-in">
+            <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center border border-slate-700">
+                <div><h2 className="text-3xl font-black mb-2"><i className="fas fa-chess-board text-blue-400 mr-3"></i> Master Execution Hub</h2><p className="text-sm text-slate-400">Aggregated view of all active WBS tasks across the regional portfolio.</p></div>
+                <div className="text-right"><div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Total Active Tasks</div><div className="text-3xl font-black text-emerald-400">{globalTasks.length}</div></div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-100 text-[10px] uppercase text-slate-600 border-b border-slate-200">
+                        <tr><th className="p-4">Project</th><th className="p-4">WBS ID</th><th className="p-4">Task Description</th><th className="p-4">RACI Owner</th><th className="p-4">Progress</th><th className="p-4">Dates</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                        {globalTasks.map(t => {
+                            const proj = projects.find(p => p.id === t.project_id);
+                            return (
+                                <tr key={t.id} className={t.is_parent ? "bg-slate-50 font-bold border-t-2 border-slate-200" : "hover:bg-blue-50"}>
+                                    <td className="p-4 font-black text-slate-800">{proj ? proj.name : t.project_id}</td>
+                                    <td className="p-4 font-mono text-slate-500">{t.wbs_id}</td>
+                                    <td className="p-4">{t.name}</td>
+                                    <td className="p-4"><span className="bg-slate-200 px-2 py-1 rounded text-[10px] font-black">{t.raci}</span></td>
+                                    <td className="p-4"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{width: t.progress}}></div></div></td>
+                                    <td className="p-4 font-mono text-[10px]">{t.start_date} - {t.end_date}</td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )
+}
+
 // Global window bindings for Babel Standalone scoping
-window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalAdHocWizard = GlobalAdHocWizard;
+window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalAdHocWizard = GlobalAdHocWizard; window.MasterExecutionHub = MasterExecutionHub;

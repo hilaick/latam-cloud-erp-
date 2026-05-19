@@ -450,7 +450,10 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
     # Read the file
     try:
         # Try with header=1 (second row) for Huawei format
-        df = pd.read_excel(file_path, header=1)
+        if file_path.lower().endswith('.csv'):
+            df = pd.read_csv(file_path, header=1)
+        else:
+            df = pd.read_excel(file_path, header=1)
     except Exception as e:
         raise ValueError(f"Failed to read Huawei quotation file {file_path}: {str(e)}")
     
@@ -542,50 +545,6 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         print(f"🔍 Some servers missing vCPU/RAM specs. Manual correction may be needed.")
     
     return blueprint
-
-# Update the main process_quotation function to detect Huawei format
-def process_quotation(file_path: str, customer_name: str = "TBD_Customer"):
-    """
-    Ingest messy Excel or CSV quotations and normalize into strict blueprint.json schema.
-    Auto-detects Huawei Cloud quotation format.
-    
-    Args:
-        file_path: Path to Excel or CSV file
-        customer_name: Customer name for the blueprint
-        
-    Returns:
-        Dictionary matching the blueprint.json schema
-    """
-    print(f"🔄 Ingesting Raw Data: {file_path}")
-    
-    # Try to detect Huawei format first
-    try:
-        # Read first few rows to check format
-        df_sample = pd.read_excel(file_path, nrows=5, header=None)
-        
-        # Check if this looks like Huawei quotation (has 'Service' in first row)
-        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
-        has_huawei_columns = any('service' in str(cell).lower() for cell in first_row)
-        
-        if has_huawei_columns:
-            print("🔍 Detected Huawei Cloud quotation format")
-            return process_huawei_quotation(file_path, customer_name)
-            
-    except Exception as e:
-        print(f"⚠️  Could not detect Huawei format: {str(e)}")
-        # Continue with original processing
-    
-    # 1. EXTRACT: Read the file (original logic)
-    try:
-        if file_path.lower().endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            # Handle both .xlsx and .xls
-            df = pd.read_excel(file_path)
-    except Exception as e:
-        raise ValueError(f"Failed to read file {file_path}: {str(e)}")
-    
-    # Rest of original function continues...
 # ============================================================================
 # COMMAND LINE INTERFACE
 # ============================================================================
