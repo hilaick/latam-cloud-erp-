@@ -1,4 +1,5 @@
 function GeospatialMap({ projects }) {
+  const { useState, useEffect, useMemo, useRef } = React;
     const mapRef = useRef(null);
     const mapInstance = useRef(null);
     const markersLayer = useRef(null);

@@ -1,5 +1,10 @@
 function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
+  const { useState, useEffect, useMemo, useRef } = React;
     const isPoC = project?.project_type === "poc";
+    
+    console.log("ProjectCommandCenter - Project:", project?.name);
+    console.log("ProjectCommandCenter - isPoC:", isPoC);
+    console.log("ProjectCommandCenter - project_type:", project?.project_type);
     
     // Dynamic Phase Arrays: Remove Post-Live if PoC
     const states = isPoC 
@@ -80,6 +85,8 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
 }
 
 function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
+    const { useState, useEffect } = React;
+    
     console.log('WizardStepARB rendering with project:', project?.id, 'blueprintData:', project?.blueprintData);
     const [showUploader, setShowUploader] = useState(false);
     const [hasBlueprint, setHasBlueprint] = useState(false);
@@ -412,7 +419,9 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
     );
 }
 
-function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
+function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     const [subTab, setSubTab] = useState('mapper');
     const hasData = typeof project?.mapperCsv === 'string' && project.mapperCsv.trim().length > 0;
 
@@ -731,7 +740,9 @@ function AssessmentView({ activeProject, onUpdateProject }) {
     )
 }
 
-function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks, isPoC }) {
+function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks, isPoC }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     const [subTab, setSubTab] = useState('budget');
     return (
         <div>
@@ -750,7 +761,9 @@ function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, cu
     )
 }
 
-function BudgetEstimatorView({ activeProject, onUpdateProject }) {
+function BudgetEstimatorView({ activeProject, onUpdateProject }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     const [mrr, setMrr] = useState(5000); 
     const [durationMonths, setDurationMonths] = useState(3); 
     const [infraComplexity, setInfraComplexity] = useState('Medium'); 
@@ -844,7 +857,9 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
 }
 
 // New Lightweight Component for PoC Budget Governance
-function PoCFinOpsView({ project, onUpdateProject }) {
+function PoCFinOpsView({ project, onUpdateProject }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     const [cap, setCap] = useState(project.pocCap || 500);
     const [ttl, setTtl] = useState(project.pocTtl || '');
     
@@ -939,7 +954,9 @@ function DedicatedMigrationPlan({ project, onUpdateProject, customPlaybooks }) {
     )
 }
 
-function WizardStepExecution({ project, onUpdateProject, onPromote, isCurrent }) {
+function WizardStepExecution({ project, onUpdateProject, onPromote, isCurrent }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     const [subTab, setSubTab] = useState('hub');
     return (
         <div>
@@ -1142,7 +1159,9 @@ function SingleProjectGantt({ project }) {
     )
 }
 
-function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
+function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {    const { useState, useEffect, useMemo, useRef } = React;
+    
+
     return (
         <div className="p-8">
             <div className="mb-8 border-b border-slate-200 pb-4 flex justify-between items-end">

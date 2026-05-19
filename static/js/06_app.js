@@ -1,4 +1,6 @@
 function App() {
+  const { useState, useEffect } = React;
+  
   const [activePhase, setActivePhase] = useState('home'); 
   const [projects, setProjects] = useState([]);
   const [customPlaybooks, setCustomPlaybooks] = useState(defaultPlaybooks);

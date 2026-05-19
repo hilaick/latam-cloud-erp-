@@ -173,6 +173,7 @@ def parse_integer(val: Any) -> int:
 def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
     """
     Ingest messy Excel or CSV quotations and normalize into strict blueprint.json schema.
+    Auto-detects Huawei Cloud quotation format.
     
     Args:
         file_path: Path to Excel or CSV file
@@ -183,7 +184,27 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
     """
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
-    # 1. EXTRACT: Read the file
+    # Try to detect Huawei format first
+    try:
+        # Read first few rows to check format
+        if file_path.lower().endswith('.csv'):
+            df_sample = pd.read_csv(file_path, nrows=5)
+        else:
+            df_sample = pd.read_excel(file_path, nrows=5, header=None)
+        
+        # Check if this looks like Huawei quotation (has 'Service' in first row)
+        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
+        has_huawei_columns = any('service' in str(cell).lower() for cell in first_row)
+        
+        if has_huawei_columns:
+            print("🔍 Detected Huawei Cloud quotation format")
+            return process_huawei_quotation(file_path, customer_name)
+            
+    except Exception as e:
+        print(f"⚠️  Could not detect Huawei format: {str(e)}")
+        # Continue with original processing
+    
+    # 1. EXTRACT: Read the file (original logic)
     try:
         if file_path.lower().endswith('.csv'):
             df = pd.read_csv(file_path)
@@ -333,6 +354,238 @@ def save_blueprint(blueprint: Dict[str, Any], output_path: str = "config/bluepri
     return output_path
 
 
+
+# ============================================================================
+# HUAWEI CLOUD QUOTATION PROCESSING
+# ============================================================================
+
+def parse_huawei_specifications(spec_string):
+    """
+    Parse Huawei Cloud specification strings like:
+    'x86 | General computing | x0.8u.16g | 8 vCPUs | 16GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; General Purpose SSD | 280GB;'
+    
+    Returns dict with: vcpus, ram_gb, os, storage_gb, instance_type
+    """
+    import pandas as pd
+    import re
+    
+    if pd.isna(spec_string):
+        return {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
+    
+    spec = str(spec_string)
+    result = {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
+    
+    # Parse vCPUs - look for patterns like '8 vCPUs' or 'x0.8u.16g'
+    vcpu_patterns = [
+        r'(\d+)\s*vCPU',  # 8 vCPUs
+        r'x(\d+)\.\d+u',  # x0.8u.16g -> 8
+        r'(\d+)\s*cores?',  # 8 cores
+    ]
+    
+    for pattern in vcpu_patterns:
+        match = re.search(pattern, spec, re.IGNORECASE)
+        if match:
+            result['vcpus'] = int(match.group(1))
+            break
+    
+    # Parse RAM - look for patterns like '16GiB' or '16GB' or 'x0.8u.16g'
+    ram_patterns = [
+        r'(\d+)\s*GiB',  # 16GiB
+        r'(\d+)\s*GB',    # 16GB
+        r'x\d+\.\d+u\.(\d+)g',  # x0.8u.16g -> 16
+    ]
+    
+    for pattern in ram_patterns:
+        match = re.search(pattern, spec, re.IGNORECASE)
+        if match:
+            result['ram_gb'] = int(match.group(1))
+            break
+    
+    # Parse OS
+    os_patterns = [
+        r'(Huawei Cloud EulerOS[^;]*)',
+        r'(CentOS[^;]*)',
+        r'(Windows[^;]*)',
+        r'(Ubuntu[^;]*)',
+        r'(Red Hat[^;]*)',
+        r'(Debian[^;]*)',
+    ]
+    
+    for pattern in os_patterns:
+        match = re.search(pattern, spec, re.IGNORECASE)
+        if match:
+            result['os'] = match.group(1).strip()
+            break
+    
+    # Parse storage - look for 'General Purpose SSD | 280GB'
+    storage_match = re.search(r'General Purpose SSD\s*\|\s*(\d+)GB', spec, re.IGNORECASE)
+    if storage_match:
+        result['storage_gb'] = int(storage_match.group(1))
+    
+    # Parse instance type - look for patterns like 'General computing', 'General computing-plus'
+    instance_patterns = [
+        r'General computing-plus',
+        r'General computing',
+        r'x86\s*\|\s*([^|]+)',  # First part after x86 |
+    ]
+    
+    for pattern in instance_patterns:
+        match = re.search(pattern, spec)
+        if match:
+            # Check if match has groups
+            if match.groups():
+                result['instance_type'] = match.group(1).strip()
+            else:
+                result['instance_type'] = match.group(0).strip()
+            break
+    
+    return result
+
+def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"):
+    """
+    Process Huawei Cloud quotation Excel files.
+    """
+    print(f"🔄 Processing Huawei Quotation: {file_path}")
+    
+    # Read the file
+    try:
+        # Try with header=1 (second row) for Huawei format
+        df = pd.read_excel(file_path, header=1)
+    except Exception as e:
+        raise ValueError(f"Failed to read Huawei quotation file {file_path}: {str(e)}")
+    
+    # Clean column names
+    df.columns = [str(col).strip() for col in df.columns]
+    
+    print(f"📊 Found {len(df)} rows, {len(df.columns)} columns")
+    print(f"📋 Columns: {list(df.columns)}")
+    
+    # Check for required Huawei columns
+    required_columns = ['Service', 'Description', 'Specifications']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        raise ValueError(f"Missing required Huawei columns: {missing_columns}. Found columns: {list(df.columns)}")
+    
+    # Build blueprint
+    blueprint = {
+        "customer": customer_name,
+        "delivery_scope": "landing_zone_only",
+        "governance": {
+            "requires_hypercare": False,
+            "maintenance_windows": []
+        },
+        "topology": {
+            "network": [],
+            "compute": [],
+            "databases": []
+        }
+    }
+    
+    warnings_count = 0
+    compute_resources = []
+    
+    # Process each row
+    for index, row in df.iterrows():
+        # Skip empty rows
+        if pd.isna(row.get('Description')):
+            continue
+        
+        service_type = str(row.get('Service', '')).strip()
+        description = str(row.get('Description', '')).strip()
+        region = str(row.get('Region', '')).strip()
+        az = str(row.get('AZ', '')).strip()
+        billing_mode = str(row.get('Billing Mode', '')).strip()
+        specs = str(row.get('Specifications', ''))
+        
+        # Only process Elastic Cloud Servers
+        if 'Elastic Cloud Server' not in service_type:
+            continue  # Skip non-ECS rows
+        
+        # Parse specifications
+        parsed_specs = parse_huawei_specifications(specs)
+        
+        # Create compute resource for ECS instances
+        compute_resource = {
+            "name": clean_server_name(description),
+            "flavor": parsed_specs['instance_type'] or service_type,
+            "is_public": False,  # Default, can be updated later
+            "status": "OK" if parsed_specs['vcpus'] > 0 else "WARNING",
+            "metadata": {
+                "tier": service_type,
+                "os_type": parsed_specs['os'],
+                "cpu_cores": parsed_specs['vcpus'],
+                "ram_gb": parsed_specs['ram_gb'],
+                "storage_gb": parsed_specs['storage_gb'],
+                "region": region,
+                "az": az,
+                "billing_mode": billing_mode.lower().replace('-', '_') if pd.notna(billing_mode) else "pay_per_use",
+                "original_row": index + 2,  # +2 because header is row 1
+                "service_type": service_type,
+                "description": description
+            }
+        }
+        
+        if parsed_specs['vcpus'] == 0:
+            warnings_count += 1
+        
+        compute_resources.append(compute_resource)
+    
+    blueprint["topology"]["compute"] = compute_resources
+    
+    print(f"✅ Huawei Quotation Processing Complete")
+    print(f"📊 Customer: {customer_name}")
+    print(f"📊 Total ECS Servers Processed: {len(compute_resources)}")
+    print(f"⚠️  Servers with Warnings: {warnings_count}")
+    
+    if warnings_count > 0:
+        print(f"🔍 Some servers missing vCPU/RAM specs. Manual correction may be needed.")
+    
+    return blueprint
+
+# Update the main process_quotation function to detect Huawei format
+def process_quotation(file_path: str, customer_name: str = "TBD_Customer"):
+    """
+    Ingest messy Excel or CSV quotations and normalize into strict blueprint.json schema.
+    Auto-detects Huawei Cloud quotation format.
+    
+    Args:
+        file_path: Path to Excel or CSV file
+        customer_name: Customer name for the blueprint
+        
+    Returns:
+        Dictionary matching the blueprint.json schema
+    """
+    print(f"🔄 Ingesting Raw Data: {file_path}")
+    
+    # Try to detect Huawei format first
+    try:
+        # Read first few rows to check format
+        df_sample = pd.read_excel(file_path, nrows=5, header=None)
+        
+        # Check if this looks like Huawei quotation (has 'Service' in first row)
+        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
+        has_huawei_columns = any('service' in str(cell).lower() for cell in first_row)
+        
+        if has_huawei_columns:
+            print("🔍 Detected Huawei Cloud quotation format")
+            return process_huawei_quotation(file_path, customer_name)
+            
+    except Exception as e:
+        print(f"⚠️  Could not detect Huawei format: {str(e)}")
+        # Continue with original processing
+    
+    # 1. EXTRACT: Read the file (original logic)
+    try:
+        if file_path.lower().endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            # Handle both .xlsx and .xls
+            df = pd.read_excel(file_path)
+    except Exception as e:
+        raise ValueError(f"Failed to read file {file_path}: {str(e)}")
+    
+    # Rest of original function continues...
 # ============================================================================
 # COMMAND LINE INTERFACE
 # ============================================================================

@@ -1,4 +1,5 @@
 function GlobalDashboard({ projects, onNavigateToProject }) {
+  const { useState, useEffect, useMemo, useRef } = React;
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     const totalMRR = activeProjects.reduce((s, p) => s + (Number(p.mrr) || 0), 0);
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);

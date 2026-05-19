@@ -4,6 +4,9 @@
 function PhysicsEngineView({ activeProject, onUpdateProject }) {
     const { useState, useEffect, useMemo } = React;
     
+    console.log("PhysicsEngineView RENDERED - activeProject:", activeProject?.name);
+    console.log("PhysicsEngineView - isPoC:", activeProject?.project_type === "poc");
+    
     // 1. Compute & Encryption
     const [computeCPU, setComputeCPU] = useState(60); 
     const [computeRAM, setComputeRAM] = useState(60);
