@@ -1,221 +1,633 @@
 {
-  "customer": "Sample Sales Quotation",
+  "customer": "Huawei Cloud Full Quotation",
   "delivery_scope": "landing_zone_only",
   "governance": {
     "requires_hypercare": false,
     "maintenance_windows": []
   },
   "topology": {
-    "network": [],
+    "network": [
+      {
+        "name": "virtual-private-network",
+        "type": "vpn",
+        "status": "OK",
+        "metadata": {
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "monthly",
+          "bandwidth": "1Mbit/s",
+          "service_type": "Virtual Private Network 1",
+          "description": "Virtual Private Network",
+          "original_row": 29
+        }
+      },
+      {
+        "name": "nat-gateway",
+        "type": "nat_gateway",
+        "status": "OK",
+        "metadata": {
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "monthly",
+          "size": "small",
+          "service_type": "NAT Gateway 1",
+          "description": "NAT Gateway",
+          "original_row": 30
+        }
+      },
+      {
+        "name": "elastic-ip",
+        "type": "eip",
+        "status": "OK",
+        "metadata": {
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "bandwidth": "1TB",
+          "service_type": "Elastic IP 1",
+          "description": "Elastic IP",
+          "original_row": 31
+        }
+      }
+    ],
     "compute": [
       {
-        "name": "app-web-01",
-        "flavor": "s6.large.2",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Web Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
-          "original_row": 1
-        }
-      },
-      {
-        "name": "app-web-02",
-        "flavor": "s6.large.2",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Web Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
-          "original_row": 2
-        }
-      },
-      {
-        "name": "app-api-01",
-        "flavor": "s6.xlarge.2",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 4,
-          "ram_gb": 8,
-          "storage_gb": 200,
-          "original_row": 3
-        }
-      },
-      {
-        "name": "app-api-02",
-        "flavor": "s6.xlarge.2",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 4,
-          "ram_gb": 8,
-          "storage_gb": 200,
-          "original_row": 4
-        }
-      },
-      {
-        "name": "db-primary-01",
-        "flavor": "c6.2xlarge.4",
+        "name": "cdp-ad365-01",
+        "flavor": "General computing",
         "is_public": false,
         "status": "OK",
         "metadata": {
-          "tier": "Database Tier",
-          "os_type": "CentOS 8",
+          "tier": "Elastic Cloud Server 1",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
           "cpu_cores": 8,
           "ram_gb": 16,
-          "storage_gb": 500,
-          "original_row": 5
+          "storage_gb": 280,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 2,
+          "service_type": "Elastic Cloud Server 1",
+          "description": "CDP-AD365-01"
         }
       },
       {
-        "name": "db-replica-01",
-        "flavor": "c6.2xlarge.4",
+        "name": "cdp-appsrv-01",
+        "flavor": "General computing",
         "is_public": false,
         "status": "OK",
         "metadata": {
-          "tier": "Database Tier",
-          "os_type": "CentOS 8",
-          "cpu_cores": 8,
-          "ram_gb": 16,
-          "storage_gb": 500,
-          "original_row": 6
+          "tier": "Elastic Cloud Server 2",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 6,
+          "storage_gb": 400,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 3,
+          "service_type": "Elastic Cloud Server 2",
+          "description": "CDP-APPSRV-01"
         }
       },
       {
-        "name": "cache-01",
-        "flavor": "redis.medium.2",
+        "name": "cdp-appsrv-03",
+        "flavor": "General computing",
         "is_public": false,
         "status": "OK",
         "metadata": {
-          "tier": "Cache Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 50,
-          "original_row": 7
-        }
-      },
-      {
-        "name": "cache-02",
-        "flavor": "redis.medium.2",
-        "is_public": false,
-        "status": "OK",
-        "metadata": {
-          "tier": "Cache Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 50,
-          "original_row": 8
-        }
-      },
-      {
-        "name": "monitoring-01",
-        "flavor": "s6.small.1",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Monitoring",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 1,
-          "ram_gb": 2,
-          "storage_gb": 100,
-          "original_row": 9
-        }
-      },
-      {
-        "name": "backup-01",
-        "flavor": "s6.large.2",
-        "is_public": false,
-        "status": "OK",
-        "metadata": {
-          "tier": "Backup",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 1000,
-          "original_row": 10
-        }
-      },
-      {
-        "name": "bastion-01",
-        "flavor": "s6.small.1",
-        "is_public": true,
-        "status": "OK",
-        "metadata": {
-          "tier": "Bastion Host",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 1,
-          "ram_gb": 2,
-          "storage_gb": 50,
-          "original_row": 11
-        }
-      },
-      {
-        "name": "nfs-server-01",
-        "flavor": "s6.large.2",
-        "is_public": false,
-        "status": "OK",
-        "metadata": {
-          "tier": "Storage",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 2000,
-          "original_row": 12
-        }
-      },
-      {
-        "name": "missing-flavor-server",
-        "flavor": "MISSING_FLAVOR",
-        "is_public": true,
-        "status": "WARNING",
-        "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
+          "tier": "Elastic Cloud Server 3",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
           "cpu_cores": 4,
           "ram_gb": 8,
           "storage_gb": 200,
-          "original_row": 13
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 4,
+          "service_type": "Elastic Cloud Server 3",
+          "description": "CDP-APPSRV-03"
         }
       },
       {
-        "name": "legacy-app-01",
-        "flavor": "old.flavor.type",
+        "name": "cdp-db-op",
+        "flavor": "General computing-plus",
         "is_public": false,
         "status": "OK",
         "metadata": {
-          "tier": "Legacy",
-          "os_type": "Windows",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
-          "original_row": 14
+          "tier": "Elastic Cloud Server 4",
+          "os_type": "CentOS | CentOS 8.2 64bit",
+          "cpu_cores": 4,
+          "ram_gb": 16,
+          "storage_gb": 380,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 5,
+          "service_type": "Elastic Cloud Server 4",
+          "description": "CDP-DB-OP"
         }
       },
       {
-        "name": "analytics-01",
-        "flavor": "c6.4xlarge.8",
-        "is_public": true,
+        "name": "cdp-dc-1-0",
+        "flavor": "General computing",
+        "is_public": false,
         "status": "OK",
         "metadata": {
-          "tier": "Analytics",
-          "os_type": "Ubuntu 22.04",
-          "cpu_cores": 16,
+          "tier": "Elastic Cloud Server 5",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 12,
+          "storage_gb": 119,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 6,
+          "service_type": "Elastic Cloud Server 5",
+          "description": "CDP-DC-1.0"
+        }
+      },
+      {
+        "name": "cdp-dc-1-1",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 6",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 12,
+          "storage_gb": 130,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 7,
+          "service_type": "Elastic Cloud Server 6",
+          "description": "CDP-DC-1.1"
+        }
+      },
+      {
+        "name": "cdp-fs-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 7",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 6,
+          "ram_gb": 18,
+          "storage_gb": 1024,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 8,
+          "service_type": "Elastic Cloud Server 7",
+          "description": "CDP-FS-01"
+        }
+      },
+      {
+        "name": "cdp-newcrosh-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 8",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 8,
+          "storage_gb": 160,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 9,
+          "service_type": "Elastic Cloud Server 8",
+          "description": "CDP-NewCrosh-01"
+        }
+      },
+      {
+        "name": "cdp-srvme-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 9",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 10,
+          "storage_gb": 250,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 10,
+          "service_type": "Elastic Cloud Server 9",
+          "description": "CDP-SRVME-01"
+        }
+      },
+      {
+        "name": "cdp-nw-obras",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 10",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 12,
+          "storage_gb": 350,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 11,
+          "service_type": "Elastic Cloud Server 10",
+          "description": "CDP-NW-OBRAS"
+        }
+      },
+      {
+        "name": "cdp-prtsrv-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 11",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 2,
+          "ram_gb": 8,
+          "storage_gb": 104,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 12,
+          "service_type": "Elastic Cloud Server 11",
+          "description": "CDP-PRTSRV-01"
+        }
+      },
+      {
+        "name": "cdp-sap-03",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 12",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
           "ram_gb": 32,
-          "storage_gb": 500,
-          "original_row": 15
+          "storage_gb": 540,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 13,
+          "service_type": "Elastic Cloud Server 12",
+          "description": "CDP-SAP-03"
+        }
+      },
+      {
+        "name": "cdp-sap-04",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 13",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 32,
+          "storage_gb": 470,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 14,
+          "service_type": "Elastic Cloud Server 13",
+          "description": "CDP-SAP-04"
+        }
+      },
+      {
+        "name": "cdp-sap-05",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 14",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 32,
+          "storage_gb": 470,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 15,
+          "service_type": "Elastic Cloud Server 14",
+          "description": "CDP-SAP-05"
+        }
+      },
+      {
+        "name": "cdp-sap-06",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 15",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 8,
+          "storage_gb": 50,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 16,
+          "service_type": "Elastic Cloud Server 15",
+          "description": "CDP-SAP-06"
+        }
+      },
+      {
+        "name": "cdp-sap-07",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 16",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 32,
+          "storage_gb": 400,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 17,
+          "service_type": "Elastic Cloud Server 16",
+          "description": "CDP-SAP-07"
+        }
+      },
+      {
+        "name": "cdp-sap-08",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 17",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 32,
+          "storage_gb": 400,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 18,
+          "service_type": "Elastic Cloud Server 17",
+          "description": "CDP-SAP-08"
+        }
+      },
+      {
+        "name": "cdp-utc-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 18",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 2,
+          "ram_gb": 6,
+          "storage_gb": 300,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 19,
+          "service_type": "Elastic Cloud Server 18",
+          "description": "CDP-UTC-01"
+        }
+      },
+      {
+        "name": "cdp-w10-ca",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 19",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 16,
+          "storage_gb": 100,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 20,
+          "service_type": "Elastic Cloud Server 19",
+          "description": "CDP-W10-CA"
+        }
+      },
+      {
+        "name": "cdpspnsvr",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 20",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 16,
+          "ram_gb": 8,
+          "storage_gb": 300,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 21,
+          "service_type": "Elastic Cloud Server 20",
+          "description": "CDPSPNSVR"
+        }
+      },
+      {
+        "name": "glpi-srvr",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 21",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 4,
+          "storage_gb": 40,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 22,
+          "service_type": "Elastic Cloud Server 21",
+          "description": "GLPI-SRVR"
+        }
+      },
+      {
+        "name": "nagios-server",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 22",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 1,
+          "ram_gb": 4,
+          "storage_gb": 100,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 23,
+          "service_type": "Elastic Cloud Server 22",
+          "description": "NAGIOS SERVER"
+        }
+      },
+      {
+        "name": "new-soft-bd-220",
+        "flavor": "General computing-plus",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 23",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 8,
+          "storage_gb": 80,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 24,
+          "service_type": "Elastic Cloud Server 23",
+          "description": "New-Soft BD 220"
+        }
+      },
+      {
+        "name": "new-soft-bd-221-245",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 24",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 1,
+          "ram_gb": 4,
+          "storage_gb": 80,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 25,
+          "service_type": "Elastic Cloud Server 24",
+          "description": "New-Soft BD 221-245"
+        }
+      },
+      {
+        "name": "newsoft-support",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 25",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 4,
+          "storage_gb": 80,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 26,
+          "service_type": "Elastic Cloud Server 25",
+          "description": "NEWSOFT-SUPPORT"
+        }
+      },
+      {
+        "name": "ocs-srvr-01",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 26",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 4,
+          "ram_gb": 4,
+          "storage_gb": 45,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 27,
+          "service_type": "Elastic Cloud Server 26",
+          "description": "OCS-SRVR-01"
+        }
+      },
+      {
+        "name": "cloud-backup-and-recovery",
+        "type": "backup",
+        "status": "OK",
+        "metadata": {
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "monthly",
+          "storage_gb": 14446,
+          "service_type": "Cloud Backup and Recovery 1",
+          "description": "Cloud Backup and Recovery",
+          "original_row": 28
+        }
+      },
+      {
+        "name": "sap-01-server",
+        "flavor": "Memory-optimized",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 27",
+          "os_type": "Unknown",
+          "cpu_cores": 64,
+          "ram_gb": 512,
+          "storage_gb": 0,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 32,
+          "service_type": "Elastic Cloud Server 27",
+          "description": "SAP 01 SERVER"
+        }
+      },
+      {
+        "name": "sap-02-server",
+        "flavor": "Large-memory",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 28",
+          "os_type": "CentOS | CentOS 8.2 64bit",
+          "cpu_cores": 48,
+          "ram_gb": 960,
+          "storage_gb": 0,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 33,
+          "service_type": "Elastic Cloud Server 28",
+          "description": "SAP 02 SERVER"
+        }
+      },
+      {
+        "name": "new-server",
+        "flavor": "General computing",
+        "is_public": false,
+        "status": "OK",
+        "metadata": {
+          "tier": "Elastic Cloud Server 29",
+          "os_type": "Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit",
+          "cpu_cores": 8,
+          "ram_gb": 16,
+          "storage_gb": 280,
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "pay_per_use",
+          "original_row": 34,
+          "service_type": "Elastic Cloud Server 29",
+          "description": "New Server"
+        }
+      },
+      {
+        "name": "cloud-backup-and-recovery",
+        "type": "backup",
+        "status": "OK",
+        "metadata": {
+          "region": "LA-Mexico City2",
+          "az": "General AZ",
+          "billing_mode": "monthly",
+          "storage_gb": 7168,
+          "service_type": "Cloud Backup and Recovery 1",
+          "description": "Cloud Backup and Recovery",
+          "original_row": 36
         }
       }
     ],
