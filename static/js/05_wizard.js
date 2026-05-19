@@ -1,6 +1,10 @@
 function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
     const isPoC = project?.project_type === "poc";
     
+    console.log("ProjectCommandCenter - Project:", project?.name);
+    console.log("ProjectCommandCenter - isPoC:", isPoC);
+    console.log("ProjectCommandCenter - project_type:", project?.project_type);
+    
     // Dynamic Phase Arrays: Remove Post-Live if PoC
     const states = isPoC 
         ? ['1_arb', '2_architecture', '3_planning', '4_execution']
