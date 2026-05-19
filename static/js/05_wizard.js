@@ -88,6 +88,7 @@ function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
     const { useState, useEffect } = React;
     
     console.log('WizardStepARB rendering with project:', project?.id, 'blueprintData:', project?.blueprintData);
+    const [showUploader, setShowUploader] = useState(false);
     const [hasBlueprint, setHasBlueprint] = useState(false);
     const [artefactsComplete, setArtefactsComplete] = useState(false);
 
