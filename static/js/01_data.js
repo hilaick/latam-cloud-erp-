@@ -1,5 +1,4 @@
-const { useState, useMemo, useEffect, useRef } = React;
-
+// Data module - no React hooks needed here
 const defaultPlaybooks = {
     "default_vm": {
         name: "Standard Generic Migration",
@@ -54,4 +53,6 @@ const defaultProjects = [
 ];
 
 // Global window bindings for Babel Standalone scoping
-window.useState = useState; window.useMemo = useMemo; window.useEffect = useEffect; window.useRef = useRef; window.defaultPlaybooks = defaultPlaybooks; window.generateDefaultProject = generateDefaultProject; window.defaultProjects = defaultProjects;
+window.defaultPlaybooks = defaultPlaybooks; 
+window.generateDefaultProject = generateDefaultProject; 
+window.defaultProjects = defaultProjects;

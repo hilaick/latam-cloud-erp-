@@ -5,6 +5,7 @@ const formatShortDate = (dateStr) => {
 };
 
 function EditableCell({ value, onSave, type = "text", className = "", placeholder = "" }) {
+  const { useState, useEffect, useMemo, useRef } = React;
   const [isEditing, setIsEditing] = useState(false); const [editValue, setEditValue] = useState(value);
   useEffect(() => { setEditValue(value); }, [value]);
   const handleSave = () => { setIsEditing(false); if (editValue !== value) onSave(editValue); };

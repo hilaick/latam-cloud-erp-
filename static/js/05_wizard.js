@@ -1,4 +1,5 @@
 function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
+  const { useState, useEffect, useMemo, useRef } = React;
     const isPoC = project?.project_type === "poc";
     
     console.log("ProjectCommandCenter - Project:", project?.name);
