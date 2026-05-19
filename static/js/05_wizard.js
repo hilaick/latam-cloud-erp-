@@ -500,6 +500,7 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
 }
 
 function TopologyMapperView({ activeProject, onUpdateProject }) {
+    const { useState, useEffect, useMemo } = React;
     const [csvText, setCsvText] = useState(activeProject?.mapperCsv || "");
     const [nodes, setNodes] = useState([]); const [viewMode, setViewMode] = useState("all");
     const [isMaximized, setIsMaximized] = useState(false);
@@ -976,6 +977,7 @@ function WizardStepExecution({ project, onUpdateProject, onPromote, isCurrent })
 }
 
 function TAMHubView({ project, onUpdateProject }) {
+    const { useState, useEffect } = React;
     const safeTamData = project.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] };
     const [tamData, setTamData] = useState(safeTamData);
     
@@ -1037,6 +1039,7 @@ function TAMHubView({ project, onUpdateProject }) {
 }
 
 function ExecutionHubView({ project, onUpdateProject }) {
+    const { useState, useEffect } = React;
     const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
     const [apiState, setApiState] = useState({ loading: false, logs: null, error: false });
     const [deploymentHistory, setDeploymentHistory] = useState([]);
@@ -1174,6 +1177,7 @@ function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) 
 }
 
 function PhasePostLive({ activeProject, onUpdateProject }) {
+    const { useState, useEffect } = React;
     const [r, setR] = useState(activeProject?.war?.r || 50); const [s, setS] = useState(activeProject?.war?.s || 50); const [p, setP] = useState(activeProject?.war?.p || 50); const [c, setC] = useState(activeProject?.war?.c || 50); const [o, setO] = useState(activeProject?.war?.o || 50);
     useEffect(()=>{ if(activeProject?.war) { setR(activeProject.war.r); setS(activeProject.war.s); setP(activeProject.war.p); setC(activeProject.war.c); setO(activeProject.war.o); } }, [activeProject]);
     const score = Math.round((parseInt(r) + parseInt(s) + parseInt(p) + parseInt(c) + parseInt(o)) / 5); const isCertified = score >= 80;

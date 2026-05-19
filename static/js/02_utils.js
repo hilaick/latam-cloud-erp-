@@ -43,6 +43,7 @@ function ConfigModal({ project, onClose, onSave }) {
 }
 
 function ExcelUploader({ onUpdateData, onClose }) {
+    const { useState } = React;
     const [customerName, setCustomerName] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
