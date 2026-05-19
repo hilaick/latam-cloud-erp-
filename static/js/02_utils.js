@@ -24,6 +24,7 @@ function EditableCell({ value, onSave, type = "text", className = "", placeholde
 }
 
 function ConfigModal({ project, onClose, onSave }) {
+    const { useState } = React;
     const [config, setConfig] = useState(project?.apiConfig || { accessKey: "", secretKey: "", region: "la-south-2", automationEnabled: false });
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">

@@ -694,6 +694,7 @@ function TopologyMapperView({ activeProject, onUpdateProject }) {
 }
 
 function AssessmentView({ activeProject, onUpdateProject }) {
+    const { useState, useEffect } = React;
     const [infraControl, setInfraControl] = useState(activeProject?.ora?.infraControl || '0'); 
     const [itSkills, setItSkills] = useState(activeProject?.ora?.itSkills || '0'); 
     const [partnerCapability, setPartnerCapability] = useState(activeProject?.ora?.partnerCapability || '0'); 
@@ -1131,6 +1132,7 @@ function ExecutionHubView({ project, onUpdateProject }) {
 }
 
 function SingleProjectGantt({ project }) {
+    const { useMemo } = React;
     const timelineData = useMemo(() => {
         if(!project.kickoff || !project.date || project.kickoff==='Pending' || project.date==='TBD') return null;
         const start = new Date(project.kickoff); const end = new Date(project.date);
