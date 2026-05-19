@@ -379,5 +379,118 @@ function GlobalProcessView() {
     )
 }
 
+function GlobalAdHocWizard() {
+    const { useState } = React;
+    const [step, setStep] = useState(1);
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState('');
+    const [region, setRegion] = useState('la-south-2'); const [osType, setOsType] = useState('linux');
+    const [isDiscovering, setIsDiscovering] = useState(false); const [sourceSpecs, setSourceSpecs] = useState(null);
+    const [targetFlavor, setTargetFlavor] = useState('s6.large.2'); const [targetSubnet, setTargetSubnet] = useState('');
+    const [taskId, setTaskId] = useState(null); const [syncProgress, setSyncProgress] = useState(0); const [syncStatus, setSyncStatus] = useState('');
+
+    const handleDiscover = async () => {
+        if (!ak || !sk) return alert("AK and SK are required.");
+        setIsDiscovering(true);
+        try {
+            const res = await fetch('/api/sms/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, region, osType }) });
+            const data = await res.json();
+            if (data.success && data.server) { setSourceSpecs(data.server); setStep(3); } 
+            else { alert("Failed to find source server."); }
+        } catch (err) { alert("API Error: " + err.message); } finally { setIsDiscovering(false); }
+    };
+
+    const startSync = async () => {
+        setStep(4);
+        try {
+            const res = await fetch('/api/sms/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, region, source_id: sourceSpecs.id, target_flavor: targetFlavor, target_subnet: targetSubnet }) });
+            const data = await res.json();
+            if (data.success && data.task_id) {
+                setTaskId(data.task_id);
+                fetch('/api/sms/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: data.task_id, region, source_os: osType, target_flavor: targetFlavor, target_subnet: targetSubnet }) });
+                pollProgress(data.task_id);
+            } else { alert("Failed to start sync."); setStep(3); }
+        } catch (err) { alert("API Error."); setStep(3); }
+    };
+
+    const pollProgress = (id) => {
+        const interval = setInterval(async () => {
+            const res = await fetch(`/api/sms/status?task_id=${id}&ak=${ak}&sk=${sk}&region=${region}`);
+            const data = await res.json();
+            if (data.success) {
+                setSyncProgress(data.progress || 0); setSyncStatus(data.status_name || 'Syncing...');
+                if (data.progress >= 100) { clearInterval(interval); setSyncStatus('Migration Complete'); setSyncProgress(100); }
+            }
+        }, 3000);
+    };
+
+    const agentScript = osType === 'linux' ? `wget https://sms-agent.obs.${region}.myhuaweicloud.com/sms-agent.tar.gz\\ntar -xvf sms-agent.tar.gz\\n./install.sh --ak ${ak || 'YOUR_AK'} --sk ${sk || 'YOUR_SK'} --region ${region}` : `Invoke-WebRequest -Uri "https://sms-agent.obs.${region}.myhuaweicloud.com/sms-agent.zip" -OutFile "sms-agent.zip"\\nExpand-Archive -Path "sms-agent.zip"\\n.\\install.ps1 -AK "${ak || 'YOUR_AK'}" -SK "${sk || 'YOUR_SK'}"`;
+
+    return (
+        <div className="animate-fade-in max-w-[1400px] mx-auto space-y-6 pb-12">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
+                <div className="px-8 py-6 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-black text-xl flex items-center gap-3"><i className="fas fa-bolt text-amber-400"></i> Global Ad-Hoc SMS Migration</h3></div>
+                <div className="flex border-b border-slate-200 bg-slate-50">
+                    {['Agent & Auth', 'Live Discovery', 'Target Config', 'Execution'].map((label, idx) => (
+                        <div key={idx} className={`flex-1 text-center py-4 text-sm font-black uppercase tracking-widest border-r border-slate-200 ${step === idx + 1 ? 'bg-amber-500 text-white' : step > idx + 1 ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>{idx + 1}. {label}</div>
+                    ))}
+                </div>
+                <div className="p-10 flex-1 overflow-y-auto bg-slate-50">
+                    {step === 1 && (
+                        <div className="space-y-6 max-w-4xl mx-auto">
+                            <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl text-blue-800 text-xs font-bold flex items-center gap-3 mb-6"><i className="fas fa-shield-alt text-2xl"></i><div>AK/SK are stored securely in your browser's memory and passed dynamically to the backend for execution. They are never written to disk.</div></div>
+                            <div className="flex gap-6">
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={ak} onChange={e=>setAk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="HW_..." /></div>
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={sk} onChange={e=>setSk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="••••••••••••" /></div>
+                            </div>
+                            <div className="flex gap-6">
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">1. Select Target Region</label><select value={region} onChange={e=>setRegion(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white"><option value="la-south-2">la-south-2 (Mexico)</option><option value="sa-brazil-1">sa-brazil-1 (Brazil)</option></select></div>
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">2. Source OS</label><select value={osType} onChange={e=>setOsType(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white"><option value="linux">Linux</option><option value="windows">Windows Server</option></select></div>
+                            </div>
+                            <div><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">3. Run this on the Source Server</label><textarea readOnly value={agentScript} className="w-full h-32 p-5 bg-slate-900 text-emerald-400 font-mono text-sm rounded-xl outline-none" /></div>
+                        </div>
+                    )}
+                    {step === 2 && (
+                        <div className="h-full flex flex-col items-center justify-center animate-fade-in space-y-6">
+                            {isDiscovering ? (
+                                <><div className="relative w-32 h-32"><div className="absolute inset-0 border-4 border-amber-200 rounded-full"></div><div className="absolute inset-0 border-4 border-amber-500 rounded-full border-t-transparent animate-spin"></div><i className="fas fa-satellite-dish absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl text-amber-500"></i></div><div className="text-center"><h4 className="font-black text-xl text-slate-800">Awaiting Agent Heartbeat...</h4></div></>
+                            ) : (
+                                <div className="text-center w-full"><div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-200 shadow-inner"><i className="fas fa-server text-4xl text-amber-600"></i></div><h4 className="font-black text-2xl text-slate-800 mb-8">Run the agent script to establish a connection.</h4><button onClick={handleDiscover} className="px-10 py-5 bg-amber-500 hover:bg-amber-600 text-white font-black text-lg uppercase tracking-widest rounded-xl shadow-lg w-full max-w-md"><i className="fas fa-sync-alt mr-2"></i> Poll Live Source API</button></div>
+                            )}
+                        </div>
+                    )}
+                    {step === 3 && sourceSpecs && (
+                        <div className="animate-fade-in space-y-8 max-w-4xl mx-auto">
+                            <div className="bg-indigo-50 border-2 border-indigo-200 p-8 rounded-2xl flex items-center justify-between shadow-sm">
+                                <div><div className="text-xs font-black uppercase text-indigo-500 tracking-widest mb-2">Live Source Payload</div><div className="font-black text-2xl text-indigo-900">{sourceSpecs.hostname}</div></div>
+                                <div className="flex gap-4 text-center">
+                                    <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100"><div className="text-2xl font-black text-indigo-700">{sourceSpecs.cpu}</div><div className="text-[10px] uppercase font-bold text-slate-400">vCPU</div></div>
+                                    <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100"><div className="text-2xl font-black text-indigo-700">{sourceSpecs.ram}</div><div className="text-[10px] uppercase font-bold text-slate-400">GB RAM</div></div>
+                                </div>
+                            </div>
+                            <div className="space-y-6">
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Flavor</label><input type="text" value={targetFlavor} onChange={e=>setTargetFlavor(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"/></div>
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Subnet ID</label><input type="text" value={targetSubnet} onChange={e=>setTargetSubnet(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"/></div>
+                            </div>
+                        </div>
+                    )}
+                    {step === 4 && (
+                        <div className="h-full flex flex-col items-center justify-center animate-fade-in text-center px-8">
+                            <h4 className="font-black text-3xl text-slate-800 mb-3">Live Block-Level Sync</h4><p className="text-base text-slate-500 font-medium mb-12">Task ID: {taskId}</p>
+                            <div className="w-full max-w-3xl bg-slate-200 h-8 rounded-full overflow-hidden shadow-inner relative mb-6"><div className="absolute inset-y-0 left-0 bg-emerald-500 transition-all duration-500 ease-out" style={{ width: `${syncProgress}%` }}></div></div>
+                            <div className="flex justify-between w-full max-w-3xl font-black text-base text-slate-700"><span>{syncStatus || 'Initializing Task...'}</span><span>{syncProgress}%</span></div>
+                        </div>
+                    )}
+                </div>
+                <div className="px-8 py-5 border-t border-slate-200 bg-white flex justify-between shrink-0">
+                    {step > 1 && step < 4 ? <button onClick={()=>setStep(step-1)} className="px-8 py-3 border-2 border-slate-300 text-slate-600 rounded-xl font-black uppercase tracking-widest hover:bg-slate-50">Back</button> : <div></div>}
+                    {step === 1 && <button onClick={()=>setStep(2)} className="px-10 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Next: Discover Source</button>}
+                    {step === 3 && <button onClick={startSync} className="px-10 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Execute Live Migration</button>}
+                    {step === 4 && syncProgress >= 100 && <button onClick={()=>setStep(1)} className="px-10 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Start Another Migration</button>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // Global window bindings for Babel Standalone scoping
-window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView;
+window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalAdHocWizard = GlobalAdHocWizard;

@@ -2,13 +2,19 @@ from flask import Flask, send_file, jsonify, request, send_from_directory
 import subprocess
 import json
 import os
+import time
+import random
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.excel_ingestor import process_quotation
+from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog
 from functools import wraps
 
 app = Flask(__name__)
+
+# Setup SQLite database
+setup_db(app)
 
 # Basic Authentication Configuration
 # IMPORTANT: Set these environment variables for production:
@@ -266,6 +272,72 @@ def upload_quotation():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+# 11. Database-backed ERP state management
+@app.route('/api/erp/state', methods=['GET'])
+@requires_auth
+def get_state():
+    projects = ProjectData.query.all()
+    playbooks = GlobalPlaybooks.query.filter_by(id="master").first()
+    return jsonify({
+        "projects": [json.loads(p.data) for p in projects],
+        "playbooks": json.loads(playbooks.data) if playbooks else None
+    })
+
+@app.route('/api/erp/projects', methods=['POST'])
+@requires_auth
+def save_project():
+    req = request.json
+    project_id = str(req.get('id'))
+    proj = ProjectData.query.get(project_id)
+    if not proj:
+        proj = ProjectData(id=project_id)
+        db.session.add(proj)
+    proj.data = json.dumps(req)
+    db.session.commit()
+    return jsonify({"success": True})
+
+@app.route('/api/erp/playbooks', methods=['POST'])
+@requires_auth
+def save_playbooks():
+    pb = GlobalPlaybooks.query.filter_by(id="master").first()
+    if not pb:
+        pb = GlobalPlaybooks(id="master")
+        db.session.add(pb)
+    pb.data = json.dumps(request.json)
+    db.session.commit()
+    return jsonify({"success": True})
+
+# 12. Ad-Hoc SMS Migration endpoints
+@app.route('/api/sms/log', methods=['POST'])
+@requires_auth
+def log_adhoc_migration():
+    req = request.json
+    log_entry = AdHocMigrationLog(
+        task_id=req.get('task_id'), region=req.get('region'),
+        source_os=req.get('source_os'), target_flavor=req.get('target_flavor'), target_subnet=req.get('target_subnet')
+    )
+    db.session.add(log_entry)
+    db.session.commit()
+    return jsonify({"success": True})
+
+# SMS Demo Mocks
+@app.route('/api/sms/discover', methods=['POST'])
+@requires_auth
+def sms_discover():
+    req = request.json
+    time.sleep(2)
+    return jsonify({"success": True, "server": {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": req.get('osType', 'linux')}})
+
+@app.route('/api/sms/sync', methods=['POST'])
+@requires_auth
+def sms_sync():
+    return jsonify({"success": True, "task_id": "task-sms-8821"})
+
+@app.route('/api/sms/status', methods=['GET'])
+@requires_auth
+def sms_status():
+    return jsonify({"success": True, "progress": random.randint(10, 100), "status_name": "Copying Disk Volumes..."})
 
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")

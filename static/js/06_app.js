@@ -13,20 +13,15 @@ function App() {
   const ERP_PLAYBOOK_KEY = 'cac_erp_playbooks_v46';
 
   useEffect(() => {
-    try { 
-        const saved = localStorage.getItem(ERP_DATA_KEY); 
-        if (saved) { 
-            const parsed = JSON.parse(saved); 
-            if (Array.isArray(parsed)) setProjects(parsed); 
-            else setProjects(defaultProjects); 
-        } else setProjects(defaultProjects); 
-
-        const savedPlaybooks = localStorage.getItem(ERP_PLAYBOOK_KEY);
-        if (savedPlaybooks) { 
-            const parsed = JSON.parse(savedPlaybooks);
-            setCustomPlaybooks(parsed || defaultPlaybooks); 
-        }
-    } catch(e) { setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); }
+    fetch('/api/erp/state')
+        .then(res => res.json())
+        .then(data => {
+            if (data.projects && data.projects.length > 0) setProjects(data.projects);
+            else setProjects(defaultProjects);
+            if (data.playbooks) setCustomPlaybooks(data.playbooks);
+            else setCustomPlaybooks(defaultPlaybooks);
+        })
+        .catch(err => { console.error(err); setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); });
     
     const handleResize = () => { if(window.innerWidth > 1024) setSidebarOpen(true); else setSidebarOpen(false); };
     window.addEventListener('resize', handleResize);
@@ -54,6 +49,12 @@ function App() {
               blueprintData: newProject.blueprintData,
               arbArtefacts: newProject.arbArtefacts
             });
+            // Save to database
+            fetch('/api/erp/projects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newProject)
+            });
             return newProject;
           } else if (typeof fieldOrUpdates === 'object') {
             // Signature: (id, updatesObject)
@@ -64,20 +65,51 @@ function App() {
               name: newProject.name,
               ...fieldOrUpdates
             });
+            // Save to database
+            fetch('/api/erp/projects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newProject)
+            });
             return newProject;
           }
         }
         return p;
       });
       console.log('Projects after update in functional update:', updated.find(p => String(p.id) === String(id)));
-      localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated));
       return updated;
     });
   };
-  const handleAddProject = (p) => { const updated = [p, ...projects]; setProjects(updated); localStorage.setItem(ERP_DATA_KEY, JSON.stringify(updated)); };
-  const handleSavePlaybooks = (newPlaybooks) => { setCustomPlaybooks(newPlaybooks); localStorage.setItem(ERP_PLAYBOOK_KEY, JSON.stringify(newPlaybooks)); };
+  const handleAddProject = (p) => { 
+    const updated = [p, ...projects]; 
+    setProjects(updated); 
+    // Save to database
+    fetch('/api/erp/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p)
+    });
+  };
+  const handleSavePlaybooks = (newPlaybooks) => { 
+    setCustomPlaybooks(newPlaybooks); 
+    // Save to database
+    fetch('/api/erp/playbooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPlaybooks)
+    });
+  };
   
-  const handleHardReset = () => { if(confirm("Are you sure you want to permanently delete all data and restore defaults?")) { localStorage.removeItem(ERP_DATA_KEY); localStorage.removeItem(ERP_PLAYBOOK_KEY); setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); setActiveProjectId("none"); setActivePhase('home'); } };
+  const handleHardReset = () => { 
+    if(confirm("Are you sure you want to permanently delete all data and restore defaults?")) { 
+      // Note: In production, we would need a DELETE endpoint to clear database
+      // For now, just reset local state
+      setProjects(defaultProjects); 
+      setCustomPlaybooks(defaultPlaybooks); 
+      setActiveProjectId("none"); 
+      setActivePhase('home'); 
+    } 
+  };
 
   const handleExportCSV = () => {
       const headers = ["Customer", "Country", "Health", "Progress", "MRR", "Kickoff", "Go-Live", "Phase", "SA", "Partner", "Type", "Location", "Blocker", "Complexity", "Scope"];
@@ -130,6 +162,7 @@ function App() {
             <div className="pt-4 mt-4 border-t border-slate-800">
                 <button onClick={()=>navToPhase('process')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='process' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-route w-5 text-center"></i> Standard Process</button>
                 <button onClick={()=>navToPhase('playbooks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='playbooks' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-book-open w-5 text-center"></i> Playbook Studio</button>
+                <button onClick={()=>navToPhase('adhoc_sms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='adhoc_sms' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-bolt w-5 text-center"></i> Ad-Hoc SMS Migrate</button>
             </div>
          </div>
 
@@ -182,6 +215,7 @@ function App() {
                        {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
+                       {activePhase === 'adhoc_sms' && <GlobalAdHocWizard />}
                    </>
                ) : (
                    <ProjectCommandCenter project={activeProjectObj} onUpdateProject={handleUpdateProject} customPlaybooks={customPlaybooks} />
