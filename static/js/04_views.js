@@ -94,6 +94,7 @@ function GlobalDashboard({ projects, onNavigateToProject }) {
 }
 
 function GlobalRadar({ projects, onUpdateProject, onAddProject }) {
+    const { useState } = React;
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     const [newLeadName, setNewLeadName] = useState(""); const [newLeadSA, setNewLeadSA] = useState(""); const [newLeadMRR, setNewLeadMRR] = useState("");
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
@@ -144,6 +145,7 @@ function GlobalRadar({ projects, onUpdateProject, onAddProject }) {
 }
 
 function GlobalPipeline({ projects, onUpdateProject, onExport, onImport }) {
+    const { useState } = React;
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -207,6 +209,7 @@ function GlobalPipeline({ projects, onUpdateProject, onExport, onImport }) {
 }
 
 function GlobalSchedule({ projects }) {
+    const { useMemo } = React;
     const timelineProjects = useMemo(() => {
         const valid = []; (projects||[]).filter(p => p && !p.isWaiting).forEach(p => { 
             const start = new Date(p.kickoff); const end = new Date(p.date); 
@@ -250,6 +253,7 @@ function GlobalSchedule({ projects }) {
 }
 
 function PlaybookStudio({ customPlaybooks, setCustomPlaybooks }) {
+    const { useState } = React;
     const [selectedKey, setSelectedKey] = useState("sap_enterprise_cutover");
     const safePlaybooks = customPlaybooks || {};
     const activePlaybook = safePlaybooks[selectedKey] || { name: 'Unknown Playbook', tasks: [] };
