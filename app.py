@@ -391,7 +391,7 @@ def sms_discover_public():
         # 2. Create SdkRequest for Huawei Cloud V4 signing
         sdk_request = SdkRequest(
             method="GET",
-            scheme=parsed_url.scheme,
+            schema=parsed_url.scheme,
             host=parsed_url.netloc,
             uri=parsed_url.path,
             query_params=[("limit", "50"), ("offset", "0")],
