@@ -344,7 +344,7 @@ def handle_customers():
             customers = Customer.query.all()
             return jsonify({
                 "success": True, 
-                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region, "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect} for c in customers]
+                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region} for c in customers]
             })
         else:
             req = request.json
@@ -358,9 +358,6 @@ def handle_customers():
             customer.ak = req.get('ak', customer.ak)
             customer.sk = req.get('sk', customer.sk)
             customer.region = req.get('region', customer.region)
-            customer.cio = req.get('cio', customer.cio)
-            customer.it_lead = req.get('it_lead', customer.it_lead)
-            customer.architect = req.get('architect', customer.architect)
             db.session.commit()
             return jsonify({"success": True})
     except Exception as e:
