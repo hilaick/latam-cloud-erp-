@@ -382,24 +382,51 @@ function GlobalProcessView() {
 function GlobalAdHocWizard() {
     const { useState } = React;
     const [step, setStep] = useState(1);
-    const [ak, setAk] = useState(''); const [sk, setSk] = useState('');
-    const [region, setRegion] = useState('la-south-2'); const [osType, setOsType] = useState('linux');
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [projectId, setProjectId] = useState('');
+    const [region, setRegion] = useState('la-north-2'); const [osType, setOsType] = useState('linux');
     const [isDiscovering, setIsDiscovering] = useState(false); const [sourceSpecs, setSourceSpecs] = useState(null);
+    const [discoveredServers, setDiscoveredServers] = useState([]); // NEW: Store all discovered servers
+    const [selectedServerId, setSelectedServerId] = useState(''); // NEW: Track selected server
     const [targetFlavor, setTargetFlavor] = useState('s6.large.2'); const [targetSubnet, setTargetSubnet] = useState('');
     const [taskId, setTaskId] = useState(null); const [syncProgress, setSyncProgress] = useState(0); const [syncStatus, setSyncStatus] = useState('');
 
     const handleDiscover = async () => {
-        if (!ak || !sk) return alert("AK and SK are required.");
+        if (!ak || !sk || !projectId) return alert("AK, SK, and Project ID are required.");
         setIsDiscovering(true);
         try {
-            const res = await fetch('/api/sms/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, region, osType }) });
+            const res = await fetch('/api/sms/discover/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, projectId, region, osType }) });
             const data = await res.json();
-            if (data.success && data.server) { setSourceSpecs(data.server); setStep(3); } 
-            else { alert("Failed to find source server."); }
+            if (data.success && data.servers && data.servers.length > 0) { 
+                // Store all discovered servers
+                setDiscoveredServers(data.servers);
+                // Auto-select the first server
+                setSelectedServerId(data.servers[0].id);
+                setSourceSpecs(data.servers[0]);
+                setStep(3); 
+            } 
+            else { 
+                if (data.error) {
+                    alert(`SMS Discovery Error: ${data.error}`);
+                } else {
+                    alert("No source servers found with SMS agents. Make sure the agent is installed and running on the source server.");
+                }
+            }
         } catch (err) { alert("API Error: " + err.message); } finally { setIsDiscovering(false); }
     };
 
+    const handleServerSelect = (serverId) => {
+        setSelectedServerId(serverId);
+        const selected = discoveredServers.find(s => s.id === serverId);
+        if (selected) {
+            setSourceSpecs(selected);
+        }
+    };
+
     const startSync = async () => {
+        if (!sourceSpecs) {
+            alert("Please select a source server first.");
+            return;
+        }
         setStep(4);
         try {
             const res = await fetch('/api/sms/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, region, source_id: sourceSpecs.id, target_flavor: targetFlavor, target_subnet: targetSubnet }) });
@@ -423,7 +450,7 @@ function GlobalAdHocWizard() {
         }, 3000);
     };
 
-    const agentScript = osType === 'linux' ? `wget https://sms-agent.obs.${region}.myhuaweicloud.com/sms-agent.tar.gz\\ntar -xvf sms-agent.tar.gz\\n./install.sh --ak ${ak || 'YOUR_AK'} --sk ${sk || 'YOUR_SK'} --region ${region}` : `Invoke-WebRequest -Uri "https://sms-agent.obs.${region}.myhuaweicloud.com/sms-agent.zip" -OutFile "sms-agent.zip"\\nExpand-Archive -Path "sms-agent.zip"\\n.\\install.ps1 -AK "${ak || 'YOUR_AK'}" -SK "${sk || 'YOUR_SK'}"`;
+    const agentScript = osType === 'linux' ? `# Huawei Cloud SMS Agent for LATAM migrations\n# All LATAM migrations use Singapore SMS control plane\nwget https://sms-agent.obs.ap-southeast-3.myhuaweicloud.com/sms-agent.tar.gz\ntar -xvf sms-agent.tar.gz\n./install.sh --ak ${ak || 'YOUR_AK'} --sk ${sk || 'YOUR_SK'} --region ap-southeast-3\n\n# Target region: ${region} (${region === 'la-north-2' ? 'Mexico City 2' : region === 'la-south-2' ? 'Santiago' : 'Sao Paulo 1'})\n# SMS control plane: ap-southeast-3 (Singapore)` : `# Huawei Cloud SMS Agent for LATAM migrations\n# All LATAM migrations use Singapore SMS control plane\nInvoke-WebRequest -Uri "https://sms-agent.obs.ap-southeast-3.myhuaweicloud.com/sms-agent.zip" -OutFile "sms-agent.zip"\nExpand-Archive -Path "sms-agent.zip"\n.\\install.ps1 -AK "${ak || 'YOUR_AK'}" -SK "${sk || 'YOUR_SK'}"\n\n# Target region: ${region} (${region === 'la-north-2' ? 'Mexico City 2' : region === 'la-south-2' ? 'Santiago' : 'Sao Paulo 1'})\n# SMS control plane: ap-southeast-3 (Singapore)`;
 
     return (
         <div className="animate-fade-in max-w-[1400px] mx-auto space-y-6 pb-12">
@@ -441,12 +468,17 @@ function GlobalAdHocWizard() {
                             <div className="flex gap-6">
                                 <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={ak} onChange={e=>setAk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="HW_..." /></div>
                                 <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={sk} onChange={e=>setSk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="••••••••••••" /></div>
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Project ID</label><input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="e.g., 0a1b2c3d4e5f..." /></div>
                             </div>
                             <div className="flex gap-6">
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">1. Select Target Region</label><select value={region} onChange={e=>setRegion(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white"><option value="la-south-2">la-south-2 (Mexico)</option><option value="sa-brazil-1">sa-brazil-1 (Brazil)</option></select></div>
+                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">1. Select Target Region</label><select value={region} onChange={e=>setRegion(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white">
+                                    <option value="la-north-2">la-north-2 (Mexico City 2)</option>
+                                    <option value="la-south-2">la-south-2 (Santiago)</option>
+                                    <option value="sa-brazil-1">sa-brazil-1 (Sao Paulo 1)</option>
+                                </select></div>
                                 <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">2. Source OS</label><select value={osType} onChange={e=>setOsType(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white"><option value="linux">Linux</option><option value="windows">Windows Server</option></select></div>
                             </div>
-                            <div><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">3. Run this on the Source Server</label><textarea readOnly value={agentScript} className="w-full h-32 p-5 bg-slate-900 text-emerald-400 font-mono text-sm rounded-xl outline-none" /></div>
+                            <div><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">3. Run this on the Source Server (Singapore SMS endpoint for LATAM)</label><textarea readOnly value={agentScript} className="w-full h-32 p-5 bg-slate-900 text-emerald-400 font-mono text-sm rounded-xl outline-none" /></div>
                         </div>
                     )}
                     {step === 2 && (
@@ -458,18 +490,98 @@ function GlobalAdHocWizard() {
                             )}
                         </div>
                     )}
-                    {step === 3 && sourceSpecs && (
-                        <div className="animate-fade-in space-y-8 max-w-4xl mx-auto">
-                            <div className="bg-indigo-50 border-2 border-indigo-200 p-8 rounded-2xl flex items-center justify-between shadow-sm">
-                                <div><div className="text-xs font-black uppercase text-indigo-500 tracking-widest mb-2">Live Source Payload</div><div className="font-black text-2xl text-indigo-900">{sourceSpecs.hostname}</div></div>
-                                <div className="flex gap-4 text-center">
-                                    <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100"><div className="text-2xl font-black text-indigo-700">{sourceSpecs.cpu}</div><div className="text-[10px] uppercase font-bold text-slate-400">vCPU</div></div>
-                                    <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100"><div className="text-2xl font-black text-indigo-700">{sourceSpecs.ram}</div><div className="text-[10px] uppercase font-bold text-slate-400">GB RAM</div></div>
+                    {step === 3 && discoveredServers.length > 0 && (
+                        <div className="animate-fade-in space-y-8 max-w-6xl mx-auto">
+                            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                                <h3 className="font-black text-lg text-slate-800 mb-4 flex items-center gap-2">
+                                    <i className="fas fa-server text-indigo-500"></i>
+                                    Select Source Server ({discoveredServers.length} found)
+                                </h3>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                                    {discoveredServers.map(server => (
+                                        <div 
+                                            key={server.id}
+                                            onClick={() => handleServerSelect(server.id)}
+                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md ${selectedServerId === server.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'}`}
+                                        >
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-bold text-slate-800 truncate">{server.hostname}</div>
+                                                <div className={`text-xs font-black px-2 py-1 rounded ${server.agent_status === 'connected' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
+                                                    {server.agent_status === 'connected' ? '✓ Connected' : '✗ Disconnected'}
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-slate-600 mb-3">
+                                                <div className="flex items-center gap-1 mb-1">
+                                                    <i className="fas fa-microchip text-slate-400"></i>
+                                                    <span>{server.cpu} vCPU • {server.ram}GB RAM • {server.disk}GB Disk</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <i className="fas fa-desktop text-slate-400"></i>
+                                                    <span>{server.os === 'linux' ? 'Linux' : 'Windows'} • {server.ip_address}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-xs">
+                                                    <span className={`px-2 py-1 rounded ${server.sync_status === 'idle' ? 'bg-slate-100 text-slate-700' : server.sync_status === 'syncing' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                        {server.sync_status === 'idle' ? 'Idle' : server.sync_status === 'syncing' ? 'Syncing' : 'Completed'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-slate-500">
+                                                    <i className="far fa-clock mr-1"></i>
+                                                    {new Date(server.last_heartbeat).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            </div>
-                            <div className="space-y-6">
-                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Flavor</label><input type="text" value={targetFlavor} onChange={e=>setTargetFlavor(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"/></div>
-                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Subnet ID</label><input type="text" value={targetSubnet} onChange={e=>setTargetSubnet(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"/></div>
+                                
+                                {sourceSpecs && (
+                                    <>
+                                        <div className="bg-indigo-50 border-2 border-indigo-200 p-6 rounded-2xl flex items-center justify-between shadow-sm mb-6">
+                                            <div>
+                                                <div className="text-xs font-black uppercase text-indigo-500 tracking-widest mb-2">Selected Source Server</div>
+                                                <div className="font-black text-2xl text-indigo-900">{sourceSpecs.hostname}</div>
+                                                <div className="text-sm text-indigo-700 mt-1">
+                                                    {sourceSpecs.cpu} vCPU • {sourceSpecs.ram}GB RAM • {sourceSpecs.disk}GB Disk • {sourceSpecs.os === 'linux' ? 'Linux' : 'Windows'}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-4 text-center">
+                                                <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100">
+                                                    <div className="text-2xl font-black text-indigo-700">{sourceSpecs.cpu}</div>
+                                                    <div className="text-[10px] uppercase font-bold text-slate-400">vCPU</div>
+                                                </div>
+                                                <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100">
+                                                    <div className="text-2xl font-black text-indigo-700">{sourceSpecs.ram}</div>
+                                                    <div className="text-[10px] uppercase font-bold text-slate-400">GB RAM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Flavor</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={targetFlavor} 
+                                                    onChange={e=>setTargetFlavor(e.target.value)} 
+                                                    className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"
+                                                    placeholder="e.g., s6.large.2, c6.2xlarge.4"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Subnet ID</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={targetSubnet} 
+                                                    onChange={e=>setTargetSubnet(e.target.value)} 
+                                                    className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"
+                                                    placeholder="e.g., subnet-1234567890abcdef0"
+                                                />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}
