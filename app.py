@@ -13,7 +13,6 @@ from services.wbs_ingestor import parse_wbs_csv
 from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog, Customer, WBSTask
 from functools import wraps
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
-from huaweicloudsdksms.v3.region.sms_region import SmsRegion
 from huaweicloudsdksms.v3 import SmsClient
 from huaweicloudsdksms.v3 import ListServersRequest, ListTasksRequest
 
@@ -365,304 +364,153 @@ def sms_discover_public():
         req = request.json
         ak = req.get('ak')
         sk = req.get('sk')
-        project_id = req.get('projectId', '').strip()  # Get project ID from request
-        region = req.get('region', 'ap-southeast-3')  # Default to Singapore region for SMS
+        project_id = req.get('projectId', '').strip()
+        region = req.get('region', 'la-south-2').strip()
         os_type = req.get('osType', 'linux')
         
-        if not ak or not sk:
-            return jsonify({"success": False, "error": "AK and SK are required"}), 400
+        if not ak or not sk or not project_id:
+            return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
+            
+        import requests
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+        from urllib.parse import urlparse
         
-        # Check if credentials are placeholders
-        if sk == 'your-secret-access-key-here' or 'placeholder' in sk.lower() or 'example' in sk.lower():
+        # 1. Construct the raw HTTP Request to the native endpoint
+        # Handle LATAM → Singapore routing
+        if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
+            # LATAM regions route through Singapore SMS control plane
+            endpoint = "https://sms.ap-southeast-3.myhuaweicloud.com"
+        else:
+            # Use the region directly for supported regions
+            endpoint = f"https://sms.{region}.myhuaweicloud.com"
+        
+        # Parse the URL
+        parsed_url = urlparse(f"{endpoint}/v3/sources")
+        
+        # 2. Create SdkRequest for Huawei Cloud V4 signing
+        sdk_request = SdkRequest(
+            method="GET",
+            schema=parsed_url.scheme,
+            host=parsed_url.netloc,
+            resource_path=parsed_url.path,  # Use resource_path instead of uri
+            query_params=[("limit", "50"), ("offset", "0")],
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        
+        # 3. Create credentials and cryptographically sign the request using Huawei's V4 Signer
+        credentials = BasicCredentials(ak, sk, project_id)
+        signer = Signer(credentials)
+        signed_request = signer.sign(sdk_request)
+        
+        # 4. BYPASS THE SDK: Execute natively via the requests library
+        url = f"{endpoint}/v3/sources?limit=50&offset=0"
+        response = requests.get(url, headers=signed_request.header_params)
+        
+        if response.status_code >= 400:
             return jsonify({
                 "success": False, 
-                "error": "Invalid Secret Key. Please update your .env file with real Huawei Cloud credentials.",
-                "hint": "The SK in .env file is a placeholder. Get real credentials from Huawei Cloud Console."
-            }), 401
+                "error": f"Huawei Cloud API Error {response.status_code}: {response.text}"
+            }), response.status_code
+            
+        data = response.json()
+        servers_list = data.get('source_servers', [])
         
-        # Check if project ID is provided
-        if not project_id:
-            return jsonify({
-                "success": False,
-                "error": "Project ID is required for Huawei Cloud SMS API",
-                "hint": "Get your Project ID from Huawei Cloud Console → My Credentials → Projects"
-            }), 400
+        servers = []
+        for server in servers_list:
+            server_info = {
+                "id": server.get('id', ""),
+                "hostname": server.get('name', server.get('ip', "Unknown")),
+                "cpu": server.get('cpu_quantity', 0),
+                "ram": server.get('memory', 0),
+                "disk": sum(vol.get('size', 0) for vol in server.get('volumes', [])) if server.get('volumes') else 0,
+                "os": server.get('os_type', os_type),
+                "status": server.get('state', 'unknown'),
+                "agent_version": server.get('agent_version', 'unknown'),
+                "ip": server.get('ip', ''),
+                "agent_status": 'connected' if server.get('connected', False) else 'disconnected',
+                "sync_status": 'idle', 
+                "last_heartbeat": server.get('updated', '')
+            }
+            servers.append(server_info)
         
-        print(f"SMS Discovery called with AK: {ak[:10]}..., Project ID: {project_id[:10]}..., Region: {region}")
+        return jsonify({
+            "success": True, 
+            "servers": servers,
+            "message": f"Found {len(servers)} servers." if servers else "No source servers found with SMS agents."
+        })
         
-        # Map LATAM regions to Singapore SMS control plane
-        region_map = {
-            'la-north-2': 'ap-southeast-3',  # Mexico City 2 -> Singapore
-            'la-south-2': 'ap-southeast-3',  # Santiago -> Singapore
-            'sa-brazil-1': 'ap-southeast-3',  # Sao Paulo 1 -> Singapore
-            'ap-southeast-3': 'ap-southeast-3',  # Singapore
-            'cn-north-4': 'cn-north-4',  # Beijing 4
-            'ru-moscow-1': 'ru-moscow-1',  # Moscow
-            'my-kualalumpur-1': 'my-kualalumpur-1'  # Kuala Lumpur
-        }
-        
-        sms_region = region_map.get(region, 'ap-southeast-3')
-        
-        try:
-            # Initialize Huawei Cloud SMS client with credentials and project ID
-            credentials = BasicCredentials(ak, sk, project_id)
-            
-            client = SmsClient.new_builder() \
-                .with_credentials(credentials) \
-                .with_region(SmsRegion.value_of(sms_region)) \
-                .build()
-            
-            # Get SMS Console data: Servers, Tasks, and Agents
-            servers = []
-            tasks = []
-            agents = []
-            
-            # 1. Get SMS servers (source servers registered in SMS Console)
-            print(f"Calling Huawei Cloud SMS Console API for region: {sms_region}, project: {project_id[:10]}...")
-            
-            try:
-                # List servers from SMS Console
-                servers_request = ListServersRequest()
-                servers_request.limit = 50
-                servers_request.offset = 0
-                
-                servers_response = client.list_servers(servers_request)
-                
-                if hasattr(servers_response, 'servers') and servers_response.servers:
-                    print(f"Found {len(servers_response.servers)} servers in SMS Console")
-                    for server in servers_response.servers:
-                        # Extract server details from SMS Console
-                        server_info = {
-                            "id": getattr(server, 'id', f"server-{len(servers)+1}"),
-                            "hostname": getattr(server, 'name', getattr(server, 'ip', f"server-{len(servers)+1}")),
-                            "cpu": getattr(server, 'cpu_quantity', 0),
-                            "ram": getattr(server, 'memory', 0),
-                            "disk": 0,
-                            "os": getattr(server, 'os_type', os_type),
-                            "status": getattr(server, 'state', 'unknown'),
-                            "agent_version": getattr(server, 'agent_version', 'unknown'),
-                            "ip": getattr(server, 'ip', ''),
-                            "connected": getattr(server, 'connected', False),
-                            "last_checked": getattr(server, 'updated', '')
-                        }
-                        
-                        # Calculate total disk from volumes if available
-                        if hasattr(server, 'volumes') and server.volumes:
-                            total_disk = sum(getattr(vol, 'size', 0) for vol in server.volumes)
-                            server_info["disk"] = total_disk
-                        
-                        servers.append(server_info)
-                else:
-                    print("No servers found in SMS Console")
-                    
-            except Exception as servers_error:
-                print(f"Error fetching servers from SMS Console: {str(servers_error)[:200]}")
-                # Continue with empty servers list
-            
-            # 2. Get SMS migration tasks
-            try:
-                tasks_request = ListTasksRequest()
-                tasks_request.limit = 50
-                tasks_request.offset = 0
-                
-                tasks_response = client.list_tasks(tasks_request)
-                
-                if hasattr(tasks_response, 'tasks') and tasks_response.tasks:
-                    print(f"Found {len(tasks_response.tasks)} migration tasks in SMS Console")
-                    for task in tasks_response.tasks:
-                        task_info = {
-                            "id": getattr(task, 'id', f"task-{len(tasks)+1}"),
-                            "name": getattr(task, 'name', f"Migration Task {len(tasks)+1}"),
-                            "status": getattr(task, 'state', 'unknown'),
-                            "progress": getattr(task, 'progress', 0),
-                            "source": getattr(task, 'source_server_name', ''),
-                            "target": getattr(task, 'target_region', region),
-                            "start_time": getattr(task, 'start_time', ''),
-                            "end_time": getattr(task, 'end_time', ''),
-                            "type": getattr(task, 'migration_type', 'server')
-                        }
-                        tasks.append(task_info)
-                else:
-                    print("No migration tasks found in SMS Console")
-                    
-            except Exception as tasks_error:
-                print(f"Error fetching tasks from SMS Console: {str(tasks_error)[:200]}")
-                # Continue with empty tasks list
-            
-            # 3. Get SMS agents (from server data or separate API)
-            # Note: SMS agents are typically part of server information in SMS Console
-            # We'll extract agent info from servers
-            for server in servers:
-                if server.get('agent_version'):
-                    agent_info = {
-                        "id": f"agent-{server['id']}",
-                        "version": server.get('agent_version', 'unknown'),
-                        "status": "online" if server.get('connected', False) else "offline",
-                        "last_seen": server.get('last_checked', ''),
-                        "server_id": server['id'],
-                        "server_name": server['hostname']
-                    }
-                    agents.append(agent_info)
-            
-            # If no agents found in server data, add some mock agents
-            if not agents and servers:
-                for i, server in enumerate(servers[:3]):
-                    agents.append({
-                        "id": f"agent-{server['id']}",
-                        "version": "3.8.2",
-                        "status": "online" if i < 2 else "offline",
-                        "last_seen": "2024-05-20T10:30:00Z",
-                        "server_id": server['id'],
-                        "server_name": server['hostname']
-                    })
-            
-            # If no tasks found, create some based on servers
-            if not tasks and servers:
-                for i, server in enumerate(servers[:3]):
-                    statuses = ["running", "completed", "pending"]
-                    task_info = {
-                        "id": f"task-{server['id']}",
-                        "name": f"{server['hostname']} Migration",
-                        "status": statuses[i] if i < len(statuses) else "pending",
-                        "progress": [65, 100, 0][i] if i < 3 else 0,
-                        "source": server['hostname'],
-                        "target": region,
-                        "start_time": "2024-05-20T08:00:00Z",
-                        "end_time": "2024-05-21T08:00:00Z" if i == 1 else "",
-                        "type": "server"
-                    }
-                    tasks.append(task_info)
-            
-            return jsonify({
-                "success": True, 
-                "servers": servers,
-                "tasks": tasks,
-                "agents": agents,
-                "metadata": {
-                    "project_id": project_id,
-                    "region": region,
-                    "sms_control_plane": f"{sms_region} ({'Singapore' if sms_region == 'ap-southeast-3' else sms_region})",
-                    "note": "LATAM regions route through Singapore SMS control plane",
-                    "server_count": len(servers),
-                    "task_count": len(tasks),
-                    "agent_count": len(agents),
-                    "source": "huawei_cloud_sms_console_api"
-                },
-                "message": f"Found {len(servers)} servers, {len(tasks)} tasks, and {len(agents)} agents in Huawei Cloud SMS Console" if servers else "No SMS Console data found in your project"
-            })
-            
-        except Exception as api_error:
-            # If Huawei Cloud API fails, return mock data with error details
-            import traceback
-            error_msg = str(api_error)
-            error_trace = traceback.format_exc()
-            
-            print(f"Huawei Cloud SMS API Error: {error_msg}")
-            print(f"Traceback: {error_trace}")
-            
-            # Check specific error types
-            if "401" in error_msg or "unauthorized" in error_msg.lower():
-                return jsonify({
-                    "success": False, 
-                    "error": "Invalid Huawei Cloud credentials or insufficient permissions",
-                    "details": "The provided AK/SK or Project ID doesn't have SMS permissions.",
-                    "hint": "Check: 1. AK/SK validity 2. Project ID correctness 3. IAM roles with SMS access"
-                }), 401
-            elif "404" in error_msg or "not found" in error_msg.lower():
-                return jsonify({
-                    "success": False, 
-                    "error": "SMS service not available or project not found",
-                    "suggestion": f"Ensure SMS service is enabled in project '{project_id}' and region '{sms_region}'"
-                }), 404
-            else:
-                # Return mock data with API error for debugging
-                return jsonify({
-                    "success": True, 
-                    "servers": [
-                        {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": os_type, "status": "agent_connected", "agent_version": "3.8.2"},
-                        {"id": "src-live-100", "hostname": "legacy-db-01", "cpu": 8, "ram": 16, "disk": 500, "os": os_type, "status": "agent_connected", "agent_version": "3.8.1"},
-                        {"id": "src-live-101", "hostname": "app-server-01", "cpu": 2, "ram": 4, "disk": 80, "os": os_type, "status": "agent_disconnected", "agent_version": "3.7.9"}
-                    ], 
-                    "tasks": [
-                        {"id": "task-001", "name": "Web Server Migration", "status": "running", "progress": 65, "source": "live-legacy-web", "target": region},
-                        {"id": "task-002", "name": "Database Migration", "status": "completed", "progress": 100, "source": "legacy-db-01", "target": region},
-                        {"id": "task-003", "name": "App Server Migration", "status": "pending", "progress": 0, "source": "app-server-01", "target": region}
-                    ],
-                    "agents": [
-                        {"id": "agent-001", "version": "3.8.2", "status": "online", "last_seen": "2024-05-20T10:30:00Z"},
-                        {"id": "agent-002", "version": "3.8.1", "status": "online", "last_seen": "2024-05-20T09:45:00Z"},
-                        {"id": "agent-003", "version": "3.7.9", "status": "offline", "last_seen": "2024-05-19T14:20:00Z"}
-                    ],
-                    "metadata": {
-                        "project_id": project_id,
-                        "region": region,
-                        "sms_control_plane": f"{sms_region} ({'Singapore' if sms_region == 'ap-southeast-3' else sms_region})",
-                        "note": "LATAM regions route through Singapore SMS control plane",
-                        "api_error": error_msg[:200],
-                        "source": "mock_data_fallback"
-                    },
-                    "warning": "Using mock data - Huawei Cloud SMS API call failed",
-                    "debug": {
-                        "error": error_msg[:200],
-                        "region_mapping": f"{region} → {sms_region}",
-                        "suggestion": "Check: 1. SMS service enabled 2. Project has SMS permissions 3. Region supports SMS"
-                    }
-                })
-            
     except Exception as e:
         import traceback
         error_msg = str(e)
-        error_trace = traceback.format_exc()
+        print(f"Huawei Cloud SMS HTTP Bypass Error: {error_msg}")
+        print(traceback.format_exc())
         
-        # Log the error for debugging
-        print(f"SMS Discovery Error: {error_msg}")
-        print(f"Traceback: {error_trace}")
+        return jsonify({
+            "success": False, 
+            "error": error_msg
+        }), 500
+        def patched_value_of(region_id):
+            if region_id == region:
+                return custom_region
+            return SmsRegion._original_value_of(region_id)
+            
+        SmsRegion.value_of = staticmethod(patched_value_of)
         
-        # Return mock data with error details
+        # 3. Proceed as normal - The SDK will now accept our LATAM region natively
+        credentials = BasicCredentials(ak, sk, project_id)
+        
+        client = SmsClient.new_builder() \
+            .with_credentials(credentials) \
+            .with_region(SmsRegion.value_of(region)) \
+            .build()
+        
+        servers = []
+        
+        # Pull servers strictly from the live Huawei Console API
+        servers_request = ListServersRequest()
+        servers_request.limit = 50
+        servers_request.offset = 0
+        
+        servers_response = client.list_servers(servers_request)
+        
+        if hasattr(servers_response, 'servers') and servers_response.servers:
+            for server in servers_response.servers:
+                server_info = {
+                    "id": getattr(server, 'id', ""),
+                    "hostname": getattr(server, 'name', getattr(server, 'ip', "Unknown")),
+                    "cpu": getattr(server, 'cpu_quantity', 0),
+                    "ram": getattr(server, 'memory', 0),
+                    "disk": sum(getattr(vol, 'size', 0) for vol in getattr(server, 'volumes', [])) if hasattr(server, 'volumes') else 0,
+                    "os": getattr(server, 'os_type', os_type),
+                    "status": getattr(server, 'state', 'unknown'),
+                    "agent_version": getattr(server, 'agent_version', 'unknown'),
+                    "ip": getattr(server, 'ip', ''),
+                    "agent_status": 'connected' if getattr(server, 'connected', False) else 'disconnected',
+                    "sync_status": 'idle', 
+                    "last_heartbeat": getattr(server, 'updated', '')
+                }
+                servers.append(server_info)
+        
         return jsonify({
             "success": True, 
-            "servers": [
-                {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": req.get('osType', 'linux'), "status": "agent_connected"},
-                {"id": "src-live-100", "hostname": "legacy-db-01", "cpu": 8, "ram": 16, "disk": 500, "os": req.get('osType', 'linux'), "status": "agent_connected"},
-                {"id": "src-live-101", "hostname": "app-server-01", "cpu": 2, "ram": 4, "disk": 80, "os": req.get('osType', 'linux'), "status": "agent_disconnected"}
-            ],
-            "tasks": [
-                {"id": "task-001", "name": "Web Server Migration", "status": "running", "progress": 65},
-                {"id": "task-002", "name": "Database Migration", "status": "completed", "progress": 100},
-                {"id": "task-003", "name": "App Server Migration", "status": "pending", "progress": 0}
-            ],
-            "warning": "Using mock SMS Console data - Unexpected error",
-            "error": error_msg[:200],
-            "api_status": "Check Huawei Cloud credentials and project permissions"
+            "servers": servers,
+            "message": f"Found {len(servers)} servers." if servers else "No source servers found with SMS agents."
         })
-            
+        
     except Exception as e:
         import traceback
         error_msg = str(e)
-        error_trace = traceback.format_exc()
+        print(f"Huawei Cloud SMS API Error: {error_msg}")
+        print(traceback.format_exc())
         
-        # Log the error for debugging
-        print(f"SMS Discovery Error: {error_msg}")
-        print(f"Traceback: {error_trace}")
-        
-        # Return mock data with error details
         return jsonify({
-            "success": True, 
-            "servers": [
-                {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": req.get('osType', 'linux'), "status": "agent_connected"},
-                {"id": "src-live-100", "hostname": "legacy-db-01", "cpu": 8, "ram": 16, "disk": 500, "os": req.get('osType', 'linux'), "status": "agent_connected"},
-                {"id": "src-live-101", "hostname": "app-server-01", "cpu": 2, "ram": 4, "disk": 80, "os": req.get('osType', 'linux'), "status": "agent_disconnected"}
-            ],
-            "tasks": [
-                {"id": "task-001", "name": "Web Server Migration", "status": "running", "progress": 65},
-                {"id": "task-002", "name": "Database Migration", "status": "completed", "progress": 100},
-                {"id": "task-003", "name": "App Server Migration", "status": "pending", "progress": 0}
-            ],
-            "warning": "Using mock SMS Console data - API call failed",
-            "error": error_msg[:200],
-            "api_status": "Real SMS API requires valid project_id with SMS permissions"
-        })
-
+            "success": False, 
+            "error": error_msg
+        }), 500
 @app.route('/api/sms/sync', methods=['POST'])
 @requires_auth
 def sms_sync():
