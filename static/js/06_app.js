@@ -3,6 +3,7 @@ function App() {
   
   const [activePhase, setActivePhase] = useState('home'); 
   const [projects, setProjects] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [customPlaybooks, setCustomPlaybooks] = useState(defaultPlaybooks);
   const [activeProjectId, setActiveProjectId] = useState("none");
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
@@ -17,12 +18,11 @@ function App() {
         .then(res => res.json())
         .then(data => {
             if (data.projects && data.projects.length > 0) setProjects(data.projects);
-            else setProjects(defaultProjects);
             if (data.playbooks) setCustomPlaybooks(data.playbooks);
-            else setCustomPlaybooks(defaultPlaybooks);
+            if (data.customers) setCustomers(data.customers);
         })
-        .catch(err => { console.error(err); setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); });
-    
+        .catch(err => console.error("DB Fetch failed", err));
+        
     const handleResize = () => { if(window.innerWidth > 1024) setSidebarOpen(true); else setSidebarOpen(false); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -100,6 +100,13 @@ function App() {
     });
   };
   
+  const handleUpdateCustomer = (customerData) => {
+    const exists = customers.find(c => c.id === customerData.id);
+    const updated = exists ? customers.map(c => c.id === customerData.id ? customerData : c) : [...customers, customerData];
+    setCustomers(updated);
+    fetch('/api/erp/customers', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(customerData) });
+  };
+
   const handleHardReset = () => { 
     if(confirm("Are you sure you want to permanently delete all data and restore defaults?")) { 
       // Note: In production, we would need a DELETE endpoint to clear database
@@ -163,7 +170,8 @@ function App() {
             <div className="pt-4 mt-4 border-t border-slate-800">
                 <button onClick={()=>navToPhase('process')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='process' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-route w-5 text-center"></i> Standard Process</button>
                 <button onClick={()=>navToPhase('playbooks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='playbooks' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-book-open w-5 text-center"></i> Playbook Studio</button>
-                <button onClick={()=>navToPhase('adhoc_sms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='adhoc_sms' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-bolt w-5 text-center"></i> Ad-Hoc SMS Migrate</button>
+                <button onClick={()=>navToPhase('customer_dir')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='customer_dir' && activeProjectId==='none' ?'bg-blue-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-address-book w-5 text-center"></i> Customer Directory</button>
+                <button onClick={()=>navToPhase('migration_monitor')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='migration_monitor' && activeProjectId==='none' ?'bg-emerald-500 text-slate-900 shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-tv w-5 text-center"></i> Migration NOC</button>
             </div>
          </div>
 
@@ -216,7 +224,8 @@ function App() {
                        {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
-                       {activePhase === 'adhoc_sms' && <GlobalAdHocWizard />}
+                       {activePhase === 'customer_dir' && <CustomerDirectory customers={customers} onUpdateCustomer={handleUpdateCustomer} projects={projects} />}
+                       {activePhase === 'migration_monitor' && <GlobalMigrationMonitor />}
                        {activePhase === 'master_hub' && <MasterExecutionHub projects={projects} />}
                    </>
                ) : (

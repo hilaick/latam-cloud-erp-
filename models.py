@@ -40,7 +40,9 @@ class Customer(db.Model):
     ak = db.Column(db.String(100))
     sk = db.Column(db.String(100))
     region = db.Column(db.String(50))
-    target_vpc = db.Column(db.String(100))
+    cio = db.Column(db.String(100))
+    it_lead = db.Column(db.String(100))
+    architect = db.Column(db.String(100))
 
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'

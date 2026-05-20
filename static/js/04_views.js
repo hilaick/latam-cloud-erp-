@@ -379,231 +379,128 @@ function GlobalProcessView() {
     )
 }
 
-function GlobalAdHocWizard() {
-    const { useState } = React;
-    const [step, setStep] = useState(1);
-    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [projectId, setProjectId] = useState('');
-    const [region, setRegion] = useState('la-north-2'); const [osType, setOsType] = useState('linux');
-    const [isDiscovering, setIsDiscovering] = useState(false); const [sourceSpecs, setSourceSpecs] = useState(null);
-    const [discoveredServers, setDiscoveredServers] = useState([]); // NEW: Store all discovered servers
-    const [selectedServerId, setSelectedServerId] = useState(''); // NEW: Track selected server
-    const [targetFlavor, setTargetFlavor] = useState('s6.large.2'); const [targetSubnet, setTargetSubnet] = useState('');
-    const [taskId, setTaskId] = useState(null); const [syncProgress, setSyncProgress] = useState(0); const [syncStatus, setSyncStatus] = useState('');
+function GlobalMigrationMonitor() {
+    const { useState, useEffect } = React;
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustId, setSelectedCustId] = useState('');
+    const [projectId, setProjectId] = useState('');
+    const [isPolling, setIsPolling] = useState(false);
+    const [autoRefresh, setAutoRefresh] = useState(false);
+    const [data, setData] = useState({ servers: [], tasks: [] });
 
-    const handleDiscover = async () => {
-        if (!ak || !sk || !projectId) return alert("AK, SK, and Project ID are required.");
-        setIsDiscovering(true);
+    useEffect(() => { fetch('/api/erp/state').then(r=>r.json()).then(d=> { if(d.customers) setCustomers(d.customers); }); }, []);
+    
+    const activeCust = customers.find(c => c.id === selectedCustId);
+
+    const fetchMonitorData = async () => {
+        if (!activeCust?.ak || !activeCust?.sk || !projectId) return;
+        setIsPolling(true);
         try {
-            const res = await fetch('/api/sms/discover/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, projectId, region, osType }) });
-            const data = await res.json();
-            if (data.success && data.servers && data.servers.length > 0) { 
-                // Store all discovered servers
-                setDiscoveredServers(data.servers);
-                // Auto-select the first server
-                setSelectedServerId(data.servers[0].id);
-                setSourceSpecs(data.servers[0]);
-                setStep(3); 
-            } 
-            else { 
-                if (data.error) {
-                    alert(`SMS Discovery Error: ${data.error}`);
-                } else {
-                    alert("No source servers found with SMS agents. Make sure the agent is installed and running on the source server.");
-                }
-            }
-        } catch (err) { alert("API Error: " + err.message); } finally { setIsDiscovering(false); }
+            const res = await fetch('/api/sms/monitor', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ak: activeCust.ak, sk: activeCust.sk, projectId, region: activeCust.region })
+            });
+            const payload = await res.json();
+            if (payload.success) setData({ servers: payload.servers || [], tasks: payload.tasks || [] });
+            else { alert(`API Error: ${payload.error}`); setAutoRefresh(false); }
+        } catch (err) { console.error(err); setAutoRefresh(false); } finally { setIsPolling(false); }
     };
 
-    const handleServerSelect = (serverId) => {
-        setSelectedServerId(serverId);
-        const selected = discoveredServers.find(s => s.id === serverId);
-        if (selected) {
-            setSourceSpecs(selected);
+    // Auto-polling loop
+    useEffect(() => {
+        let interval;
+        if (autoRefresh && activeCust) {
+            fetchMonitorData();
+            interval = setInterval(fetchMonitorData, 10000);
         }
-    };
+        return () => clearInterval(interval);
+    }, [autoRefresh, activeCust, projectId]);
 
-    const startSync = async () => {
-        if (!sourceSpecs) {
-            alert("Please select a source server first.");
-            return;
-        }
-        setStep(4);
-        try {
-            const res = await fetch('/api/sms/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, region, source_id: sourceSpecs.id, target_flavor: targetFlavor, target_subnet: targetSubnet }) });
-            const data = await res.json();
-            if (data.success && data.task_id) {
-                setTaskId(data.task_id);
-                fetch('/api/sms/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: data.task_id, region, source_os: osType, target_flavor: targetFlavor, target_subnet: targetSubnet }) });
-                pollProgress(data.task_id);
-            } else { alert("Failed to start sync."); setStep(3); }
-        } catch (err) { alert("API Error."); setStep(3); }
-    };
-
-    const pollProgress = (id) => {
-        const interval = setInterval(async () => {
-            const res = await fetch(`/api/sms/status?task_id=${id}&ak=${ak}&sk=${sk}&region=${region}`);
-            const data = await res.json();
-            if (data.success) {
-                setSyncProgress(data.progress || 0); setSyncStatus(data.status_name || 'Syncing...');
-                if (data.progress >= 100) { clearInterval(interval); setSyncStatus('Migration Complete'); setSyncProgress(100); }
-            }
-        }, 3000);
-    };
-
-    const agentScript = osType === 'linux' ? `# Huawei Cloud SMS Agent for LATAM migrations\n# All LATAM migrations use Singapore SMS control plane\nwget https://sms-agent.obs.ap-southeast-3.myhuaweicloud.com/sms-agent.tar.gz\ntar -xvf sms-agent.tar.gz\n./install.sh --ak ${ak || 'YOUR_AK'} --sk ${sk || 'YOUR_SK'} --region ap-southeast-3\n\n# Target region: ${region} (${region === 'la-north-2' ? 'Mexico City 2' : region === 'la-south-2' ? 'Santiago' : 'Sao Paulo 1'})\n# SMS control plane: ap-southeast-3 (Singapore)` : `# Huawei Cloud SMS Agent for LATAM migrations\n# All LATAM migrations use Singapore SMS control plane\nInvoke-WebRequest -Uri "https://sms-agent.obs.ap-southeast-3.myhuaweicloud.com/sms-agent.zip" -OutFile "sms-agent.zip"\nExpand-Archive -Path "sms-agent.zip"\n.\\install.ps1 -AK "${ak || 'YOUR_AK'}" -SK "${sk || 'YOUR_SK'}"\n\n# Target region: ${region} (${region === 'la-north-2' ? 'Mexico City 2' : region === 'la-south-2' ? 'Santiago' : 'Sao Paulo 1'})\n# SMS control plane: ap-southeast-3 (Singapore)`;
+    const activeTasks = data.tasks.filter(t => !['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
+    const completedTasks = data.tasks.filter(t => ['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
 
     return (
-        <div className="animate-fade-in max-w-[1400px] mx-auto space-y-6 pb-12">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
-                <div className="px-8 py-6 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-black text-xl flex items-center gap-3"><i className="fas fa-bolt text-amber-400"></i> Global Ad-Hoc SMS Migration</h3></div>
-                <div className="flex border-b border-slate-200 bg-slate-50">
-                    {['Agent & Auth', 'Live Discovery', 'Target Config', 'Execution'].map((label, idx) => (
-                        <div key={idx} className={`flex-1 text-center py-4 text-sm font-black uppercase tracking-widest border-r border-slate-200 ${step === idx + 1 ? 'bg-amber-500 text-white' : step > idx + 1 ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>{idx + 1}. {label}</div>
-                    ))}
+        <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
+            {/* Control Panel */}
+            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 p-6 flex flex-wrap gap-6 items-center text-white">
+                <div className="flex-1 min-w-[200px]">
+                    <h2 className="text-2xl font-black mb-1"><i className="fas fa-tv text-emerald-400 mr-3"></i> Migration NOC</h2>
+                    <p className="text-xs text-slate-400">Single Pane of Glass for SMS Console operations.</p>
                 </div>
-                <div className="p-10 flex-1 overflow-y-auto bg-slate-50">
-                    {step === 1 && (
-                        <div className="space-y-6 max-w-4xl mx-auto">
-                            <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl text-blue-800 text-xs font-bold flex items-center gap-3 mb-6"><i className="fas fa-shield-alt text-2xl"></i><div>AK/SK are stored securely in your browser's memory and passed dynamically to the backend for execution. They are never written to disk.</div></div>
-                            <div className="flex gap-6">
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={ak} onChange={e=>setAk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="HW_..." /></div>
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={sk} onChange={e=>setSk(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="••••••••••••" /></div>
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Project ID</label><input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-mono text-sm outline-none focus:border-amber-500" placeholder="e.g., 0a1b2c3d4e5f..." /></div>
-                            </div>
-                            <div className="flex gap-6">
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">1. Select Target Region</label><select value={region} onChange={e=>setRegion(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white">
-                                    <option value="la-north-2">la-north-2 (Mexico City 2)</option>
-                                    <option value="la-south-2">la-south-2 (Santiago)</option>
-                                    <option value="sa-brazil-1">sa-brazil-1 (Sao Paulo 1)</option>
-                                </select></div>
-                                <div className="flex-1"><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">2. Source OS</label><select value={osType} onChange={e=>setOsType(e.target.value)} className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-sm outline-none bg-white"><option value="linux">Linux</option><option value="windows">Windows Server</option></select></div>
-                            </div>
-                            <div><label className="block text-xs font-black uppercase text-slate-500 mb-2 mt-4">3. Run this on the Source Server (Singapore SMS endpoint for LATAM)</label><textarea readOnly value={agentScript} className="w-full h-32 p-5 bg-slate-900 text-emerald-400 font-mono text-sm rounded-xl outline-none" /></div>
-                        </div>
-                    )}
-                    {step === 2 && (
-                        <div className="h-full flex flex-col items-center justify-center animate-fade-in space-y-6">
-                            {isDiscovering ? (
-                                <><div className="relative w-32 h-32"><div className="absolute inset-0 border-4 border-amber-200 rounded-full"></div><div className="absolute inset-0 border-4 border-amber-500 rounded-full border-t-transparent animate-spin"></div><i className="fas fa-satellite-dish absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl text-amber-500"></i></div><div className="text-center"><h4 className="font-black text-xl text-slate-800">Awaiting Agent Heartbeat...</h4></div></>
-                            ) : (
-                                <div className="text-center w-full"><div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-200 shadow-inner"><i className="fas fa-server text-4xl text-amber-600"></i></div><h4 className="font-black text-2xl text-slate-800 mb-8">Run the agent script to establish a connection.</h4><button onClick={handleDiscover} className="px-10 py-5 bg-amber-500 hover:bg-amber-600 text-white font-black text-lg uppercase tracking-widest rounded-xl shadow-lg w-full max-w-md"><i className="fas fa-sync-alt mr-2"></i> Poll Live Source API</button></div>
-                            )}
-                        </div>
-                    )}
-                    {step === 3 && discoveredServers.length > 0 && (
-                        <div className="animate-fade-in space-y-8 max-w-6xl mx-auto">
-                            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                                <h3 className="font-black text-lg text-slate-800 mb-4 flex items-center gap-2">
-                                    <i className="fas fa-server text-indigo-500"></i>
-                                    Select Source Server ({discoveredServers.length} found)
-                                </h3>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                                    {discoveredServers.map(server => (
-                                        <div 
-                                            key={server.id}
-                                            onClick={() => handleServerSelect(server.id)}
-                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md ${selectedServerId === server.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'}`}
-                                        >
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="font-bold text-slate-800 truncate">{server.hostname}</div>
-                                                <div className={`text-xs font-black px-2 py-1 rounded ${server.agent_status === 'connected' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
-                                                    {server.agent_status === 'connected' ? '✓ Connected' : '✗ Disconnected'}
-                                                </div>
-                                            </div>
-                                            <div className="text-xs text-slate-600 mb-3">
-                                                <div className="flex items-center gap-1 mb-1">
-                                                    <i className="fas fa-microchip text-slate-400"></i>
-                                                    <span>{server.cpu} vCPU • {server.ram}GB RAM • {server.disk}GB Disk</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <i className="fas fa-desktop text-slate-400"></i>
-                                                    <span>{server.os === 'linux' ? 'Linux' : 'Windows'} • {server.ip_address}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <div className="text-xs">
-                                                    <span className={`px-2 py-1 rounded ${server.sync_status === 'idle' ? 'bg-slate-100 text-slate-700' : server.sync_status === 'syncing' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                        {server.sync_status === 'idle' ? 'Idle' : server.sync_status === 'syncing' ? 'Syncing' : 'Completed'}
-                                                    </span>
-                                                </div>
-                                                <div className="text-xs text-slate-500">
-                                                    <i className="far fa-clock mr-1"></i>
-                                                    {new Date(server.last_heartbeat).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                
-                                {sourceSpecs && (
-                                    <>
-                                        <div className="bg-indigo-50 border-2 border-indigo-200 p-6 rounded-2xl flex items-center justify-between shadow-sm mb-6">
-                                            <div>
-                                                <div className="text-xs font-black uppercase text-indigo-500 tracking-widest mb-2">Selected Source Server</div>
-                                                <div className="font-black text-2xl text-indigo-900">{sourceSpecs.hostname}</div>
-                                                <div className="text-sm text-indigo-700 mt-1">
-                                                    {sourceSpecs.cpu} vCPU • {sourceSpecs.ram}GB RAM • {sourceSpecs.disk}GB Disk • {sourceSpecs.os === 'linux' ? 'Linux' : 'Windows'}
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-4 text-center">
-                                                <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100">
-                                                    <div className="text-2xl font-black text-indigo-700">{sourceSpecs.cpu}</div>
-                                                    <div className="text-[10px] uppercase font-bold text-slate-400">vCPU</div>
-                                                </div>
-                                                <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100">
-                                                    <div className="text-2xl font-black text-indigo-700">{sourceSpecs.ram}</div>
-                                                    <div className="text-[10px] uppercase font-bold text-slate-400">GB RAM</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="space-y-6">
-                                            <div>
-                                                <label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Flavor</label>
-                                                <input 
-                                                    type="text" 
-                                                    value={targetFlavor} 
-                                                    onChange={e=>setTargetFlavor(e.target.value)} 
-                                                    className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"
-                                                    placeholder="e.g., s6.large.2, c6.2xlarge.4"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-black uppercase text-slate-500 mb-2">Target Subnet ID</label>
-                                                <input 
-                                                    type="text" 
-                                                    value={targetSubnet} 
-                                                    onChange={e=>setTargetSubnet(e.target.value)} 
-                                                    className="w-full p-4 border-2 border-slate-300 rounded-xl font-bold text-base outline-none bg-white"
-                                                    placeholder="e.g., subnet-1234567890abcdef0"
-                                                />
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                    {step === 4 && (
-                        <div className="h-full flex flex-col items-center justify-center animate-fade-in text-center px-8">
-                            <h4 className="font-black text-3xl text-slate-800 mb-3">Live Block-Level Sync</h4><p className="text-base text-slate-500 font-medium mb-12">Task ID: {taskId}</p>
-                            <div className="w-full max-w-3xl bg-slate-200 h-8 rounded-full overflow-hidden shadow-inner relative mb-6"><div className="absolute inset-y-0 left-0 bg-emerald-500 transition-all duration-500 ease-out" style={{ width: `${syncProgress}%` }}></div></div>
-                            <div className="flex justify-between w-full max-w-3xl font-black text-base text-slate-700"><span>{syncStatus || 'Initializing Task...'}</span><span>{syncProgress}%</span></div>
-                        </div>
-                    )}
+                <div className="flex gap-3 flex-wrap flex-[2]">
+                    <select value={selectedCustId} onChange={e=>setSelectedCustId(e.target.value)} className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-bold outline-none text-white">
+                        <option value="">-- Select Customer Account --</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.region})</option>)}
+                    </select>
+                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Target Project ID" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none text-white" />
                 </div>
-                <div className="px-8 py-5 border-t border-slate-200 bg-white flex justify-between shrink-0">
-                    {step > 1 && step < 4 ? <button onClick={()=>setStep(step-1)} className="px-8 py-3 border-2 border-slate-300 text-slate-600 rounded-xl font-black uppercase tracking-widest hover:bg-slate-50">Back</button> : <div></div>}
-                    {step === 1 && <button onClick={()=>setStep(2)} className="px-10 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Next: Discover Source</button>}
-                    {step === 3 && <button onClick={startSync} className="px-10 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Execute Live Migration</button>}
-                    {step === 4 && syncProgress >= 100 && <button onClick={()=>setStep(1)} className="px-10 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest shadow-md">Start Another Migration</button>}
+                <div className="flex gap-3">
+                    <button onClick={() => !activeCust?.ak ? alert("Select a customer with credentials") : setAutoRefresh(!autoRefresh)} className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all ${autoRefresh ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'}`}>
+                        {autoRefresh ? <><i className="fas fa-stop-circle mr-2"></i> Stop Polling</> : <><i className="fas fa-satellite-dish mr-2"></i> Live Monitor</>}
+                    </button>
+                    {!autoRefresh && <button onClick={fetchMonitorData} className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl"><i className={`fas fa-sync-alt ${isPolling ? 'fa-spin' : ''}`}></i></button>}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Active Migrations */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
+                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-rocket text-blue-500 mr-2"></i> Active Tasks</h3><span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-black">{activeTasks.length}</span></div>
+                    <div className="flex-1 overflow-auto p-0">
+                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Status</th><th className="p-4 w-1/3">Progress</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {activeTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No active migrations running.</td></tr> : activeTasks.map(t => (
+                                <tr key={t.id} className="hover:bg-slate-50">
+                                    <td className="p-4 font-bold text-slate-800">{t.name}</td>
+                                    <td className="p-4"><span className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-[10px] font-black uppercase">{t.state}</span></td>
+                                    <td className="p-4"><div className="flex items-center gap-3"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all duration-500" style={{width: `${t.progress}%`}}></div></div><span className="font-black text-slate-600">{t.progress}%</span></div></td>
+                                </tr>
+                            ))}
+                        </tbody></table>
+                    </div>
+                </div>
+
+                {/* Discovered Servers */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
+                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-server text-purple-500 mr-2"></i> Source Inventory</h3><span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs font-black">{data.servers.length}</span></div>
+                    <div className="flex-1 overflow-auto p-0">
+                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Hostname</th><th className="p-4">Specs</th><th className="p-4">Agent Status</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {data.servers.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No servers discovered. Check credentials.</td></tr> : data.servers.map(s => (
+                                <tr key={s.id} className="hover:bg-slate-50">
+                                    <td className="p-4"><div className="font-bold text-slate-800">{s.name}</div><div className="text-[10px] font-mono text-slate-500">{s.ip}</div></td>
+                                    <td className="p-4"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded font-mono text-[10px] text-slate-600">{s.cpu}c / {s.ram}g</span></td>
+                                    <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${s.connected ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{s.connected ? 'Connected' : 'Offline'}</span></td>
+                                </tr>
+                            ))}
+                        </tbody></table>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Historic Tasks */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col max-h-[400px]">
+                <div className="px-6 py-4 border-b border-slate-200 bg-slate-50"><h3 className="font-black text-slate-800"><i className="fas fa-history text-slate-500 mr-2"></i> Migration History</h3></div>
+                <div className="flex-1 overflow-auto p-0">
+                    <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Target Flavor</th><th className="p-4">Final Status</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {completedTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No completed history.</td></tr> : completedTasks.map(t => (
+                            <tr key={t.id} className="hover:bg-slate-50">
+                                <td className="p-4 font-bold text-slate-700">{t.name}</td>
+                                <td className="p-4 font-mono text-[10px] text-slate-500">{t.target_flavor}</td>
+                                <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${t.state === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{t.state}</span></td>
+                            </tr>
+                        ))}
+                    </tbody></table>
                 </div>
             </div>
         </div>
     );
 }
 
+window.GlobalMigrationMonitor = GlobalMigrationMonitor;
+
+window.GlobalMigrationMonitor = GlobalMigrationMonitor;
 function MasterExecutionHub({ projects }) {
     const { useState, useEffect } = React;
     const [globalTasks, setGlobalTasks] = useState([]);
@@ -645,5 +542,78 @@ function MasterExecutionHub({ projects }) {
     )
 }
 
+function CustomerDirectory({ customers, onUpdateCustomer, projects }) {
+    const { useState } = React;
+    const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
+    
+    const handleNew = () => {
+        const name = prompt("Enter Customer Name:");
+        if (!name) return;
+        const newCustomer = { id: 'cust_' + Date.now(), name, ak: '', sk: '', region: 'la-south-2', cio: '', it_lead: '', architect: '' };
+        onUpdateCustomer(newCustomer);
+        setSelectedId(newCustomer.id);
+    };
+
+    const activeCust = customers.find(c => c.id === selectedId) || null;
+    const custProjects = activeCust ? (projects || []).filter(p => p.name?.toLowerCase().includes(activeCust.name.toLowerCase())) : [];
+
+    return (
+        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
+            <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center border border-slate-700">
+                <div><h2 className="text-3xl font-black mb-2"><i className="fas fa-address-book text-blue-400 mr-3"></i> Customer Directory (CRM)</h2></div>
+                <button onClick={handleNew} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-black uppercase text-xs tracking-widest"><i className="fas fa-plus mr-2"></i> Add Account</button>
+            </div>
+            
+            <div className="flex flex-col lg:flex-row gap-6">
+                <div className="w-full lg:w-1/3 space-y-3">
+                    {customers.length === 0 ? <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200">No Customers.</div> : 
+                        customers.map(c => (
+                            <div key={c.id} onClick={()=>setSelectedId(c.id)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedId === c.id ? 'bg-blue-50 border-blue-500 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
+                                <div className="font-black text-slate-800 text-lg">{c.name}</div>
+                                <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase"><i className="fas fa-globe mr-1"></i> {c.region}</div>
+                            </div>
+                        ))
+                    }
+                </div>
+                
+                {activeCust && (
+                    <div className="flex-1 space-y-6">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-lock text-rose-500 mr-2"></i> The Vault (Credentials)</h3></div>
+                            <div className="p-6 grid grid-cols-2 gap-6">
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={activeCust.ak} onChange={e=>onUpdateCustomer({...activeCust, ak: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={activeCust.sk} onChange={e=>onUpdateCustomer({...activeCust, sk: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
+                                <div className="col-span-2"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Primary Target Region</label><input type="text" value={activeCust.region} onChange={e=>onUpdateCustomer({...activeCust, region: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold text-sm outline-none" /></div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-users text-indigo-500 mr-2"></i> The Rolodex</h3></div>
+                            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Exec Sponsor (CIO)</label><input type="text" value={activeCust.cio} onChange={e=>onUpdateCustomer({...activeCust, cio: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Customer IT Lead</label><input type="text" value={activeCust.it_lead} onChange={e=>onUpdateCustomer({...activeCust, it_lead: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Principal Architect</label><input type="text" value={activeCust.architect} onChange={e=>onUpdateCustomer({...activeCust, architect: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-project-diagram text-emerald-500 mr-2"></i> Project Portfolio</h3></div>
+                            <div className="p-6">
+                                {custProjects.length === 0 ? <div className="text-sm text-slate-500">No active projects found matching customer name.</div> : 
+                                    <ul className="space-y-3">
+                                        {custProjects.map(p => <li key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center"><span className="font-bold text-slate-800">{p.name}</span><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded font-black">${p.mrr} MRR</span></li>)}
+                                    </ul>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+window.CustomerDirectory = CustomerDirectory;
+
 // Global window bindings for Babel Standalone scoping
-window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalAdHocWizard = GlobalAdHocWizard; window.MasterExecutionHub = MasterExecutionHub;
+window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalMigrationMonitor = GlobalMigrationMonitor; window.MasterExecutionHub = MasterExecutionHub;
