@@ -381,44 +381,40 @@ function GlobalProcessView() {
 
 function GlobalMigrationMonitor() {
     const { useState, useEffect } = React;
-    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [projectId, setProjectId] = useState('');
-    const [region, setRegion] = useState('la-south-2');
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustId, setSelectedCustId] = useState('');
+    const [projectId, setProjectId] = useState('');
     const [isPolling, setIsPolling] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(false);
     const [data, setData] = useState({ servers: [], tasks: [] });
 
+    useEffect(() => { fetch('/api/erp/state').then(r=>r.json()).then(d=> { if(d.customers) setCustomers(d.customers); }); }, []);
+    
+    const activeCust = customers.find(c => c.id === selectedCustId);
+
     const fetchMonitorData = async () => {
-        if (!ak || !sk || !projectId) return;
+        if (!activeCust?.ak || !activeCust?.sk || !projectId) return;
         setIsPolling(true);
         try {
             const res = await fetch('/api/sms/monitor', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ak, sk, projectId, region })
+                body: JSON.stringify({ ak: activeCust.ak, sk: activeCust.sk, projectId, region: activeCust.region })
             });
             const payload = await res.json();
-            if (payload.success) {
-                setData({ servers: payload.servers || [], tasks: payload.tasks || [] });
-            } else {
-                alert(`API Error: ${payload.error}`);
-                setAutoRefresh(false);
-            }
-        } catch (err) {
-            console.error(err);
-            setAutoRefresh(false);
-        } finally {
-            setIsPolling(false);
-        }
+            if (payload.success) setData({ servers: payload.servers || [], tasks: payload.tasks || [] });
+            else { alert(`API Error: ${payload.error}`); setAutoRefresh(false); }
+        } catch (err) { console.error(err); setAutoRefresh(false); } finally { setIsPolling(false); }
     };
 
     // Auto-polling loop
     useEffect(() => {
         let interval;
-        if (autoRefresh) {
+        if (autoRefresh && activeCust) {
             fetchMonitorData();
-            interval = setInterval(fetchMonitorData, 10000); // Poll every 10s
+            interval = setInterval(fetchMonitorData, 10000);
         }
         return () => clearInterval(interval);
-    }, [autoRefresh, ak, sk, projectId, region]);
+    }, [autoRefresh, activeCust, projectId]);
 
     const activeTasks = data.tasks.filter(t => !['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
     const completedTasks = data.tasks.filter(t => ['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
@@ -432,15 +428,14 @@ function GlobalMigrationMonitor() {
                     <p className="text-xs text-slate-400">Single Pane of Glass for SMS Console operations.</p>
                 </div>
                 <div className="flex gap-3 flex-wrap flex-[2]">
-                    <input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none" />
-                    <input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none" />
-                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Project ID" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none" />
-                    <select value={region} onChange={e=>setRegion(e.target.value)} className="w-32 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-bold outline-none">
-                        <option value="la-south-2">Santiago</option><option value="la-north-2">Mexico</option><option value="sa-brazil-1">Sao Paulo</option>
+                    <select value={selectedCustId} onChange={e=>setSelectedCustId(e.target.value)} className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-bold outline-none text-white">
+                        <option value="">-- Select Customer Account --</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.region})</option>)}
                     </select>
+                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Target Project ID" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none text-white" />
                 </div>
                 <div className="flex gap-3">
-                    <button onClick={() => !ak ? alert("Enter credentials") : setAutoRefresh(!autoRefresh)} className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all ${autoRefresh ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'}`}>
+                    <button onClick={() => !activeCust?.ak ? alert("Select a customer with credentials") : setAutoRefresh(!autoRefresh)} className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all ${autoRefresh ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'}`}>
                         {autoRefresh ? <><i className="fas fa-stop-circle mr-2"></i> Stop Polling</> : <><i className="fas fa-satellite-dish mr-2"></i> Live Monitor</>}
                     </button>
                     {!autoRefresh && <button onClick={fetchMonitorData} className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl"><i className={`fas fa-sync-alt ${isPolling ? 'fa-spin' : ''}`}></i></button>}
@@ -504,6 +499,8 @@ function GlobalMigrationMonitor() {
 }
 
 window.GlobalMigrationMonitor = GlobalMigrationMonitor;
+
+window.GlobalMigrationMonitor = GlobalMigrationMonitor;
 function MasterExecutionHub({ projects }) {
     const { useState, useEffect } = React;
     const [globalTasks, setGlobalTasks] = useState([]);
@@ -544,6 +541,79 @@ function MasterExecutionHub({ projects }) {
         </div>
     )
 }
+
+function CustomerDirectory({ customers, onUpdateCustomer, projects }) {
+    const { useState } = React;
+    const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
+    
+    const handleNew = () => {
+        const name = prompt("Enter Customer Name:");
+        if (!name) return;
+        const newCustomer = { id: 'cust_' + Date.now(), name, ak: '', sk: '', region: 'la-south-2', cio: '', it_lead: '', architect: '' };
+        onUpdateCustomer(newCustomer);
+        setSelectedId(newCustomer.id);
+    };
+
+    const activeCust = customers.find(c => c.id === selectedId) || null;
+    const custProjects = activeCust ? (projects || []).filter(p => p.name?.toLowerCase().includes(activeCust.name.toLowerCase())) : [];
+
+    return (
+        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
+            <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center border border-slate-700">
+                <div><h2 className="text-3xl font-black mb-2"><i className="fas fa-address-book text-blue-400 mr-3"></i> Customer Directory (CRM)</h2></div>
+                <button onClick={handleNew} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-black uppercase text-xs tracking-widest"><i className="fas fa-plus mr-2"></i> Add Account</button>
+            </div>
+            
+            <div className="flex flex-col lg:flex-row gap-6">
+                <div className="w-full lg:w-1/3 space-y-3">
+                    {customers.length === 0 ? <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200">No Customers.</div> : 
+                        customers.map(c => (
+                            <div key={c.id} onClick={()=>setSelectedId(c.id)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedId === c.id ? 'bg-blue-50 border-blue-500 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
+                                <div className="font-black text-slate-800 text-lg">{c.name}</div>
+                                <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase"><i className="fas fa-globe mr-1"></i> {c.region}</div>
+                            </div>
+                        ))
+                    }
+                </div>
+                
+                {activeCust && (
+                    <div className="flex-1 space-y-6">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-lock text-rose-500 mr-2"></i> The Vault (Credentials)</h3></div>
+                            <div className="p-6 grid grid-cols-2 gap-6">
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={activeCust.ak} onChange={e=>onUpdateCustomer({...activeCust, ak: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
+                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={activeCust.sk} onChange={e=>onUpdateCustomer({...activeCust, sk: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
+                                <div className="col-span-2"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Primary Target Region</label><input type="text" value={activeCust.region} onChange={e=>onUpdateCustomer({...activeCust, region: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold text-sm outline-none" /></div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-users text-indigo-500 mr-2"></i> The Rolodex</h3></div>
+                            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Exec Sponsor (CIO)</label><input type="text" value={activeCust.cio} onChange={e=>onUpdateCustomer({...activeCust, cio: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Customer IT Lead</label><input type="text" value={activeCust.it_lead} onChange={e=>onUpdateCustomer({...activeCust, it_lead: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Principal Architect</label><input type="text" value={activeCust.architect} onChange={e=>onUpdateCustomer({...activeCust, architect: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-project-diagram text-emerald-500 mr-2"></i> Project Portfolio</h3></div>
+                            <div className="p-6">
+                                {custProjects.length === 0 ? <div className="text-sm text-slate-500">No active projects found matching customer name.</div> : 
+                                    <ul className="space-y-3">
+                                        {custProjects.map(p => <li key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center"><span className="font-bold text-slate-800">{p.name}</span><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded font-black">${p.mrr} MRR</span></li>)}
+                                    </ul>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+window.CustomerDirectory = CustomerDirectory;
 
 // Global window bindings for Babel Standalone scoping
 window.GlobalDashboard = GlobalDashboard; window.GlobalRadar = GlobalRadar; window.GlobalPipeline = GlobalPipeline; window.GlobalSchedule = GlobalSchedule; window.PlaybookStudio = PlaybookStudio; window.GlobalProcessView = GlobalProcessView; window.GlobalMigrationMonitor = GlobalMigrationMonitor; window.MasterExecutionHub = MasterExecutionHub;

@@ -1214,39 +1214,45 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
 }
 
 function MgCReconciliationView({ activeProject, onUpdateProject }) {
-    const { useState } = React;
-    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [region, setRegion] = useState('la-south-2');
-    const [isPolling, setIsPolling] = useState(false); const [mgcData, setMgcData] = useState(activeProject?.mgcData || null);
+    const { useState, useEffect } = React;
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustId, setSelectedCustId] = useState('');
+    const [isPolling, setIsPolling] = useState(false);
+    const [mgcData, setMgcData] = useState(activeProject?.mgcData || null);
     const [acknowledged, setAcknowledged] = useState(activeProject?.scopeAcknowledged || false);
 
+    useEffect(() => { fetch('/api/erp/state').then(r=>r.json()).then(d=> { if(d.customers) setCustomers(d.customers); }); }, []);
+    
+    const activeCust = customers.find(c => c.id === selectedCustId);
     const blueprintCompute = activeProject?.blueprintData?.topology?.compute || [];
 
     const handleLiveDiscovery = async () => {
+        if(!activeCust) return alert("Select a Customer Account first.");
         setIsPolling(true);
         try {
-            const res = await fetch('/api/mgc/discover', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ak, sk, region }) });
+            const res = await fetch('/api/mgc/discover', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ak: activeCust.ak, sk: activeCust.sk, region: activeCust.region }) });
             const data = await res.json();
             if (data.success) { setMgcData(data.servers); onUpdateProject(activeProject.id, 'mgcData', data.servers); }
-        } catch (err) { alert("MgC API Error"); } finally { setIsPolling(false); }
+        } catch (err) { alert("API Error"); } finally { setIsPolling(false); }
     };
-
-    const handleAcknowledge = () => {
-        onUpdateProject(activeProject.id, 'scopeAcknowledged', true);
-        setAcknowledged(true); alert("Scope Creep Acknowledged. FinOps parameters updated.");
-    };
+    
+    const handleAcknowledge = () => { onUpdateProject(activeProject.id, 'scopeAcknowledged', true); setAcknowledged(true); alert("Scope Creep Acknowledged."); };
 
     return (
         <div className="space-y-6 animate-fade-in max-w-[1400px] mx-auto pb-12">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
-                <div><h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-id-card text-blue-500"></i> Customer Environment Profile</h3><p className="text-xs text-slate-500">Store AK/SK credentials to safely query MgC Agent.</p></div>
-                <div className="flex gap-4"><input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="p-2 border rounded text-xs font-mono w-32" /><input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="p-2 border rounded text-xs font-mono w-32" /><button className="px-4 py-2 bg-slate-800 text-white rounded text-xs font-bold">Save Context</button></div>
+                <div><h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-id-card text-blue-500"></i> Account Integration</h3></div>
+                <div className="flex gap-4">
+                    <select value={selectedCustId} onChange={e=>setSelectedCustId(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50">
+                        <option value="">-- Bind CRM Customer --</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                </div>
             </div>
-
+            {/* Action Bar and Table remain the same */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex gap-4">
-                <button onClick={handleLiveDiscovery} disabled={isPolling} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-all">{isPolling ? <><i className="fas fa-spinner fa-spin mr-2"></i> Polling MgC...</> : <><i className="fas fa-satellite-dish mr-2"></i> Trigger Live MgC Discovery</>}</button>
-                <button className="px-6 py-3 bg-slate-100 text-slate-600 border border-slate-300 font-black uppercase tracking-widest text-xs rounded-xl shadow-sm"><i className="fas fa-file-csv mr-2"></i> Upload MgC Export (CSV)</button>
+                <button onClick={handleLiveDiscovery} disabled={isPolling || !activeCust} className="px-6 py-3 bg-purple-600 text-white font-black uppercase tracking-widest text-xs rounded-xl disabled:opacity-50">{isPolling ? 'Polling...' : 'Trigger Live MgC Discovery'}</button>
             </div>
-
             {mgcData && (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-black tracking-widest uppercase text-sm"><i className="fas fa-balance-scale text-purple-400 mr-2"></i> Reality vs. Quote (Diff Engine)</h3>
@@ -1275,9 +1281,7 @@ function MgCReconciliationView({ activeProject, onUpdateProject }) {
             )}
         </div>
     );
-}
-
-function WBSImportView({ activeProject, onUpdateProject }) {
+}function WBSImportView({ activeProject, onUpdateProject }) {
     const { useState } = React;
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);

@@ -305,9 +305,11 @@ def upload_quotation():
 def get_state():
     projects = ProjectData.query.all()
     playbooks = GlobalPlaybooks.query.filter_by(id="master").first()
+    customers = Customer.query.all()
     return jsonify({
         "projects": [json.loads(p.data) for p in projects],
-        "playbooks": json.loads(playbooks.data) if playbooks else None
+        "playbooks": json.loads(playbooks.data) if playbooks else None,
+        "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region, "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect} for c in customers]
     })
 
 @app.route('/api/erp/projects', methods=['POST'])
@@ -331,6 +333,25 @@ def save_playbooks():
         pb = GlobalPlaybooks(id="master")
         db.session.add(pb)
     pb.data = json.dumps(request.json)
+    db.session.commit()
+    return jsonify({"success": True})
+
+@app.route('/api/erp/customers', methods=['POST'])
+@requires_auth
+def save_customer():
+    req = request.json
+    c_id = str(req.get('id'))
+    c = Customer.query.get(c_id)
+    if not c:
+        c = Customer(id=c_id)
+        db.session.add(c)
+    c.name = req.get('name', '')
+    c.ak = req.get('ak', '')
+    c.sk = req.get('sk', '')
+    c.region = req.get('region', '')
+    c.cio = req.get('cio', '')
+    c.it_lead = req.get('it_lead', '')
+    c.architect = req.get('architect', '')
     db.session.commit()
     return jsonify({"success": True})
 
