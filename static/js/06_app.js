@@ -44,9 +44,14 @@ function App() {
     setProjects(prevProjects => {
       const updated = prevProjects.map(p => {
         if (String(p.id) === String(id)) {
-          let newProject = { ...p };
-          if (typeof fieldOrUpdates === 'string' && value !== undefined) newProject[fieldOrUpdates] = value;
-          else if (typeof fieldOrUpdates === 'object') newProject = { ...p, ...fieldOrUpdates };
+          let newProject;
+          if (typeof fieldOrUpdates === 'string' && value !== undefined) {
+             newProject = { ...p, [fieldOrUpdates]: value };
+          } else if (typeof fieldOrUpdates === 'object') {
+             newProject = { ...p, ...fieldOrUpdates };
+          } else {
+             newProject = { ...p };
+          }
           
           // CRM TRIGGER: Auto-create Customer when moving from Radar to Pipeline
           if (p.isWaiting === true && newProject.isWaiting === false) {
@@ -54,7 +59,15 @@ function App() {
               setCustomers(prevCusts => {
                   if (!prevCusts.some(c => c.name === customerName)) {
                       const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
-                      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCust) });
+                      // Save customer to database with error handling
+                      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCust) })
+                          .then(res => res.json())
+                          .then(data => {
+                              if (!data.success) {
+                                  console.error('Failed to save customer:', data.error);
+                              }
+                          })
+                          .catch(err => console.error('Error saving customer:', err));
                       return [...prevCusts, newCust];
                   }
                   return prevCusts;
@@ -90,7 +103,18 @@ function App() {
   
   const handleUpdateCustomer = (customerData) => {
       setCustomers(prev => prev.some(c => c.id === customerData.id) ? prev.map(c => c.id === customerData.id ? customerData : c) : [...prev, customerData]);
-      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(customerData) });
+      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(customerData) })
+          .then(res => res.json())
+          .then(data => {
+              if (!data.success) {
+                  console.error('Failed to save customer:', data.error);
+                  alert('Failed to save customer: ' + (data.error || 'Unknown error'));
+              }
+          })
+          .catch(err => {
+              console.error('Error saving customer:', err);
+              alert('Error saving customer. Check console for details.');
+          });
   };
 
   const handleHardReset = () => { 
