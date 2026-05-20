@@ -511,6 +511,111 @@ def sms_discover_public():
             "success": False, 
             "error": error_msg
         }), 500
+
+@app.route('/api/sms/monitor', methods=['POST'])
+def sms_monitor_public():
+    try:
+        req = request.json
+        ak = req.get('ak')
+        sk = req.get('sk')
+        project_id = req.get('projectId', '').strip()
+        region = req.get('region', 'la-south-2').strip()
+        
+        if not ak or not sk or not project_id:
+            return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
+            
+        import requests
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+        from huaweicloudsdkcore.auth.credentials import BasicCredentials
+        from urllib.parse import urlparse
+        
+        # Handle LATAM → Singapore routing
+        if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
+            # LATAM regions route through Singapore SMS control plane
+            endpoint = "https://sms.ap-southeast-3.myhuaweicloud.com"
+        else:
+            # Use the region directly for supported regions
+            endpoint = f"https://sms.{region}.myhuaweicloud.com"
+        
+        # Create credentials for signing
+        credentials = BasicCredentials(ak, sk, project_id)
+        signer = Signer(credentials)
+        
+        # 1. Fetch Registered Source Servers
+        parsed_url_sources = urlparse(f"{endpoint}/v3/sources")
+        sdk_request_sources = SdkRequest(
+            method="GET",
+            schema=parsed_url_sources.scheme,
+            host=parsed_url_sources.netloc,
+            resource_path=parsed_url_sources.path,
+            query_params=[("limit", "100"), ("offset", "0")],
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        signed_request_sources = signer.sign(sdk_request_sources)
+        url_sources = f"{endpoint}/v3/sources?limit=100&offset=0"
+        res_sources = requests.get(url_sources, headers=signed_request_sources.header_params)
+        servers_data = res_sources.json().get('source_servers', []) if res_sources.status_code < 400 else []
+        
+        # 2. Fetch Active and Historic Migration Tasks
+        parsed_url_tasks = urlparse(f"{endpoint}/v3/tasks")
+        sdk_request_tasks = SdkRequest(
+            method="GET",
+            schema=parsed_url_tasks.scheme,
+            host=parsed_url_tasks.netloc,
+            resource_path=parsed_url_tasks.path,
+            query_params=[("limit", "100"), ("offset", "0")],
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        signed_request_tasks = signer.sign(sdk_request_tasks)
+        url_tasks = f"{endpoint}/v3/tasks?limit=100&offset=0"
+        res_tasks = requests.get(url_tasks, headers=signed_request_tasks.header_params)
+        tasks_data = res_tasks.json().get('tasks', []) if res_tasks.status_code < 400 else []
+        
+        # 3. Format Servers (Fixing the Bytes to GB bug)
+        formatted_servers = []
+        for s in servers_data:
+            formatted_servers.append({
+                "id": s.get('id', ""),
+                "name": s.get('name', s.get('ip', "Unknown")),
+                "ip": s.get('ip', ""),
+                "os": s.get('os_type', "Unknown"),
+                "cpu": s.get('cpu_quantity', 0),
+                "ram": int(s.get('memory', 0) or 0) // (1024**3), # Convert Bytes to GB
+                "state": s.get('state', "Unknown"),
+                "connected": s.get('connected', False),
+                "agent_version": s.get('agent_version', "Unknown")
+            })
+            
+        # 4. Format Tasks
+        formatted_tasks = []
+        for t in tasks_data:
+            formatted_tasks.append({
+                "id": t.get('id', ""),
+                "name": t.get('name', ""),
+                "state": t.get('state', "Unknown"),
+                "progress": t.get('progress', 0),
+                "migration_type": t.get('type', "SERVER"),
+                "start_date": t.get('start_date', 0),
+                "target_flavor": t.get('target_server', {}).get('flavor', 'Unknown') if t.get('target_server') else 'Unknown'
+            })
+            
+        return jsonify({
+            "success": True, 
+            "servers": formatted_servers,
+            "tasks": formatted_tasks
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route('/api/sms/sync', methods=['POST'])
 @requires_auth
 def sms_sync():

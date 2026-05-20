@@ -163,7 +163,7 @@ function App() {
             <div className="pt-4 mt-4 border-t border-slate-800">
                 <button onClick={()=>navToPhase('process')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='process' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-route w-5 text-center"></i> Standard Process</button>
                 <button onClick={()=>navToPhase('playbooks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='playbooks' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-book-open w-5 text-center"></i> Playbook Studio</button>
-                <button onClick={()=>navToPhase('adhoc_sms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='adhoc_sms' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-bolt w-5 text-center"></i> Ad-Hoc SMS Migrate</button>
+                <button onClick={()=>navToPhase('migration_monitor')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='migration_monitor' && activeProjectId==='none' ?'bg-emerald-500 text-slate-900 shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-tv w-5 text-center"></i> Migration NOC</button>
             </div>
          </div>
 
@@ -216,7 +216,7 @@ function App() {
                        {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
-                       {activePhase === 'adhoc_sms' && <GlobalAdHocWizard />}
+                       {activePhase === 'migration_monitor' && <GlobalMigrationMonitor />}
                        {activePhase === 'master_hub' && <MasterExecutionHub projects={projects} />}
                    </>
                ) : (
