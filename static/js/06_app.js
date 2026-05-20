@@ -14,95 +14,61 @@ function App() {
   const ERP_PLAYBOOK_KEY = 'cac_erp_playbooks_v46';
 
   useEffect(() => {
-    // Existing project fetch
-    fetch('/api/erp/state').then(res => res.json()).then(data => {
-        if (data.projects && data.projects.length > 0) setProjects(data.projects); else setProjects(defaultProjects);
-        if (data.playbooks) setCustomPlaybooks(data.playbooks); else setCustomPlaybooks(defaultPlaybooks);
-    }).catch(err => console.error(err));
+    fetch('/api/erp/state')
+        .then(res => res.json())
+        .then(data => {
+            if (data.projects && data.projects.length > 0) {
+                setProjects(data.projects);
+            } else {
+                // FIX GHOST DEFAULTS: Save hardcoded projects to SQLite immediately so they persist and behave normally
+                setProjects(defaultProjects);
+                defaultProjects.forEach(p => fetch('/api/erp/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(p) }));
+            }
+            if (data.playbooks) setCustomPlaybooks(data.playbooks);
+            else setCustomPlaybooks(defaultPlaybooks);
+        })
+        .catch(err => { console.error(err); setProjects(defaultProjects); setCustomPlaybooks(defaultPlaybooks); });
     
-    // NEW: Fetch Customers
-    fetch('/api/erp/customers').then(res => res.json()).then(data => {
-        if (data.success && data.customers) setCustomers(data.customers);
-    }).catch(err => console.error(err));
-    
+    // FETCH CUSTOMERS
+    fetch('/api/erp/customers')
+        .then(res => res.json())
+        .then(data => { if (data.success && data.customers) setCustomers(data.customers); })
+        .catch(err => console.error(err));
+        
     const handleResize = () => { if(window.innerWidth > 1024) setSidebarOpen(true); else setSidebarOpen(false); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handleUpdateProject = (id, fieldOrUpdates, value) => { 
-    console.log('handleUpdateProject called:', { id, fieldOrUpdates, value, idType: typeof id });
-    
-    // Use functional update to ensure we have the latest state
     setProjects(prevProjects => {
       const updated = prevProjects.map(p => {
-        // Compare IDs as strings to handle both number and string IDs
         if (String(p.id) === String(id)) {
-          // Handle both signatures: (id, field, value) and (id, updatesObject)
-          if (typeof fieldOrUpdates === 'string' && value !== undefined) {
-            // Signature: (id, field, value)
-            console.log(`Updating project ${id} (${typeof id}) field ${fieldOrUpdates} from:`, p[fieldOrUpdates]);
-            console.log(`Updating project ${id} (${typeof id}) field ${fieldOrUpdates} to:`, value);
-            const newProject = { ...p, [fieldOrUpdates]: value };
-            console.log(`Updated project ${id}:`, { 
-              id: newProject.id, 
-              name: newProject.name,
-              [fieldOrUpdates]: newProject[fieldOrUpdates],
-              blueprintData: newProject.blueprintData,
-              arbArtefacts: newProject.arbArtefacts
-            });
-            
-            // THE CRM TRIGGER: If project is moved out of waiting (Start ARB), create customer if missing
-            if (fieldOrUpdates === 'isWaiting' && value === false && p.isWaiting === true) {
-                const customerName = newProject.name.split('-')[0].trim(); // Extract 'Bank of Andes' from 'Bank of Andes - Migration'
-                if (!customers.some(c => c.name === customerName)) {
-                    const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
-                    handleUpdateCustomer(newCust);
-                }
-            }
-
-            // Save to database
-            fetch('/api/erp/projects', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newProject)
-            });
-            return newProject;
-          } else if (typeof fieldOrUpdates === 'object') {
-            // Signature: (id, updatesObject)
-            console.log(`Updating project ${id} (${typeof id}) with multiple fields:`, fieldOrUpdates);
-            const newProject = { ...p, ...fieldOrUpdates };
-            console.log(`Updated project ${id}:`, { 
-              id: newProject.id, 
-              name: newProject.name,
-              ...fieldOrUpdates
-            });
-            
-            // THE CRM TRIGGER: If project is moved out of waiting (Start ARB), create customer if missing
-            if (fieldOrUpdates.isWaiting === false && p.isWaiting === true) {
-                const customerName = newProject.name.split('-')[0].trim(); // Extract 'Bank of Andes' from 'Bank of Andes - Migration'
-                if (!customers.some(c => c.name === customerName)) {
-                    const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
-                    handleUpdateCustomer(newCust);
-                }
-            }
-
-            // Save to database
-            fetch('/api/erp/projects', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newProject)
-            });
-            return newProject;
+          let newProject = { ...p };
+          if (typeof fieldOrUpdates === 'string' && value !== undefined) newProject[fieldOrUpdates] = value;
+          else if (typeof fieldOrUpdates === 'object') newProject = { ...p, ...fieldOrUpdates };
+          
+          // CRM TRIGGER: Auto-create Customer when moving from Radar to Pipeline
+          if (p.isWaiting === true && newProject.isWaiting === false) {
+              const customerName = newProject.name.split('-')[0].trim();
+              setCustomers(prevCusts => {
+                  if (!prevCusts.some(c => c.name === customerName)) {
+                      const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
+                      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCust) });
+                      return [...prevCusts, newCust];
+                  }
+                  return prevCusts;
+              });
           }
+
+          fetch('/api/erp/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProject) });
+          return newProject;
         }
         return p;
       });
-      console.log('Projects after update in functional update:', updated.find(p => String(p.id) === String(id)));
       return updated;
     });
-  };
-  const handleAddProject = (p) => { 
+  };  const handleAddProject = (p) => { 
     const updated = [p, ...projects]; 
     setProjects(updated); 
     // Save to database
@@ -123,10 +89,8 @@ function App() {
   };
   
   const handleUpdateCustomer = (customerData) => {
-    const exists = customers.find(c => c.id === customerData.id);
-    const updated = exists ? customers.map(c => c.id === customerData.id ? customerData : c) : [...customers, customerData];
-    setCustomers(updated);
-    fetch('/api/erp/customers', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(customerData) });
+      setCustomers(prev => prev.some(c => c.id === customerData.id) ? prev.map(c => c.id === customerData.id ? customerData : c) : [...prev, customerData]);
+      fetch('/api/erp/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(customerData) });
   };
 
   const handleHardReset = () => { 
