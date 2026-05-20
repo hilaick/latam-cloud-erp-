@@ -271,6 +271,15 @@ function PlaybookStudio({ customPlaybooks, setCustomPlaybooks }) {
         setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: updatedTasks}});
     };
 
+    const handleDeletePlaybook = () => {
+        if(confirm(`Delete playbook '${activePlaybook.name}'?`)) {
+            const newBooks = {...safePlaybooks};
+            delete newBooks[selectedKey];
+            setCustomPlaybooks(newBooks);
+            setSelectedKey(Object.keys(newBooks)[0] || "");
+        }
+    };
+
     const handleAddTask = () => {
         const newId = prompt("Enter WBS ID (e.g., 4.1):");
         if(!newId) return;
@@ -302,7 +311,10 @@ function PlaybookStudio({ customPlaybooks, setCustomPlaybooks }) {
                 <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-[600px]">
                     <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                         <h3 className="font-black text-lg text-slate-800">Editing: {activePlaybook?.name}</h3>
-                        <button onClick={handleAddTask} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shadow-sm"><i className="fas fa-plus mr-2"></i> Add Task Row</button>
+                        <div className="flex gap-2">
+                            <button onClick={handleAddTask} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shadow-sm"><i className="fas fa-plus mr-2"></i> Add Task</button>
+                            <button onClick={handleDeletePlaybook} className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold shadow-sm border border-rose-200"><i className="fas fa-trash-alt"></i></button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto bg-slate-50 p-6 custom-scrollbar">
                         <table className="w-full text-left min-w-[800px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
@@ -332,11 +344,11 @@ function PlaybookStudio({ customPlaybooks, setCustomPlaybooks }) {
 
 function GlobalProcessView() {
     const phases = [
-        { id: 1, title: "ARB Intake Gate", icon: "fa-door-open", color: "bg-purple-500", shadow: "shadow-purple-500/30", text: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200", owner: "Sales Architect (SA)", desc: "Pre-sales transition phase.", artefacts: ["Present State HLD (As-Is)", "Target Architecture (To-Be)", "Signed Scope of Work (SOW)"] },
-        { id: 2, title: "Architecture & Physics", icon: "fa-project-diagram", color: "bg-blue-500", shadow: "shadow-blue-500/30", text: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", owner: "Principal Architect", desc: "Technical validation phase.", artefacts: ["IaC Topology Map", "Delivery Physics Calculation", "ORA Friction Profile"] },
-        { id: 3, title: "Delivery Planning", icon: "fa-tasks", color: "bg-emerald-500", shadow: "shadow-emerald-500/30", text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", owner: "Delivery Manager", desc: "Financial and scheduling phase.", artefacts: ["FinOps Commercial Model", "RACI Assignment Matrix", "Enterprise Playbook / WBS"] },
-        { id: 4, title: "Active Execution", icon: "fa-rocket", color: "bg-amber-500", shadow: "shadow-amber-500/30", text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200", owner: "Delivery Pod / Partner", desc: "The active migration phase.", artefacts: ["TAM Support Ticket Hub", "Active Comms Dashboard", "Live Progress Gantt"] },
-        { id: 5, title: "Post-Live Handover", icon: "fa-award", color: "bg-slate-700", shadow: "shadow-slate-700/30", text: "text-slate-800", bg: "bg-slate-100", border: "border-slate-300", owner: "TAM / Principal Architect", desc: "Final delivery milestone.", artefacts: ["5-Pillar WAR Scorecard", "Cost Optimization Review", "Formal Project Sign-Off"] }
+        { id: 1, title: "ARB Intake Gate", icon: "fa-door-open", color: "bg-purple-500", shadow: "shadow-purple-500/30", text: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200", owner: "Sales Architect (SA)", desc: "Pre-sales transition and blueprint generation.", artefacts: ["Present State HLD (As-Is)", "Target Architecture (To-Be)", "Signed SOW & Blueprint.json"] },
+        { id: 2, title: "Architecture & Physics", icon: "fa-project-diagram", color: "bg-blue-500", shadow: "shadow-blue-500/30", text: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", owner: "Principal Architect", desc: "Technical validation against live environment.", artefacts: ["Live MgC Sizing Reconciliation", "Delivery Physics Calculation", "ORA Friction Profile"] },
+        { id: 3, title: "Delivery Planning", icon: "fa-tasks", color: "bg-emerald-500", shadow: "shadow-emerald-500/30", text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", owner: "Delivery Manager", desc: "Financial modeling and execution scheduling.", artefacts: ["FinOps Commercial Model", "RACI Assignment Matrix", "WBS Migration Plan Lock"] },
+        { id: 4, title: "Active Execution", icon: "fa-rocket", color: "bg-amber-500", shadow: "shadow-amber-500/30", text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200", owner: "Delivery Pod / Partner", desc: "The active block-level migration phase.", artefacts: ["Live Cloud NOC Dashboard", "Master Execution Hub Updates", "TAM Support Ticket Tracking"] },
+        { id: 5, title: "Post-Live Handover", icon: "fa-award", color: "bg-slate-700", shadow: "shadow-slate-700/30", text: "text-slate-800", bg: "bg-slate-100", border: "border-slate-300", owner: "TAM / Principal Architect", desc: "Cost Optimization verification and sign-off.", artefacts: ["Automated WAR Diff Engine", "Cost Optimization Verification", "Formal Project Sign-Off"] }
     ];
 
     return (
@@ -456,6 +468,11 @@ function MasterExecutionHub({ projects }) {
         fetch('/api/wbs/global').then(r=>r.json()).then(d=> { if(d.success) setGlobalTasks(d.tasks); });
     }, []);
 
+    const updateTaskProgress = async (taskId, newProgress) => {
+        await fetch('/api/wbs/task', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: taskId, progress: newProgress}) });
+        setGlobalTasks(globalTasks.map(t => t.id === taskId ? {...t, progress: newProgress} : t));
+    };
+
     return (
         <div className="max-w-[1800px] mx-auto space-y-6 pb-12 animate-fade-in">
             <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center border border-slate-700">
@@ -477,7 +494,13 @@ function MasterExecutionHub({ projects }) {
                                     <td className="p-4 font-mono text-slate-500">{t.wbs_id}</td>
                                     <td className="p-4">{t.name}</td>
                                     <td className="p-4"><span className="bg-slate-200 px-2 py-1 rounded text-[10px] font-black">{t.raci}</span></td>
-                                    <td className="p-4"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{width: t.progress}}></div></div></td>
+                                    <td className="p-4">
+                                        {!t.is_parent ? (
+                                            <select value={t.progress} onChange={e => updateTaskProgress(t.id, e.target.value)} className={`border rounded p-1.5 text-xs font-black outline-none ${t.progress==='100%'?'bg-emerald-100 text-emerald-800 border-emerald-300':'bg-amber-50 text-amber-800 border-amber-300'}`}>
+                                                <option value="0%">0%</option><option value="25%">25%</option><option value="50%">50%</option><option value="75%">75%</option><option value="100%">100%</option>
+                                            </select>
+                                        ) : <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-slate-400 h-full w-full"></div></div>}
+                                    </td>
                                     <td className="p-4 font-mono text-[10px]">{t.start_date} - {t.end_date}</td>
                                 </tr>
                             )
@@ -489,7 +512,7 @@ function MasterExecutionHub({ projects }) {
     )
 }
 
-function CustomerDirectory({ customers, projects, onUpdateCustomer }) {
+function CustomerDirectory({ customers, projects, onUpdateCustomer, onDeleteCustomer }) {
     const { useState, useEffect } = React;
     const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
     
@@ -533,7 +556,10 @@ function CustomerDirectory({ customers, projects, onUpdateCustomer }) {
                 {activeCustomer ? (
                     <div className="flex-1 space-y-6">
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                            <h3 className="font-black text-2xl text-slate-800 mb-6 border-b border-slate-100 pb-4">{activeCustomer.name}</h3>
+                            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                                <h3 className="font-black text-2xl text-slate-800">{activeCustomer.name}</h3>
+                                <button onClick={()=>onDeleteCustomer(activeCustomer.id)} className="px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-trash-alt mr-2"></i> Delete Account</button>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-4">
                                     <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4"><i className="fas fa-lock text-emerald-500 mr-2"></i> Security Vault (API Credentials)</h4>
@@ -548,7 +574,10 @@ function CustomerDirectory({ customers, projects, onUpdateCustomer }) {
                                         {linkedProjects.length === 0 && <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl text-center text-xs font-bold text-slate-400">No active projects found.</div>}
                                         {linkedProjects.map(p => (
                                             <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
-                                                <div><div className="font-bold text-sm text-slate-800">{p.name}</div><div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">{p.sa}</div></div>
+                                                <div>
+                                                    <div className="font-bold text-sm text-slate-800">{p.name}</div>
+                                                    <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold"><i className="fas fa-globe-americas mr-1"></i> {p.country || 'Global'} | SA: {p.sa}</div>
+                                                </div>
                                                 <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">${p.mrr}</div>
                                             </div>
                                         ))}

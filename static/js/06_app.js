@@ -117,6 +117,14 @@ function App() {
           });
   };
 
+  const handleDeleteCustomer = (id) => {
+      if(confirm("Are you sure you want to permanently delete this Customer Profile?")) {
+          setCustomers(prev => prev.filter(c => c.id !== id));
+          fetch(`/api/erp/customers/${id}`, { method: 'DELETE' });
+          setActivePhase('home'); // Redirect to home to refresh view
+      }
+  };
+
   const handleHardReset = () => { 
     if(confirm("Are you sure you want to permanently delete all data and restore defaults? This will wipe the SQLite database.")) { 
       fetch('/api/erp/reset', { method: 'POST' })
@@ -241,7 +249,7 @@ function App() {
                        {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
-                       {activePhase === 'crm' && <CustomerDirectory customers={customers} projects={projects} onUpdateCustomer={handleUpdateCustomer} />}
+                       {activePhase === 'crm' && <CustomerDirectory customers={customers} projects={projects} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} />}
                        {activePhase === 'migration_monitor' && <GlobalMigrationMonitor />}
                        {activePhase === 'master_hub' && <MasterExecutionHub projects={projects} />}
                    </>

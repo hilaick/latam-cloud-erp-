@@ -938,8 +938,8 @@ function DedicatedMigrationPlan({ project, onUpdateProject, customPlaybooks }) {
                                         <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
                                         <td className="p-3">
                                             {!task.isParent && (
-                                                <div className={`px-3 py-1.5 rounded-lg border-2 inline-flex items-center w-full max-w-[80px] shadow-sm ${task.prog==='100%'?'bg-emerald-50 border-emerald-200 text-emerald-800 font-black':task.prog==='0%'?'bg-white border-slate-200 text-slate-500':'bg-blue-50 border-blue-200 text-blue-800 font-black'}`}>
-                                                    <EditableCell value={task.prog} onSave={v=>handlePlanUpdate(task.id, 'prog', v)} className="w-full text-center" />
+                                                <div className={`px-3 py-1.5 rounded-lg border-2 inline-flex items-center w-full max-w-[80px] justify-center shadow-sm ${(task.progress==='100%'||task.prog==='100%')?'bg-emerald-50 border-emerald-200 text-emerald-800 font-black':'bg-slate-50 border-slate-200 text-slate-500 font-bold'}`}>
+                                                    {task.progress || task.prog || '0%'}
                                                 </div>
                                             )}
                                         </td>
