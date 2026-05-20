@@ -94,13 +94,20 @@ function App() {
   };
 
   const handleHardReset = () => { 
-    if(confirm("Are you sure you want to permanently delete all data and restore defaults?")) { 
-      // Note: In production, we would need a DELETE endpoint to clear database
-      // For now, just reset local state
-      setProjects(defaultProjects); 
-      setCustomPlaybooks(defaultPlaybooks); 
-      setActiveProjectId("none"); 
-      setActivePhase('home'); 
+    if(confirm("Are you sure you want to permanently delete all data and restore defaults? This will wipe the SQLite database.")) { 
+      fetch('/api/erp/reset', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                setProjects(defaultProjects); 
+                setCustomers([]);
+                setCustomPlaybooks(defaultPlaybooks); 
+                setActiveProjectId("none"); 
+                setActivePhase('home');
+                defaultProjects.forEach(p => fetch('/api/erp/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(p) }));
+                alert("Database wiped successfully.");
+            }
+        }).catch(err => alert("Error resetting database."));
     } 
   };
 
