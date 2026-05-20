@@ -13,7 +13,6 @@ from services.wbs_ingestor import parse_wbs_csv
 from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog, Customer, WBSTask
 from functools import wraps
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
-from huaweicloudsdksms.v3.region.sms_region import SmsRegion
 from huaweicloudsdksms.v3 import SmsClient
 from huaweicloudsdksms.v3 import ListServersRequest, ListTasksRequest
 
@@ -373,21 +372,24 @@ def sms_discover_public():
             return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
             
         from huaweicloudsdkcore.auth.credentials import BasicCredentials
-        from huaweicloudsdksms.v3.region.sms_region import SmsRegion
+        from huaweicloudsdkcore.region.region import Region
         from huaweicloudsdksms.v3 import SmsClient
         from huaweicloudsdksms.v3 import ListServersRequest
         
         credentials = BasicCredentials(ak, sk, project_id)
         
-        # Query the EXACT region selected by the user. Do NOT map to Singapore.
+        # BYPASS THE SDK'S HARDCODED REGION LIST
+        # Dynamically construct the native endpoint for the user's local region
+        custom_region = Region(region, f"https://sms.{region}.myhuaweicloud.com")
+        
         client = SmsClient.new_builder() \
             .with_credentials(credentials) \
-            .with_region(SmsRegion.value_of(region)) \
+            .with_region(custom_region) \
             .build()
         
         servers = []
         
-        # Pull servers strictly from the live Huawei Console API
+        # Pull servers strictly from the live Huawei API in the local region
         servers_request = ListServersRequest()
         servers_request.limit = 50
         servers_request.offset = 0
@@ -408,12 +410,11 @@ def sms_discover_public():
                     "agent_version": getattr(server, 'agent_version', 'unknown'),
                     "ip": getattr(server, 'ip', ''),
                     "agent_status": 'connected' if getattr(server, 'connected', False) else 'disconnected',
-                    "sync_status": 'idle', # Placeholder until task API is merged
+                    "sync_status": 'idle',
                     "last_heartbeat": getattr(server, 'updated', '')
                 }
                 servers.append(server_info)
         
-        # Return STRICTLY what was found. No fallbacks.
         return jsonify({
             "success": True, 
             "servers": servers,
@@ -426,13 +427,10 @@ def sms_discover_public():
         print(f"Huawei Cloud SMS API Error: {error_msg}")
         print(traceback.format_exc())
         
-        # Pass the raw API error directly to the frontend
         return jsonify({
             "success": False, 
             "error": error_msg
         }), 500
-
-
 @app.route('/api/sms/sync', methods=['POST'])
 @requires_auth
 def sms_sync():
