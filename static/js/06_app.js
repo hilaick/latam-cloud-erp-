@@ -14,15 +14,17 @@ function App() {
   const ERP_PLAYBOOK_KEY = 'cac_erp_playbooks_v46';
 
   useEffect(() => {
-    fetch('/api/erp/state')
-        .then(res => res.json())
-        .then(data => {
-            if (data.projects && data.projects.length > 0) setProjects(data.projects);
-            if (data.playbooks) setCustomPlaybooks(data.playbooks);
-            if (data.customers) setCustomers(data.customers);
-        })
-        .catch(err => console.error("DB Fetch failed", err));
-        
+    // Existing project fetch
+    fetch('/api/erp/state').then(res => res.json()).then(data => {
+        if (data.projects && data.projects.length > 0) setProjects(data.projects); else setProjects(defaultProjects);
+        if (data.playbooks) setCustomPlaybooks(data.playbooks); else setCustomPlaybooks(defaultPlaybooks);
+    }).catch(err => console.error(err));
+    
+    // NEW: Fetch Customers
+    fetch('/api/erp/customers').then(res => res.json()).then(data => {
+        if (data.success && data.customers) setCustomers(data.customers);
+    }).catch(err => console.error(err));
+    
     const handleResize = () => { if(window.innerWidth > 1024) setSidebarOpen(true); else setSidebarOpen(false); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -49,6 +51,16 @@ function App() {
               blueprintData: newProject.blueprintData,
               arbArtefacts: newProject.arbArtefacts
             });
+            
+            // THE CRM TRIGGER: If project is moved out of waiting (Start ARB), create customer if missing
+            if (fieldOrUpdates === 'isWaiting' && value === false && p.isWaiting === true) {
+                const customerName = newProject.name.split('-')[0].trim(); // Extract 'Bank of Andes' from 'Bank of Andes - Migration'
+                if (!customers.some(c => c.name === customerName)) {
+                    const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
+                    handleUpdateCustomer(newCust);
+                }
+            }
+
             // Save to database
             fetch('/api/erp/projects', {
               method: 'POST',
@@ -65,6 +77,16 @@ function App() {
               name: newProject.name,
               ...fieldOrUpdates
             });
+            
+            // THE CRM TRIGGER: If project is moved out of waiting (Start ARB), create customer if missing
+            if (fieldOrUpdates.isWaiting === false && p.isWaiting === true) {
+                const customerName = newProject.name.split('-')[0].trim(); // Extract 'Bank of Andes' from 'Bank of Andes - Migration'
+                if (!customers.some(c => c.name === customerName)) {
+                    const newCust = { id: 'cust_' + Date.now(), name: customerName, ak: '', sk: '', region: 'la-south-2' };
+                    handleUpdateCustomer(newCust);
+                }
+            }
+
             // Save to database
             fetch('/api/erp/projects', {
               method: 'POST',
@@ -162,6 +184,7 @@ function App() {
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 mb-3">Global Overviews</p>
             <button onClick={()=>navToPhase('home')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='home' && activeProjectId==='none' ?'bg-blue-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5 text-center"></i> Executive Dash</button>
             <button onClick={()=>navToPhase('map')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='map' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-globe-americas w-5 text-center"></i> Regional Map</button>
+            <button onClick={()=>navToPhase('crm')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='crm' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-building w-5 text-center"></i> Customer Directory</button>
             <button onClick={()=>navToPhase('pipeline')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='pipeline' && activeProjectId==='none' ?'bg-emerald-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-list-alt w-5 text-center"></i> Master Pipeline</button>
             <button onClick={()=>navToPhase('master_hub')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='master_hub' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-chess-board w-5 text-center"></i> Master Execution Hub</button>
             <button onClick={()=>navToPhase('schedule')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='schedule' && activeProjectId==='none' ?'bg-amber-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-calendar-alt w-5 text-center"></i> Regional Schedule</button>
@@ -170,7 +193,6 @@ function App() {
             <div className="pt-4 mt-4 border-t border-slate-800">
                 <button onClick={()=>navToPhase('process')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase==='process' && activeProjectId==='none' ?'bg-blue-500 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-route w-5 text-center"></i> Standard Process</button>
                 <button onClick={()=>navToPhase('playbooks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='playbooks' && activeProjectId==='none' ?'bg-indigo-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-book-open w-5 text-center"></i> Playbook Studio</button>
-                <button onClick={()=>navToPhase('customer_dir')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='customer_dir' && activeProjectId==='none' ?'bg-blue-600 text-white shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-address-book w-5 text-center"></i> Customer Directory</button>
                 <button onClick={()=>navToPhase('migration_monitor')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase==='migration_monitor' && activeProjectId==='none' ?'bg-emerald-500 text-slate-900 shadow-md':'text-slate-300 hover:bg-slate-800'}`}><i className="fas fa-tv w-5 text-center"></i> Migration NOC</button>
             </div>
          </div>
@@ -224,7 +246,7 @@ function App() {
                        {activePhase === 'schedule' && <GlobalSchedule projects={projects} />}
                        {activePhase === 'process' && <GlobalProcessView />}
                        {activePhase === 'playbooks' && <PlaybookStudio customPlaybooks={customPlaybooks} setCustomPlaybooks={handleSavePlaybooks} />}
-                       {activePhase === 'customer_dir' && <CustomerDirectory customers={customers} onUpdateCustomer={handleUpdateCustomer} projects={projects} />}
+                       {activePhase === 'crm' && <CustomerDirectory customers={customers} projects={projects} onUpdateCustomer={handleUpdateCustomer} />}
                        {activePhase === 'migration_monitor' && <GlobalMigrationMonitor />}
                        {activePhase === 'master_hub' && <MasterExecutionHub projects={projects} />}
                    </>

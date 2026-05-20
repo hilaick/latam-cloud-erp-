@@ -380,124 +380,71 @@ function GlobalProcessView() {
 }
 
 function GlobalMigrationMonitor() {
-    const { useState, useEffect } = React;
-    const [customers, setCustomers] = useState([]);
-    const [selectedCustId, setSelectedCustId] = useState('');
-    const [projectId, setProjectId] = useState('');
-    const [isPolling, setIsPolling] = useState(false);
-    const [autoRefresh, setAutoRefresh] = useState(false);
-    const [data, setData] = useState({ servers: [], tasks: [] });
-
-    useEffect(() => { fetch('/api/erp/state').then(r=>r.json()).then(d=> { if(d.customers) setCustomers(d.customers); }); }, []);
+    const { useState } = React;
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); 
+    const [projectId, setProjectId] = useState(''); const [region, setRegion] = useState('la-south-2');
+    const [inventory, setInventory] = useState(null); const [isLoading, setIsLoading] = useState(false);
     
-    const activeCust = customers.find(c => c.id === selectedCustId);
-
-    const fetchMonitorData = async () => {
-        if (!activeCust?.ak || !activeCust?.sk || !projectId) return;
-        setIsPolling(true);
+    const fetchInventory = async () => {
+        if (!ak || !sk || !projectId) return alert("Credentials required.");
+        setIsLoading(true);
         try {
-            const res = await fetch('/api/sms/monitor', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ak: activeCust.ak, sk: activeCust.sk, projectId, region: activeCust.region })
-            });
-            const payload = await res.json();
-            if (payload.success) setData({ servers: payload.servers || [], tasks: payload.tasks || [] });
-            else { alert(`API Error: ${payload.error}`); setAutoRefresh(false); }
-        } catch (err) { console.error(err); setAutoRefresh(false); } finally { setIsPolling(false); }
+            const res = await fetch('/api/cloud/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, projectId, region }) });
+            const data = await res.json();
+            if (data.success) setInventory(data.inventory);
+            else alert("API Error: " + data.error);
+        } catch (err) { alert("Network Error"); } finally { setIsLoading(false); }
     };
-
-    // Auto-polling loop
-    useEffect(() => {
-        let interval;
-        if (autoRefresh && activeCust) {
-            fetchMonitorData();
-            interval = setInterval(fetchMonitorData, 10000);
-        }
-        return () => clearInterval(interval);
-    }, [autoRefresh, activeCust, projectId]);
-
-    const activeTasks = data.tasks.filter(t => !['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
-    const completedTasks = data.tasks.filter(t => ['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
-            {/* Control Panel */}
-            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 p-6 flex flex-wrap gap-6 items-center text-white">
-                <div className="flex-1 min-w-[200px]">
-                    <h2 className="text-2xl font-black mb-1"><i className="fas fa-tv text-emerald-400 mr-3"></i> Migration NOC</h2>
-                    <p className="text-xs text-slate-400">Single Pane of Glass for SMS Console operations.</p>
-                </div>
-                <div className="flex gap-3 flex-wrap flex-[2]">
-                    <select value={selectedCustId} onChange={e=>setSelectedCustId(e.target.value)} className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-bold outline-none text-white">
-                        <option value="">-- Select Customer Account --</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.region})</option>)}
-                    </select>
-                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Target Project ID" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none text-white" />
-                </div>
-                <div className="flex gap-3">
-                    <button onClick={() => !activeCust?.ak ? alert("Select a customer with credentials") : setAutoRefresh(!autoRefresh)} className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all ${autoRefresh ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'}`}>
-                        {autoRefresh ? <><i className="fas fa-stop-circle mr-2"></i> Stop Polling</> : <><i className="fas fa-satellite-dish mr-2"></i> Live Monitor</>}
-                    </button>
-                    {!autoRefresh && <button onClick={fetchMonitorData} className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl"><i className={`fas fa-sync-alt ${isPolling ? 'fa-spin' : ''}`}></i></button>}
+            <div className="bg-slate-900 rounded-2xl shadow-xl p-6 flex flex-wrap gap-4 items-center text-white">
+                <div className="flex-1 min-w-[250px]"><h2 className="text-2xl font-black mb-1"><i className="fas fa-tv text-blue-400 mr-3"></i> Live Cloud NOC</h2><p className="text-xs text-slate-400">Real-time resource discovery directly via AK/SK.</p></div>
+                <div className="flex gap-3 flex-wrap">
+                    <input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Project ID" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <button onClick={fetchInventory} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-black uppercase tracking-widest">{isLoading ? 'Scanning...' : 'Scan Environment'}</button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Active Migrations */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
-                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-rocket text-blue-500 mr-2"></i> Active Tasks</h3><span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-black">{activeTasks.length}</span></div>
-                    <div className="flex-1 overflow-auto p-0">
-                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Status</th><th className="p-4 w-1/3">Progress</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {activeTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No active migrations running.</td></tr> : activeTasks.map(t => (
-                                <tr key={t.id} className="hover:bg-slate-50">
-                                    <td className="p-4 font-bold text-slate-800">{t.name}</td>
-                                    <td className="p-4"><span className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-[10px] font-black uppercase">{t.state}</span></td>
-                                    <td className="p-4"><div className="flex items-center gap-3"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all duration-500" style={{width: `${t.progress}%`}}></div></div><span className="font-black text-slate-600">{t.progress}%</span></div></td>
-                                </tr>
-                            ))}
-                        </tbody></table>
+            {inventory && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* ECS Servers */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-server text-blue-500 mr-2"></i> Compute (ECS)</h3><span className="bg-blue-100 text-blue-800 px-2 rounded font-black text-xs">{inventory.ecs.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Flavor</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.ecs.map(s => <tr key={s.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{s.name}</td><td className="p-3 font-mono text-[10px]">{s.flavor?.id}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-[9px] font-black ${s.status==='ACTIVE'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{s.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
+                    </div>
+                    {/* VPCs */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-network-wired text-purple-500 mr-2"></i> Networks (VPC)</h3><span className="bg-purple-100 text-purple-800 px-2 rounded font-black text-xs">{inventory.vpc.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">CIDR</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.vpc.map(v => <tr key={v.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{v.name}</td><td className="p-3 font-mono text-[10px]">{v.cidr}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{v.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
+                    </div>
+                    {/* RDS */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-database text-rose-500 mr-2"></i> Databases (RDS)</h3><span className="bg-rose-100 text-rose-800 px-2 rounded font-black text-xs">{inventory.rds.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Engine</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.rds.map(r => <tr key={r.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{r.name}</td><td className="p-3 font-mono text-[10px]">{r.datastore?.type}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{r.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
                     </div>
                 </div>
-
-                {/* Discovered Servers */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
-                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-server text-purple-500 mr-2"></i> Source Inventory</h3><span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs font-black">{data.servers.length}</span></div>
-                    <div className="flex-1 overflow-auto p-0">
-                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Hostname</th><th className="p-4">Specs</th><th className="p-4">Agent Status</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {data.servers.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No servers discovered. Check credentials.</td></tr> : data.servers.map(s => (
-                                <tr key={s.id} className="hover:bg-slate-50">
-                                    <td className="p-4"><div className="font-bold text-slate-800">{s.name}</div><div className="text-[10px] font-mono text-slate-500">{s.ip}</div></td>
-                                    <td className="p-4"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded font-mono text-[10px] text-slate-600">{s.cpu}c / {s.ram}g</span></td>
-                                    <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${s.connected ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{s.connected ? 'Connected' : 'Offline'}</span></td>
-                                </tr>
-                            ))}
-                        </tbody></table>
-                    </div>
-                </div>
-            </div>
-            
-            {/* Historic Tasks */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col max-h-[400px]">
-                <div className="px-6 py-4 border-b border-slate-200 bg-slate-50"><h3 className="font-black text-slate-800"><i className="fas fa-history text-slate-500 mr-2"></i> Migration History</h3></div>
-                <div className="flex-1 overflow-auto p-0">
-                    <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Target Flavor</th><th className="p-4">Final Status</th></tr></thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {completedTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No completed history.</td></tr> : completedTasks.map(t => (
-                            <tr key={t.id} className="hover:bg-slate-50">
-                                <td className="p-4 font-bold text-slate-700">{t.name}</td>
-                                <td className="p-4 font-mono text-[10px] text-slate-500">{t.target_flavor}</td>
-                                <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${t.state === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{t.state}</span></td>
-                            </tr>
-                        ))}
-                    </tbody></table>
-                </div>
-            </div>
+            )}
         </div>
-    );
+    )
 }
-
 window.GlobalMigrationMonitor = GlobalMigrationMonitor;
 
 window.GlobalMigrationMonitor = GlobalMigrationMonitor;
@@ -542,77 +489,81 @@ function MasterExecutionHub({ projects }) {
     )
 }
 
-function CustomerDirectory({ customers, onUpdateCustomer, projects }) {
+function CustomerDirectory({ customers, projects, onUpdateCustomer }) {
     const { useState } = React;
     const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
     
-    const handleNew = () => {
-        const name = prompt("Enter Customer Name:");
-        if (!name) return;
-        const newCustomer = { id: 'cust_' + Date.now(), name, ak: '', sk: '', region: 'la-south-2', cio: '', it_lead: '', architect: '' };
-        onUpdateCustomer(newCustomer);
-        setSelectedId(newCustomer.id);
-    };
+    const activeCustomer = customers.find(c => c.id === selectedId);
+    const linkedProjects = projects.filter(p => !p.isWaiting && p.name.toLowerCase().includes((activeCustomer?.name || '').toLowerCase().split(' ')[0]));
 
-    const activeCust = customers.find(c => c.id === selectedId) || null;
-    const custProjects = activeCust ? (projects || []).filter(p => p.name?.toLowerCase().includes(activeCust.name.toLowerCase())) : [];
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [region, setRegion] = useState('');
+    
+    // Sync local state when selected customer changes
+    React.useEffect(() => {
+        if(activeCustomer) { setAk(activeCustomer.ak || ''); setSk(activeCustomer.sk || ''); setRegion(activeCustomer.region || 'la-south-2'); }
+    }, [activeCustomer]);
+
+    const handleSaveVault = () => {
+        onUpdateCustomer({ ...activeCustomer, ak, sk, region });
+        alert("Secure Customer Vault Updated.");
+    };
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
-            <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center border border-slate-700">
-                <div><h2 className="text-3xl font-black mb-2"><i className="fas fa-address-book text-blue-400 mr-3"></i> Customer Directory (CRM)</h2></div>
-                <button onClick={handleNew} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-black uppercase text-xs tracking-widest"><i className="fas fa-plus mr-2"></i> Add Account</button>
+            <div className="bg-slate-900 rounded-2xl shadow-xl p-8 flex justify-between items-center text-white border border-slate-700">
+                <div><h2 className="text-3xl font-black mb-2"><i className="fas fa-building text-blue-400 mr-3"></i> Customer Directory</h2><p className="text-sm text-slate-400">Master Accounts, Security Vaults, and Associated Portfolios.</p></div>
+                <div className="text-right"><div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Total Managed Accounts</div><div className="text-3xl font-black text-blue-400">{customers.length}</div></div>
             </div>
-            
             <div className="flex flex-col lg:flex-row gap-6">
-                <div className="w-full lg:w-1/3 space-y-3">
-                    {customers.length === 0 ? <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200">No Customers.</div> : 
-                        customers.map(c => (
-                            <div key={c.id} onClick={()=>setSelectedId(c.id)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedId === c.id ? 'bg-blue-50 border-blue-500 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                                <div className="font-black text-slate-800 text-lg">{c.name}</div>
-                                <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase"><i className="fas fa-globe mr-1"></i> {c.region}</div>
+                {/* Left: Accounts List */}
+                <div className="w-full lg:w-80 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[600px] flex flex-col">
+                    <div className="p-4 bg-slate-50 border-b border-slate-200"><input type="text" placeholder="Search accounts..." className="w-full p-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500" /></div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                        {customers.length === 0 && <div className="p-4 text-center text-xs font-bold text-slate-400">No customers generated yet.</div>}
+                        {customers.map(c => (
+                            <div key={c.id} onClick={()=>setSelectedId(c.id)} className={`p-4 rounded-xl cursor-pointer transition-colors border-2 ${selectedId === c.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent hover:bg-slate-50'}`}>
+                                <div className="font-black text-sm text-slate-800 truncate">{c.name}</div>
+                                <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold"><i className="fas fa-key text-slate-400 mr-1"></i> {c.ak ? 'Vault Active' : 'Keys Missing'}</div>
                             </div>
-                        ))
-                    }
+                        ))}
+                    </div>
                 </div>
-                
-                {activeCust && (
+
+                {/* Right: Active Profile */}
+                {activeCustomer ? (
                     <div className="flex-1 space-y-6">
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-lock text-rose-500 mr-2"></i> The Vault (Credentials)</h3></div>
-                            <div className="p-6 grid grid-cols-2 gap-6">
-                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Access Key (AK)</label><input type="text" value={activeCust.ak} onChange={e=>onUpdateCustomer({...activeCust, ak: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
-                                <div><label className="block text-xs font-black uppercase text-slate-500 mb-2">Secret Key (SK)</label><input type="password" value={activeCust.sk} onChange={e=>onUpdateCustomer({...activeCust, sk: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-sm outline-none" /></div>
-                                <div className="col-span-2"><label className="block text-xs font-black uppercase text-slate-500 mb-2">Primary Target Region</label><input type="text" value={activeCust.region} onChange={e=>onUpdateCustomer({...activeCust, region: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold text-sm outline-none" /></div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-users text-indigo-500 mr-2"></i> The Rolodex</h3></div>
-                            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Exec Sponsor (CIO)</label><input type="text" value={activeCust.cio} onChange={e=>onUpdateCustomer({...activeCust, cio: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
-                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Customer IT Lead</label><input type="text" value={activeCust.it_lead} onChange={e=>onUpdateCustomer({...activeCust, it_lead: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
-                                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Principal Architect</label><input type="text" value={activeCust.architect} onChange={e=>onUpdateCustomer({...activeCust, architect: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm" /></div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h3 className="font-black text-slate-800"><i className="fas fa-project-diagram text-emerald-500 mr-2"></i> Project Portfolio</h3></div>
-                            <div className="p-6">
-                                {custProjects.length === 0 ? <div className="text-sm text-slate-500">No active projects found matching customer name.</div> : 
-                                    <ul className="space-y-3">
-                                        {custProjects.map(p => <li key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center"><span className="font-bold text-slate-800">{p.name}</span><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded font-black">${p.mrr} MRR</span></li>)}
-                                    </ul>
-                                }
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                            <h3 className="font-black text-2xl text-slate-800 mb-6 border-b border-slate-100 pb-4">{activeCustomer.name}</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-4">
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4"><i className="fas fa-lock text-emerald-500 mr-2"></i> Security Vault (API Credentials)</h4>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Access Key (AK)</label><input type="password" value={ak} onChange={e=>setAk(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Secret Key (SK)</label><input type="password" value={sk} onChange={e=>setSk(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Default Region</label><select value={region} onChange={e=>setRegion(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-blue-500 outline-none"><option value="la-south-2">Santiago</option><option value="la-north-2">Mexico</option><option value="sa-brazil-1">Sao Paulo</option></select></div>
+                                    <button onClick={handleSaveVault} className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md transition-colors">Update Vault</button>
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4"><i className="fas fa-folder-open text-blue-500 mr-2"></i> Active Portfolio</h4>
+                                    <div className="space-y-3">
+                                        {linkedProjects.length === 0 && <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl text-center text-xs font-bold text-slate-400">No active projects found.</div>}
+                                        {linkedProjects.map(p => (
+                                            <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                                                <div><div className="font-bold text-sm text-slate-800">{p.name}</div><div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">{p.sa}</div></div>
+                                                <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">${p.mrr}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+                ) : (
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-400"><div className="text-center"><i className="fas fa-id-card text-6xl mb-4 opacity-50"></i><h3 className="font-black text-xl">Select a Customer Profile</h3></div></div>
                 )}
             </div>
         </div>
     );
 }
-
 window.CustomerDirectory = CustomerDirectory;
 
 // Global window bindings for Babel Standalone scoping
