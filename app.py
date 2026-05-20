@@ -336,24 +336,35 @@ def save_playbooks():
     db.session.commit()
     return jsonify({"success": True})
 
-@app.route('/api/erp/customers', methods=['POST'])
+@app.route('/api/erp/customers', methods=['GET', 'POST'])
 @requires_auth
-def save_customer():
-    req = request.json
-    c_id = str(req.get('id'))
-    c = Customer.query.get(c_id)
-    if not c:
-        c = Customer(id=c_id)
-        db.session.add(c)
-    c.name = req.get('name', '')
-    c.ak = req.get('ak', '')
-    c.sk = req.get('sk', '')
-    c.region = req.get('region', '')
-    c.cio = req.get('cio', '')
-    c.it_lead = req.get('it_lead', '')
-    c.architect = req.get('architect', '')
-    db.session.commit()
-    return jsonify({"success": True})
+def handle_customers():
+    try:
+        if request.method == 'GET':
+            customers = Customer.query.all()
+            return jsonify({
+                "success": True, 
+                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region, "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect} for c in customers]
+            })
+        else:
+            req = request.json
+            c_id = str(req.get('id'))
+            customer = Customer.query.get(c_id)
+            if not customer:
+                customer = Customer(id=c_id)
+                db.session.add(customer)
+            
+            customer.name = req.get('name', customer.name)
+            customer.ak = req.get('ak', customer.ak)
+            customer.sk = req.get('sk', customer.sk)
+            customer.region = req.get('region', customer.region)
+            customer.cio = req.get('cio', customer.cio)
+            customer.it_lead = req.get('it_lead', customer.it_lead)
+            customer.architect = req.get('architect', customer.architect)
+            db.session.commit()
+            return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # 12. Ad-Hoc SMS Migration endpoints
 @app.route('/api/sms/log', methods=['POST'])
