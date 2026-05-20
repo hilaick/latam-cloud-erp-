@@ -373,7 +373,8 @@ def sms_discover_public():
             
         import requests
         from huaweicloudsdkcore.signer.signer import Signer
-        from huaweicloudsdkcore.http.http_request import HttpRequest
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+        from urllib.parse import urlparse
         
         # 1. Construct the raw HTTP Request to the native endpoint
         # Handle LATAM → Singapore routing
@@ -383,20 +384,30 @@ def sms_discover_public():
         else:
             # Use the region directly for supported regions
             endpoint = f"https://sms.{region}.myhuaweicloud.com"
-        url = f"{endpoint}/v3/source-servers?limit=50&offset=0"
         
-        http_request = HttpRequest("GET", url)
-        http_request.headers = {
-            "Content-Type": "application/json",
-            "X-Project-Id": project_id
-        }
+        # Parse the URL
+        parsed_url = urlparse(f"{endpoint}/v3/source-servers")
         
-        # 2. Cryptographically sign the request using Huawei's V4 Signer
+        # 2. Create SdkRequest for Huawei Cloud V4 signing
+        sdk_request = SdkRequest(
+            method="GET",
+            scheme=parsed_url.scheme,
+            host=parsed_url.netloc,
+            uri=parsed_url.path,
+            query_params=[("limit", "50"), ("offset", "0")],
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        
+        # 3. Cryptographically sign the request using Huawei's V4 Signer
         signer = Signer(ak, sk)
-        signer.sign(http_request)
+        signed_request = signer.sign(sdk_request)
         
-        # 3. BYPASS THE SDK: Execute natively via the requests library
-        response = requests.get(url, headers=http_request.headers)
+        # 4. BYPASS THE SDK: Execute natively via the requests library
+        url = f"{endpoint}/v3/source-servers?limit=50&offset=0"
+        response = requests.get(url, headers=signed_request.header_params)
         
         if response.status_code >= 400:
             return jsonify({
