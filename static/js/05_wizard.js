@@ -84,6 +84,42 @@ function ProjectCommandCenter({ project, onUpdateProject, customPlaybooks }) {
     );
 }
 
+function AIIaCAnalysisView({ activeProject }) {
+    const compute = activeProject?.blueprintData?.topology?.compute || [];
+    const db = activeProject?.blueprintData?.topology?.database || [];
+    
+    // Real Analysis: Anything without an OS or marked as native PaaS can be auto-deployed
+    const nativeResources = compute.filter(s => !s.metadata?.os_type || s.metadata?.os_type === 'Unknown').length + db.length + 2; // +2 for VPC & Subnet
+    const smsResources = compute.filter(s => s.metadata?.os_type && s.metadata?.os_type !== 'Unknown').length;
+    
+    const total = nativeResources + smsResources;
+    const percentage = total > 0 ? Math.round((nativeResources / total) * 100) : 0;
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-4xl mx-auto animate-fade-in">
+            <h3 className="font-black text-xl text-slate-800 mb-2"><i className="fas fa-robot text-indigo-500 mr-3"></i> API Orchestration Analysis</h3>
+            <p className="text-sm text-slate-500 mb-8">Scanning blueprint to identify the foundational Landing Zone vs Complex Block-Level Migrations.</p>
+            
+            <div className="flex items-center gap-8 mb-8">
+                <div className="w-32 h-32 rounded-full border-8 border-slate-100 flex items-center justify-center relative shrink-0">
+                    <div className="absolute inset-0 rounded-full border-8 border-indigo-500 border-l-transparent border-b-transparent" style={{transform: `rotate(${percentage * 3.6}deg)`}}></div>
+                    <span className="text-2xl font-black text-slate-800">{percentage}%</span>
+                </div>
+                <div className="flex-1 space-y-4">
+                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex justify-between items-center">
+                        <div><div className="font-bold text-emerald-800">Landing Zone (API Auto-Deployable)</div><div className="text-xs text-emerald-600">VPCs, Subnets, SGs, and PaaS DBs extracted from Blueprint.</div></div>
+                        <div className="text-2xl font-black text-emerald-700">{nativeResources}</div>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex justify-between items-center">
+                        <div><div className="font-bold text-amber-800">Stateful Compute (SMS Migration)</div><div className="text-xs text-amber-600">Stateful OS workloads requiring block-level agent sync.</div></div>
+                        <div className="text-2xl font-black text-amber-700">{smsResources}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function WizardStepARB({ project, onUpdateProject, onPromote, isCurrent }) {
     const { useState, useEffect } = React;
     
@@ -1044,91 +1080,52 @@ function TAMHubView({ project, onUpdateProject }) {
 }
 
 function ExecutionHubView({ project, onUpdateProject }) {
-    const { useState, useEffect } = React;
-    const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
-    const [apiState, setApiState] = useState({ loading: false, logs: null, error: false });
-    const [deploymentHistory, setDeploymentHistory] = useState([]);
-    
-    useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
-    
-    useEffect(() => {
-        fetch('/api/logs').then(res => res.json()).then(data => setDeploymentHistory(data.deployments || [])).catch(err => console.error("Failed to load logs", err));
-    }, []);
+    const { useState } = React;
+    const [apiState, setApiState] = useState({ loading: false, logs: project.lastDeploymentLogs || null, error: false });
 
-    const handleSaveComms = () => { onUpdateProject(project.id, 'comms', comms); alert("Comms Hub Updated"); };
-
-    const triggerAPI = async (endpoint, actionName) => {
-        if(!confirm(`WARNING: You are about to execute a LIVE ${actionName} in Huawei Cloud. Proceed?`)) return;
-        setApiState({ loading: true, logs: `Initiating ${actionName}...\nExecuting shell script on backend...`, error: false });
+    const triggerLandingZone = async () => {
+        if(!confirm(`Deploy Landing Zone to Huawei Cloud? This will create real VPCs and Subnets for ${project.name}.`)) return;
+        setApiState({ loading: true, logs: "Parsing Blueprint...\nAuthenticating with Huawei Cloud API...", error: false });
         
         try {
-            const res = await fetch(endpoint, { method: 'POST' });
+            const res = await fetch('/api/deploy/landing_zone', { 
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: project.id })
+            });
             const data = await res.json();
-            let finalLog = data.output || data.error || "Execution Finished.";
-            setApiState({ loading: false, logs: finalLog, error: !data.success });
-
-            if(endpoint === '/api/deploy' || endpoint === '/api/cleanup') {
-                fetch('/api/logs').then(r=>r.json()).then(d=>setDeploymentHistory(d.deployments || []));
+            
+            if (data.success) {
+                const logText = data.logs.join('\n');
+                setApiState({ loading: false, logs: logText, error: false });
+                onUpdateProject(project.id, 'lastDeploymentLogs', logText);
+            } else {
+                setApiState({ loading: false, logs: `API Error: ${data.error}`, error: true });
             }
         } catch(e) {
-            setApiState({ loading: false, logs: `API Connection Failed: ${e.message}`, error: true });
+            setApiState({ loading: false, logs: `Network Error: ${e.message}`, error: true });
         }
     };
 
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row">
-                <div className="p-6 md:w-1/2 border-b md:border-b-0 md:border-r border-slate-200">
-                    <h3 className="font-black text-sm tracking-wide text-slate-800 mb-4"><i className="fas fa-server text-blue-500 mr-2"></i> Infrastructure Execution</h3>
-                    <p className="text-xs text-slate-500 mb-6">Fire Huawei Cloud pipelines directly from the ERP.</p>
+                <div className="p-6 md:w-1/2 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50">
+                    <h3 className="font-black text-sm tracking-wide text-slate-800 mb-4"><i className="fas fa-server text-blue-500 mr-2"></i> Native Orchestration</h3>
+                    <p className="text-xs text-slate-500 mb-6">Deploy the baseline infrastructure identified by the AI Analysis directly from the Blueprint.</p>
                     
-                    <div className="space-y-3">
-                        <button onClick={() => triggerAPI('/api/audit', 'Pre-Flight Audit')} disabled={apiState.loading} className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md uppercase tracking-widest disabled:opacity-50 transition-colors"><i className="fas fa-shield-alt mr-2"></i> 1. Run Environment Audit</button>
-                        <button onClick={() => triggerAPI('/api/deploy', 'Deployment')} disabled={apiState.loading} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md uppercase tracking-widest disabled:opacity-50 transition-colors"><i className="fas fa-rocket mr-2"></i> 2. Deploy Infrastructure</button>
-                        <button onClick={() => triggerAPI('/api/cleanup', 'Teardown/Cleanup')} disabled={apiState.loading} className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-black shadow-sm uppercase tracking-widest disabled:opacity-50 transition-colors"><i className="fas fa-fire mr-2"></i> 3. Destroy / Cleanup Logs</button>
+                    <div className="space-y-4">
+                        <button onClick={triggerLandingZone} disabled={apiState.loading} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md uppercase tracking-widest disabled:opacity-50 transition-colors">
+                            <i className="fas fa-cloud-upload-alt mr-2"></i> Deploy Landing Zone
+                        </button>
+                        <div className="p-4 border-2 border-dashed border-slate-300 rounded-xl text-center">
+                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Next Step: SMS Block Sync</p>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">Use the Migration NOC in the sidebar to track the stateful server replications into this Landing Zone.</p>
+                        </div>
                     </div>
                 </div>
-                <div className={`p-6 md:w-1/2 bg-slate-900 font-mono text-[10px] overflow-y-auto max-h-[300px] custom-scrollbar whitespace-pre-wrap ${apiState.error ? 'text-rose-400' : 'text-emerald-400'}`}>
+                <div className={`p-6 md:w-1/2 bg-slate-900 font-mono text-[11px] overflow-y-auto min-h-[300px] max-h-[400px] custom-scrollbar whitespace-pre-wrap ${apiState.error ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {apiState.loading && <i className="fas fa-spinner fa-spin mr-2 mb-2 block text-white text-base"></i>}
-                    {apiState.logs || "// Terminal Output\n// Awaiting Execution Commands...\n// Backend API Ready."}
-                </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                 <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-sm tracking-wide text-slate-800"><i className="fas fa-history text-slate-500 mr-2"></i> Active Deployments & Logs</h3></div>
-                <div className="p-0 overflow-x-auto">
-                    {deploymentHistory.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 text-xs font-bold">No deployment logs found.</div>
-                    ) : (
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-100 text-[10px] uppercase text-slate-600 border-b border-slate-200">
-                                <tr><th className="p-4">Date/Time</th><th className="p-4">Tag</th><th className="p-4">Region</th><th className="p-4">VPC</th><th className="p-4">ECS Count</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                                {deploymentHistory.map((dep, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50">
-                                        <td className="p-4 font-mono">{dep.metadata?.time}</td><td className="p-4 font-bold">{dep.metadata?.tag || "Unknown"}</td>
-                                        <td className="p-4">{dep.metadata?.region || "N/A"}</td><td className="p-4">{dep.vpc?.id ? "✅ Yes" : "❌ No"}</td>
-                                        <td className="p-4"><span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-black">{dep.ecs?.length || 0}</span></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200 bg-indigo-50 flex justify-between items-center">
-                    <h3 className="font-black text-sm tracking-wide text-indigo-900"><i className="fas fa-headset text-indigo-600 mr-2"></i> Live Communications</h3>
-                    <button onClick={handleSaveComms} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors">Save Links</button>
-                </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 bg-white">
-                    <div className="col-span-2 space-y-4">
-                        <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Persistent Bridge Link</label><input type="text" value={comms.bridge} onChange={e=>setComms({...comms, bridge: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 bg-slate-50" /></div>
-                        <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Group Chat Link</label><input type="text" value={comms.chat} onChange={e=>setComms({...comms, chat: e.target.value})} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 bg-slate-50" /></div>
-                    </div>
-                    <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes</label><textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-3 border-2 border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 bg-amber-50/50"></textarea></div>
+                    {apiState.logs || "// Terminal Output\n// Awaiting Execution Commands..."}
                 </div>
             </div>
         </div>
