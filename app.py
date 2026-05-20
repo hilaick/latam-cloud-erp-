@@ -816,6 +816,94 @@ def get_global_wbs():
     } for t in tasks]
     return jsonify({"success": True, "tasks": out})
 
+@app.route('/api/deploy/landing_zone', methods=['POST'])
+@requires_auth
+def deploy_landing_zone():
+    try:
+        req = request.json
+        project_id_db = str(req.get('id'))
+        
+        # 1. Fetch Project and Profile
+        from models import ProjectData
+        import json
+        project_record = ProjectData.query.get(project_id_db)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+            
+        project_data = json.loads(project_record.data)
+        profile = project_data.get('customerProfile', {})
+        ak, sk, region, hw_project_id = profile.get('ak'), profile.get('sk'), profile.get('region'), profile.get('projectId')
+        
+        if not all([ak, sk, hw_project_id, region]):
+            return jsonify({"success": False, "error": "Customer AK/SK and Project ID are required. Check Customer Profile."}), 400
+            
+        import requests
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+        signer = Signer(ak, sk)
+        
+        deployment_logs = []
+        
+        # 2. Extract network requirements from Blueprint
+        # Fallback to defaults if blueprint topology lacks explicit networks
+        blueprint = project_data.get('blueprintData', {}).get('topology', {})
+        vpc_name = f"vpc-erp-{project_id_db[:6]}"
+        vpc_cidr = "10.0.0.0/16"
+        subnet_name = f"subnet-erp-{project_id_db[:6]}"
+        subnet_cidr = "10.0.1.0/24"
+        gateway_ip = "10.0.1.1"
+
+        # 3. Create VPC natively
+        deployment_logs.append(f"Initiating VPC Creation: {vpc_name} ({vpc_cidr})")
+        vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/vpcs"
+        req_vpc = SdkRequest("POST", vpc_url)
+        req_vpc.headers = {"Content-Type": "application/json", "X-Project-Id": hw_project_id}
+        req_vpc.body = json.dumps({"vpc": {"name": vpc_name, "cidr": vpc_cidr}})
+        signer.sign(req_vpc)
+        
+        res_vpc = requests.post(vpc_url, headers=req_vpc.headers, data=req_vpc.body)
+        if res_vpc.status_code >= 400:
+            return jsonify({"success": False, "error": f"VPC Creation Failed: {res_vpc.text}"}), res_vpc.status_code
+            
+        created_vpc_id = res_vpc.json().get('vpc', {}).get('id')
+        deployment_logs.append(f"SUCCESS: VPC Created (ID: {created_vpc_id})")
+        
+        # 4. Create Subnet natively
+        deployment_logs.append(f"Initiating Subnet Creation: {subnet_name} ({subnet_cidr})")
+        subnet_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/subnets"
+        req_subnet = SdkRequest("POST", subnet_url)
+        req_subnet.headers = {"Content-Type": "application/json", "X-Project-Id": hw_project_id}
+        req_subnet.body = json.dumps({
+            "subnet": {
+                "name": subnet_name, "cidr": subnet_cidr, 
+                "vpc_id": created_vpc_id, "gateway_ip": gateway_ip
+            }
+        })
+        signer.sign(req_subnet)
+        
+        res_subnet = requests.post(subnet_url, headers=req_subnet.headers, data=req_subnet.body)
+        if res_subnet.status_code >= 400:
+            return jsonify({"success": False, "error": f"Subnet Creation Failed: {res_subnet.text}"}), res_subnet.status_code
+            
+        created_subnet_id = res_subnet.json().get('subnet', {}).get('id')
+        deployment_logs.append(f"SUCCESS: Subnet Created (ID: {created_subnet_id})")
+        
+        # Save execution logs to project state
+        project_data['lastDeploymentLogs'] = "\n".join(deployment_logs)
+        project_record.data = json.dumps(project_data)
+        from models import db
+        db.session.commit()
+        
+        return jsonify({
+            "success": True, 
+            "logs": deployment_logs,
+            "resources": {"vpc_id": created_vpc_id, "subnet_id": created_subnet_id}
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route('/api/mgc/discover', methods=['POST'])
 @requires_auth
 def mgc_discover():
