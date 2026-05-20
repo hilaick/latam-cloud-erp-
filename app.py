@@ -363,6 +363,31 @@ def handle_customers():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/erp/customers/<c_id>', methods=['DELETE'])
+@requires_auth
+def delete_customer(c_id):
+    try:
+        from models import Customer
+        Customer.query.filter_by(id=c_id).delete()
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/wbs/task', methods=['POST'])
+@requires_auth
+def update_wbs_task():
+    try:
+        req = request.json
+        from models import WBSTask
+        task = WBSTask.query.get(req.get('id'))
+        if task:
+            task.progress = req.get('progress', task.progress)
+            db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/api/erp/reset', methods=['POST'])
 @requires_auth
 def reset_database():
