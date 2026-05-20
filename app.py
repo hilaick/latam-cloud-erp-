@@ -386,14 +386,14 @@ def sms_discover_public():
             endpoint = f"https://sms.{region}.myhuaweicloud.com"
         
         # Parse the URL
-        parsed_url = urlparse(f"{endpoint}/v3/source-servers")
+        parsed_url = urlparse(f"{endpoint}/v3/sources")
         
         # 2. Create SdkRequest for Huawei Cloud V4 signing
         sdk_request = SdkRequest(
             method="GET",
             schema=parsed_url.scheme,
             host=parsed_url.netloc,
-            uri=parsed_url.path,
+            resource_path=parsed_url.path,  # Use resource_path instead of uri
             query_params=[("limit", "50"), ("offset", "0")],
             header_params={
                 "Content-Type": "application/json",
@@ -407,7 +407,7 @@ def sms_discover_public():
         signed_request = signer.sign(sdk_request)
         
         # 4. BYPASS THE SDK: Execute natively via the requests library
-        url = f"{endpoint}/v3/source-servers?limit=50&offset=0"
+        url = f"{endpoint}/v3/sources?limit=50&offset=0"
         response = requests.get(url, headers=signed_request.header_params)
         
         if response.status_code >= 400:
