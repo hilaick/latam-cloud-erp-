@@ -371,29 +371,76 @@ def sms_discover_public():
         if not ak or not sk or not project_id:
             return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
             
-        from huaweicloudsdkcore.auth.credentials import BasicCredentials
-        from huaweicloudsdkcore.region.region import Region
-        from huaweicloudsdksms.v3.region.sms_region import SmsRegion
-        from huaweicloudsdksms.v3 import SmsClient
-        from huaweicloudsdksms.v3 import ListServersRequest
+        import requests
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.http.http_request import HttpRequest
         
-        # 1. Create the dynamic region
+        # 1. Construct the raw HTTP Request to the native endpoint
         # Handle LATAM → Singapore routing
         if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
             # LATAM regions route through Singapore SMS control plane
-            sms_endpoint = 'https://sms.ap-southeast-3.myhuaweicloud.com'
-            sms_region = 'ap-southeast-3'
+            endpoint = "https://sms.ap-southeast-3.myhuaweicloud.com"
         else:
             # Use the region directly for supported regions
-            sms_endpoint = f'https://sms.{region}.myhuaweicloud.com'
-            sms_region = region
+            endpoint = f"https://sms.{region}.myhuaweicloud.com"
+        url = f"{endpoint}/v3/source-servers?limit=50&offset=0"
         
-        custom_region = Region(sms_region, sms_endpoint)
+        http_request = HttpRequest("GET", url)
+        http_request.headers = {
+            "Content-Type": "application/json",
+            "X-Project-Id": project_id
+        }
         
-        # 2. BULLETPROOF MONKEY PATCH: Intercept the exact method throwing the validation error
-        if not hasattr(SmsRegion, '_original_value_of'):
-            SmsRegion._original_value_of = SmsRegion.value_of
-
+        # 2. Cryptographically sign the request using Huawei's V4 Signer
+        signer = Signer(ak, sk)
+        signer.sign(http_request)
+        
+        # 3. BYPASS THE SDK: Execute natively via the requests library
+        response = requests.get(url, headers=http_request.headers)
+        
+        if response.status_code >= 400:
+            return jsonify({
+                "success": False, 
+                "error": f"Huawei Cloud API Error {response.status_code}: {response.text}"
+            }), response.status_code
+            
+        data = response.json()
+        servers_list = data.get('source_servers', [])
+        
+        servers = []
+        for server in servers_list:
+            server_info = {
+                "id": server.get('id', ""),
+                "hostname": server.get('name', server.get('ip', "Unknown")),
+                "cpu": server.get('cpu_quantity', 0),
+                "ram": server.get('memory', 0),
+                "disk": sum(vol.get('size', 0) for vol in server.get('volumes', [])) if server.get('volumes') else 0,
+                "os": server.get('os_type', os_type),
+                "status": server.get('state', 'unknown'),
+                "agent_version": server.get('agent_version', 'unknown'),
+                "ip": server.get('ip', ''),
+                "agent_status": 'connected' if server.get('connected', False) else 'disconnected',
+                "sync_status": 'idle', 
+                "last_heartbeat": server.get('updated', '')
+            }
+            servers.append(server_info)
+        
+        return jsonify({
+            "success": True, 
+            "servers": servers,
+            "message": f"Found {len(servers)} servers." if servers else "No source servers found with SMS agents."
+        })
+        
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        print(f"Huawei Cloud SMS HTTP Bypass Error: {error_msg}")
+        print(traceback.format_exc())
+        
+        return jsonify({
+            "success": False, 
+            "error": error_msg
+        }), 500
         def patched_value_of(region_id):
             if region_id == region:
                 return custom_region
