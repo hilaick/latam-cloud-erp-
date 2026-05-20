@@ -373,23 +373,45 @@ def sms_discover_public():
             
         from huaweicloudsdkcore.auth.credentials import BasicCredentials
         from huaweicloudsdkcore.region.region import Region
+        from huaweicloudsdksms.v3.region.sms_region import SmsRegion
         from huaweicloudsdksms.v3 import SmsClient
         from huaweicloudsdksms.v3 import ListServersRequest
         
-        credentials = BasicCredentials(ak, sk, project_id)
+        # 1. Create the dynamic region
+        # Handle LATAM → Singapore routing
+        if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
+            # LATAM regions route through Singapore SMS control plane
+            sms_endpoint = 'https://sms.ap-southeast-3.myhuaweicloud.com'
+            sms_region = 'ap-southeast-3'
+        else:
+            # Use the region directly for supported regions
+            sms_endpoint = f'https://sms.{region}.myhuaweicloud.com'
+            sms_region = region
         
-        # BYPASS THE SDK'S HARDCODED REGION LIST
-        # Dynamically construct the native endpoint for the user's local region
-        custom_region = Region(region, f"https://sms.{region}.myhuaweicloud.com")
+        custom_region = Region(sms_region, sms_endpoint)
+        
+        # 2. BULLETPROOF MONKEY PATCH: Intercept the exact method throwing the validation error
+        if not hasattr(SmsRegion, '_original_value_of'):
+            SmsRegion._original_value_of = SmsRegion.value_of
+
+        def patched_value_of(region_id):
+            if region_id == region:
+                return custom_region
+            return SmsRegion._original_value_of(region_id)
+            
+        SmsRegion.value_of = staticmethod(patched_value_of)
+        
+        # 3. Proceed as normal - The SDK will now accept our LATAM region natively
+        credentials = BasicCredentials(ak, sk, project_id)
         
         client = SmsClient.new_builder() \
             .with_credentials(credentials) \
-            .with_region(custom_region) \
+            .with_region(SmsRegion.value_of(region)) \
             .build()
         
         servers = []
         
-        # Pull servers strictly from the live Huawei API in the local region
+        # Pull servers strictly from the live Huawei Console API
         servers_request = ListServersRequest()
         servers_request.limit = 50
         servers_request.offset = 0
@@ -403,14 +425,13 @@ def sms_discover_public():
                     "hostname": getattr(server, 'name', getattr(server, 'ip', "Unknown")),
                     "cpu": getattr(server, 'cpu_quantity', 0),
                     "ram": getattr(server, 'memory', 0),
-                    # Sum up volumes if they exist to get total disk size
                     "disk": sum(getattr(vol, 'size', 0) for vol in getattr(server, 'volumes', [])) if hasattr(server, 'volumes') else 0,
                     "os": getattr(server, 'os_type', os_type),
                     "status": getattr(server, 'state', 'unknown'),
                     "agent_version": getattr(server, 'agent_version', 'unknown'),
                     "ip": getattr(server, 'ip', ''),
                     "agent_status": 'connected' if getattr(server, 'connected', False) else 'disconnected',
-                    "sync_status": 'idle',
+                    "sync_status": 'idle', 
                     "last_heartbeat": getattr(server, 'updated', '')
                 }
                 servers.append(server_info)
