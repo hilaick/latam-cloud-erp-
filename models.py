@@ -32,3 +32,61 @@ class AdHocMigrationLog(db.Model):
     target_subnet = db.Column(db.String(255))
     status = db.Column(db.String(50), default="Initiated")
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id = db.Column(db.String(50), primary_key=True)
+    name = db.Column(db.String(100))
+    ak = db.Column(db.String(100))
+    sk = db.Column(db.String(100))
+    region = db.Column(db.String(50))
+    target_vpc = db.Column(db.String(100))
+
+class HuaweiAccount(db.Model):
+    __tablename__ = 'huawei_accounts'
+    id = db.Column(db.String(50), primary_key=True)
+    user_id = db.Column(db.String(50), nullable=False)  # Reference to ERP user
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    encrypted_ak = db.Column(db.Text, nullable=False)
+    encrypted_sk = db.Column(db.Text, nullable=False)
+    iv = db.Column(db.String(32), nullable=False)  # Initialization vector for AES-GCM
+    tag = db.Column(db.String(32), nullable=False)  # Authentication tag for AES-GCM
+    default_region = db.Column(db.String(50), default='ap-southeast-3')
+    is_active = db.Column(db.Boolean, default=True)
+    last_used = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    migration_tasks = db.relationship('MigrationTask', backref='account', lazy=True)
+
+class MigrationTask(db.Model):
+    __tablename__ = 'migration_tasks'
+    id = db.Column(db.String(50), primary_key=True)
+    account_id = db.Column(db.String(50), db.ForeignKey('huawei_accounts.id'), nullable=False)
+    user_id = db.Column(db.String(50), nullable=False)
+    source_server_id = db.Column(db.String(100))
+    source_server_name = db.Column(db.String(200))
+    target_region = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='created')  # created, running, completed, failed, cancelled
+    progress = db.Column(db.Integer, default=0)  # 0-100
+    config = db.Column(db.Text)  # JSON string of migration parameters
+    huawei_task_id = db.Column(db.String(100))  # Huawei SMS task ID
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class WBSTask(db.Model):
+    __tablename__ = 'wbs_tasks'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'))
+    wbs_id = db.Column(db.String(20))
+    name = db.Column(db.String(200))
+    progress = db.Column(db.String(20), default="0%")
+    raci = db.Column(db.String(100))
+    start_date = db.Column(db.String(50))
+    end_date = db.Column(db.String(50))
+    is_parent = db.Column(db.Boolean, default=False)

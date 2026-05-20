@@ -1,0 +1,3 @@
+server_name,flavor,cpu,ram,disk,os_type,is_public,tier
+web-01,s6.large.2,2,4,100,linux,true,web
+db-01,r6.xlarge.4,4,16,500,linux,false,database

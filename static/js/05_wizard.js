@@ -468,6 +468,8 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                     <button onClick={()=>setSubTab('mapper')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='mapper'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>1. Topology Auto-Mapper</button>
                     <button onClick={()=>setSubTab('physics')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='physics'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>2. Delivery Physics</button>
                     <button onClick={()=>setSubTab('ora')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='ora'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>3. ORA Friction</button>
+                    <button onClick={()=>setSubTab('mgc')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='mgc'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>4. MgC Reconciliation</button>
+                    <button onClick={()=>setSubTab('wbs')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='wbs'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>5. WBS Import</button>
                 </div>
                 {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Complete Architecture <i className="fas fa-arrow-right ml-2"></i></button>}
             </div>
@@ -494,6 +496,8 @@ function WizardStepArchitecture({ project, onUpdateProject, onPromote, isCurrent
                 )}
                 {subTab === 'physics' && <PhysicsEngineView activeProject={project} onUpdateProject={onUpdateProject} />}
                 {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'wbs' && <WBSImportView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     )
@@ -1209,6 +1213,355 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
     )
 }
 
+function MgCReconciliationView({ activeProject, onUpdateProject }) {
+    const { useState } = React;
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); const [region, setRegion] = useState('la-south-2');
+    const [isPolling, setIsPolling] = useState(false); const [mgcData, setMgcData] = useState(activeProject?.mgcData || null);
+    const [acknowledged, setAcknowledged] = useState(activeProject?.scopeAcknowledged || false);
+
+    const blueprintCompute = activeProject?.blueprintData?.topology?.compute || [];
+
+    const handleLiveDiscovery = async () => {
+        setIsPolling(true);
+        try {
+            const res = await fetch('/api/mgc/discover', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ak, sk, region }) });
+            const data = await res.json();
+            if (data.success) { setMgcData(data.servers); onUpdateProject(activeProject.id, 'mgcData', data.servers); }
+        } catch (err) { alert("MgC API Error"); } finally { setIsPolling(false); }
+    };
+
+    const handleAcknowledge = () => {
+        onUpdateProject(activeProject.id, 'scopeAcknowledged', true);
+        setAcknowledged(true); alert("Scope Creep Acknowledged. FinOps parameters updated.");
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in max-w-[1400px] mx-auto pb-12">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+                <div><h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-id-card text-blue-500"></i> Customer Environment Profile</h3><p className="text-xs text-slate-500">Store AK/SK credentials to safely query MgC Agent.</p></div>
+                <div className="flex gap-4"><input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="p-2 border rounded text-xs font-mono w-32" /><input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="p-2 border rounded text-xs font-mono w-32" /><button className="px-4 py-2 bg-slate-800 text-white rounded text-xs font-bold">Save Context</button></div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex gap-4">
+                <button onClick={handleLiveDiscovery} disabled={isPolling} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-all">{isPolling ? <><i className="fas fa-spinner fa-spin mr-2"></i> Polling MgC...</> : <><i className="fas fa-satellite-dish mr-2"></i> Trigger Live MgC Discovery</>}</button>
+                <button className="px-6 py-3 bg-slate-100 text-slate-600 border border-slate-300 font-black uppercase tracking-widest text-xs rounded-xl shadow-sm"><i className="fas fa-file-csv mr-2"></i> Upload MgC Export (CSV)</button>
+            </div>
+
+            {mgcData && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-black tracking-widest uppercase text-sm"><i className="fas fa-balance-scale text-purple-400 mr-2"></i> Reality vs. Quote (Diff Engine)</h3>
+                        {acknowledged ? <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 px-3 py-1 rounded text-[10px] font-black uppercase">Scope Acknowledged</span> : <button onClick={handleAcknowledge} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase rounded shadow-sm">Acknowledge Scope Creep</button>}
+                    </div>
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-600"><tr><th className="p-3">Hostname</th><th className="p-3 border-l-2 border-blue-200 bg-blue-50/50">Quoted (Blueprint)</th><th className="p-3 border-l-2 border-purple-200 bg-purple-50/50">Discovered (MgC)</th><th className="p-3">Variance Status</th></tr></thead>
+                        <tbody className="text-xs divide-y divide-slate-100">
+                            {mgcData.map((server, i) => {
+                                const quote = blueprintCompute.find(s => s.name?.toLowerCase().includes(server.hostname.toLowerCase()) || server.hostname.toLowerCase().includes(s.name?.toLowerCase()));
+                                let status = "Match"; let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"; let isWarn = false;
+                                if (!quote) { status = "Unquoted (Creep)"; statusColor = "bg-rose-100 text-rose-800 border-rose-200"; isWarn = true; }
+                                else if (parseInt(quote.cpu || 0) < server.cpu || parseInt(quote.ram || 0) < server.ram) { status = "Undersized"; statusColor = "bg-rose-100 text-rose-800 border-rose-200"; isWarn = true; }
+                                return (
+                                    <tr key={i} className={isWarn ? "bg-rose-50/30" : ""}>
+                                        <td className="p-3 font-bold text-slate-800">{server.hostname}</td>
+                                        <td className="p-3 border-l-2 border-blue-100">{quote ? <span className="font-mono text-slate-600">{quote.cpu}vCPU / {quote.ram}GB</span> : <span className="text-slate-400 italic">Not in Quote</span>}</td>
+                                        <td className="p-3 border-l-2 border-purple-100"><span className="font-mono font-bold text-slate-800">{server.cpu}vCPU / {server.ram}GB / {server.disk}GB</span></td>
+                                        <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase border ${statusColor}`}>{status}</span></td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function WBSImportView({ activeProject, onUpdateProject }) {
+    const { useState } = React;
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadMessage, setUploadMessage] = useState("");
+    const [wbsTasks, setWbsTasks] = useState(activeProject?.wbsTasks || []);
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const allowedTypes = ['.csv'];
+            const fileExt = file.name.split('.').pop().toLowerCase();
+            
+            if (!allowedTypes.includes(`.${fileExt}`)) {
+                alert('Please select a CSV file (.csv)');
+                e.target.value = '';
+                setSelectedFile(null);
+                return;
+            }
+            
+            setSelectedFile(file);
+            setUploadMessage(`Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+        }
+    };
+
+    const handleUpload = async () => {
+        if (!selectedFile) {
+            alert("Please select a WBS CSV file to upload");
+            return;
+        }
+
+        if (!activeProject?.id) {
+            alert("No project selected");
+            return;
+        }
+
+        setIsUploading(true);
+        setUploadMessage("Uploading WBS CSV...");
+
+        try {
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('project_id', activeProject.id);
+
+            const response = await fetch('/api/wbs/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                setUploadMessage(`✅ ${result.message}`);
+                alert(`✅ WBS uploaded successfully!\n\nTasks processed: ${result.tasks?.length || 0}`);
+                
+                // Refresh global WBS tasks
+                fetch('/api/wbs/global')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            setWbsTasks(data.tasks.filter(t => t.project_id === activeProject.id));
+                        }
+                    });
+            } else {
+                setUploadMessage(`❌ Error: ${result.error}`);
+                alert(`❌ Upload failed: ${result.error}`);
+            }
+        } catch (error) {
+            setUploadMessage(`❌ Network error: ${error.message}`);
+            alert(`❌ Network error: ${error.message}`);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleAutoGenerate = () => {
+        if (!activeProject?.blueprintData?.topology?.compute || activeProject.blueprintData.topology.compute.length === 0) {
+            alert("No blueprint data found. Please upload a quotation first in the ARB Intake Gate.");
+            return;
+        }
+
+        const servers = activeProject.blueprintData.topology.compute;
+        let tasks = [
+            { wbs_id: "1", name: "Phase 1: Landing Zone & Security", progress: "0%", raci: "Partner", start_date: "", end_date: "", is_parent: true },
+            { wbs_id: "1.1", name: "Deploy Target VPC & Subnets", progress: "0%", raci: "Partner", start_date: "", end_date: "", is_parent: false },
+            { wbs_id: "1.2", name: "Configure IAM & Security Groups", progress: "0%", raci: "Partner", start_date: "", end_date: "", is_parent: false }
+        ];
+        
+        let phaseCount = 2;
+        
+        // Check for compute resources
+        if (servers.some(s => s.metadata?.tier?.toLowerCase().includes('web') || s.metadata?.tier?.toLowerCase().includes('app'))) {
+            tasks.push({ wbs_id: `${phaseCount}`, name: `Phase ${phaseCount}: Compute Deployment`, progress: "0%", raci: "Partner", start_date: "", end_date: "", is_parent: true });
+            tasks.push({ wbs_id: `${phaseCount}.1`, name: "Provision ECS Instances", progress: "0%", raci: "Cloud Ops", start_date: "", end_date: "", is_parent: false });
+            tasks.push({ wbs_id: `${phaseCount}.2`, name: "Configure OS & Security", progress: "0%", raci: "SysAdmin", start_date: "", end_date: "", is_parent: false });
+            phaseCount++;
+        }
+        
+        // Check for database resources
+        if (servers.some(s => s.metadata?.tier?.toLowerCase().includes('database') || s.metadata?.tier?.toLowerCase().includes('db'))) {
+            tasks.push({ wbs_id: `${phaseCount}`, name: `Phase ${phaseCount}: Database Deployment`, progress: "0%", raci: "DBA", start_date: "", end_date: "", is_parent: true });
+            tasks.push({ wbs_id: `${phaseCount}.1`, name: "Provision RDS/GaussDB", progress: "0%", raci: "Partner", start_date: "", end_date: "", is_parent: false });
+            tasks.push({ wbs_id: `${phaseCount}.2`, name: "Configure Backup & HA", progress: "0%", raci: "DBA", start_date: "", end_date: "", is_parent: false });
+            phaseCount++;
+        }
+        
+        tasks.push({ wbs_id: `${phaseCount}`, name: `Phase ${phaseCount}: Validation & Cutover`, progress: "0%", raci: "All", start_date: "", end_date: "", is_parent: true });
+        tasks.push({ wbs_id: `${phaseCount}.1`, name: "Performance & Security Testing", progress: "0%", raci: "QA Team", start_date: "", end_date: "", is_parent: false });
+        tasks.push({ wbs_id: `${phaseCount}.2`, name: "Production Cutover", progress: "0%", raci: "Change Board", start_date: "", end_date: "", is_parent: false });
+
+        if (confirm(`Auto-generate WBS with ${tasks.length} tasks based on ${servers.length} servers?`)) {
+            // Save to project
+            onUpdateProject(activeProject.id, 'wbsTasks', tasks);
+            setWbsTasks(tasks);
+            alert(`✅ WBS auto-generated with ${tasks.length} tasks!`);
+        }
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in max-w-[1400px] mx-auto pb-12">
+            <div className="bg-gradient-to-r from-indigo-900 to-purple-800 p-8 rounded-2xl shadow-xl text-white">
+                <h2 className="text-2xl font-black mb-2 flex items-center gap-3">
+                    <i className="fas fa-tasks"></i>
+                    Work Breakdown Structure (WBS) Import
+                </h2>
+                <p className="text-sm text-indigo-200">
+                    Upload standard High-Level Migration Plan CSV or auto-generate WBS from blueprint.
+                </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left Column: WBS Upload */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h3 className="font-black text-lg text-slate-800 mb-4 flex items-center gap-2">
+                        <i className="fas fa-file-upload text-emerald-600"></i>
+                        Upload WBS CSV
+                    </h3>
+                    
+                    <div className="space-y-4">
+                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-emerald-400 transition-colors">
+                            <div className="flex flex-col items-center justify-center">
+                                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+                                    <i className="fas fa-file-csv text-2xl text-emerald-600"></i>
+                                </div>
+                                <p className="text-sm text-slate-600 mb-4">
+                                    Upload a CSV file with columns: <code className="bg-slate-100 px-2 py-1 rounded text-xs">WBS_ID, Name, Progress, RACI, Start_Date, End_Date</code>
+                                </p>
+                                
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={handleFileChange}
+                                    className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                                />
+                                
+                                {uploadMessage && (
+                                    <div className={`mt-4 p-3 rounded-lg text-sm ${uploadMessage.includes('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                                        {uploadMessage}
+                                    </div>
+                                )}
+                                
+                                <button
+                                    onClick={handleUpload}
+                                    disabled={isUploading || !selectedFile}
+                                    className={`w-full mt-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-md transition-all ${isUploading || !selectedFile ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:scale-105'}`}
+                                >
+                                    {isUploading ? (
+                                        <>
+                                            <i className="fas fa-spinner fa-spin mr-2"></i>
+                                            Uploading...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fas fa-cloud-upload-alt mr-2"></i>
+                                            Upload WBS CSV
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Column: Auto-Generate & Preview */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h3 className="font-black text-lg text-slate-800 mb-4 flex items-center gap-2">
+                        <i className="fas fa-magic text-purple-600"></i>
+                        Auto-Generate WBS
+                    </h3>
+                    
+                    <div className="space-y-4">
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5">
+                            <p className="text-sm text-purple-800 mb-4">
+                                Generate a Work Breakdown Structure automatically from the blueprint topology.
+                            </p>
+                            
+                            <button
+                                onClick={handleAutoGenerate}
+                                className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-sm uppercase tracking-widest rounded-xl shadow-lg transition-all hover:scale-105"
+                            >
+                                <i className="fas fa-bolt mr-2"></i>
+                                ✨ Auto-Generate from Blueprint
+                            </button>
+                            
+                            <p className="text-xs text-purple-600 mt-3">
+                                Based on {activeProject?.blueprintData?.topology?.compute?.length || 0} servers in blueprint
+                            </p>
+                        </div>
+
+                        {/* WBS Preview */}
+                        {wbsTasks.length > 0 && (
+                            <div className="mt-6">
+                                <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                    <i className="fas fa-list-check text-blue-600"></i>
+                                    WBS Tasks ({wbsTasks.length})
+                                </h4>
+                                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-slate-100 text-slate-600 text-xs uppercase">
+                                            <tr>
+                                                <th className="p-3 text-left">WBS ID</th>
+                                                <th className="p-3 text-left">Task</th>
+                                                <th className="p-3 text-left">RACI</th>
+                                                <th className="p-3 text-left">Progress</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {wbsTasks.slice(0, 5).map((task, idx) => (
+                                                <tr key={idx} className={task.is_parent ? "bg-slate-50 font-bold" : ""}>
+                                                    <td className="p-3 font-mono text-slate-700">{task.wbs_id}</td>
+                                                    <td className="p-3">{task.name}</td>
+                                                    <td className="p-3">
+                                                        <span className="bg-slate-200 px-2 py-1 rounded text-xs font-black">
+                                                            {task.raci}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                            <div 
+                                                                className="bg-emerald-500 h-full" 
+                                                                style={{width: task.progress || '0%'}}
+                                                            ></div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {wbsTasks.length > 5 && (
+                                        <div className="p-3 text-center text-xs text-slate-500 bg-slate-50">
+                                            ... and {wbsTasks.length - 5} more tasks
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <i className="fas fa-info-circle text-blue-600"></i>
+                    CSV Format Instructions
+                </h4>
+                <div className="text-sm text-slate-600 space-y-2">
+                    <p>Download the standard <strong>High-Level Migration Plan template</strong> and fill with:</p>
+                    <div className="bg-white border border-slate-300 rounded-lg p-4 font-mono text-xs">
+                        WBS_ID,Name,Progress,RACI,Start_Date,End_Date<br/>
+                        1,Phase 1: Landing Zone & Security,0%,Partner,2024-01-15,2024-01-30<br/>
+                        1.1,Deploy Target VPC & Subnets,0%,Partner,2024-01-15,2024-01-20<br/>
+                        1.2,Configure IAM & Security Groups,0%,Partner,2024-01-18,2024-01-25<br/>
+                        2,Phase 2: Compute Deployment,0%,Cloud Ops,2024-01-22,2024-02-05<br/>
+                    </div>
+                    <p className="mt-2">
+                        <i className="fas fa-lightbulb text-amber-500 mr-1"></i>
+                        Parent tasks have WBS_ID without dots (e.g., "1"), child tasks have dots (e.g., "1.1")
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // Global window binding for Babel Standalone scoping
 window.ProjectCommandCenter = ProjectCommandCenter;
 window.PhysicsEngineView = PhysicsEngineView;
@@ -1220,3 +1573,5 @@ window.NetworkRouting = NetworkRouting;
 window.SLASection = SLASection;
 window.PhysicsResults = PhysicsResults;
 window.FAQSection = FAQSection;
+window.MgCReconciliationView = MgCReconciliationView;
+window.WBSImportView = WBSImportView;

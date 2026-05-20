@@ -1,0 +1,3 @@
+Service,Description,Region,AZ,Billing Mode,Specifications
+Elastic Cloud Server,web-server-01,la-south-2,az1,On-Demand,x86 | General computing | x0.8u.16g | 8 vCPUs | 16GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; General Purpose SSD | 280GB;
+Elastic Cloud Server,db-server-01,la-south-2,az1,On-Demand,x86 | General computing-plus | x1.16u.32g | 16 vCPUs | 32GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; General Purpose SSD | 500GB;

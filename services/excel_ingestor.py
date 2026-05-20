@@ -192,11 +192,23 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
         else:
             df_sample = pd.read_excel(file_path, nrows=5, header=None)
         
-        # Check if this looks like Huawei quotation (has 'Service' in first row)
-        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
-        has_huawei_columns = any('service' in str(cell).lower() for cell in first_row)
+        print(f"🔍 Checking Huawei format detection...")
+        print(f"  DataFrame columns: {df_sample.columns.tolist()}")
+        print(f"  First row values: {df_sample.iloc[0].tolist()}")
         
-        if has_huawei_columns:
+        # Check if this looks like Huawei quotation (has 'Service' in column names or first row)
+        # First check column names (if header=0 worked)
+        column_names = [str(col).lower() for col in df_sample.columns]
+        has_huawei_columns_in_header = any('service' in col_name for col_name in column_names)
+        
+        # Also check first data row for Huawei service types
+        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
+        has_huawei_columns_in_data = any('elastic cloud server' in str(cell).lower() for cell in first_row)
+        
+        print(f"  Has 'service' in column names: {has_huawei_columns_in_header}")
+        print(f"  Has 'elastic cloud server' in first row: {has_huawei_columns_in_data}")
+        
+        if has_huawei_columns_in_header or has_huawei_columns_in_data:
             print("🔍 Detected Huawei Cloud quotation format")
             return process_huawei_quotation(file_path, customer_name)
             
@@ -449,13 +461,32 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
     
     # Read the file
     try:
-        # Try with header=1 (second row) for Huawei format
-        df = pd.read_excel(file_path, header=1)
+        # First try with header=0 (default) to see if we have proper column names
+        if file_path.lower().endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+        
+        # Check if we have the expected Huawei columns
+        column_names = [str(col).strip() for col in df.columns]
+        has_service_col = 'Service' in column_names
+        has_description_col = 'Description' in column_names
+        has_specs_col = 'Specifications' in column_names
+        
+        # If we don't have the expected columns, try reading with header=1
+        # (some Huawei exports might have the column names in row 1)
+        if not (has_service_col and has_description_col and has_specs_col):
+            print("⚠️  Standard header not found, trying with header=1")
+            if file_path.lower().endswith('.csv'):
+                df = pd.read_csv(file_path, header=1)
+            else:
+                df = pd.read_excel(file_path, header=1)
+            # Clean column names again
+            df.columns = [str(col).strip() for col in df.columns]
+            column_names = [str(col).strip() for col in df.columns]
+            
     except Exception as e:
         raise ValueError(f"Failed to read Huawei quotation file {file_path}: {str(e)}")
-    
-    # Clean column names
-    df.columns = [str(col).strip() for col in df.columns]
     
     print(f"📊 Found {len(df)} rows, {len(df.columns)} columns")
     print(f"📋 Columns: {list(df.columns)}")
@@ -542,50 +573,6 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         print(f"🔍 Some servers missing vCPU/RAM specs. Manual correction may be needed.")
     
     return blueprint
-
-# Update the main process_quotation function to detect Huawei format
-def process_quotation(file_path: str, customer_name: str = "TBD_Customer"):
-    """
-    Ingest messy Excel or CSV quotations and normalize into strict blueprint.json schema.
-    Auto-detects Huawei Cloud quotation format.
-    
-    Args:
-        file_path: Path to Excel or CSV file
-        customer_name: Customer name for the blueprint
-        
-    Returns:
-        Dictionary matching the blueprint.json schema
-    """
-    print(f"🔄 Ingesting Raw Data: {file_path}")
-    
-    # Try to detect Huawei format first
-    try:
-        # Read first few rows to check format
-        df_sample = pd.read_excel(file_path, nrows=5, header=None)
-        
-        # Check if this looks like Huawei quotation (has 'Service' in first row)
-        first_row = df_sample.iloc[0].astype(str).str.lower().tolist()
-        has_huawei_columns = any('service' in str(cell).lower() for cell in first_row)
-        
-        if has_huawei_columns:
-            print("🔍 Detected Huawei Cloud quotation format")
-            return process_huawei_quotation(file_path, customer_name)
-            
-    except Exception as e:
-        print(f"⚠️  Could not detect Huawei format: {str(e)}")
-        # Continue with original processing
-    
-    # 1. EXTRACT: Read the file (original logic)
-    try:
-        if file_path.lower().endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            # Handle both .xlsx and .xls
-            df = pd.read_excel(file_path)
-    except Exception as e:
-        raise ValueError(f"Failed to read file {file_path}: {str(e)}")
-    
-    # Rest of original function continues...
 # ============================================================================
 # COMMAND LINE INTERFACE
 # ============================================================================
