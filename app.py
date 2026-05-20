@@ -637,6 +637,88 @@ def sms_monitor_public():
         import traceback
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
 
+@app.route('/api/cloud/inventory', methods=['POST'])
+def cloud_inventory():
+    try:
+        req = request.json
+        ak, sk = req.get('ak'), req.get('sk')
+        project_id = req.get('projectId', '').strip()
+        region = req.get('region', 'la-south-2').strip()
+        
+        if not ak or not sk or not project_id:
+            return jsonify({"success": False, "error": "AK, SK, and Project ID required"}), 400
+            
+        import requests
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+        from huaweicloudsdkcore.auth.credentials import BasicCredentials
+        from urllib.parse import urlparse
+        
+        # Create credentials for signing
+        credentials = BasicCredentials(ak, sk, project_id)
+        signer = Signer(credentials)
+        inventory = {"ecs": [], "vpc": [], "rds": []}
+        
+        # 1. Fetch ECS Servers
+        ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/{project_id}/cloudservers"
+        parsed_ecs_url = urlparse(ecs_url)
+        sdk_request_ecs = SdkRequest(
+            method="GET",
+            schema=parsed_ecs_url.scheme,
+            host=parsed_ecs_url.netloc,
+            resource_path=parsed_ecs_url.path,
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        signed_request_ecs = signer.sign(sdk_request_ecs)
+        res_ecs = requests.get(ecs_url, headers=signed_request_ecs.header_params)
+        if res_ecs.status_code < 400:
+            inventory['ecs'] = res_ecs.json().get('servers', [])
+
+        # 2. Fetch VPCs & Subnets
+        vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{project_id}/vpcs"
+        parsed_vpc_url = urlparse(vpc_url)
+        sdk_request_vpc = SdkRequest(
+            method="GET",
+            schema=parsed_vpc_url.scheme,
+            host=parsed_vpc_url.netloc,
+            resource_path=parsed_vpc_url.path,
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        signed_request_vpc = signer.sign(sdk_request_vpc)
+        res_vpc = requests.get(vpc_url, headers=signed_request_vpc.header_params)
+        if res_vpc.status_code < 400:
+            inventory['vpc'] = res_vpc.json().get('vpcs', [])
+            
+        # 3. Fetch RDS Databases
+        rds_url = f"https://rds.{region}.myhuaweicloud.com/v3/{project_id}/instances"
+        parsed_rds_url = urlparse(rds_url)
+        sdk_request_rds = SdkRequest(
+            method="GET",
+            schema=parsed_rds_url.scheme,
+            host=parsed_rds_url.netloc,
+            resource_path=parsed_rds_url.path,
+            header_params={
+                "Content-Type": "application/json",
+                "X-Project-Id": project_id
+            }
+        )
+        signed_request_rds = signer.sign(sdk_request_rds)
+        res_rds = requests.get(rds_url, headers=signed_request_rds.header_params)
+        if res_rds.status_code < 400:
+            inventory['rds'] = res_rds.json().get('instances', [])
+
+        return jsonify({"success": True, "inventory": inventory})
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/api/sms/sync', methods=['POST'])
 @requires_auth
 def sms_sync():

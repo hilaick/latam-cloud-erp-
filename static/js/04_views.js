@@ -380,124 +380,71 @@ function GlobalProcessView() {
 }
 
 function GlobalMigrationMonitor() {
-    const { useState, useEffect } = React;
-    const [customers, setCustomers] = useState([]);
-    const [selectedCustId, setSelectedCustId] = useState('');
-    const [projectId, setProjectId] = useState('');
-    const [isPolling, setIsPolling] = useState(false);
-    const [autoRefresh, setAutoRefresh] = useState(false);
-    const [data, setData] = useState({ servers: [], tasks: [] });
-
-    useEffect(() => { fetch('/api/erp/state').then(r=>r.json()).then(d=> { if(d.customers) setCustomers(d.customers); }); }, []);
+    const { useState } = React;
+    const [ak, setAk] = useState(''); const [sk, setSk] = useState(''); 
+    const [projectId, setProjectId] = useState(''); const [region, setRegion] = useState('la-south-2');
+    const [inventory, setInventory] = useState(null); const [isLoading, setIsLoading] = useState(false);
     
-    const activeCust = customers.find(c => c.id === selectedCustId);
-
-    const fetchMonitorData = async () => {
-        if (!activeCust?.ak || !activeCust?.sk || !projectId) return;
-        setIsPolling(true);
+    const fetchInventory = async () => {
+        if (!ak || !sk || !projectId) return alert("Credentials required.");
+        setIsLoading(true);
         try {
-            const res = await fetch('/api/sms/monitor', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ak: activeCust.ak, sk: activeCust.sk, projectId, region: activeCust.region })
-            });
-            const payload = await res.json();
-            if (payload.success) setData({ servers: payload.servers || [], tasks: payload.tasks || [] });
-            else { alert(`API Error: ${payload.error}`); setAutoRefresh(false); }
-        } catch (err) { console.error(err); setAutoRefresh(false); } finally { setIsPolling(false); }
+            const res = await fetch('/api/cloud/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak, sk, projectId, region }) });
+            const data = await res.json();
+            if (data.success) setInventory(data.inventory);
+            else alert("API Error: " + data.error);
+        } catch (err) { alert("Network Error"); } finally { setIsLoading(false); }
     };
-
-    // Auto-polling loop
-    useEffect(() => {
-        let interval;
-        if (autoRefresh && activeCust) {
-            fetchMonitorData();
-            interval = setInterval(fetchMonitorData, 10000);
-        }
-        return () => clearInterval(interval);
-    }, [autoRefresh, activeCust, projectId]);
-
-    const activeTasks = data.tasks.filter(t => !['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
-    const completedTasks = data.tasks.filter(t => ['SUCCESS', 'FAILED', 'ABORTED'].includes(t.state));
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
-            {/* Control Panel */}
-            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 p-6 flex flex-wrap gap-6 items-center text-white">
-                <div className="flex-1 min-w-[200px]">
-                    <h2 className="text-2xl font-black mb-1"><i className="fas fa-tv text-emerald-400 mr-3"></i> Migration NOC</h2>
-                    <p className="text-xs text-slate-400">Single Pane of Glass for SMS Console operations.</p>
-                </div>
-                <div className="flex gap-3 flex-wrap flex-[2]">
-                    <select value={selectedCustId} onChange={e=>setSelectedCustId(e.target.value)} className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-bold outline-none text-white">
-                        <option value="">-- Select Customer Account --</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.region})</option>)}
-                    </select>
-                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Target Project ID" className="flex-1 p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono outline-none text-white" />
-                </div>
-                <div className="flex gap-3">
-                    <button onClick={() => !activeCust?.ak ? alert("Select a customer with credentials") : setAutoRefresh(!autoRefresh)} className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all ${autoRefresh ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'}`}>
-                        {autoRefresh ? <><i className="fas fa-stop-circle mr-2"></i> Stop Polling</> : <><i className="fas fa-satellite-dish mr-2"></i> Live Monitor</>}
-                    </button>
-                    {!autoRefresh && <button onClick={fetchMonitorData} className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl"><i className={`fas fa-sync-alt ${isPolling ? 'fa-spin' : ''}`}></i></button>}
+            <div className="bg-slate-900 rounded-2xl shadow-xl p-6 flex flex-wrap gap-4 items-center text-white">
+                <div className="flex-1 min-w-[250px]"><h2 className="text-2xl font-black mb-1"><i className="fas fa-tv text-blue-400 mr-3"></i> Live Cloud NOC</h2><p className="text-xs text-slate-400">Real-time resource discovery directly via AK/SK.</p></div>
+                <div className="flex gap-3 flex-wrap">
+                    <input type="password" value={ak} onChange={e=>setAk(e.target.value)} placeholder="AK" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <input type="password" value={sk} onChange={e=>setSk(e.target.value)} placeholder="SK" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <input type="text" value={projectId} onChange={e=>setProjectId(e.target.value)} placeholder="Project ID" className="p-3 rounded-xl bg-slate-800 border border-slate-600 text-xs font-mono w-32 outline-none" />
+                    <button onClick={fetchInventory} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-black uppercase tracking-widest">{isLoading ? 'Scanning...' : 'Scan Environment'}</button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Active Migrations */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
-                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-rocket text-blue-500 mr-2"></i> Active Tasks</h3><span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-black">{activeTasks.length}</span></div>
-                    <div className="flex-1 overflow-auto p-0">
-                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Status</th><th className="p-4 w-1/3">Progress</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {activeTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No active migrations running.</td></tr> : activeTasks.map(t => (
-                                <tr key={t.id} className="hover:bg-slate-50">
-                                    <td className="p-4 font-bold text-slate-800">{t.name}</td>
-                                    <td className="p-4"><span className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-[10px] font-black uppercase">{t.state}</span></td>
-                                    <td className="p-4"><div className="flex items-center gap-3"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all duration-500" style={{width: `${t.progress}%`}}></div></div><span className="font-black text-slate-600">{t.progress}%</span></div></td>
-                                </tr>
-                            ))}
-                        </tbody></table>
+            {inventory && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* ECS Servers */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-server text-blue-500 mr-2"></i> Compute (ECS)</h3><span className="bg-blue-100 text-blue-800 px-2 rounded font-black text-xs">{inventory.ecs.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Flavor</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.ecs.map(s => <tr key={s.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{s.name}</td><td className="p-3 font-mono text-[10px]">{s.flavor?.id}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-[9px] font-black ${s.status==='ACTIVE'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{s.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
+                    </div>
+                    {/* VPCs */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-network-wired text-purple-500 mr-2"></i> Networks (VPC)</h3><span className="bg-purple-100 text-purple-800 px-2 rounded font-black text-xs">{inventory.vpc.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">CIDR</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.vpc.map(v => <tr key={v.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{v.name}</td><td className="p-3 font-mono text-[10px]">{v.cidr}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{v.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
+                    </div>
+                    {/* RDS */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-database text-rose-500 mr-2"></i> Databases (RDS)</h3><span className="bg-rose-100 text-rose-800 px-2 rounded font-black text-xs">{inventory.rds.length}</span></div>
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left text-xs"><thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Engine</th><th className="p-3">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inventory.rds.map(r => <tr key={r.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{r.name}</td><td className="p-3 font-mono text-[10px]">{r.datastore?.type}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{r.status}</span></td></tr>)}
+                            </tbody></table>
+                        </div>
                     </div>
                 </div>
-
-                {/* Discovered Servers */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[500px]">
-                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800"><i className="fas fa-server text-purple-500 mr-2"></i> Source Inventory</h3><span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs font-black">{data.servers.length}</span></div>
-                    <div className="flex-1 overflow-auto p-0">
-                        <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Hostname</th><th className="p-4">Specs</th><th className="p-4">Agent Status</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {data.servers.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No servers discovered. Check credentials.</td></tr> : data.servers.map(s => (
-                                <tr key={s.id} className="hover:bg-slate-50">
-                                    <td className="p-4"><div className="font-bold text-slate-800">{s.name}</div><div className="text-[10px] font-mono text-slate-500">{s.ip}</div></td>
-                                    <td className="p-4"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded font-mono text-[10px] text-slate-600">{s.cpu}c / {s.ram}g</span></td>
-                                    <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${s.connected ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{s.connected ? 'Connected' : 'Offline'}</span></td>
-                                </tr>
-                            ))}
-                        </tbody></table>
-                    </div>
-                </div>
-            </div>
-            
-            {/* Historic Tasks */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col max-h-[400px]">
-                <div className="px-6 py-4 border-b border-slate-200 bg-slate-50"><h3 className="font-black text-slate-800"><i className="fas fa-history text-slate-500 mr-2"></i> Migration History</h3></div>
-                <div className="flex-1 overflow-auto p-0">
-                    <table className="w-full text-left text-xs"><thead className="bg-slate-100 sticky top-0 z-10 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Task Name</th><th className="p-4">Target Flavor</th><th className="p-4">Final Status</th></tr></thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {completedTasks.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No completed history.</td></tr> : completedTasks.map(t => (
-                            <tr key={t.id} className="hover:bg-slate-50">
-                                <td className="p-4 font-bold text-slate-700">{t.name}</td>
-                                <td className="p-4 font-mono text-[10px] text-slate-500">{t.target_flavor}</td>
-                                <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${t.state === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{t.state}</span></td>
-                            </tr>
-                        ))}
-                    </tbody></table>
-                </div>
-            </div>
+            )}
         </div>
-    );
+    )
 }
-
 window.GlobalMigrationMonitor = GlobalMigrationMonitor;
 
 window.GlobalMigrationMonitor = GlobalMigrationMonitor;

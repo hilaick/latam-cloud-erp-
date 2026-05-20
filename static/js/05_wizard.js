@@ -1184,36 +1184,59 @@ function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) 
 
 function PhasePostLive({ activeProject, onUpdateProject }) {
     const { useState, useEffect } = React;
-    const [r, setR] = useState(activeProject?.war?.r || 50); const [s, setS] = useState(activeProject?.war?.s || 50); const [p, setP] = useState(activeProject?.war?.p || 50); const [c, setC] = useState(activeProject?.war?.c || 50); const [o, setO] = useState(activeProject?.war?.o || 50);
-    useEffect(()=>{ if(activeProject?.war) { setR(activeProject.war.r); setS(activeProject.war.s); setP(activeProject.war.p); setC(activeProject.war.c); setO(activeProject.war.o); } }, [activeProject]);
-    const score = Math.round((parseInt(r) + parseInt(s) + parseInt(p) + parseInt(c) + parseInt(o)) / 5); const isCertified = score >= 80;
-    const saveContext = () => { onUpdateProject(activeProject.id, 'war', { r, s, p, c, o }); alert("Sign-Off Saved"); };
+    const [liveData, setLiveData] = useState(null); const [isLoading, setIsLoading] = useState(false);
+    
+    // Fallback sliders
+    const [r, setR] = useState(activeProject?.war?.r || 50); const [s, setS] = useState(activeProject?.war?.s || 50);
+    const score = Math.round((parseInt(r) + parseInt(s) + 100) / 3);
+    const blueprintCompute = activeProject?.blueprintData?.topology?.compute || [];
+
+    const triggerAutomatedWAR = async () => {
+        const profile = activeProject.customerProfile;
+        if (!profile || !profile.ak) return alert("Customer AK/SK is missing. Please save it in the MgC Reconciliation step first.");
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/cloud/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ak: profile.ak, sk: profile.sk, projectId: profile.projectId || prompt("Enter Project ID:"), region: profile.region || 'la-south-2' }) });
+            const data = await res.json();
+            if (data.success) setLiveData(data.inventory.ecs);
+        } catch(e) { alert("API Error."); } finally { setIsLoading(false); }
+    };
 
     return (
-        <div className="max-w-[1200px] mx-auto space-y-6 animate-fade-in">
+        <div className="max-w-[1400px] mx-auto space-y-6 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
-                <h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-award text-amber-500"></i> Well-Architected Framework</h3>
-                <button onClick={saveContext} className="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-black text-xs shadow-md hover:bg-amber-600 transition-colors uppercase tracking-widest">Sign & Save</button>
+                <div><h3 className="font-black flex items-center gap-3 text-lg"><i className="fas fa-balance-scale text-amber-500"></i> Blueprint vs Live Reality (Automated WAR)</h3><p className="text-xs text-slate-500 mt-1">Cross-check delivered Huawei infrastructure against the signed SOW quotation.</p></div>
+                <button onClick={triggerAutomatedWAR} className="px-6 py-3 bg-amber-500 text-white rounded-xl font-black text-xs shadow-md uppercase tracking-widest">{isLoading ? 'Scanning Cloud...' : 'Run Automated Diff'}</button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-8">
-                    <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Resilience (HA/DR)</label><span className="text-blue-600 font-black text-sm">{r}%</span></div><input type="range" min="0" max="100" value={r} onChange={e=>setR(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-blue-600 cursor-pointer" /></div>
-                    <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Security & Compliance</label><span className="text-rose-600 font-black text-sm">{s}%</span></div><input type="range" min="0" max="100" value={s} onChange={e=>setS(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-rose-600 cursor-pointer" /></div>
-                    <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Performance Efficiency</label><span className="text-purple-600 font-black text-sm">{p}%</span></div><input type="range" min="0" max="100" value={p} onChange={e=>setP(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /></div>
-                    <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Cost Optimization</label><span className="text-emerald-600 font-black text-sm">{c}%</span></div><input type="range" min="0" max="100" value={c} onChange={e=>setC(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-emerald-600 cursor-pointer" /></div>
-                    <div><div className="flex justify-between mb-2"><label className="font-black text-sm">Operational Excellence</label><span className="text-slate-600 font-black text-sm">{o}%</span></div><input type="range" min="0" max="100" value={o} onChange={e=>setO(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-slate-600 cursor-pointer" /></div>
-                </div>
-                <div className={`p-10 rounded-3xl border-4 flex flex-col items-center justify-center text-center ${isCertified ? 'bg-amber-50 border-amber-300 shadow-inner' : 'bg-slate-50 border-slate-300'}`}>
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4">Architecture Final Score</h4>
-                    <div className={`text-8xl font-black tracking-tighter ${isCertified ? 'text-amber-500' : 'text-slate-700'}`}>{score}</div>
-                    <div className={`mt-8 px-8 py-3 rounded-full font-black uppercase tracking-widest text-xs border-2 ${isCertified ? 'bg-amber-500 text-white border-amber-600 shadow-lg' : 'bg-slate-200 text-slate-500 border-slate-300'}`}>{isCertified ? 'Certified & Approved' : 'Remediation Required'}</div>
-                </div>
-            </div>
-        </div>
-    )
-}
 
-function MgCReconciliationView({ activeProject, onUpdateProject }) {
+            {liveData && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-500"><tr><th className="p-4">Hostname</th><th className="p-4 border-l-2 border-blue-200 bg-blue-50/50">SOW Blueprint (Quoted)</th><th className="p-4 border-l-2 border-amber-200 bg-amber-50/50">Live Environment (Reality)</th><th className="p-4">WAR Status</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {liveData.map(liveServer => {
+                                const quote = blueprintCompute.find(b => b.name?.toLowerCase() === liveServer.name?.toLowerCase());
+                                let status = "Optimized"; let statusClass = "bg-emerald-100 text-emerald-800";
+                                if (!quote) { status = "Unquoted Extra"; statusClass = "bg-rose-100 text-rose-800"; }
+                                else if (quote.flavor !== liveServer.flavor?.id) { status = "Cost Violation (Flavor Mismatch)"; statusClass = "bg-rose-100 text-rose-800"; }
+                                
+                                return (
+                                    <tr key={liveServer.id} className={status !== 'Optimized' ? 'bg-rose-50/30' : ''}>
+                                        <td className="p-4 font-bold">{liveServer.name}</td>
+                                        <td className="p-4 border-l-2 border-blue-100">{quote ? <span className="font-mono text-blue-800 bg-blue-50 px-2 py-1 rounded">{quote.flavor}</span> : <span className="text-slate-400 italic">Not in SOW</span>}</td>
+                                        <td className="p-4 border-l-2 border-amber-100"><span className="font-mono text-amber-900 bg-amber-50 px-2 py-1 rounded">{liveServer.flavor?.id}</span></td>
+                                        <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${statusClass}`}>{status}</span></td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+window.PhasePostLive = PhasePostLive;function MgCReconciliationView({ activeProject, onUpdateProject }) {
     const { useState, useEffect } = React;
     const [customers, setCustomers] = useState([]);
     const [selectedCustId, setSelectedCustId] = useState('');
