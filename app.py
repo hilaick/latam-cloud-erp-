@@ -401,8 +401,10 @@ def sms_discover_public():
             }
         )
         
-        # 3. Cryptographically sign the request using Huawei's V4 Signer
-        signer = Signer(ak, sk)
+        # 3. Create credentials and cryptographically sign the request using Huawei's V4 Signer
+        from huaweicloudsdkcore.auth.credentials import BasicCredentials
+        credentials = BasicCredentials(ak, sk, project_id)
+        signer = Signer(credentials)
         signed_request = signer.sign(sdk_request)
         
         # 4. BYPASS THE SDK: Execute natively via the requests library
