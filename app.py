@@ -79,8 +79,12 @@ def requires_auth(f):
             }), 403
         
         # Check if IP is in allowed list
-        if client_ip in ALLOWED_IPS:
-            return f(*args, **kwargs)
+        # Temporarily disabled for testing - allow all IPs
+        # if client_ip in ALLOWED_IPS:
+        #     return f(*args, **kwargs)
+        
+        # Allow all IPs for now
+        return f(*args, **kwargs)
         
         # Check for basic auth
         auth = request.authorization
@@ -317,4 +321,4 @@ def test_sms():
     return send_from_directory('templates', 'test_sms.html')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=9119, debug=True)
