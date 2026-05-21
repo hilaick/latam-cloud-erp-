@@ -792,12 +792,16 @@ function WizardStepPlanning({ project, onUpdateProject, onPromote, isCurrent, cu
                 <div className="flex gap-2">
                     <button onClick={()=>setSubTab('budget')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='budget'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-file-invoice-dollar mr-2"></i> FinOps Budget & Commercial Model</button>
                     <button onClick={()=>setSubTab('plan')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='plan'?'bg-blue-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-tasks mr-2"></i> Migration Plan Builder</button>
+                    <button onClick={()=>setSubTab('wbs')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='wbs'?'bg-purple-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-sitemap mr-2"></i> 3. WBS Import</button>
+                    <button onClick={()=>setSubTab('runbook')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='runbook'?'bg-purple-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-calendar-alt mr-2"></i> 4. Cutover Runbook</button>
                 </div>
                 {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Lock Plan & Start Delivery <i className="fas fa-arrow-right ml-2"></i></button>}
             </div>
             <div className="p-8 bg-slate-100/50">
                 {subTab === 'budget' && (isPoC ? <PoCFinOpsView project={project} onUpdateProject={onUpdateProject} /> : <BudgetEstimatorView activeProject={project} onUpdateProject={onUpdateProject} />)}
                 {subTab === 'plan' && <DedicatedMigrationPlan project={project} onUpdateProject={onUpdateProject} customPlaybooks={customPlaybooks} />}
+                {subTab === 'wbs' && <WBSImportView activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'runbook' && <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     )
@@ -1006,12 +1010,14 @@ function WizardStepExecution({ project, onUpdateProject, onPromote, isCurrent })
                 <div className="flex gap-2">
                     <button onClick={()=>setSubTab('hub')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='hub'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-stream mr-2"></i> Progress Tracking</button>
                     <button onClick={()=>setSubTab('tam')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='tam'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-headset mr-2"></i> TAM & Service Hub</button>
+                    <button onClick={()=>setSubTab('tasks')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='tasks'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-check-square mr-2"></i> Task Execution Board</button>
                 </div>
                 {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Go-Live Complete <i className="fas fa-arrow-right ml-2"></i></button>}
             </div>
             <div className="p-8 bg-slate-100/50">
                 {subTab === 'hub' && <ExecutionHubView project={project} onUpdateProject={onUpdateProject} />}
                 {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'tasks' && <ProjectTaskExecutionView project={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     )
