@@ -62,12 +62,17 @@ function ConfigModal({ project, onClose, onSave }) {
     );
 }
 
-function ExcelUploader({ onUpdateData, onClose }) {
-    const { useState } = React;
-    const [customerName, setCustomerName] = useState("");
+function ExcelUploader({ onUpdateData, onClose, defaultCustomer = "" }) {
+    const { useState, useEffect } = React;
+    const [customerName, setCustomerName] = useState(defaultCustomer);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadMessage, setUploadMessage] = useState("");
+
+    // FIX: Force the input to update if the parent passes a new defaultCustomer
+    useEffect(() => {
+        if (defaultCustomer) setCustomerName(defaultCustomer);
+    }, [defaultCustomer]);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
