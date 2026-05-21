@@ -1,53 +1,41 @@
-import React, { useContext } from 'react'
-import { ERPContext } from './context/ERPContext.jsx'
+import React, { useContext } from 'react';
+import { ERPContext } from './context/ERPContext';
+import Sidebar from './components/layout/Sidebar';
+import CustomerDirectory from './components/views/CustomerDirectory';
+import MasterExecutionHub from './components/views/MasterExecutionHub';
+import LiveCloudNOC from './components/views/LiveCloudNOC';
+import RegionalMap from './components/views/RegionalMap';
+import MasterPipeline from './components/views/MasterPipeline';
+import PreSalesRadar from './components/views/PreSalesRadar';
+import FinOpsDashboard from './components/views/FinOpsDashboard';
+import ProjectWizard from './components/wizard/ProjectWizard';
 
-function App() {
-  const { projects, customers, activePhase, setActivePhase, activeProjectId, setActiveProjectId, fetchState } = useContext(ERPContext)
+export default function App() {
+    const { activePhase } = useContext(ERPContext);
 
-  return (
-    <div className="min-h-screen bg-slate-100 p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">Latam Cloud ERP</h1>
-          <p className="text-slate-600 mt-2">Modern Enterprise Stack: Vite + Flask Blueprints + PostgreSQL</p>
-        </header>
-
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">System Status</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-slate-500">Projects</h3>
-              <p className="text-2xl font-bold text-slate-800 mt-2">{projects.length}</p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-slate-500">Customers</h3>
-              <p className="text-2xl font-bold text-slate-800 mt-2">{customers.length}</p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-slate-500">Active Phase</h3>
-              <p className="text-2xl font-bold text-slate-800 mt-2">{activePhase}</p>
-            </div>
-          </div>
+    return (
+        <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-800 selection:bg-blue-200">
+            <Sidebar />
+            <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50">
+                <div className="p-4 md:p-8 lg:p-12 pb-24">
+                    {activePhase === 'home' && <RegionalMap />}
+                    {activePhase === 'radar' && <PreSalesRadar />}
+                    {activePhase === 'pipeline' && <MasterPipeline />}
+                    {activePhase === 'crm' && <CustomerDirectory />}
+                    {activePhase === 'noc' && <LiveCloudNOC />}
+                    {activePhase === 'execution' && <MasterExecutionHub />}
+                    {activePhase === 'wizard' && <ProjectWizard />}
+                    {activePhase === 'finops' && <FinOpsDashboard />}
+                    
+                    {/* Fallback for components you haven't ported yet */}
+                    {!['home', 'radar', 'pipeline', 'crm', 'noc', 'execution', 'wizard', 'finops'].includes(activePhase) && (
+                        <div className="text-center mt-20 text-slate-400">
+                            <h2 className="text-2xl font-bold">View Migration in Progress</h2>
+                            <p>This view is currently being ported to the Vite architecture.</p>
+                        </div>
+                    )}
+                </div>
+            </main>
         </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Migration in Progress</h2>
-          <p className="text-slate-600">
-            This is the new Vite + React frontend. The old Babel Standalone components will be migrated in the next PR.
-          </p>
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-medium text-blue-800">Current Architecture:</h3>
-            <ul className="mt-2 space-y-1 text-blue-700">
-              <li>• PostgreSQL RDS: {process.env.DATABASE_URL ? 'Connected' : 'Not Configured'}</li>
-              <li>• Flask Blueprints: CRM endpoints modularized</li>
-              <li>• React Context API: Global state management</li>
-              <li>• Vite Build System: Modern bundler</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+    );
 }
-
-export default App
