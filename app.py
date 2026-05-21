@@ -315,26 +315,34 @@ def get_state():
 @app.route('/api/erp/projects', methods=['POST'])
 @requires_auth
 def save_project():
-    req = request.json
-    project_id = str(req.get('id'))
-    proj = ProjectData.query.get(project_id)
-    if not proj:
-        proj = ProjectData(id=project_id)
-        db.session.add(proj)
-    proj.data = json.dumps(req)
-    db.session.commit()
-    return jsonify({"success": True})
+    try:
+        req = request.json
+        project_id = str(req.get('id'))
+        proj = ProjectData.query.get(project_id)
+        if not proj:
+            proj = ProjectData(id=project_id)
+            db.session.add(proj)
+        proj.data = json.dumps(req)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/erp/playbooks', methods=['POST'])
 @requires_auth
 def save_playbooks():
-    pb = GlobalPlaybooks.query.filter_by(id="master").first()
-    if not pb:
-        pb = GlobalPlaybooks(id="master")
-        db.session.add(pb)
-    pb.data = json.dumps(request.json)
-    db.session.commit()
-    return jsonify({"success": True})
+    try:
+        pb = GlobalPlaybooks.query.filter_by(id="master").first()
+        if not pb:
+            pb = GlobalPlaybooks(id="master")
+            db.session.add(pb)
+        pb.data = json.dumps(request.json)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/erp/customers', methods=['GET', 'POST'])
 @requires_auth
@@ -361,6 +369,7 @@ def handle_customers():
             db.session.commit()
             return jsonify({"success": True})
     except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/erp/customers/<c_id>', methods=['DELETE'])
@@ -372,6 +381,7 @@ def delete_customer(c_id):
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/wbs/task', methods=['POST'])
@@ -386,6 +396,7 @@ def update_wbs_task():
             db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/erp/reset', methods=['POST'])
@@ -407,14 +418,18 @@ def reset_database():
 @app.route('/api/sms/log', methods=['POST'])
 @requires_auth
 def log_adhoc_migration():
-    req = request.json
-    log_entry = AdHocMigrationLog(
-        task_id=req.get('task_id'), region=req.get('region'),
-        source_os=req.get('source_os'), target_flavor=req.get('target_flavor'), target_subnet=req.get('target_subnet')
-    )
-    db.session.add(log_entry)
-    db.session.commit()
-    return jsonify({"success": True})
+    try:
+        req = request.json
+        log_entry = AdHocMigrationLog(
+            task_id=req.get('task_id'), region=req.get('region'),
+            source_os=req.get('source_os'), target_flavor=req.get('target_flavor'), target_subnet=req.get('target_subnet')
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/test-sms')
 def test_sms():
@@ -431,18 +446,31 @@ def sms_discover():
 def sms_discover_public():
     try:
         req = request.json
-        ak = req.get('ak')
-        sk = req.get('sk')
-        project_id = req.get('projectId', '').strip()
-        region = req.get('region', 'la-south-2').strip()
+        project_id_db = req.get('projectId') # This is our internal SQLite Project ID
+        
+        # PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite
+        from models import ProjectData
+        import json
+        project_record = ProjectData.query.get(project_id_db)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found in database."}), 404
+            
+        project_data = json.loads(project_record.data)
+        profile = project_data.get('customerProfile', {})
+        ak = profile.get('ak')
+        sk = profile.get('sk')
+        region = profile.get('region', 'la-south-2')
+        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
+        
+        if not all([ak, sk, hw_project_id]):
+            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
+            
         os_type = req.get('osType', 'linux')
         
-        if not ak or not sk or not project_id:
-            return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
-            
         import requests
         from huaweicloudsdkcore.signer.signer import Signer
         from huaweicloudsdkcore.sdk_request import SdkRequest
+        from huaweicloudsdkcore.auth.credentials import BasicCredentials
         from urllib.parse import urlparse
         
         # 1. Construct the raw HTTP Request to the native endpoint
@@ -466,18 +494,18 @@ def sms_discover_public():
             query_params=[("limit", "50"), ("offset", "0")],
             header_params={
                 "Content-Type": "application/json",
-                "X-Project-Id": project_id
+                "X-Project-Id": hw_project_id
             }
         )
         
         # 3. Create credentials and cryptographically sign the request using Huawei's V4 Signer
-        credentials = BasicCredentials(ak, sk, project_id)
+        credentials = BasicCredentials(ak, sk, hw_project_id)
         signer = Signer(credentials)
         signed_request = signer.sign(sdk_request)
         
         # 4. BYPASS THE SDK: Execute natively via the requests library
         url = f"{endpoint}/v3/sources?limit=50&offset=0"
-        response = requests.get(url, headers=signed_request.header_params)
+        response = requests.get(url, headers=signed_request.header_params, timeout=15)
         
         if response.status_code >= 400:
             return jsonify({
@@ -507,13 +535,15 @@ def sms_discover_public():
             servers.append(server_info)
         
         return jsonify({
-            "success": True, 
-            "servers": servers,
-            "message": f"Found {len(servers)} servers." if servers else "No source servers found with SMS agents."
+            "success": True,
+            "servers": servers
         })
         
     except Exception as e:
+        from models import db
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         import traceback
+        return jsonify({"success": False, "error": str(e)}), 500
         error_msg = str(e)
         print(f"Huawei Cloud SMS HTTP Bypass Error: {error_msg}")
         print(traceback.format_exc())
@@ -585,13 +615,24 @@ def sms_discover_public():
 def sms_monitor_public():
     try:
         req = request.json
-        ak = req.get('ak')
-        sk = req.get('sk')
-        project_id = req.get('projectId', '').strip()
-        region = req.get('region', 'la-south-2').strip()
+        project_id_db = req.get('projectId') # This is our internal SQLite Project ID
         
-        if not ak or not sk or not project_id:
-            return jsonify({"success": False, "error": "AK, SK, and Project ID are required"}), 400
+        # PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite
+        from models import ProjectData
+        import json
+        project_record = ProjectData.query.get(project_id_db)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found in database."}), 404
+            
+        project_data = json.loads(project_record.data)
+        profile = project_data.get('customerProfile', {})
+        ak = profile.get('ak')
+        sk = profile.get('sk')
+        region = profile.get('region', 'la-south-2')
+        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
+        
+        if not all([ak, sk, hw_project_id]):
+            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
             
         import requests
         from huaweicloudsdkcore.signer.signer import Signer
@@ -608,7 +649,7 @@ def sms_monitor_public():
             endpoint = f"https://sms.{region}.myhuaweicloud.com"
         
         # Create credentials for signing
-        credentials = BasicCredentials(ak, sk, project_id)
+        credentials = BasicCredentials(ak, sk, hw_project_id)
         signer = Signer(credentials)
         
         # 1. Fetch Registered Source Servers
@@ -621,12 +662,12 @@ def sms_monitor_public():
             query_params=[("limit", "100"), ("offset", "0")],
             header_params={
                 "Content-Type": "application/json",
-                "X-Project-Id": project_id
+                "X-Project-Id": hw_project_id
             }
         )
         signed_request_sources = signer.sign(sdk_request_sources)
         url_sources = f"{endpoint}/v3/sources?limit=100&offset=0"
-        res_sources = requests.get(url_sources, headers=signed_request_sources.header_params)
+        res_sources = requests.get(url_sources, headers=signed_request_sources.header_params, timeout=15)
         servers_data = res_sources.json().get('source_servers', []) if res_sources.status_code < 400 else []
         
         # 2. Fetch Active and Historic Migration Tasks
@@ -639,12 +680,12 @@ def sms_monitor_public():
             query_params=[("limit", "100"), ("offset", "0")],
             header_params={
                 "Content-Type": "application/json",
-                "X-Project-Id": project_id
+                "X-Project-Id": hw_project_id
             }
         )
         signed_request_tasks = signer.sign(sdk_request_tasks)
         url_tasks = f"{endpoint}/v3/tasks?limit=100&offset=0"
-        res_tasks = requests.get(url_tasks, headers=signed_request_tasks.header_params)
+        res_tasks = requests.get(url_tasks, headers=signed_request_tasks.header_params, timeout=15)
         tasks_data = res_tasks.json().get('tasks', []) if res_tasks.status_code < 400 else []
         
         # 3. Format Servers (Fixing the Bytes to GB bug)
@@ -682,19 +723,26 @@ def sms_monitor_public():
         })
         
     except Exception as e:
+        from models import db
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         import traceback
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
-
-@app.route('/api/cloud/inventory', methods=['POST'])
-def cloud_inventory():
-    try:
-        req = request.json
-        ak, sk = req.get('ak'), req.get('sk')
-        project_id = req.get('projectId', '').strip()
-        region = req.get('region', 'la-south-2').strip()
+        return jsonify({"success": False, "error": str(e)}), 500
+        # 1. PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite. Frontend never sends it.
+        from models import ProjectData
+        import json
+        project_record = ProjectData.query.get(project_id_db)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found in database."}), 404
+            
+        project_data = json.loads(project_record.data)
+        profile = project_data.get('customerProfile', {})
+        ak = profile.get('ak')
+        sk = profile.get('sk')
+        region = profile.get('region', 'la-south-2')
+        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
         
-        if not ak or not sk or not project_id:
-            return jsonify({"success": False, "error": "AK, SK, and Project ID required"}), 400
+        if not all([ak, sk, hw_project_id]):
+            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
             
         import requests
         from huaweicloudsdkcore.signer.signer import Signer
@@ -703,91 +751,102 @@ def cloud_inventory():
         from urllib.parse import urlparse
         
         # Create credentials for signing
-        credentials = BasicCredentials(ak, sk, project_id)
+        credentials = BasicCredentials(ak, sk, hw_project_id)
         signer = Signer(credentials)
         inventory = {"ecs": [], "vpc": [], "rds": []}
         
         # 1. Fetch ECS Servers
-        ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/{project_id}/cloudservers"
-        parsed_ecs_url = urlparse(ecs_url)
-        sdk_request_ecs = SdkRequest(
-            method="GET",
-            schema=parsed_ecs_url.scheme,
-            host=parsed_ecs_url.netloc,
-            resource_path=parsed_ecs_url.path,
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": project_id
-            }
-        )
-        signed_request_ecs = signer.sign(sdk_request_ecs)
-        res_ecs = requests.get(ecs_url, headers=signed_request_ecs.header_params)
-        if res_ecs.status_code < 400:
-            inventory['ecs'] = res_ecs.json().get('servers', [])
+        try:
+            ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/{hw_project_id}/cloudservers"
+            parsed_ecs_url = urlparse(ecs_url)
+            sdk_request_ecs = SdkRequest(
+                method="GET",
+                schema=parsed_ecs_url.scheme,
+                host=parsed_ecs_url.netloc,
+                resource_path=parsed_ecs_url.path,
+                header_params={
+                    "Content-Type": "application/json",
+                    "X-Project-Id": hw_project_id
+                }
+            )
+            signed_request_ecs = signer.sign(sdk_request_ecs)
+            res_ecs = requests.get(ecs_url, headers=signed_request_ecs.header_params, timeout=15)
+            if res_ecs.status_code < 400:
+                inventory['ecs'] = res_ecs.json().get('servers', [])
+        except Exception as e:
+            print(f"ECS Fetch Error: {str(e)}")
 
         # 2. Fetch VPCs & Subnets
-        vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{project_id}/vpcs"
-        parsed_vpc_url = urlparse(vpc_url)
-        sdk_request_vpc = SdkRequest(
-            method="GET",
-            schema=parsed_vpc_url.scheme,
-            host=parsed_vpc_url.netloc,
-            resource_path=parsed_vpc_url.path,
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": project_id
-            }
-        )
-        signed_request_vpc = signer.sign(sdk_request_vpc)
-        res_vpc = requests.get(vpc_url, headers=signed_request_vpc.header_params)
-        if res_vpc.status_code < 400:
-            inventory['vpc'] = res_vpc.json().get('vpcs', [])
-            
-        # 3. Fetch RDS Databases
-        rds_url = f"https://rds.{region}.myhuaweicloud.com/v3/{project_id}/instances"
-        parsed_rds_url = urlparse(rds_url)
-        sdk_request_rds = SdkRequest(
-            method="GET",
-            schema=parsed_rds_url.scheme,
-            host=parsed_rds_url.netloc,
-            resource_path=parsed_rds_url.path,
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": project_id
-            }
-        )
-        signed_request_rds = signer.sign(sdk_request_rds)
-        res_rds = requests.get(rds_url, headers=signed_request_rds.header_params)
-        if res_rds.status_code < 400:
-            inventory['rds'] = res_rds.json().get('instances', [])
+        try:
+            vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/vpcs"
+            parsed_vpc_url = urlparse(vpc_url)
+            sdk_request_vpc = SdkRequest(
+                method="GET",
+                schema=parsed_vpc_url.scheme,
+                host=parsed_vpc_url.netloc,
+                resource_path=parsed_vpc_url.path,
+                header_params={
+                    "Content-Type": "application/json",
+                    "X-Project-Id": hw_project_id
+                }
+            )
+            signed_request_vpc = signer.sign(sdk_request_vpc)
+            res_vpc = requests.get(vpc_url, headers=signed_request_vpc.header_params, timeout=15)
+            if res_vpc.status_code < 400:
+                vpcs = res_vpc.json().get('vpcs', [])
+                inventory['vpc'] = vpcs
+                
+                # Fetch subnets for each VPC
+                for vpc in vpcs:
+                    vpc_id = vpc.get('id')
+                    if vpc_id:
+                        subnet_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/subnets?vpc_id={vpc_id}"
+                        parsed_subnet_url = urlparse(subnet_url)
+                        sdk_request_subnet = SdkRequest(
+                            method="GET",
+                            schema=parsed_subnet_url.scheme,
+                            host=parsed_subnet_url.netloc,
+                            resource_path=parsed_subnet_url.path,
+                            header_params={
+                                "Content-Type": "application/json",
+                                "X-Project-Id": hw_project_id
+                            }
+                        )
+                        signed_request_subnet = signer.sign(sdk_request_subnet)
+                        res_subnet = requests.get(subnet_url, headers=signed_request_subnet.header_params, timeout=15)
+                        if res_subnet.status_code < 400:
+                            vpc['subnets'] = res_subnet.json().get('subnets', [])
+        except Exception as e:
+            print(f"VPC/Subnet Fetch Error: {str(e)}")
 
+        # 3. Fetch RDS Instances
+        try:
+            rds_url = f"https://rds.{region}.myhuaweicloud.com/v3/{hw_project_id}/instances"
+            parsed_rds_url = urlparse(rds_url)
+            sdk_request_rds = SdkRequest(
+                method="GET",
+                schema=parsed_rds_url.scheme,
+                host=parsed_rds_url.netloc,
+                resource_path=parsed_rds_url.path,
+                header_params={
+                    "Content-Type": "application/json",
+                    "X-Project-Id": hw_project_id
+                }
+            )
+            signed_request_rds = signer.sign(sdk_request_rds)
+            res_rds = requests.get(rds_url, headers=signed_request_rds.header_params, timeout=15)
+            if res_rds.status_code < 400:
+                inventory['rds'] = res_rds.json().get('instances', [])
+        except Exception as e:
+            print(f"RDS Fetch Error: {str(e)}")
+        
         return jsonify({"success": True, "inventory": inventory})
         
     except Exception as e:
+        from models import db
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         import traceback
         return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/sms/sync', methods=['POST'])
-@requires_auth
-def sms_sync():
-    return jsonify({"success": True, "task_id": "task-sms-8821"})
-
-@app.route('/api/sms/status', methods=['GET'])
-@requires_auth
-def sms_status():
-    return jsonify({"success": True, "progress": random.randint(10, 100), "status_name": "Copying Disk Volumes..."})
-
-# 12. WBS and MgC Endpoints
-@app.route('/api/wbs/upload', methods=['POST'])
-@requires_auth
-def upload_wbs():
-    project_id = request.form.get('project_id')
-    file = request.files.get('file')
-    if not file or not project_id: 
-        return jsonify({"success": False, "error": "Missing file or project ID"})
-    
-    tasks = parse_wbs_csv(file.read())
-    # Delete old tasks for this project
     WBSTask.query.filter_by(project_id=project_id).delete()
     
     for t in tasks:
@@ -901,6 +960,8 @@ def deploy_landing_zone():
         })
         
     except Exception as e:
+        from models import db
+        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
         import traceback
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
 

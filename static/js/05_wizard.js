@@ -1233,7 +1233,7 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
         </div>
     );
 }
-window.PhasePostLive = PhasePostLive;function MgCReconciliationView({ activeProject, onUpdateProject }) {
+function MgCReconciliationView({ activeProject, onUpdateProject }) {
     const { useState, useEffect } = React;
     const [customers, setCustomers] = useState([]);
     const [selectedCustId, setSelectedCustId] = useState('');
@@ -1587,15 +1587,103 @@ window.PhasePostLive = PhasePostLive;function MgCReconciliationView({ activeProj
 }
 
 // Global window binding for Babel Standalone scoping
+// 1. Cutover Runbook Component
+function CutoverRunbookView({ activeProject, onUpdateProject }) {
+    const { useState } = React;
+    const plan = activeProject?.migrationPlan || [];
+    const runbook = activeProject?.runbook || [];
+    const oraRules = activeProject?.physicsData?.frictionProfile?.downtime || "Standard Weekend Outage Only";
+
+    const [taskId, setTaskId] = useState('');
+    const [windowDate, setWindowDate] = useState('');
+    const [estHours, setEstHours] = useState('');
+
+    const handleAddRunbookEntry = () => {
+        if (!taskId || !windowDate || !estHours) return alert("Task, Date, and Estimated Hours required.");
+        const taskName = plan.find(t => t.id === taskId)?.name || 'Unknown Task';
+        const newEntry = { id: 'rb_'+Date.now(), taskId, taskName, windowDate, estHours: parseFloat(estHours), actualHours: 0 };
+        onUpdateProject(activeProject.id, 'runbook', [...runbook, newEntry]);
+        setTaskId(''); setWindowDate(''); setEstHours('');
+    };
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-fade-in">
+            <div className="flex justify-between items-start mb-6">
+                <div><h3 className="font-black text-xl text-slate-800"><i className="fas fa-calendar-alt text-purple-500 mr-2"></i> Cutover Runbook</h3><p className="text-xs text-slate-500 mt-1">Schedule critical maintenance windows based on ORA friction rules.</p></div>
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-right"><div className="text-[10px] font-black uppercase text-rose-500">ORA Friction Rule</div><div className="text-xs font-bold text-rose-800">{oraRules}</div></div>
+            </div>
+            
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex gap-4 items-end">
+                <div className="flex-1"><label className="block text-[10px] font-bold text-slate-500 uppercase">Critical Task</label><select value={taskId} onChange={e=>setTaskId(e.target.value)} className="w-full p-2 border rounded-lg text-xs"><option value="">-- Select WBS Task --</option>{plan.filter(t => !t.isParent).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+                <div><label className="block text-[10px] font-bold text-slate-500 uppercase">Window</label><input type="datetime-local" value={windowDate} onChange={e=>setWindowDate(e.target.value)} className="w-full p-2 border rounded-lg text-xs" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-500 uppercase">Est. Hrs</label><input type="number" step="0.5" value={estHours} onChange={e=>setEstHours(e.target.value)} className="w-24 p-2 border rounded-lg text-xs" /></div>
+                <button onClick={handleAddRunbookEntry} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black">Add</button>
+            </div>
+
+            <table className="w-full text-left text-xs"><thead className="bg-slate-100 uppercase text-slate-500 text-[10px]"><tr><th className="p-3">Task</th><th className="p-3">Window</th><th className="p-3">Est. Hours</th><th className="p-3">Action</th></tr></thead>
+            <tbody>
+                {runbook.map(r => <tr key={r.id} className="border-t"><td className="p-3 font-bold">{r.taskName}</td><td className="p-3">{new Date(r.windowDate).toLocaleString()}</td><td className="p-3 font-black">{r.estHours}h</td><td className="p-3"><button onClick={()=>onUpdateProject(activeProject.id, 'runbook', runbook.filter(x => x.id !== r.id))} className="text-rose-500"><i className="fas fa-trash"></i></button></td></tr>)}
+            </tbody></table>
+        </div>
+    );
+}
+
+// 2. Project Task Execution View (Shadow Mode)
+function ProjectTaskExecutionView({ project, onUpdateProject }) {
+    const plan = project.migrationPlan || [];
+    const runbook = project.runbook || [];
+
+    const handlePlanUpdate = (taskId, val) => onUpdateProject(project.id, 'migrationPlan', plan.map(t => t.id === taskId ? {...t, prog: val} : t));
+    const handleRunbookUpdate = (id, val) => onUpdateProject(project.id, 'runbook', runbook.map(r => r.id === id ? {...r, actualHours: parseFloat(val)||0} : r));
+
+    const totalEst = runbook.reduce((sum, r) => sum + r.estHours, 0);
+    const totalActual = runbook.reduce((sum, r) => sum + r.actualHours, 0);
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 animate-fade-in">
+            <div className="flex justify-between items-center mb-6 border-b pb-6">
+                <div><h3 className="font-black text-xl text-slate-800"><i className="fas fa-check-square text-emerald-500 mr-2"></i> Active Task Execution</h3></div>
+                <div className="bg-slate-900 text-white p-4 rounded-xl flex gap-6 shadow-lg">
+                    <div><div className="text-[9px] uppercase text-slate-400">Shadow Mode</div><div className="text-xs text-emerald-400">Active Tracking</div></div>
+                    <div className="border-l border-slate-700 pl-6"><div className="text-[9px] uppercase text-slate-400">Est. Baseline</div><div className="text-lg font-black">{totalEst}h</div></div>
+                    <div className="border-l border-slate-700 pl-6"><div className="text-[9px] uppercase text-slate-400">Actual Billed</div><div className={`text-lg font-black ${totalActual > totalEst ? 'text-rose-400' : 'text-emerald-400'}`}>{totalActual}h</div></div>
+                </div>
+            </div>
+
+            <table className="w-full text-left text-xs"><thead className="bg-slate-100 uppercase text-slate-500 text-[10px]"><tr><th className="p-3">Task Name</th><th className="p-3">Progress</th><th className="p-3">Timesheet (Shadow Mode)</th></tr></thead>
+            <tbody>
+                {plan.map(t => {
+                    const rb = runbook.find(r => r.taskId === t.id);
+                    return (
+                        <tr key={t.id} className="border-t">
+                            <td className={`p-3 font-bold ${t.isParent ? 'text-slate-800' : 'text-slate-600 pl-8'}`}>{t.name}</td>
+                            <td className="p-3">{!t.isParent ? <select value={t.prog||'0%'} onChange={e=>handlePlanUpdate(t.id, e.target.value)} className="border p-1 rounded font-black"><option>0%</option><option>50%</option><option>100%</option></select> : null}</td>
+                            <td className="p-3">{rb ? <div className="flex gap-2 items-center"><span className="text-[10px] text-slate-400">Est: {rb.estHours}h | Act:</span><input type="number" disabled={t.prog!=='100%'} value={rb.actualHours||''} onChange={e=>handleRunbookUpdate(rb.id, e.target.value)} className="w-16 border p-1 rounded disabled:bg-slate-100" /></div> : null}</td>
+                        </tr>
+                    )
+                })}
+            </tbody></table>
+        </div>
+    );
+}
+// Global window binding for Babel Standalone scoping
 window.ProjectCommandCenter = ProjectCommandCenter;
-window.PhysicsEngineView = PhysicsEngineView;
-window.calculatePhysics = calculatePhysics;
-window.ComputeNode = ComputeNode;
-window.PayloadInputs = PayloadInputs;
-window.DatabaseRouting = DatabaseRouting;
-window.NetworkRouting = NetworkRouting;
-window.SLASection = SLASection;
-window.PhysicsResults = PhysicsResults;
-window.FAQSection = FAQSection;
+window.AIIaCAnalysisView = AIIaCAnalysisView;
+window.WizardStepARB = WizardStepARB;
+window.WizardStepArchitecture = WizardStepArchitecture;
+window.TopologyMapperView = TopologyMapperView;
+window.AssessmentView = AssessmentView;
+window.WizardStepPlanning = WizardStepPlanning;
+window.BudgetEstimatorView = BudgetEstimatorView;
+window.PoCFinOpsView = PoCFinOpsView;
+window.DedicatedMigrationPlan = DedicatedMigrationPlan;
+window.WizardStepExecution = WizardStepExecution;
+window.TAMHubView = TAMHubView;
+window.ExecutionHubView = ExecutionHubView;
+window.SingleProjectGantt = SingleProjectGantt;
+window.WizardStepPostLive = WizardStepPostLive;
+window.PhasePostLive = PhasePostLive;
 window.MgCReconciliationView = MgCReconciliationView;
 window.WBSImportView = WBSImportView;
+window.CutoverRunbookView = CutoverRunbookView;
+window.ProjectTaskExecutionView = ProjectTaskExecutionView;
