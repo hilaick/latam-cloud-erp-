@@ -7,6 +7,7 @@ from huaweicloudsdkcore.sdk_request import SdkRequest
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
 from urllib.parse import urlparse
 import time
+from services.auth import requires_auth  # CRITICAL FIX
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 

@@ -12,7 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__, static_folder='frontend/dist')  # Pointing to new Vite build output
+# FIX: Absolute pathing to prevent 500 errors on static file resolution
+basedir = os.path.abspath(os.path.dirname(__file__))
+dist_folder = os.path.join(basedir, 'frontend', 'dist')
+app = Flask(__name__, static_folder=dist_folder)
 # Enable CORS for all routes with more permissive settings
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 

@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from models import db, ProjectData, Customer, HuaweiAccount, MigrationTask, GlobalPlaybooks
 import json
 from datetime import datetime
+from services.auth import requires_auth  # CRITICAL FIX
 
 crm_bp = Blueprint('crm', __name__)
 

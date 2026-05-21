@@ -6,6 +6,7 @@ from huaweicloudsdkcore.signer.signer import Signer
 from huaweicloudsdkcore.sdk_request import SdkRequest
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
 from urllib.parse import urlparse
+from services.auth import requires_auth  # CRITICAL FIX
 
 sms_bp = Blueprint('sms_migrations', __name__)
 
