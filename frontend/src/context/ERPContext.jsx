@@ -5,66 +5,24 @@ export const ERPContext = createContext();
 export const ERPProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
     const [customers, setCustomers] = useState([]);
-    const [activePhase, setActivePhase] = useState('home');
-    const [activeProjectId, setActiveProjectId] = useState('none');
-    const [isLoading, setIsLoading] = useState(true);
+    const [activePhase, setActivePhase] = useState(() => localStorage.getItem('erp_activePhase') || 'home');
+    const [activeProjectId, setActiveProjectId] = useState(() => localStorage.getItem('erp_activeProject') || "none");
+
+    useEffect(() => { localStorage.setItem('erp_activePhase', activePhase); }, [activePhase]);
+    useEffect(() => { localStorage.setItem('erp_activeProject', activeProjectId); }, [activeProjectId]);
 
     const fetchState = async () => {
         try {
-            setIsLoading(true);
-            const [projectsRes, customersRes] = await Promise.all([
-                fetch('/api/erp/projects'),
-                fetch('/api/erp/customers')
-            ]);
-            
-            if (projectsRes.ok) {
-                const projectsData = await projectsRes.json();
-                setProjects(projectsData);
-            }
-            
-            if (customersRes.ok) {
-                const customersData = await customersRes.json();
-                setCustomers(customersData);
-            }
-        } catch (error) {
-            console.error('Failed to fetch data:', error);
-        } finally {
-            setIsLoading(false);
-        }
+            const res = await fetch('/api/erp/state');
+            const data = await res.json();
+            if (data.projects) setProjects(data.projects);
+        } catch (error) { console.error("Failed to fetch state", error); }
     };
 
-    useEffect(() => {
-        fetchState();
-        
-        // Restore active phase from localStorage
-        const savedPhase = localStorage.getItem('erp_activePhase');
-        const savedProjectId = localStorage.getItem('erp_activeProjectId');
-        
-        if (savedPhase) setActivePhase(savedPhase);
-        if (savedProjectId) setActiveProjectId(savedProjectId);
-    }, []);
-
-    useEffect(() => {
-        localStorage.setItem('erp_activePhase', activePhase);
-    }, [activePhase]);
-
-    useEffect(() => {
-        localStorage.setItem('erp_activeProjectId', activeProjectId);
-    }, [activeProjectId]);
-
-    const value = {
-        projects,
-        customers,
-        activePhase,
-        setActivePhase,
-        activeProjectId,
-        setActiveProjectId,
-        fetchState,
-        isLoading
-    };
+    useEffect(() => { fetchState(); }, []);
 
     return (
-        <ERPContext.Provider value={value}>
+        <ERPContext.Provider value={{ projects, setProjects, customers, setCustomers, activePhase, setActivePhase, activeProjectId, setActiveProjectId, fetchState }}>
             {children}
         </ERPContext.Provider>
     );
