@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, ProjectData, Customer, HuaweiAccount, MigrationTask, WBSTask, AdHocMigrationLog, GlobalPlaybooks
+from models import db, ProjectData, Customer, HuaweiAccount, MigrationTask, GlobalPlaybooks
 import json
 from datetime import datetime
 
@@ -119,46 +119,6 @@ def delete_customer(c_id):
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
-@crm_bp.route('/api/wbs/task', methods=['POST'])
-def save_wbs_task():
-    try:
-        req = request.json
-        task = WBSTask(
-            project_id=req.get('project_id'),
-            wbs_id=req.get('wbs_id'),
-            name=req.get('name'),
-            progress=req.get('progress', '0%'),
-            raci=req.get('raci'),
-            start_date=req.get('start_date'),
-            end_date=req.get('end_date'),
-            is_parent=req.get('is_parent', False)
-        )
-        db.session.add(task)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@crm_bp.route('/api/sms/log', methods=['POST'])
-def log_adhoc_migration():
-    try:
-        req = request.json
-        log_entry = AdHocMigrationLog(
-            task_id=req.get('task_id'),
-            region=req.get('region'),
-            source_os=req.get('source_os'),
-            target_flavor=req.get('target_flavor'),
-            target_subnet=req.get('target_subnet'),
-            status=req.get('status', 'Initiated')
-        )
-        db.session.add(log_entry)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
-
 @crm_bp.route('/api/erp/reset', methods=['POST'])
 def reset_all():
     try:
@@ -167,8 +127,6 @@ def reset_all():
         Customer.query.delete()
         HuaweiAccount.query.delete()
         MigrationTask.query.delete()
-        WBSTask.query.delete()
-        AdHocMigrationLog.query.delete()
         GlobalPlaybooks.query.delete()
         db.session.commit()
         return jsonify({"success": True})

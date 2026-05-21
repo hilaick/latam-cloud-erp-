@@ -1,5 +1,8 @@
-function GeospatialMap({ projects }) {
-  const { useState, useEffect, useMemo, useRef } = React;
+import React, { useEffect, useMemo, useRef, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
+
+export default function RegionalMap() {
+    const { projects } = useContext(ERPContext);
     const mapRef = useRef(null);
     const mapInstance = useRef(null);
     const markersLayer = useRef(null);
@@ -81,8 +84,6 @@ function GeospatialMap({ projects }) {
         }
     }, [mapData]);
 
-    useEffect(() => { return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } }; }, []);
-
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-140px)] min-h-[800px] pb-6">
             <div className="w-full lg:w-80 bg-slate-900 rounded-2xl shadow-xl border border-slate-800 p-6 flex flex-col text-white shrink-0 h-auto lg:h-full">
@@ -102,6 +103,3 @@ function GeospatialMap({ projects }) {
         </div>
     )
 }
-
-// Global window binding for Babel Standalone scoping
-window.GeospatialMap = GeospatialMap;

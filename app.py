@@ -1,20 +1,13 @@
-from flask import Flask, send_file, jsonify, request, send_from_directory
+import os
+from flask import Flask, send_from_directory, request, jsonify
 from flask_cors import CORS
 import subprocess
 import json
-import os
-import time
-import random
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.excel_ingestor import process_quotation
-from services.wbs_ingestor import parse_wbs_csv
-from models import db, setup_db
-from functools import wraps
-from huaweicloudsdkcore.auth.credentials import BasicCredentials
-from huaweicloudsdksms.v3 import SmsClient
-from huaweicloudsdksms.v3 import ListServersRequest, ListTasksRequest
+from models import setup_db
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -64,6 +57,7 @@ def authenticate():
     }), 401, {'WWW-Authenticate': 'Basic realm="Dashboard Access"'}
 
 def requires_auth(f):
+    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         # Get client IP, checking X-Forwarded-For for proxy scenarios
@@ -100,12 +94,12 @@ huawei_lb = HuaweiLoadBalancer()
 
 # Import and register Blueprints
 from routes.crm import crm_bp
-# from routes.cloud_ops import cloud_ops_bp  # You will move Cloud APIs here next
-# from routes.sms_migrations import sms_bp # You will move SMS APIs here next
+from routes.cloud_ops import cloud_ops_bp
+from routes.sms_migrations import sms_bp
 
 app.register_blueprint(crm_bp)
-# app.register_blueprint(cloud_ops_bp)
-# app.register_blueprint(sms_bp)
+app.register_blueprint(cloud_ops_bp)
+app.register_blueprint(sms_bp)
 
 # Serve the React App
 @app.route('/', defaults={'path': ''})
@@ -310,6 +304,7 @@ def upload_quotation():
 # SMS Demo Mocks
 @app.route('/api/sms/discover', methods=['POST'])
 def sms_discover():
+    import time
     req = request.json
     time.sleep(2)
     return jsonify({"success": True, "server": {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": req.get('osType', 'linux')}})
