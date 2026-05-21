@@ -118,6 +118,11 @@ def serve(path):
     else:
         return send_from_directory(app.static_folder, 'index.html')
 
+# Serve assets from the Vite build
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    return send_from_directory(app.static_folder + '/assets', filename)
+
 # Serve static files (JS modules) - fallback for old static files
 @app.route('/static/<path:filename>')
 def serve_static(filename):
