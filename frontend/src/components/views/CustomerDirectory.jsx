@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 
-export default function CustomerDirectory({ customers, projects, onUpdateCustomer, onDeleteCustomer }) {
+export default function CustomerDirectory() {
+    const { customers, projects, onUpdateCustomer, onDeleteCustomer } = useContext(ERPContext);
     const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
     
     const activeCustomer = customers.find(c => c.id === selectedId);
