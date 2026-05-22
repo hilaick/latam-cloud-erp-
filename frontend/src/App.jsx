@@ -10,6 +10,11 @@ import PreSalesRadar from './components/views/PreSalesRadar';
 import FinOpsDashboard from './components/views/FinOpsDashboard';
 import ProjectWizard from './components/wizard/ProjectWizard';
 
+// IMPORT THE RESTORED COMPONENTS HERE:
+import GlobalDashboard from './components/views/GlobalDashboard';
+import GlobalSchedule from './components/views/GlobalSchedule';
+import GlobalProcessView from './components/views/GlobalProcessView';
+
 export default function App() {
     const { activePhase } = useContext(ERPContext);
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -19,7 +24,12 @@ export default function App() {
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50">
                 <div className="p-4 md:p-8 lg:p-12 pb-24">
-                    {activePhase === 'home' && <RegionalMap />}
+                    {/* ADD THE RESTORED COMPONENTS TO THE ROUTER: */}
+                    {activePhase === 'home' && <GlobalDashboard />}
+                    {activePhase === 'schedule' && <GlobalSchedule />}
+                    {activePhase === 'process' && <GlobalProcessView />}
+                    
+                    {activePhase === 'map' && <RegionalMap />}
                     {activePhase === 'radar' && <PreSalesRadar />}
                     {activePhase === 'pipeline' && <MasterPipeline />}
                     {activePhase === 'crm' && <CustomerDirectory />}
@@ -28,8 +38,8 @@ export default function App() {
                     {activePhase === 'wizard' && <ProjectWizard />}
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     
-                    {/* Fallback for components you haven't ported yet */}
-                    {!['home', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops'].includes(activePhase) && (
+                    {/* Update the fallback check to include the new routes */}
+                    {!['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process'].includes(activePhase) && (
                         <div className="text-center mt-20 text-slate-400">
                             <h2 className="text-2xl font-bold">View Migration in Progress</h2>
                             <p>This view is currently being ported to the Vite architecture.</p>
