@@ -2,21 +2,123 @@ from flask import Blueprint, request, jsonify
 from models import db, ProjectData, Customer
 import json
 
+# CRITICAL FIX: We are importing the real, secure auth decorator 
+# from the services module, completely eliminating the dummy proxy.
+from services.auth import requires_auth
+
 crm_bp = Blueprint('crm', __name__)
 
-def requires_auth_from_app(f):
-    """Proxy decorator that will be replaced by the actual decorator from app.py"""
-    return f
+# ==========================================
+# STATE & PROJECT MANAGEMENT
+# ==========================================
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
-@requires_auth_from_app
+@requires_auth
 def get_state():
+    """Returns the full master state of the ERP (All Projects)"""
     try:
         projects = ProjectData.query.all()
-        return jsonify({"projects": [json.loads(p.data) for p in projects]})
+        return jsonify({
+            "success": True, 
+            "projects": [json.loads(p.data) for p in projects]
+        })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-# TODO: Add /api/erp/projects endpoint when available in app.py
-# TODO: Add /api/erp/customers endpoint when available in app.py  
-# TODO: Add /api/erp/reset endpoint when available in app.py
+@crm_bp.route('/api/erp/projects', methods=['POST'])
+@requires_auth
+def update_project():
+    """Creates or Updates a Project's JSON Blob (WBS, Runbook, State)"""
+    try:
+        data = request.json
+        project_id = str(data.get('id'))
+        
+        # Check if project exists
+        project = ProjectData.query.get(project_id)
+        if project:
+            project.data = json.dumps(data)
+        else:
+            project = ProjectData(id=project_id, data=json.dumps(data))
+            db.session.add(project)
+            
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback() # Prevent SQLite/Postgres DB Locking
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==========================================
+# CUSTOMER VAULT MANAGEMENT (AK/SK)
+# ==========================================
+
+@crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
+@requires_auth
+def manage_customers():
+    """Handles fetching and creating new Customer profiles"""
+    if request.method == 'GET':
+        try:
+            customers = Customer.query.all()
+            return jsonify({
+                "success": True,
+                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region} for c in customers]
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    
+    elif request.method == 'POST':
+        try:
+            data = request.json
+            customer = Customer(
+                id=str(data.get('id')), 
+                name=data.get('name', 'Unknown'), 
+                ak=data.get('ak', ''), 
+                sk=data.get('sk', ''), 
+                region=data.get('region', 'la-south-2')
+            )
+            db.session.add(customer)
+            db.session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(e)}), 500
+
+@crm_bp.route('/api/erp/customers/<c_id>', methods=['PUT', 'DELETE'])
+@requires_auth
+def update_delete_customer(c_id):
+    """Updates Vault Keys or Deletes Customer"""
+    try:
+        customer = Customer.query.get(c_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+            
+        if request.method == 'DELETE':
+            db.session.delete(customer)
+        
+        elif request.method == 'PUT':
+            data = request.json
+            customer.ak = data.get('ak', customer.ak)
+            customer.sk = data.get('sk', customer.sk)
+            customer.region = data.get('region', customer.region)
+            
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==========================================
+# DISASTER RECOVERY
+# ==========================================
+
+@crm_bp.route('/api/erp/reset', methods=['POST'])
+@requires_auth
+def hard_reset():
+    """Wipes the database for Demo resets"""
+    try:
+        ProjectData.query.delete()
+        Customer.query.delete()
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
