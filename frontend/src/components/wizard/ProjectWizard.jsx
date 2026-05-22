@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import StepARB from './StepARB';
 import StepArchitecture from './StepArchitecture';
+// We will create these next:
 import StepPlanning from './StepPlanning';
 import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
@@ -10,9 +11,11 @@ export default function ProjectWizard() {
     const { projects, activeProjectId, setProjects } = useContext(ERPContext);
     const project = projects.find(p => String(p.id) === String(activeProjectId));
 
-    if (!project) return <div className="p-12 text-center text-slate-500 font-bold">Please select a project from the Pipeline or Radar.</div>;
+    if (!project) {
+        return <div className="p-12 text-center text-slate-500 font-bold bg-white rounded-2xl border border-slate-200 mt-8">Please select a project from the Pipeline or Radar.</div>;
+    }
 
-    const phases = [
+    const stages = [
         { id: '1_arb', name: '1. ARB Intake', icon: 'fa-door-open' },
         { id: '2_architecture', name: '2. Architecture', icon: 'fa-project-diagram' },
         { id: '3_planning', name: '3. Planning', icon: 'fa-tasks' },
@@ -31,6 +34,17 @@ export default function ProjectWizard() {
         }));
     };
 
+    const renderStage = () => {
+        switch(project.lifecycleState) {
+            case '1_arb': return <StepARB project={project} onUpdateProject={handleUpdateProject} />;
+            case '2_architecture': return <StepArchitecture project={project} onUpdateProject={handleUpdateProject} />;
+            case '3_planning': return <StepPlanning project={project} onUpdateProject={handleUpdateProject} />;
+            case '4_execution': return <StepExecution project={project} onUpdateProject={handleUpdateProject} />;
+            case '5_postlive': return <StepPostLive project={project} onUpdateProject={handleUpdateProject} />;
+            default: return <StepARB project={project} onUpdateProject={handleUpdateProject} />;
+        }
+    };
+
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
@@ -42,20 +56,14 @@ export default function ProjectWizard() {
             </div>
 
             <div className="flex gap-2 bg-slate-200 p-1.5 rounded-xl overflow-x-auto shadow-inner">
-                {phases.map(ph => (
-                    <button key={ph.id} onClick={() => handleUpdateProject(project.id, 'lifecycleState', ph.id)} 
-                        className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === ph.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
-                        <i className={`fas ${ph.icon} mr-2`}></i> {ph.name}
+                {stages.map(stg => (
+                    <button key={stg.id} onClick={() => handleUpdateProject(project.id, 'lifecycleState', stg.id)} className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === stg.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
+                        <i className={`fas ${stg.icon} mr-2`}></i> {stg.name}
                     </button>
                 ))}
             </div>
 
-            {/* We render the core components here. You can expand ARB/Architecture later! */}
-            {project.lifecycleState === '1_arb' && <StepARB project={project} onUpdateProject={handleUpdateProject} />}
-            {project.lifecycleState === '2_architecture' && <StepArchitecture project={project} onUpdateProject={handleUpdateProject} />}
-            {project.lifecycleState === '3_planning' && <StepPlanning project={project} onUpdateProject={handleUpdateProject} />}
-            {project.lifecycleState === '4_execution' && <StepExecution project={project} onUpdateProject={handleUpdateProject} />}
-            {project.lifecycleState === '5_postlive' && <StepPostLive project={project} onUpdateProject={handleUpdateProject} />}
+            {renderStage()}
         </div>
     );
 }

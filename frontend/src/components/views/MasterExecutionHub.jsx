@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 
-export default function MasterExecutionHub({ projects }) {
+export default function MasterExecutionHub() {
+    const { projects } = useContext(ERPContext);
     const [globalTasks, setGlobalTasks] = useState([]);
 
     useEffect(() => {

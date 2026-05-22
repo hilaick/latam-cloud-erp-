@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 
-export default function Sidebar({ activePhase, activeProjectId, setActivePhase, setActiveProjectId, projects, sidebarOpen, setSidebarOpen }) {
+export default function Sidebar({ sidebarOpen, setSidebarOpen }) {
+    const { activePhase, activeProjectId, setActivePhase, setActiveProjectId, projects } = useContext(ERPContext);
     
     const navToPhase = (phase) => {
         setActivePhase(phase);
