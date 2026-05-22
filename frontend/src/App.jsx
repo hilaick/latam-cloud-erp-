@@ -14,6 +14,7 @@ import ProjectWizard from './components/wizard/ProjectWizard';
 import GlobalDashboard from './components/views/GlobalDashboard';
 import GlobalSchedule from './components/views/GlobalSchedule';
 import GlobalProcessView from './components/views/GlobalProcessView';
+import PlaybookStudio from './components/views/PlaybookStudio';
 
 export default function App() {
     const { activePhase } = useContext(ERPContext);
@@ -40,8 +41,9 @@ export default function App() {
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     {activePhase === 'wizard' && <ProjectWizard />}
                     {activePhase === 'finops' && <FinOpsDashboard />}
+                    {activePhase === 'playbooks' && <PlaybookStudio />}
                     
-                    {!['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process'].includes(activePhase) && (
+                    {!['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks'].includes(activePhase) && (
                         <div className="text-center mt-20 text-slate-400">
                             <h2 className="text-2xl font-bold">View Migration in Progress</h2>
                             <p>This view is currently being ported to the Vite architecture.</p>
