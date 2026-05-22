@@ -1,4 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ERPProvider } from './context/ERPContext.jsx'
-// Note: App.jsx will be ported in the next chunk.
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <ERPProvider>
+      <App />
+    </ERPProvider>
+  </React.StrictMode>
+)
