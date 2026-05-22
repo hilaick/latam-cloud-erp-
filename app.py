@@ -1,35 +1,39 @@
-from flask import Flask, send_file, jsonify, request, send_from_directory
+import os
+from flask import Flask, send_from_directory, request, jsonify
 from flask_cors import CORS
 import subprocess
 import json
-import os
-import time
-import random
 from pathlib import Path
 from services.huawei_load_balancer import HuaweiLoadBalancer
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.excel_ingestor import process_quotation
-from services.wbs_ingestor import parse_wbs_csv
-from models import db, setup_db, ProjectData, GlobalPlaybooks, AdHocMigrationLog, Customer, WBSTask
-from functools import wraps
-from huaweicloudsdkcore.auth.credentials import BasicCredentials
-from huaweicloudsdksms.v3 import SmsClient
-from huaweicloudsdksms.v3 import ListServersRequest, ListTasksRequest
+from models import setup_db
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+load_dotenv()
+
+# Add this near the top where app is initialized:
+basedir = os.path.abspath(os.path.dirname(__file__))
+dist_folder = os.path.join(basedir, 'frontend', 'dist')
+app = Flask(__name__, static_folder=dist_folder)
+
 # Enable CORS for all routes with more permissive settings
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 
 # Increase file upload size limit to 50MB
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Setup SQLite database
+# Setup database (PostgreSQL from env, fallback to SQLite)
 setup_db(app)
+
+# Register Blueprint after setup_db(app):
+from routes.crm import crm_bp
+app.register_blueprint(crm_bp)
 
 # Basic Authentication Configuration
 # IMPORTANT: Set these environment variables for production:
 # export DASHBOARD_USERNAME="your_secure_username"
-# export DASHBOARD_PASSWORD="strong_random_password_here"
+# export DASHBOARD_PASSWORD="strong...here"
 USERNAME = os.environ.get('DASHBOARD_USERNAME', 'admin')
 PASSWORD = os.environ.get('DASHBOARD_PASSWORD', 'changeme123')
 
@@ -53,933 +57,338 @@ def check_auth(username, password):
     return username == USERNAME and password == PASSWORD
 
 def authenticate():
-    """Send 401 response to enable basic auth."""
+    """Sends a 401 response that enables basic auth."""
     return jsonify({
-        'success': False,
-        'error': 'Authentication required',
-        'message': 'Please provide valid credentials'
-    }), 401, {'WWW-Authenticate': 'Basic realm="Dashboard Access"'}
+        "error": "Authentication required",
+        "authenticate": "Basic realm=\"Huawei Cloud ERP Dashboard\""
+    }), 401, {'WWW-Authenticate': 'Basic realm="Huawei Cloud ERP Dashboard"'}
 
 def requires_auth(f):
+    """Decorator to require authentication for a route."""
+    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Get client IP, checking X-Forwarded-For for proxy scenarios
+        # Skip auth for allowed IPs
         client_ip = request.remote_addr
-        forwarded_for = request.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            # Take the first IP in X-Forwarded-For chain
-            client_ip = forwarded_for.split(',')[0].strip()
-        
-        # Check if IP is in denied list
-        if client_ip in DENIED_IPS:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied',
-                'message': 'Your IP has been blocked due to suspicious activity'
-            }), 403
-        
-        # Check if IP is in allowed list
         if client_ip in ALLOWED_IPS:
             return f(*args, **kwargs)
         
-        # Check for basic auth
+        # Block denied IPs immediately
+        if client_ip in DENIED_IPS:
+            return jsonify({"error": "Access denied"}), 403
+        
         auth = request.authorization
         if not auth or not check_auth(auth.username, auth.password):
             return authenticate()
         return f(*args, **kwargs)
     return decorated
 
-# Get the project root directory
-PROJECT_ROOT = Path(__file__).parent
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    """Serve the React app for any route not explicitly defined."""
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
-# Initialize Huawei Load Balancer
-huawei_lb = HuaweiLoadBalancer()
-
-# 0. Test endpoint for CORS
-@app.route('/api/test-cors', methods=['GET', 'OPTIONS'])
-def test_cors():
-    """Test endpoint to verify CORS is working"""
-    if request.method == 'OPTIONS':
-        return '', 200
-    return jsonify({'success': True, 'message': 'CORS test successful', 'timestamp': time.time()})
-
-# 1. Serve the Enterprise HTML Frontend
-@app.route('/')
-@requires_auth
-def serve_html():
-    return send_file(str(PROJECT_ROOT / 'templates' / 'index.html'))
-
-# 2. Serve static files (JS modules)
 @app.route('/static/<path:filename>')
 def serve_static(filename):
+    """Serve static files from the static directory."""
     return send_from_directory('static', filename)
 
-# 3. Receive Blueprint from the UI
 @app.route('/api/blueprint', methods=['POST'])
 @requires_auth
 def update_blueprint():
-    data = request.json
-    blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
-    with open(blueprint_path, 'w') as f:
-        json.dump(data, f, indent=2)
-    return jsonify({'success': True})
+    """Update the blueprint configuration."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        # Save to blueprint.json
+        with open('config/blueprint.json', 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        return jsonify({"message": "Blueprint updated successfully", "data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# 4. Run Environment Audit
 @app.route('/api/audit', methods=['POST'])
 @requires_auth
 def run_audit():
+    """Run the Huawei Cloud resource audit."""
     try:
-        audit_script = PROJECT_ROOT / 'scripts' / 'audit_quick.sh'
-        result = subprocess.run(['bash', str(audit_script)], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
-        return jsonify({
-            'success': result.returncode == 0,
-            'output': result.stdout,
-            'error': result.stderr,
-            'exit_code': result.returncode
-        })
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        ak = data.get('ak')
+        sk = data.get('sk')
+        region = data.get('region', 'ap-southeast-3')
+        
+        if not ak or not sk:
+            return jsonify({"error": "AK and SK are required"}), 400
+        
+        # Run the audit script
+        result = subprocess.run(
+            ['python3', 'scripts/audit_quick.sh', ak, sk, region],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr}), 500
+        
+        # Parse the audit results
+        audit_file = 'deployments/huawei_resources.log'
+        if os.path.exists(audit_file):
+            with open(audit_file, 'r') as f:
+                content = f.read()
+            resources = parse_resource_log(content)
+            return jsonify({
+                "message": "Audit completed successfully",
+                "resources": resources,
+                "raw_output": result.stdout
+            })
+        else:
+            return jsonify({
+                "message": "Audit completed but no resources file found",
+                "raw_output": result.stdout
+            })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
-# 5. Trigger Deployment
 @app.route('/api/deploy', methods=['POST'])
 @requires_auth
 def deploy():
+    """Deploy resources based on blueprint."""
     try:
-        # Run the self-healing audit first
-        audit_script = PROJECT_ROOT / 'scripts' / 'audit_quick.sh'
-        deploy_script = PROJECT_ROOT / 'scripts' / 'deploy_real_tagged.sh'
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
         
-        subprocess.run(['bash', str(audit_script)], check=True, cwd=str(PROJECT_ROOT))
-        result = subprocess.run(['bash', str(deploy_script)], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
-        return jsonify({'success': result.returncode == 0, 'output': result.stdout, 'error': result.stderr})
+        ak = data.get('ak')
+        sk = data.get('sk')
+        region = data.get('region', 'ap-southeast-3')
+        resources = data.get('resources', [])
+        
+        if not ak or not sk:
+            return jsonify({"error": "AK and SK are required"}), 400
+        
+        if not resources:
+            return jsonify({"error": "No resources to deploy"}), 400
+        
+        # For now, just log the deployment request
+        # In a real implementation, this would call Huawei Cloud APIs
+        deployment_log = {
+            "timestamp": subprocess.check_output(['date', '+%Y-%m-%d %H:%M:%S']).decode().strip(),
+            "region": region,
+            "resources": resources,
+            "status": "requested"
+        }
+        
+        # Save deployment log
+        log_file = f"deployments/deployment_{int(subprocess.check_output(['date', '+%s']).decode().strip())}.json"
+        os.makedirs('deployments', exist_ok=True)
+        with open(log_file, 'w') as f:
+            json.dump(deployment_log, f, indent=2)
+        
+        return jsonify({
+            "message": "Deployment request received",
+            "log_file": log_file,
+            "deployment": deployment_log
+        })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
-# 6. Trigger Teardown
 @app.route('/api/cleanup', methods=['POST'])
 @requires_auth
 def cleanup():
+    """Clean up deployed resources."""
     try:
-        cleanup_script = PROJECT_ROOT / 'scripts' / 'cleanup_resources.sh'
-        result = subprocess.run(['bash', str(cleanup_script), '--force'], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
-        return jsonify({'success': result.returncode == 0, 'output': result.stdout, 'error': result.stderr})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# 7. Check deployment status
-@app.route('/api/status', methods=['GET'])
-@requires_auth
-def status():
-    try:
-        # Check if we have resource logs
-        deployments_dir = PROJECT_ROOT / 'deployments'
-        deployments_dir.mkdir(exist_ok=True)
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
         
-        resource_logs = sorted([f for f in os.listdir(str(deployments_dir)) 
-                              if f.startswith('huawei_resources_') and f.endswith('.log')])
+        ak = data.get('ak')
+        sk = data.get('sk')
+        region = data.get('region', 'ap-southeast-3')
+        resource_ids = data.get('resource_ids', [])
         
-        if not resource_logs:
-            return jsonify({'status': 'no_deployments', 'message': 'No deployments found'})
+        if not ak or not sk:
+            return jsonify({"error": "AK and SK are required"}), 400
         
-        # Read and parse the latest log
-        latest_log = resource_logs[-1]
-        log_path = deployments_dir / latest_log
+        # For now, just log the cleanup request
+        cleanup_log = {
+            "timestamp": subprocess.check_output(['date', '+%Y-%m-%d %H:%M:%S']).decode().strip(),
+            "region": region,
+            "resource_ids": resource_ids,
+            "status": "requested"
+        }
         
-        resources = parse_resource_log(str(log_path))
+        # Save cleanup log
+        log_file = f"deployments/cleanup_{int(subprocess.check_output(['date', '+%s']).decode().strip())}.json"
+        os.makedirs('deployments', exist_ok=True)
+        with open(log_file, 'w') as f:
+            json.dump(cleanup_log, f, indent=2)
         
         return jsonify({
-            'status': 'deployed',
-            'latest_log': latest_log,
-            'resources': resources,
-            'total_deployments': len(resource_logs)
+            "message": "Cleanup request received",
+            "log_file": log_file,
+            "cleanup": cleanup_log
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
-# 8. Get deployment logs
+@app.route('/api/status', methods=['GET'])
+def status():
+    """Get API status and list all deployments."""
+    try:
+        deployments = get_all_deployments()
+        return jsonify({
+            "status": "online",
+            "deployments": deployments,
+            "message": "No deployments found" if not deployments else f"Found {len(deployments)} deployments"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/logs', methods=['GET'])
 @requires_auth
 def get_logs():
+    """Get the latest audit logs."""
     try:
-        deployments_dir = str(PROJECT_ROOT / 'deployments')
-        deployments = get_all_deployments(deployments_dir)
-        return jsonify({'success': True, 'deployments': deployments})
+        log_file = 'deployments/huawei_resources.log'
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                content = f.read()
+            return jsonify({"logs": content})
+        else:
+            return jsonify({"message": "No logs found"})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
-# 9. Huawei ModelArts API endpoints
 @app.route('/api/huawei/chat', methods=['POST'])
 @requires_auth
 def huawei_chat():
-    """Proxy to Huawei ModelArts chat completion with load balancing"""
+    """Chat with Huawei Cloud API using load balancer."""
     try:
-        data = request.json
+        data = request.get_json()
         if not data:
-            return jsonify({'success': False, 'error': 'No data provided'})
+            return jsonify({"error": "No JSON data provided"}), 400
         
-        response = huawei_lb.chat_completion(data)
-        return jsonify(response)
+        message = data.get('message', '')
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Initialize load balancer
+        lb = HuaweiLoadBalancer()
+        
+        # Get response from Huawei Cloud
+        response = lb.chat(message)
+        
+        return jsonify({
+            "response": response,
+            "key_used": lb.current_key_index,
+            "total_keys": len(lb.api_keys)
+        })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/huawei/keys/status', methods=['GET'])
 @requires_auth
 def huawei_keys_status():
-    """Get status of Huawei API keys"""
+    """Get status of Huawei Cloud API keys."""
     try:
-        return jsonify(huawei_lb.get_status())
+        lb = HuaweiLoadBalancer()
+        return jsonify({
+            "total_keys": len(lb.api_keys),
+            "active_keys": lb.get_active_key_count(),
+            "keys": [
+                {
+                    "index": i,
+                    "last_used": key.get('last_used'),
+                    "error_count": key.get('error_count', 0),
+                    "is_active": key.get('is_active', True)
+                }
+                for i, key in enumerate(lb.api_keys)
+            ]
+        })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({"error": str(e)}), 500
 
-# 10. Upload and process quotation files
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
 @requires_auth
 def upload_quotation():
-    """Upload Excel/CSV quotation and normalize to blueprint.json"""
+    """Upload and process Excel quotation file."""
     if request.method == 'OPTIONS':
-        # Handle preflight request
         return '', 200
     
     try:
-        # Check if file is present
         if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'})
+            return jsonify({"error": "No file part"}), 400
         
         file = request.files['file']
-        
-        # Check if file has a name
         if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'})
+            return jsonify({"error": "No selected file"}), 400
         
-        # Check file extension
-        allowed_extensions = {'csv', 'xlsx', 'xls'}
-        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-        
-        if file_ext not in allowed_extensions:
+        if file and file.filename.endswith(('.xlsx', '.xls', '.csv')):
+            # Save the file temporarily
+            filename = os.path.join('uploads', file.filename)
+            os.makedirs('uploads', exist_ok=True)
+            file.save(filename)
+            
+            # Process the quotation
+            result = process_quotation(filename)
+            
             return jsonify({
-                'success': False, 
-                'error': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
-            })
-        
-        # Get customer name from form data
-        customer_name = request.form.get('customer_name', 'Unknown Customer')
-        
-        # Save file temporarily
-        upload_dir = PROJECT_ROOT / 'uploads'
-        upload_dir.mkdir(exist_ok=True)
-        
-        temp_path = upload_dir / f'temp_quotation.{file_ext}'
-        file.save(str(temp_path))
-        
-        # Process the quotation
-        blueprint = process_quotation(str(temp_path), customer_name)
-        
-        # Save to blueprint.json
-        blueprint_path = PROJECT_ROOT / 'config' / 'blueprint.json'
-        with open(blueprint_path, 'w') as f:
-            json.dump(blueprint, f, indent=2)
-        
-        # Clean up temp file
-        temp_path.unlink(missing_ok=True)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Quotation processed successfully. Generated blueprint for {customer_name}',
-            'blueprint': blueprint,
-            'stats': {
-                'total_servers': len(blueprint['topology']['compute']),
-                'warnings': len([s for s in blueprint['topology']['compute'] if s['status'] == 'WARNING'])
-            }
-        })
-        
-    except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"❌ Error processing quotation: {str(e)}")
-        print(f"📋 Traceback: {error_trace}")
-        return jsonify({'success': False, 'error': str(e), 'trace': error_trace})
-
-# 11. Database-backed ERP state management
-@app.route('/api/erp/state', methods=['GET'])
-@requires_auth
-def get_state():
-    projects = ProjectData.query.all()
-    playbooks = GlobalPlaybooks.query.filter_by(id="master").first()
-    customers = Customer.query.all()
-    return jsonify({
-        "projects": [json.loads(p.data) for p in projects],
-        "playbooks": json.loads(playbooks.data) if playbooks else None,
-        "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region, "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect} for c in customers]
-    })
-
-@app.route('/api/erp/projects', methods=['POST'])
-@requires_auth
-def save_project():
-    try:
-        req = request.json
-        project_id = str(req.get('id'))
-        proj = ProjectData.query.get(project_id)
-        if not proj:
-            proj = ProjectData(id=project_id)
-            db.session.add(proj)
-        proj.data = json.dumps(req)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/erp/playbooks', methods=['POST'])
-@requires_auth
-def save_playbooks():
-    try:
-        pb = GlobalPlaybooks.query.filter_by(id="master").first()
-        if not pb:
-            pb = GlobalPlaybooks(id="master")
-            db.session.add(pb)
-        pb.data = json.dumps(request.json)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/erp/customers', methods=['GET', 'POST'])
-@requires_auth
-def handle_customers():
-    try:
-        if request.method == 'GET':
-            customers = Customer.query.all()
-            return jsonify({
-                "success": True, 
-                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region} for c in customers]
+                "message": "File uploaded and processed successfully",
+                "filename": file.filename,
+                "result": result
             })
         else:
-            req = request.json
-            c_id = str(req.get('id'))
-            customer = Customer.query.get(c_id)
-            if not customer:
-                customer = Customer(id=c_id)
-                db.session.add(customer)
-            
-            customer.name = req.get('name', customer.name)
-            customer.ak = req.get('ak', customer.ak)
-            customer.sk = req.get('sk', customer.sk)
-            customer.region = req.get('region', customer.region)
-            db.session.commit()
-            return jsonify({"success": True})
+            return jsonify({"error": "Invalid file type. Please upload Excel or CSV file."}), 400
     except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/api/erp/customers/<c_id>', methods=['DELETE'])
+@app.route('/api/sms/discover', methods=['POST'])
 @requires_auth
-def delete_customer(c_id):
+def sms_discover():
+    """Discover SMS servers with Huawei Cloud SDK."""
     try:
-        from models import Customer
-        Customer.query.filter_by(id=c_id).delete()
-        db.session.commit()
-        return jsonify({"success": True})
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        ak = data.get('ak')
+        sk = data.get('sk')
+        region = data.get('region', 'ap-southeast-3')
+        
+        if not ak or not sk:
+            return jsonify({"error": "AK and SK are required"}), 400
+        
+        # Import here to avoid circular imports
+        from services.sms_handler import discover_servers
+        
+        servers = discover_servers(ak, sk, region)
+        return jsonify({
+            "message": "SMS discovery completed",
+            "servers": servers,
+            "count": len(servers)
+        })
     except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/wbs/task', methods=['POST'])
-@requires_auth
-def update_wbs_task():
-    try:
-        req = request.json
-        from models import WBSTask
-        task = WBSTask.query.get(req.get('id'))
-        if task:
-            task.progress = req.get('progress', task.progress)
-            db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/erp/reset', methods=['POST'])
-@requires_auth
-def reset_database():
-    try:
-        # Actually wipe the SQLite tables
-        db.session.query(ProjectData).delete()
-        db.session.query(Customer).delete()
-        db.session.query(WBSTask).delete()
-        db.session.query(AdHocMigrationLog).delete()
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# 12. Ad-Hoc SMS Migration endpoints
-@app.route('/api/sms/log', methods=['POST'])
-@requires_auth
-def log_adhoc_migration():
-    try:
-        req = request.json
-        log_entry = AdHocMigrationLog(
-            task_id=req.get('task_id'), region=req.get('region'),
-            source_os=req.get('source_os'), target_flavor=req.get('target_flavor'), target_subnet=req.get('target_subnet')
-        )
-        db.session.add(log_entry)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/test-sms')
 def test_sms():
+    """Test SMS discovery page."""
     return send_from_directory('templates', 'test_sms.html')
-
-# SMS Demo Mocks
-@app.route('/api/sms/discover', methods=['POST'])
-def sms_discover():
-    req = request.json
-    time.sleep(2)
-    return jsonify({"success": True, "server": {"id": "src-live-99", "hostname": "live-legacy-web", "cpu": 4, "ram": 8, "disk": 120, "os": req.get('osType', 'linux')}})
-
-@app.route('/api/sms/discover/public', methods=['POST'])
-def sms_discover_public():
-    try:
-        req = request.json
-        project_id_db = req.get('projectId') # This is our internal SQLite Project ID
-        
-        # PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite
-        from models import ProjectData
-        import json
-        project_record = ProjectData.query.get(project_id_db)
-        if not project_record:
-            return jsonify({"success": False, "error": "Project not found in database."}), 404
-            
-        project_data = json.loads(project_record.data)
-        profile = project_data.get('customerProfile', {})
-        ak = profile.get('ak')
-        sk = profile.get('sk')
-        region = profile.get('region', 'la-south-2')
-        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
-        
-        if not all([ak, sk, hw_project_id]):
-            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
-            
-        os_type = req.get('osType', 'linux')
-        
-        import requests
-        from huaweicloudsdkcore.signer.signer import Signer
-        from huaweicloudsdkcore.sdk_request import SdkRequest
-        from huaweicloudsdkcore.auth.credentials import BasicCredentials
-        from urllib.parse import urlparse
-        
-        # 1. Construct the raw HTTP Request to the native endpoint
-        # Handle LATAM → Singapore routing
-        if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
-            # LATAM regions route through Singapore SMS control plane
-            endpoint = "https://sms.ap-southeast-3.myhuaweicloud.com"
-        else:
-            # Use the region directly for supported regions
-            endpoint = f"https://sms.{region}.myhuaweicloud.com"
-        
-        # Parse the URL
-        parsed_url = urlparse(f"{endpoint}/v3/sources")
-        
-        # 2. Create SdkRequest for Huawei Cloud V4 signing
-        sdk_request = SdkRequest(
-            method="GET",
-            schema=parsed_url.scheme,
-            host=parsed_url.netloc,
-            resource_path=parsed_url.path,  # Use resource_path instead of uri
-            query_params=[("limit", "50"), ("offset", "0")],
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": hw_project_id
-            }
-        )
-        
-        # 3. Create credentials and cryptographically sign the request using Huawei's V4 Signer
-        credentials = BasicCredentials(ak, sk, hw_project_id)
-        signer = Signer(credentials)
-        signed_request = signer.sign(sdk_request)
-        
-        # 4. BYPASS THE SDK: Execute natively via the requests library
-        url = f"{endpoint}/v3/sources?limit=50&offset=0"
-        response = requests.get(url, headers=signed_request.header_params, timeout=15)
-        
-        if response.status_code >= 400:
-            return jsonify({
-                "success": False, 
-                "error": f"Huawei Cloud API Error {response.status_code}: {response.text}"
-            }), response.status_code
-            
-        data = response.json()
-        servers_list = data.get('source_servers', [])
-        
-        servers = []
-        for server in servers_list:
-            server_info = {
-                "id": server.get('id', ""),
-                "hostname": server.get('name', server.get('ip', "Unknown")),
-                "cpu": server.get('cpu_quantity', 0),
-                "ram": server.get('memory', 0),
-                "disk": sum(vol.get('size', 0) for vol in server.get('volumes', [])) if server.get('volumes') else 0,
-                "os": server.get('os_type', os_type),
-                "status": server.get('state', 'unknown'),
-                "agent_version": server.get('agent_version', 'unknown'),
-                "ip": server.get('ip', ''),
-                "agent_status": 'connected' if server.get('connected', False) else 'disconnected',
-                "sync_status": 'idle', 
-                "last_heartbeat": server.get('updated', '')
-            }
-            servers.append(server_info)
-        
-        return jsonify({
-            "success": True,
-            "servers": servers
-        })
-        
-    except Exception as e:
-        from models import db
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e)}), 500
-        error_msg = str(e)
-        print(f"Huawei Cloud SMS HTTP Bypass Error: {error_msg}")
-        print(traceback.format_exc())
-        
-        return jsonify({
-            "success": False, 
-            "error": error_msg
-        }), 500
-        def patched_value_of(region_id):
-            if region_id == region:
-                return custom_region
-            return SmsRegion._original_value_of(region_id)
-            
-        SmsRegion.value_of = staticmethod(patched_value_of)
-        
-        # 3. Proceed as normal - The SDK will now accept our LATAM region natively
-        credentials = BasicCredentials(ak, sk, project_id)
-        
-        client = SmsClient.new_builder() \
-            .with_credentials(credentials) \
-            .with_region(SmsRegion.value_of(region)) \
-            .build()
-        
-        servers = []
-        
-        # Pull servers strictly from the live Huawei Console API
-        servers_request = ListServersRequest()
-        servers_request.limit = 50
-        servers_request.offset = 0
-        
-        servers_response = client.list_servers(servers_request)
-        
-        if hasattr(servers_response, 'servers') and servers_response.servers:
-            for server in servers_response.servers:
-                server_info = {
-                    "id": getattr(server, 'id', ""),
-                    "hostname": getattr(server, 'name', getattr(server, 'ip', "Unknown")),
-                    "cpu": getattr(server, 'cpu_quantity', 0),
-                    "ram": getattr(server, 'memory', 0),
-                    "disk": sum(getattr(vol, 'size', 0) for vol in getattr(server, 'volumes', [])) if hasattr(server, 'volumes') else 0,
-                    "os": getattr(server, 'os_type', os_type),
-                    "status": getattr(server, 'state', 'unknown'),
-                    "agent_version": getattr(server, 'agent_version', 'unknown'),
-                    "ip": getattr(server, 'ip', ''),
-                    "agent_status": 'connected' if getattr(server, 'connected', False) else 'disconnected',
-                    "sync_status": 'idle', 
-                    "last_heartbeat": getattr(server, 'updated', '')
-                }
-                servers.append(server_info)
-        
-        return jsonify({
-            "success": True, 
-            "servers": servers,
-            "message": f"Found {len(servers)} servers." if servers else "No source servers found with SMS agents."
-        })
-        
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
-        print(f"Huawei Cloud SMS API Error: {error_msg}")
-        print(traceback.format_exc())
-        
-        return jsonify({
-            "success": False, 
-            "error": error_msg
-        }), 500
-
-@app.route('/api/sms/monitor', methods=['POST'])
-def sms_monitor_public():
-    try:
-        req = request.json
-        project_id_db = req.get('projectId') # This is our internal SQLite Project ID
-        
-        # PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite
-        from models import ProjectData
-        import json
-        project_record = ProjectData.query.get(project_id_db)
-        if not project_record:
-            return jsonify({"success": False, "error": "Project not found in database."}), 404
-            
-        project_data = json.loads(project_record.data)
-        profile = project_data.get('customerProfile', {})
-        ak = profile.get('ak')
-        sk = profile.get('sk')
-        region = profile.get('region', 'la-south-2')
-        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
-        
-        if not all([ak, sk, hw_project_id]):
-            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
-            
-        import requests
-        from huaweicloudsdkcore.signer.signer import Signer
-        from huaweicloudsdkcore.sdk_request import SdkRequest
-        from huaweicloudsdkcore.auth.credentials import BasicCredentials
-        from urllib.parse import urlparse
-        
-        # Handle LATAM → Singapore routing
-        if region in ['la-north-2', 'la-south-2', 'sa-brazil-1']:
-            # LATAM regions route through Singapore SMS control plane
-            endpoint = "https://sms.ap-southeast-3.myhuaweicloud.com"
-        else:
-            # Use the region directly for supported regions
-            endpoint = f"https://sms.{region}.myhuaweicloud.com"
-        
-        # Create credentials for signing
-        credentials = BasicCredentials(ak, sk, hw_project_id)
-        signer = Signer(credentials)
-        
-        # 1. Fetch Registered Source Servers
-        parsed_url_sources = urlparse(f"{endpoint}/v3/sources")
-        sdk_request_sources = SdkRequest(
-            method="GET",
-            schema=parsed_url_sources.scheme,
-            host=parsed_url_sources.netloc,
-            resource_path=parsed_url_sources.path,
-            query_params=[("limit", "100"), ("offset", "0")],
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": hw_project_id
-            }
-        )
-        signed_request_sources = signer.sign(sdk_request_sources)
-        url_sources = f"{endpoint}/v3/sources?limit=100&offset=0"
-        res_sources = requests.get(url_sources, headers=signed_request_sources.header_params, timeout=15)
-        servers_data = res_sources.json().get('source_servers', []) if res_sources.status_code < 400 else []
-        
-        # 2. Fetch Active and Historic Migration Tasks
-        parsed_url_tasks = urlparse(f"{endpoint}/v3/tasks")
-        sdk_request_tasks = SdkRequest(
-            method="GET",
-            schema=parsed_url_tasks.scheme,
-            host=parsed_url_tasks.netloc,
-            resource_path=parsed_url_tasks.path,
-            query_params=[("limit", "100"), ("offset", "0")],
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": hw_project_id
-            }
-        )
-        signed_request_tasks = signer.sign(sdk_request_tasks)
-        url_tasks = f"{endpoint}/v3/tasks?limit=100&offset=0"
-        res_tasks = requests.get(url_tasks, headers=signed_request_tasks.header_params, timeout=15)
-        tasks_data = res_tasks.json().get('tasks', []) if res_tasks.status_code < 400 else []
-        
-        # 3. Format Servers (Fixing the Bytes to GB bug)
-        formatted_servers = []
-        for s in servers_data:
-            formatted_servers.append({
-                "id": s.get('id', ""),
-                "name": s.get('name', s.get('ip', "Unknown")),
-                "ip": s.get('ip', ""),
-                "os": s.get('os_type', "Unknown"),
-                "cpu": s.get('cpu_quantity', 0),
-                "ram": int(s.get('memory', 0) or 0) // (1024**3), # Convert Bytes to GB
-                "state": s.get('state', "Unknown"),
-                "connected": s.get('connected', False),
-                "agent_version": s.get('agent_version', "Unknown")
-            })
-            
-        # 4. Format Tasks
-        formatted_tasks = []
-        for t in tasks_data:
-            formatted_tasks.append({
-                "id": t.get('id', ""),
-                "name": t.get('name', ""),
-                "state": t.get('state', "Unknown"),
-                "progress": t.get('progress', 0),
-                "migration_type": t.get('type', "SERVER"),
-                "start_date": t.get('start_date', 0),
-                "target_flavor": t.get('target_server', {}).get('flavor', 'Unknown') if t.get('target_server') else 'Unknown'
-            })
-            
-        return jsonify({
-            "success": True, 
-            "servers": formatted_servers,
-            "tasks": formatted_tasks
-        })
-        
-    except Exception as e:
-        from models import db
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e)}), 500
-        # 1. PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite. Frontend never sends it.
-        from models import ProjectData
-        import json
-        project_record = ProjectData.query.get(project_id_db)
-        if not project_record:
-            return jsonify({"success": False, "error": "Project not found in database."}), 404
-            
-        project_data = json.loads(project_record.data)
-        profile = project_data.get('customerProfile', {})
-        ak = profile.get('ak')
-        sk = profile.get('sk')
-        region = profile.get('region', 'la-south-2')
-        hw_project_id = profile.get('projectId') # The actual Huawei Cloud Project ID
-        
-        if not all([ak, sk, hw_project_id]):
-            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
-            
-        import requests
-        from huaweicloudsdkcore.signer.signer import Signer
-        from huaweicloudsdkcore.sdk_request import SdkRequest
-        from huaweicloudsdkcore.auth.credentials import BasicCredentials
-        from urllib.parse import urlparse
-        
-        # Create credentials for signing
-        credentials = BasicCredentials(ak, sk, hw_project_id)
-        signer = Signer(credentials)
-        inventory = {"ecs": [], "vpc": [], "rds": []}
-        
-        # 1. Fetch ECS Servers
-        try:
-            ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/{hw_project_id}/cloudservers"
-            parsed_ecs_url = urlparse(ecs_url)
-            sdk_request_ecs = SdkRequest(
-                method="GET",
-                schema=parsed_ecs_url.scheme,
-                host=parsed_ecs_url.netloc,
-                resource_path=parsed_ecs_url.path,
-                header_params={
-                    "Content-Type": "application/json",
-                    "X-Project-Id": hw_project_id
-                }
-            )
-            signed_request_ecs = signer.sign(sdk_request_ecs)
-            res_ecs = requests.get(ecs_url, headers=signed_request_ecs.header_params, timeout=15)
-            if res_ecs.status_code < 400:
-                inventory['ecs'] = res_ecs.json().get('servers', [])
-        except Exception as e:
-            print(f"ECS Fetch Error: {str(e)}")
-
-        # 2. Fetch VPCs & Subnets
-        try:
-            vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/vpcs"
-            parsed_vpc_url = urlparse(vpc_url)
-            sdk_request_vpc = SdkRequest(
-                method="GET",
-                schema=parsed_vpc_url.scheme,
-                host=parsed_vpc_url.netloc,
-                resource_path=parsed_vpc_url.path,
-                header_params={
-                    "Content-Type": "application/json",
-                    "X-Project-Id": hw_project_id
-                }
-            )
-            signed_request_vpc = signer.sign(sdk_request_vpc)
-            res_vpc = requests.get(vpc_url, headers=signed_request_vpc.header_params, timeout=15)
-            if res_vpc.status_code < 400:
-                vpcs = res_vpc.json().get('vpcs', [])
-                inventory['vpc'] = vpcs
-                
-                # Fetch subnets for each VPC
-                for vpc in vpcs:
-                    vpc_id = vpc.get('id')
-                    if vpc_id:
-                        subnet_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/subnets?vpc_id={vpc_id}"
-                        parsed_subnet_url = urlparse(subnet_url)
-                        sdk_request_subnet = SdkRequest(
-                            method="GET",
-                            schema=parsed_subnet_url.scheme,
-                            host=parsed_subnet_url.netloc,
-                            resource_path=parsed_subnet_url.path,
-                            header_params={
-                                "Content-Type": "application/json",
-                                "X-Project-Id": hw_project_id
-                            }
-                        )
-                        signed_request_subnet = signer.sign(sdk_request_subnet)
-                        res_subnet = requests.get(subnet_url, headers=signed_request_subnet.header_params, timeout=15)
-                        if res_subnet.status_code < 400:
-                            vpc['subnets'] = res_subnet.json().get('subnets', [])
-        except Exception as e:
-            print(f"VPC/Subnet Fetch Error: {str(e)}")
-
-        # 3. Fetch RDS Instances
-        try:
-            rds_url = f"https://rds.{region}.myhuaweicloud.com/v3/{hw_project_id}/instances"
-            parsed_rds_url = urlparse(rds_url)
-            sdk_request_rds = SdkRequest(
-                method="GET",
-                schema=parsed_rds_url.scheme,
-                host=parsed_rds_url.netloc,
-                resource_path=parsed_rds_url.path,
-                header_params={
-                    "Content-Type": "application/json",
-                    "X-Project-Id": hw_project_id
-                }
-            )
-            signed_request_rds = signer.sign(sdk_request_rds)
-            res_rds = requests.get(rds_url, headers=signed_request_rds.header_params, timeout=15)
-            if res_rds.status_code < 400:
-                inventory['rds'] = res_rds.json().get('instances', [])
-        except Exception as e:
-            print(f"RDS Fetch Error: {str(e)}")
-        
-        return jsonify({"success": True, "inventory": inventory})
-        
-    except Exception as e:
-        from models import db
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e)}), 500
-    WBSTask.query.filter_by(project_id=project_id).delete()
-    
-    for t in tasks:
-        db.session.add(WBSTask(
-            project_id=project_id, wbs_id=t['wbs_id'], name=t['name'],
-            progress=t['progress'], raci=t['raci'], start_date=t['start_date'], 
-            end_date=t['end_date'], is_parent=t['is_parent']
-        ))
-    db.session.commit()
-    return jsonify({"success": True, "tasks": tasks})
-
-@app.route('/api/wbs/global', methods=['GET'])
-@requires_auth
-def get_global_wbs():
-    tasks = WBSTask.query.all()
-    out = [{
-        "id": t.id, 
-        "project_id": t.project_id, 
-        "wbs_id": t.wbs_id, 
-        "name": t.name, 
-        "progress": t.progress, 
-        "raci": t.raci, 
-        "start_date": t.start_date, 
-        "end_date": t.end_date, 
-        "is_parent": t.is_parent
-    } for t in tasks]
-    return jsonify({"success": True, "tasks": out})
-
-@app.route('/api/deploy/landing_zone', methods=['POST'])
-@requires_auth
-def deploy_landing_zone():
-    try:
-        req = request.json
-        project_id_db = str(req.get('id'))
-        
-        # 1. Fetch Project and Profile
-        from models import ProjectData
-        import json
-        project_record = ProjectData.query.get(project_id_db)
-        if not project_record:
-            return jsonify({"success": False, "error": "Project not found"}), 404
-            
-        project_data = json.loads(project_record.data)
-        profile = project_data.get('customerProfile', {})
-        ak, sk, region, hw_project_id = profile.get('ak'), profile.get('sk'), profile.get('region'), profile.get('projectId')
-        
-        if not all([ak, sk, hw_project_id, region]):
-            return jsonify({"success": False, "error": "Customer AK/SK and Project ID are required. Check Customer Profile."}), 400
-            
-        import requests
-        from huaweicloudsdkcore.signer.signer import Signer
-        from huaweicloudsdkcore.sdk_request import SdkRequest
-        signer = Signer(ak, sk)
-        
-        deployment_logs = []
-        
-        # 2. Extract network requirements from Blueprint
-        # Fallback to defaults if blueprint topology lacks explicit networks
-        blueprint = project_data.get('blueprintData', {}).get('topology', {})
-        vpc_name = f"vpc-erp-{project_id_db[:6]}"
-        vpc_cidr = "10.0.0.0/16"
-        subnet_name = f"subnet-erp-{project_id_db[:6]}"
-        subnet_cidr = "10.0.1.0/24"
-        gateway_ip = "10.0.1.1"
-
-        # 3. Create VPC natively
-        deployment_logs.append(f"Initiating VPC Creation: {vpc_name} ({vpc_cidr})")
-        vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/vpcs"
-        req_vpc = SdkRequest("POST", vpc_url)
-        req_vpc.headers = {"Content-Type": "application/json", "X-Project-Id": hw_project_id}
-        req_vpc.body = json.dumps({"vpc": {"name": vpc_name, "cidr": vpc_cidr}})
-        signer.sign(req_vpc)
-        
-        res_vpc = requests.post(vpc_url, headers=req_vpc.headers, data=req_vpc.body)
-        if res_vpc.status_code >= 400:
-            return jsonify({"success": False, "error": f"VPC Creation Failed: {res_vpc.text}"}), res_vpc.status_code
-            
-        created_vpc_id = res_vpc.json().get('vpc', {}).get('id')
-        deployment_logs.append(f"SUCCESS: VPC Created (ID: {created_vpc_id})")
-        
-        # 4. Create Subnet natively
-        deployment_logs.append(f"Initiating Subnet Creation: {subnet_name} ({subnet_cidr})")
-        subnet_url = f"https://vpc.{region}.myhuaweicloud.com/v1/{hw_project_id}/subnets"
-        req_subnet = SdkRequest("POST", subnet_url)
-        req_subnet.headers = {"Content-Type": "application/json", "X-Project-Id": hw_project_id}
-        req_subnet.body = json.dumps({
-            "subnet": {
-                "name": subnet_name, "cidr": subnet_cidr, 
-                "vpc_id": created_vpc_id, "gateway_ip": gateway_ip
-            }
-        })
-        signer.sign(req_subnet)
-        
-        res_subnet = requests.post(subnet_url, headers=req_subnet.headers, data=req_subnet.body)
-        if res_subnet.status_code >= 400:
-            return jsonify({"success": False, "error": f"Subnet Creation Failed: {res_subnet.text}"}), res_subnet.status_code
-            
-        created_subnet_id = res_subnet.json().get('subnet', {}).get('id')
-        deployment_logs.append(f"SUCCESS: Subnet Created (ID: {created_subnet_id})")
-        
-        # Save execution logs to project state
-        project_data['lastDeploymentLogs'] = "\n".join(deployment_logs)
-        project_record.data = json.dumps(project_data)
-        from models import db
-        db.session.commit()
-        
-        return jsonify({
-            "success": True, 
-            "logs": deployment_logs,
-            "resources": {"vpc_id": created_vpc_id, "subnet_id": created_subnet_id}
-        })
-        
-    except Exception as e:
-        from models import db
-        db.session.rollback() # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
-
-@app.route('/api/mgc/discover', methods=['POST'])
-@requires_auth
-def mgc_discover():
-    # In a real environment, this polls Huawei MgC API. For MVP, we return a mock diff payload.
-    import time
-    time.sleep(2)
-    return jsonify({"success": True, "servers": [
-        {"hostname": "web-server-1", "cpu": 4, "ram": 8, "disk": 100},
-        {"hostname": "db-server-1", "cpu": 16, "ram": 64, "disk": 500}, # Intentional Sizing Creep
-        {"hostname": "legacy-ad-01", "cpu": 2, "ram": 4, "disk": 50}    # Intentional Unquoted Server
-    ]})
 
 if __name__ == '__main__':
     print("🚀 Huawei Cloud Infrastructure API Active. Serving dashboard on port 9119...")
-    print(f"📁 Project root: {PROJECT_ROOT}")
+    print(f"📁 Project root: {os.path.abspath(os.path.dirname(__file__))}")
     print(f"📊 Dashboard: http://0.0.0.0:9119")
     print(f"🔍 Environment Audit: http://0.0.0.0:9119/api/audit")
     print(f"📈 API Status: http://0.0.0.0:9119/api/status")
