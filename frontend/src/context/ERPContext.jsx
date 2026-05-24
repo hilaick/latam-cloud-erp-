@@ -4,55 +4,73 @@ export const ERPContext = createContext();
 
 export const ERPProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
-    const [customers, setCustomers] = useState([]);
-    const [activePhase, setActivePhase] = useState(() => localStorage.getItem('erp_activePhase') || 'home');
-    const [activeProjectId, setActiveProjectId] = useState(() => localStorage.getItem('erp_activeProject') || "none");
+    const [customPlaybooks, setCustomPlaybooks] = useState({});
+    const [activePhase, setActivePhase] = useState('home');
+    const [activeProjectId, setActiveProjectId] = useState('none');
+    const [isLoaded, setIsLoaded] = useState(false);
 
-    useEffect(() => { localStorage.setItem('erp_activePhase', activePhase); }, [activePhase]);
-    useEffect(() => { localStorage.setItem('erp_activeProject', activeProjectId); }, [activeProjectId]);
+    // 1. INITIAL LOAD FROM POSTGRESQL
+    useEffect(() => {
+        const fetchState = async () => {
+            try {
+                const res = await fetch('/api/erp/state');
+                const data = await res.json();
+                if (data.success && data.projects) {
+                    setProjects(data.projects);
+                }
+                // If you build a /api/erp/playbooks endpoint later, fetch it here.
+                // For now, we load playbooks from memory/local to prevent crash.
+                const savedPb = localStorage.getItem('cac_erp_playbooks');
+                if (savedPb) setCustomPlaybooks(JSON.parse(savedPb));
+                
+                setIsLoaded(true);
+            } catch (err) {
+                console.error("CRITICAL: Failed to connect to PostgreSQL:", err);
+            }
+        };
+        fetchState();
+    }, []);
 
-    const fetchState = async () => {
-        try {
-            const res = await fetch('/api/erp/state');
-            const data = await res.json();
-            if (data.projects) setProjects(data.projects);
-            // TODO: Add customers fetch when endpoint is available
-            // if (data.customers) setCustomers(data.customers);
-        } catch (error) { console.error("Failed to fetch state", error); }
+    // 2. BACKGROUND POSTGRESQL SYNC ON EVERY UPDATE
+    const handleUpdateProject = (id, field, value) => {
+        setProjects(prevProjects => {
+            // Update React State instantly for snappy UI
+            const updatedProjects = prevProjects.map(p => String(p.id) === String(id) ? { ...p, [field]: value } : p);
+            const modifiedProject = updatedProjects.find(p => String(p.id) === String(id));
+
+            // Fire and forget to PostgreSQL backend
+            fetch('/api/erp/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(modifiedProject)
+            }).catch(err => console.error("Postgres Sync Error:", err));
+
+            return updatedProjects;
+        });
     };
 
-    // Placeholder functions for customer operations
-    const onUpdateCustomer = async (customerData) => {
-        console.log('Updating customer:', customerData);
-        // TODO: Implement API call to update customer
-        // For now, update local state
-        setCustomers(customers.map(c => c.id === customerData.id ? customerData : c));
+    const handleAddProject = (newProject) => {
+        setProjects(prev => [newProject, ...prev]);
+        fetch('/api/erp/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newProject)
+        });
     };
 
-    const onDeleteCustomer = async (customerId) => {
-        console.log('Deleting customer:', customerId);
-        // TODO: Implement API call to delete customer
-        // For now, update local state
-        if (window.confirm('Are you sure you want to delete this customer?')) {
-            setCustomers(customers.filter(c => c.id !== customerId));
-        }
-    };
-
-    useEffect(() => { fetchState(); }, []);
+    if (!isLoaded) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-black animate-pulse">Connecting to PostgreSQL...</div>;
 
     return (
-        <ERPContext.Provider value={{ 
-            projects, 
-            setProjects, 
-            customers, 
-            setCustomers, 
-            activePhase, 
-            setActivePhase, 
-            activeProjectId, 
-            setActiveProjectId, 
-            fetchState,
-            onUpdateCustomer,
-            onDeleteCustomer
+        <ERPContext.Provider value={{
+            projects,
+            activePhase,
+            activeProjectId,
+            customPlaybooks,
+            setActivePhase,
+            setActiveProjectId,
+            setCustomPlaybooks: (pb) => { setCustomPlaybooks(pb); localStorage.setItem('cac_erp_playbooks', JSON.stringify(pb)); },
+            handleUpdateProject,
+            handleAddProject
         }}>
             {children}
         </ERPContext.Provider>
