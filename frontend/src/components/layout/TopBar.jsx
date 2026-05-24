@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function TopBar({ setSidebarOpen }) {
-    const { projects, activeProjectId, setActiveProjectId } = useContext(ERPContext);
+    const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     
     // We only want to show active projects in the global dropdown (not leads in the radar)
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
@@ -29,7 +29,12 @@ export default function TopBar({ setSidebarOpen }) {
                         </div>
                         <select 
                             value={activeProjectId || "none"} 
-                            onChange={(e) => setActiveProjectId(e.target.value)}
+                            onChange={(e) => {
+                                setActiveProjectId(e.target.value);
+                                if (e.target.value !== 'none') {
+                                    setActivePhase('wizard'); // FORCE IMMEDIATE NAVIGATION
+                                }
+                            }}
                             className="bg-transparent font-black text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors"
                         >
                             <option value="none">-- Select Project to Manage --</option>
