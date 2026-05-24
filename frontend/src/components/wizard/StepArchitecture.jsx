@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import AssessmentView from './AssessmentView';
 import PhysicsEngine from './PhysicsEngine';
 import TopologyMapperView from './TopologyMapperView';
-import PhysicsEngine from './PhysicsEngine';
+import FinOpsCalculator from './FinOpsCalculator';
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');

@@ -136,4 +136,23 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                         <div className="ml-2 flex items-center bg-slate-50 rounded-xl border border-slate-200 p-1">
                             <select onChange={e=>loadSnapshot(e.target.value)} className="bg-transparent text-xs font-bold outline-none px-2 py-1 max-w-[150px] text-slate-600 cursor-pointer">
                                 <option value="">-- History --</option>
-                                {(activeProject?.mapperHistory||[]).map(h => <option key={
+                                {(activeProject?.mapperHistory||[]).map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+</select>
+                        </div>
+                    </div>
+                    <div className="flex-1 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 flex items-center justify-center relative overflow-hidden min-h-[400px]">
+                        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay"></div>
+                        <div className="text-center relative z-10">
+                            <div className="flex justify-center gap-4 mb-4">
+                                <div className="w-16 h-16 bg-white border-2 border-purple-200 rounded-xl shadow-sm flex flex-col items-center justify-center text-purple-600"><i className="fas fa-network-wired text-xl"></i><span className="text-[10px] font-black mt-1">{networks.length || 1} VPC</span></div>
+                                <div className="w-16 h-16 bg-white border-2 border-blue-200 rounded-xl shadow-sm flex flex-col items-center justify-center text-blue-600"><i className="fas fa-server text-xl"></i><span className="text-[10px] font-black mt-1">{servers.length} ECS</span></div>
+                                <div className="w-16 h-16 bg-white border-2 border-emerald-200 rounded-xl shadow-sm flex flex-col items-center justify-center text-emerald-600"><i className="fas fa-database text-xl"></i><span className="text-[10px] font-black mt-1">{databases.length} RDS</span></div>
+                            </div>
+                            <p className="text-xs text-slate-500 font-bold">Topology parsed from Blueprint JSON.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

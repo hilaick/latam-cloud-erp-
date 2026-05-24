@@ -310,3 +310,26 @@ function PhysicsResults({ results, downtimeWindow, storageUnit, smallFilePct }) 
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3 border-b border-slate-700 pb-2">Execution Breakdown</div>
                     <div className="space-y-3">
                         <div
+ className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                            <div className="text-[9px] uppercase text-slate-400 font-bold mb-1">Data Transfer</div>
+                            <div className="text-lg font-black text-amber-400">{results.dataTransferHours} <span className="text-[10px] text-slate-500 font-bold">hours</span></div>
+                            <div className="text-xs text-slate-400 mt-1">{results.dataTransferPercent}% of total</div>
+                        </div>
+                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                            <div className="text-[9px] uppercase text-slate-400 font-bold mb-1">Orchestration</div>
+                            <div className="text-lg font-black text-indigo-400">{results.orchestrationHours} <span className="text-[10px] text-slate-500 font-bold">hours</span></div>
+                            <div className="text-xs text-slate-400 mt-1">{results.orchestrationPercent}% of total</div>
+                        </div>
+                        <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+                            <div className="text-[9px] uppercase text-slate-400 font-bold mb-1">Validation</div>
+                            <div className="text-lg font-black text-emerald-400">{results.validationHours} <span className="text-[10px] text-slate-500 font-bold">hours</span></div>
+                            <div className="text-xs text-slate-400 mt-1">{results.validationPercent}% of total</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default PhysicsEngine;
