@@ -1,8 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
 
-export const ERPContext = createContext();
-
-// Helper to manage URL Hash routing
 const getHashParams = () => {
     const hash = window.location.hash.replace('#', '');
     const params = new URLSearchParams(hash || '');
@@ -16,17 +13,17 @@ const setHashParams = (phase, proj) => {
     window.history.pushState(null, '', `#phase=${phase}&proj=${proj}`);
 };
 
+export const ERPContext = createContext();
+
 export const ERPProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
     const [customPlaybooks, setCustomPlaybooks] = useState({});
     const [customers, setCustomers] = useState([]);
     
-    // Initialize state from URL Hash
     const initialParams = getHashParams();
     const [activePhase, setActivePhaseState] = useState(initialParams.phase);
     const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
 
-    // Sync state when Browser Back/Forward buttons are clicked
     useEffect(() => {
         const handlePopState = () => {
             const { phase, proj } = getHashParams();
@@ -34,7 +31,6 @@ export const ERPProvider = ({ children }) => {
             setActiveProjectIdState(proj);
         };
         window.addEventListener('popstate', handlePopState);
-        // Ensure initial URL is properly formatted on first load
         if (!window.location.hash) setHashParams(initialParams.phase, initialParams.proj);
         return () => window.removeEventListener('popstate', handlePopState);
     }, []);
@@ -54,7 +50,8 @@ export const ERPProvider = ({ children }) => {
             try {
                 const res = await fetch('/api/erp/state');
                 const data = await res.json();
-                if (data.success && data.projects) setProjects(data.projects);
+                // Filter out any projects we flagged as deleted
+                if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
                 const savedPb = localStorage.getItem('cac_erp_playbooks');
                 if (savedPb) setCustomPlaybooks(JSON.parse(savedPb));
@@ -79,7 +76,6 @@ export const ERPProvider = ({ children }) => {
                 body: JSON.stringify(modifiedProject)
             }).catch(err => console.error("Postgres Sync Error:", err));
 
-            // Generate Customer Vault when leaving Pre-Sales Radar
             if (field === 'isWaiting' && value === false) {
                 const custName = modifiedProject.name.split('-')[0].trim();
                 setCustomers(prevCusts => {
@@ -112,10 +108,33 @@ export const ERPProvider = ({ children }) => {
         localStorage.setItem('cac_erp_customers', JSON.stringify(newCusts));
     };
 
+    // 🚨 THE CASCADE DELETE FIX
     const handleDeleteCustomer = (id) => {
+        const customerToDelete = customers.find(c => c.id === id);
+        if (!customerToDelete) return;
+
+        // 1. Delete the Customer Profile
         const newCusts = customers.filter(c => c.id !== id);
         setCustomers(newCusts);
         localStorage.setItem('cac_erp_customers', JSON.stringify(newCusts));
+
+        // 2. Cascade Delete all associated projects from the Pipeline
+        const prefix = customerToDelete.name.toLowerCase().split(' ')[0];
+        setProjects(prevProjects => {
+            const remaining = prevProjects.filter(p => {
+                const isMatch = (p.name || '').toLowerCase().includes(prefix);
+                if (isMatch) {
+                    // Send an update to Postgres to mark it as archived/deleted so it doesn't return on refresh
+                    fetch('/api/erp/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...p, isDeleted: true, lifecycleState: 'archived' })
+                    }).catch(e => console.error("Cascade Delete Error:", e));
+                }
+                return !isMatch;
+            });
+            return remaining;
+        });
     };
 
     return (
