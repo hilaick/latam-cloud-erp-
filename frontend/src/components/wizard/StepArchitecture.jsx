@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+
+// The correct, required imports
 import AssessmentView from './AssessmentView';
 import PhysicsEngine from './PhysicsEngine';
 import TopologyMapperView from './TopologyMapperView';
-import FinOpsCalculator from './FinOpsCalculator';
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
+    // Default to the summary view
     const [subTab, setSubTab] = useState('summary');
 
     const servers = project.blueprintData?.topology?.compute || [];
@@ -17,21 +19,23 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Tab Navigation */}
+            {/* Tab Navigation - NOW INCLUDES THE MAPPER! */}
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6">
-                <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold ${subTab==='summary'?'bg-indigo-600 text-white':'bg-white text-slate-600 hover:bg-slate-50'}`}>Summary</button>
-                <button onClick={()=>setSubTab('physics')} className={`px-4 py-2 rounded-lg text-xs font-bold ${subTab==='physics'?'bg-rose-600 text-white':'bg-white text-slate-600 hover:bg-slate-50'}`}>Delivery Physics</button>
-                <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold ${subTab==='ora'?'bg-purple-600 text-white':'bg-white text-slate-600 hover:bg-slate-50'}`}>ORA Friction Profile</button>
+                <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='summary'?'bg-indigo-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Summary</button>
+                <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Topology Mapper</button>
+                <button onClick={()=>setSubTab('physics')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='physics'?'bg-rose-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Delivery Physics</button>
+                <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>ORA Friction Profile</button>
             </div>
 
-            {/* Tab Content */}
+            {/* Tab Content Routing */}
             {subTab === 'summary' && (
-                <>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="animate-fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">Live MgC Sizing</h4><i className="fas fa-server text-blue-500"></i></div>
                             <div className="text-xs text-blue-700 mb-4">Reconciliation against source APIs.</div>
                             <div className="text-xl font-black text-blue-800">{servers.length} Instances</div>
+                            <button onClick={()=>setSubTab('mapper')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View Topology &gt;</button>
                         </div>
                         <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl shadow-sm">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-emerald-900 text-sm">Delivery Physics</h4><i className="fas fa-stopwatch text-emerald-500"></i></div>
@@ -52,7 +56,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="font-black text-lg text-slate-800"><i className="fas fa-project-diagram text-indigo-500 mr-2"></i> Architecture Topology</h3>
-                                <button className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black border border-indigo-100 hover:bg-indigo-100 transition-colors"><i className="fas fa-magic mr-1"></i> Auto-Generate Diagram</button>
+                                <button onClick={()=>setSubTab('mapper')} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black border border-indigo-100 hover:bg-indigo-100 transition-colors"><i className="fas fa-sitemap mr-1"></i> Open Mapper Tool</button>
                             </div>
                             <div className="flex-1 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 flex items-center justify-center relative overflow-hidden min-h-[300px]">
                                 <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay"></div>
@@ -88,13 +92,13 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                             </div>
                         </div>
                     </div>
-                </>
+                </div>
             )}
 
-            {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'ora' && <AssessmentView project={project} onUpdateProject={onUpdateProject} />}
+            {/* Sub-Component Renders */}
             {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'ora' && <AssessmentView project={project} onUpdateProject={onUpdateProject} />}
 
         </div>
     );
