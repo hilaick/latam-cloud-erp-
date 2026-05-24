@@ -2,33 +2,67 @@ import React, { createContext, useState, useEffect } from 'react';
 
 export const ERPContext = createContext();
 
+// Helper to manage URL Hash routing
+const getHashParams = () => {
+    const hash = window.location.hash.replace('#', '');
+    const params = new URLSearchParams(hash || '');
+    return {
+        phase: params.get('phase') || 'home',
+        proj: params.get('proj') || 'none'
+    };
+};
+
+const setHashParams = (phase, proj) => {
+    window.history.pushState(null, '', `#phase=${phase}&proj=${proj}`);
+};
+
 export const ERPProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
     const [customPlaybooks, setCustomPlaybooks] = useState({});
     const [customers, setCustomers] = useState([]);
     
-    const [activePhase, setActivePhase] = useState('home');
-    const [activeProjectId, setActiveProjectId] = useState('none');
-    const [isLoaded, setIsLoaded] = useState(false);
+    // Initialize state from URL Hash
+    const initialParams = getHashParams();
+    const [activePhase, setActivePhaseState] = useState(initialParams.phase);
+    const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
+
+    // Sync state when Browser Back/Forward buttons are clicked
+    useEffect(() => {
+        const handlePopState = () => {
+            const { phase, proj } = getHashParams();
+            setActivePhaseState(phase);
+            setActiveProjectIdState(proj);
+        };
+        window.addEventListener('popstate', handlePopState);
+        // Ensure initial URL is properly formatted on first load
+        if (!window.location.hash) setHashParams(initialParams.phase, initialParams.proj);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    const setActivePhase = (phase) => {
+        setActivePhaseState(phase);
+        setHashParams(phase, activeProjectId);
+    };
+
+    const setActiveProjectId = (proj) => {
+        setActiveProjectIdState(proj);
+        setHashParams(activePhase, proj);
+    };
 
     useEffect(() => {
         const fetchState = async () => {
             try {
                 const res = await fetch('/api/erp/state');
                 const data = await res.json();
-                if (data.success && data.projects) {
-                    setProjects(data.projects);
-                }
+                if (data.success && data.projects) setProjects(data.projects);
 
                 const savedPb = localStorage.getItem('cac_erp_playbooks');
                 if (savedPb) setCustomPlaybooks(JSON.parse(savedPb));
 
                 const savedCust = localStorage.getItem('cac_erp_customers');
                 if (savedCust) setCustomers(JSON.parse(savedCust));
-                
-                setIsLoaded(true);
             } catch (err) {
-                console.error("CRITICAL: Failed to connect to PostgreSQL:", err);
+                console.error("PostgreSQL Connection Warning:", err);
             }
         };
         fetchState();
@@ -39,14 +73,13 @@ export const ERPProvider = ({ children }) => {
             const updatedProjects = prevProjects.map(p => String(p.id) === String(id) ? { ...p, [field]: value } : p);
             const modifiedProject = updatedProjects.find(p => String(p.id) === String(id));
 
-            // Sync to Postgres
             fetch('/api/erp/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(modifiedProject)
             }).catch(err => console.error("Postgres Sync Error:", err));
 
-            // 🚨 THE FIX: Only generate the Customer Profile when the Lead enters the Master Pipeline
+            // Generate Customer Vault when leaving Pre-Sales Radar
             if (field === 'isWaiting' && value === false) {
                 const custName = modifiedProject.name.split('-')[0].trim();
                 setCustomers(prevCusts => {
@@ -66,13 +99,11 @@ export const ERPProvider = ({ children }) => {
 
     const handleAddProject = (newProject) => {
         setProjects(prev => [newProject, ...prev]);
-        // Sync to Postgres
         fetch('/api/erp/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newProject)
         });
-        // Notice we REMOVED customer generation from here!
     };
 
     const handleUpdateCustomer = (updatedCustomer) => {
@@ -86,8 +117,6 @@ export const ERPProvider = ({ children }) => {
         setCustomers(newCusts);
         localStorage.setItem('cac_erp_customers', JSON.stringify(newCusts));
     };
-
-    if (!isLoaded) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-black animate-pulse">Connecting to PostgreSQL...</div>;
 
     return (
         <ERPContext.Provider value={{
