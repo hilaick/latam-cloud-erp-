@@ -3,18 +3,12 @@ import { ERPContext } from '../../context/ERPContext';
 import { EditableCell } from '../../utils/helpers'; 
 
 export default function PreSalesRadar() {
-    // 🚨 THE FIX: Extract the correct Database-Linked functions from Context!
     const { projects, handleAddProject, handleUpdateProject } = useContext(ERPContext);
-    
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
     const [newLeadName, setNewLeadName] = useState(""); 
-    const [newLeadSA, setNewLeadSA] = useState(""); 
-    const [newLeadMRR, setNewLeadMRR] = useState("");
     const [newLeadCountry, setNewLeadCountry] = useState("");
-    const [newLeadPartner, setNewLeadPartner] = useState("");
-    const [newLeadTechContact, setNewLeadTechContact] = useState("");
-
+    const [newLeadSA, setNewLeadSA] = useState(""); 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
 
     const handleAddNewLead = () => { 
@@ -26,21 +20,18 @@ export default function PreSalesRadar() {
             isWaiting: true, 
             waitingStage: "prospect", 
             health: "Yellow", 
-            mrr: parseFloat(newLeadMRR) || 0, 
+            mrr: 0, 
             sa: newLeadSA, 
             country: newLeadCountry || "TBD",
-            partner: newLeadPartner || "None",
-            techContact: newLeadTechContact || "TBD",
+            partner: "TBD",
+            techContact: "TBD",
+            blocker: "",
             lifecycleState: '1_arb', 
             progress: '0%'
         };
 
-        // Send straight to Postgres
         handleAddProject(newProj); 
-        
-        // Reset Form
-        setNewLeadName(""); setNewLeadSA(""); setNewLeadMRR(""); 
-        setNewLeadCountry(""); setNewLeadPartner(""); setNewLeadTechContact("");
+        setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry("");
     };
     
     const cols = [
@@ -52,40 +43,28 @@ export default function PreSalesRadar() {
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
             
-            {/* NEW LEAD INTAKE FORM */}
+            {/* INTAKE FORM (Simplified for Stage 1) */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center">
-                    <i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Prospect
+                    <i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Lead *</label>
-                        <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="GlobalCorp Migration" />
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Name *</label>
+                        <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="GlobalCorp" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Country</label>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Country</label>
                         <input type="text" value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="e.g. Mexico" />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Est. MRR ($)</label>
-                        <input type="number" value={newLeadMRR} onChange={e=>setNewLeadMRR(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="5000" />
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Sales Architect *</label>
                         <input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="SA Name" />
                     </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Partner</label>
-                        <input type="text" value={newLeadPartner} onChange={e=>setNewLeadPartner(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="e.g. TechCorp Integrators" />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Technical Contact</label>
-                        <input type="text" value={newLeadTechContact} onChange={e=>setNewLeadTechContact(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="CIO / IT Lead" />
-                    </div>
                 </div>
                 <div className="flex justify-end pt-4 border-t border-slate-100">
                     <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl shadow-md text-xs transition-colors">
-                        <i className="fas fa-plus mr-2"></i> Add Lead to Radar
+                        <i className="fas fa-plus mr-2"></i> Add Lead
                     </button>
                 </div>
             </div>
@@ -102,46 +81,75 @@ export default function PreSalesRadar() {
                             </div>
                             <div className={`p-5 space-y-5 overflow-y-auto flex-1 custom-scrollbar ${!expanded[col.id] ? 'hidden' : 'block'}`}>
                                 {colProjects.map(p => (
-                                    <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:shadow-md transition-all">
+                                    <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-all">
                                         <div className="font-black text-base text-slate-800 leading-tight mb-4 border-b border-slate-100 pb-2">
                                             <EditableCell value={p.name} onSave={v=>handleUpdateProject(p.id,'name',v)} />
                                         </div>
                                         
-                                        {/* RICH DATA GRID */}
+                                        {/* STAGE 1: BASIC INFO */}
                                         <div className="grid grid-cols-2 gap-3 mb-4">
-                                            <div className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center bg-blue-50 p-1.5 rounded">
-                                                <i className="fas fa-user-tie mr-2 opacity-70"></i> 
+                                            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                <i className="fas fa-user-tie mr-2 opacity-50"></i> 
                                                 <EditableCell value={p.sa} placeholder="SA Name" onSave={v=>handleUpdateProject(p.id,'sa',v)} className="w-full" />
                                             </div>
                                             <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
                                                 <i className="fas fa-globe-americas mr-2 opacity-50"></i> 
                                                 <EditableCell value={p.country} placeholder="Country" onSave={v=>handleUpdateProject(p.id,'country',v)} className="w-full" />
                                             </div>
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
-                                                <i className="fas fa-handshake mr-2 opacity-50"></i> 
-                                                <EditableCell value={p.partner} placeholder="Partner" onSave={v=>handleUpdateProject(p.id,'partner',v)} className="w-full" />
-                                            </div>
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
-                                                <i className="fas fa-headset mr-2 opacity-50"></i> 
-                                                <EditableCell value={p.techContact} placeholder="Tech Contact" onSave={v=>handleUpdateProject(p.id,'techContact',v)} className="w-full" />
-                                            </div>
                                         </div>
 
-                                        <div className="flex justify-between items-center mt-2">
-                                            <div className="text-sm font-black bg-emerald-50 text-emerald-800 w-max px-4 py-1.5 rounded-lg border border-emerald-200 flex items-center shadow-sm">
-                                                <span className="mr-1 text-emerald-500">$</span>
-                                                <EditableCell value={p.mrr} type="number" onSave={v=>handleUpdateProject(p.id,'mrr',v)} />
-                                            </div>
-                                        </div>
+                                        {/* STAGE 2 & 3: TECHNICAL & FINANCIAL SCOPE */}
+                                        {(col.id === 'sizing' || col.id === 'ready') && (
+                                            <div className="animate-fade-in space-y-4">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                        <i className="fas fa-handshake mr-2 opacity-50"></i> 
+                                                        <EditableCell value={p.partner} placeholder="Partner" onSave={v=>handleUpdateProject(p.id,'partner',v)} className="w-full" />
+                                                    </div>
+                                                    <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                        <i className="fas fa-headset mr-2 opacity-50"></i> 
+                                                        <EditableCell value={p.techContact} placeholder="Tech Contact" onSave={v=>handleUpdateProject(p.id,'techContact',v)} className="w-full" />
+                                                    </div>
+                                                </div>
 
-                                        <div className="text-xs text-slate-600 mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 font-medium">
-                                            <EditableCell type="textarea" placeholder="Add blockers or discovery notes..." value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} />
-                                        </div>
+                                                <div className="text-sm font-black bg-emerald-50 text-emerald-800 w-max px-4 py-1.5 rounded-lg border border-emerald-200 flex items-center shadow-sm">
+                                                    <span className="mr-1 text-emerald-500">$</span>
+                                                    <EditableCell value={p.mrr} type="number" placeholder="Est. MRR" onSave={v=>handleUpdateProject(p.id,'mrr',v)} />
+                                                </div>
+
+                                                <div className="text-xs text-slate-600 p-3 bg-amber-50 rounded-xl border border-amber-100 font-medium">
+                                                    <EditableCell type="textarea" placeholder="Add discovery notes, scope, or blockers..." value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {col.id === 'ready' && (
+                                            <div className="mt-4 bg-purple-50 p-3 rounded-lg border border-purple-200 text-[10px] font-bold text-purple-800 uppercase tracking-widest text-center">
+                                                Verify data before Pipeline Entry
+                                            </div>
+                                        )}
                                         
-                                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {col.id === 'prospect' && <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-lg transition-colors">Move <i className="fas fa-arrow-right ml-1"></i></button>}
-                                            {col.id === 'sizing' && <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'ready')} className="text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-lg transition-colors">Ready <i className="fas fa-arrow-right ml-1"></i></button>}
-                                            {col.id === 'ready' && <button onClick={()=>{handleUpdateProject(p.id, 'isWaiting', false); alert("Moved to Delivery Pipeline! Customer Profile created.");}} className="text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg shadow-md transition-colors">Start ARB <i className="fas fa-door-open ml-1"></i></button>}
+                                        {/* BACK / FORWARD NAVIGATION */}
+                                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {col.id === 'prospect' && (
+                                                <div className="w-full flex justify-end">
+                                                    <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-lg transition-colors">Move <i className="fas fa-arrow-right ml-1"></i></button>
+                                                </div>
+                                            )}
+                                            
+                                            {col.id === 'sizing' && (
+                                                <>
+                                                    <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'prospect')} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"><i className="fas fa-arrow-left mr-1"></i> Back</button>
+                                                    <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'ready')} className="text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-lg transition-colors">Ready <i className="fas fa-arrow-right ml-1"></i></button>
+                                                </>
+                                            )}
+
+                                            {col.id === 'ready' && (
+                                                <>
+                                                    <button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"><i className="fas fa-arrow-left mr-1"></i> Back</button>
+                                                    <button onClick={()=>{handleUpdateProject(p.id, 'isWaiting', false); alert("Moved to Delivery Pipeline! Customer Profile created.");}} className="text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg shadow-md transition-colors">Start ARB <i className="fas fa-door-open ml-1"></i></button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
