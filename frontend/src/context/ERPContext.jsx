@@ -50,7 +50,6 @@ export const ERPProvider = ({ children }) => {
             try {
                 const res = await fetch('/api/erp/state');
                 const data = await res.json();
-                // Filter out any projects we flagged as deleted
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
                 const savedPb = localStorage.getItem('cac_erp_playbooks');
@@ -108,23 +107,19 @@ export const ERPProvider = ({ children }) => {
         localStorage.setItem('cac_erp_customers', JSON.stringify(newCusts));
     };
 
-    // 🚨 THE CASCADE DELETE FIX
     const handleDeleteCustomer = (id) => {
         const customerToDelete = customers.find(c => c.id === id);
         if (!customerToDelete) return;
 
-        // 1. Delete the Customer Profile
         const newCusts = customers.filter(c => c.id !== id);
         setCustomers(newCusts);
         localStorage.setItem('cac_erp_customers', JSON.stringify(newCusts));
 
-        // 2. Cascade Delete all associated projects from the Pipeline
         const prefix = customerToDelete.name.toLowerCase().split(' ')[0];
         setProjects(prevProjects => {
             const remaining = prevProjects.filter(p => {
                 const isMatch = (p.name || '').toLowerCase().includes(prefix);
                 if (isMatch) {
-                    // Send an update to Postgres to mark it as archived/deleted so it doesn't return on refresh
                     fetch('/api/erp/projects', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -135,6 +130,28 @@ export const ERPProvider = ({ children }) => {
             });
             return remaining;
         });
+    };
+
+    // 🚨 NEW: Explicitly delete a single project (Fixes Orphaned Data)
+    const handleDeleteProject = (id) => {
+        if (!window.confirm("Are you sure you want to permanently delete this project?")) return;
+        
+        setProjects(prevProjects => {
+            const projectToDelete = prevProjects.find(p => String(p.id) === String(id));
+            if (projectToDelete) {
+                fetch('/api/erp/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...projectToDelete, isDeleted: true, lifecycleState: 'archived' })
+                }).catch(err => console.error("Postgres Sync Error:", err));
+            }
+            return prevProjects.filter(p => String(p.id) !== String(id));
+        });
+        
+        if (String(activeProjectId) === String(id)) {
+            setActiveProjectId('none');
+            setActivePhase('home');
+        }
     };
 
     return (
@@ -150,7 +167,8 @@ export const ERPProvider = ({ children }) => {
             handleUpdateProject,
             handleAddProject,
             handleUpdateCustomer,
-            handleDeleteCustomer
+            handleDeleteCustomer,
+            handleDeleteProject // <-- Now available globally
         }}>
             {children}
         </ERPContext.Provider>
