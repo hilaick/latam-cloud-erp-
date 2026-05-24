@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import AssessmentView from './AssessmentView';
 import PhysicsEngine from './PhysicsEngine';
 import TopologyMapperView from './TopologyMapperView';
+import MgCReconciliationView from './MgCReconciliationView'; // NEW: The Diff Engine
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     // Default to the summary view
@@ -19,9 +20,10 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Tab Navigation - NOW INCLUDES THE MAPPER! */}
-            <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6">
+            {/* Tab Navigation - NOW INCLUDES MGC DIFF */}
+            <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='summary'?'bg-indigo-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Summary</button>
+                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> Live MgC Diff</button>
                 <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Topology Mapper</button>
                 <button onClick={()=>setSubTab('physics')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='physics'?'bg-rose-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Delivery Physics</button>
                 <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>ORA Friction Profile</button>
@@ -35,7 +37,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">Live MgC Sizing</h4><i className="fas fa-server text-blue-500"></i></div>
                             <div className="text-xs text-blue-700 mb-4">Reconciliation against source APIs.</div>
                             <div className="text-xl font-black text-blue-800">{servers.length} Instances</div>
-                            <button onClick={()=>setSubTab('mapper')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View Topology &gt;</button>
+                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View MgC Diff &gt;</button>
                         </div>
                         <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl shadow-sm">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-emerald-900 text-sm">Delivery Physics</h4><i className="fas fa-stopwatch text-emerald-500"></i></div>
@@ -96,7 +98,9 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
             )}
 
             {/* Sub-Component Renders */}
-            {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
+            {/* THE FIX: We pass onPromote down so the WBS Generator can actually advance the screen! */}
+            {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />}
             {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'ora' && <AssessmentView project={project} onUpdateProject={onUpdateProject} />}
 
