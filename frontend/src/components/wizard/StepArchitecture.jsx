@@ -35,13 +35,13 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-emerald-900 text-sm">Delivery Physics</h4><i className="fas fa-stopwatch text-emerald-500"></i></div>
                             <div className="text-xs text-emerald-700 mb-4">Calculated automated provisioning speed.</div>
                             <div className="text-xl font-black text-emerald-800">~{(autoDeployable * 4.5).toFixed(1)} Hours</div>
-                            <button onClick={()=>setSubTab('physics')} className="mt-2 text-[10px] uppercase font-bold text-emerald-600 hover:underline">Configure Details -></button>
+                            <button onClick={()=>setSubTab('physics')} className="mt-2 text-[10px] uppercase font-bold text-emerald-600 hover:underline">Configure Details &gt;</button>
                         </div>
                         <div className="bg-rose-50 border border-rose-200 p-6 rounded-2xl shadow-sm">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-rose-900 text-sm">ORA Friction Profile</h4><i className="fas fa-exclamation-triangle text-rose-500"></i></div>
                             <div className="text-xs text-rose-700 mb-4">Stateful workload cutover complexity.</div>
                             <div className="text-xl font-black text-rose-800">{manual > 0 ? 'High' : 'Low'} Risk</div>
-                            <button onClick={()=>setSubTab('ora')} className="mt-2 text-[10px] uppercase font-bold text-rose-600 hover:underline">Configure Details -></button>
+                            <button onClick={()=>setSubTab('ora')} className="mt-2 text-[10px] uppercase font-bold text-rose-600 hover:underline">Configure Details &gt;</button>
                         </div>
                     </div>
 
