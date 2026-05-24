@@ -1,12 +1,13 @@
 import React, { useState, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell } from '../utils/EditableCell'; // Adjusted path if needed, usually '../../components/utils/EditableCell' or whatever your helper path is. Assuming from prior files it's in utils.
+import { EditableCell } from '../../utils/helpers'; 
 
 export default function PreSalesRadar() {
-    const { projects, setProjects } = useContext(ERPContext);
+    // 🚨 THE FIX: Extract the correct Database-Linked functions from Context!
+    const { projects, handleAddProject, handleUpdateProject } = useContext(ERPContext);
+    
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
-    // Expanded Pre-Sales Data Capture
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadSA, setNewLeadSA] = useState(""); 
     const [newLeadMRR, setNewLeadMRR] = useState("");
@@ -15,23 +16,6 @@ export default function PreSalesRadar() {
     const [newLeadTechContact, setNewLeadTechContact] = useState("");
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
-
-    // Built-in updater using the context
-    const handleUpdateProject = (id, field, value) => {
-        setProjects(prev => prev.map(p => {
-            if (String(p.id) === String(id)) {
-                const newProject = { ...p, [field]: value };
-                fetch('/api/erp/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProject) });
-                return newProject;
-            }
-            return p;
-        }));
-    };
-
-    const handleAddProject = (newProj) => {
-        setProjects([...projects, newProj]);
-        fetch('/api/erp/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(newProj) });
-    };
 
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA) return alert("Customer Name and Sales Architect are required."); 
@@ -51,6 +35,7 @@ export default function PreSalesRadar() {
             progress: '0%'
         };
 
+        // Send straight to Postgres
         handleAddProject(newProj); 
         
         // Reset Form
@@ -67,7 +52,7 @@ export default function PreSalesRadar() {
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
             
-            {/* EXPANDED NEW LEAD INTAKE FORM */}
+            {/* NEW LEAD INTAKE FORM */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center">
                     <i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Prospect
@@ -105,6 +90,7 @@ export default function PreSalesRadar() {
                 </div>
             </div>
             
+            {/* KANBAN BOARD */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {cols.map(col => {
                     const colProjects = waitingProjects.filter(p => p.waitingStage === col.id || (col.id==='prospect' && !p.waitingStage));
