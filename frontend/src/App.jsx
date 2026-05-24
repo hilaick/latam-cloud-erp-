@@ -15,17 +15,20 @@ import GlobalDashboard from './components/views/GlobalDashboard';
 import GlobalSchedule from './components/views/GlobalSchedule';
 import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
+import UserManagement from './components/views/UserManagement'; // 🚨 FIX: Imported UserManagement!
 
 export default function App() {
     const { activePhase } = useContext(ERPContext);
     const [sidebarOpen, setSidebarOpen] = useState(true);
+
+    // 🚨 FIX: Added 'users' to the list of known routes so it doesn't trigger the fallback!
+    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users'];
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-800 selection:bg-blue-200">
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
             
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col">
-                {/* INJECT THE TOP BAR HERE */}
                 <TopBar setSidebarOpen={setSidebarOpen} />
 
                 <div className="p-4 md:p-8 lg:p-12 pb-24 flex-1">
@@ -42,8 +45,9 @@ export default function App() {
                     {activePhase === 'wizard' && <ProjectWizard />}
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     {activePhase === 'playbooks' && <PlaybookStudio />}
+                    {activePhase === 'users' && <UserManagement />} {/* 🚨 FIX: Routed UserManagement! */}
                     
-                    {!['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks'].includes(activePhase) && (
+                    {!knownRoutes.includes(activePhase) && (
                         <div className="text-center mt-20 text-slate-400">
                             <h2 className="text-2xl font-bold">View Migration in Progress</h2>
                             <p>This view is currently being ported to the Vite architecture.</p>
