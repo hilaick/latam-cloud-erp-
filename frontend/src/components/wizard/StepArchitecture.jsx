@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import AssessmentView from './AssessmentView';
 import PhysicsEngine from './PhysicsEngine';
+import TopologyMapperView from './TopologyMapperView';
+import PhysicsEngine from './PhysicsEngine';
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
@@ -91,6 +93,8 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
 
             {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'ora' && <AssessmentView project={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
 
         </div>
     );
