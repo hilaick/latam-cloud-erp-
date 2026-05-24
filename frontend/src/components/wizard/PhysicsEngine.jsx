@@ -56,7 +56,14 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
     }, [project]);
 
     const saveContext = () => { 
-        const data = { computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, diskType, targetKMS, storageSize, storageUnit, totalFiles, smallFiles, syncMethod, excludeDb, dbStorageSize, dbType, dbRowsM, dbRps, netSource, transitType, netTunnel, netTarget, omsTasks, omsObjPerSec, omsBackbone, drBackupHrs, drStability, downtimeWindow };
+        const data = { 
+            computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, diskType, targetKMS, 
+            storageSize, storageUnit, totalFiles, smallFiles, syncMethod, excludeDb, dbStorageSize, 
+            dbType, dbRowsM, dbRps, netSource, transitType, netTunnel, netTarget, omsTasks, 
+            omsObjPerSec, omsBackbone, drBackupHrs, drStability, downtimeWindow,
+            // 🚨 FIX: We now explicitly save the math output to PostgreSQL so the Summary Tab can see it!
+            calculatedTotalHours: result.totalHours 
+        };
         onUpdateProject(project.id, 'physics', data); 
         alert("Physics Engine parameters saved to project context."); 
     };
