@@ -1,5 +1,80 @@
 import React, { createContext, useState, useEffect } from 'react';
 
+// --- 5 ENTERPRISE-GRADE PLAYBOOKS ---
+const DEFAULT_PLAYBOOKS = {
+    "default_vm": {
+        name: "Standard VM Lift & Shift (SMS)",
+        tasks: [
+            { id: "1", name: "Phase 1: Architecture & Auth", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "1.1", name: "Provision IAM Service Account & API Keys", prog: "0%", resp: "Customer", start: "", end: "", isParent: false },
+            { id: "1.2", name: "Deploy Target VPC & Core Network", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "2", name: "Phase 2: Workload Sync", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "2.1", name: "Install SMS Agents on Source VMs", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false },
+            { id: "2.2", name: "Execute Initial Full Block Sync", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3", name: "Phase 3: Validation & Cutover", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "3.1", name: "Final Delta Sync & App Switchover", prog: "0%", resp: "Partner", start: "", end: "", isParent: false }
+        ]
+    },
+    "sap_enterprise_cutover": {
+        name: "SAP Enterprise: Cutover & Hypercare",
+        tasks: [
+            { id: "1", name: "PHASE 0: PRE-CUTOVER", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "1.1", name: "Purge & Export Logs/Backups to Cold VM", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "1.2", name: "Full On-Premise Backup (Safe Point)", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false },
+            { id: "2", name: "PHASE 1: CUTOVER (DOWNTIME WINDOW)", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "2.1", name: "Shutdown On-Premise SAP & Network Block", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false },
+            { id: "2.2", name: "Final Sync (Exclude Logs)", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "2.3", name: "Cloud Boot & Over-Provisioning (200% Compute)", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3", name: "PHASE 2: GO-LIVE", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "3.1", name: "DNS Update & SAP Logon Switch", prog: "0%", resp: "Partner / Cust", start: "", end: "", isParent: false },
+            { id: "3.2", name: "Go-Live: 'Monday Avalanche' Hypercare", prog: "0%", resp: "TAM", start: "", end: "", isParent: false }
+        ]
+    },
+    "k8s_cce_migration": {
+        name: "Cloud-Native K8s Migration (to CCE)",
+        tasks: [
+            { id: "1", name: "Phase 1: Platform Provisioning", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "1.1", name: "Deploy CCE Turbo Cluster & Node Pools", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "1.2", name: "Configure SWR Container Registry", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "2", name: "Phase 2: CI/CD & Stateful Data", prog: "0%", resp: "DevOps", start: "", end: "", isParent: true },
+            { id: "2.1", name: "Push Docker Images to Huawei SWR", prog: "0%", resp: "Customer DevOps", start: "", end: "", isParent: false },
+            { id: "2.2", name: "Migrate Persistent Volumes (SFS Turbo/EVS)", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3", name: "Phase 3: Ingress & Traffic Switch", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "3.1", name: "Deploy Helm Charts / Manifests", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3.2", name: "Update Global DNS to ELB Ingress", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false }
+        ]
+    },
+    "oms_data_lake": {
+        name: "Data Lake Sync (AWS S3 to OBS)",
+        tasks: [
+            { id: "1", name: "Phase 1: Target Landing Zone", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "1.1", name: "Create Target OBS Buckets", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "1.2", name: "Configure Target KMS Encryption", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "2", name: "Phase 2: OMS Serverless Transfer", prog: "0%", resp: "Cloud Backend", start: "", end: "", isParent: true },
+            { id: "2.1", name: "Setup Source IAM / AWS Access Keys", prog: "0%", resp: "Customer", start: "", end: "", isParent: false },
+            { id: "2.2", name: "Execute Initial OMS Sync (Background)", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3", name: "Phase 3: Delta Sync & API Cutover", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "3.1", name: "Execute Delta OMS Sync", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3.2", name: "Update App APIs to target OBS Endpoints", prog: "0%", resp: "Customer Dev", start: "", end: "", isParent: false }
+        ]
+    },
+    "database_drs": {
+        name: "Database Logical Sync (Oracle to GaussDB)",
+        tasks: [
+            { id: "1", name: "Phase 1: Schema Conversion", prog: "0%", resp: "DBA", start: "", end: "", isParent: true },
+            { id: "1.1", name: "Run Huawei UGO (Database Assessment)", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "1.2", name: "Provision Target GaussDB Instance", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "2", name: "Phase 2: Continuous Replication", prog: "0%", resp: "DBA", start: "", end: "", isParent: true },
+            { id: "2.1", name: "Configure DRS Network Connectivity", prog: "0%", resp: "Network Team", start: "", end: "", isParent: false },
+            { id: "2.2", name: "Start DRS Full + Incremental Sync", prog: "0%", resp: "Partner", start: "", end: "", isParent: false },
+            { id: "3", name: "Phase 3: Connection Cutover", prog: "0%", resp: "All", start: "", end: "", isParent: true },
+            { id: "3.1", name: "Stop Source Application Traffic", prog: "0%", resp: "Customer IT", start: "", end: "", isParent: false },
+            { id: "3.2", name: "Verify DRS Zero-Lag & Promote Target", prog: "0%", resp: "Partner DBA", start: "", end: "", isParent: false },
+            { id: "3.3", name: "Update App Connection Strings", prog: "0%", resp: "Customer Dev", start: "", end: "", isParent: false }
+        ]
+    }
+};
+
 const getHashParams = () => {
     const hash = window.location.hash.replace('#', '');
     const params = new URLSearchParams(hash || '');
@@ -52,8 +127,14 @@ export const ERPProvider = ({ children }) => {
                 const data = await res.json();
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
+                // 🚨 FIX: Load saved playbooks, otherwise inject the DEFAULT_PLAYBOOKS
                 const savedPb = localStorage.getItem('cac_erp_playbooks');
-                if (savedPb) setCustomPlaybooks(JSON.parse(savedPb));
+                if (savedPb && Object.keys(JSON.parse(savedPb)).length > 0) {
+                    setCustomPlaybooks(JSON.parse(savedPb));
+                } else {
+                    setCustomPlaybooks(DEFAULT_PLAYBOOKS);
+                    localStorage.setItem('cac_erp_playbooks', JSON.stringify(DEFAULT_PLAYBOOKS));
+                }
 
                 const savedCust = localStorage.getItem('cac_erp_customers');
                 if (savedCust) setCustomers(JSON.parse(savedCust));
@@ -132,7 +213,6 @@ export const ERPProvider = ({ children }) => {
         });
     };
 
-    // 🚨 NEW: Explicitly delete a single project (Fixes Orphaned Data)
     const handleDeleteProject = (id) => {
         if (!window.confirm("Are you sure you want to permanently delete this project?")) return;
         
@@ -168,7 +248,7 @@ export const ERPProvider = ({ children }) => {
             handleAddProject,
             handleUpdateCustomer,
             handleDeleteCustomer,
-            handleDeleteProject // <-- Now available globally
+            handleDeleteProject
         }}>
             {children}
         </ERPContext.Provider>
