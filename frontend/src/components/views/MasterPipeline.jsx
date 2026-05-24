@@ -3,7 +3,8 @@ import { ERPContext } from '../../context/ERPContext';
 import { EditableCell, formatShortDate } from '../../utils/helpers';
 
 export default function MasterPipeline() {
-    const { projects, setProjects } = useContext(ERPContext);
+    // 🚨 FIXED: Pulling the correct global methods from context
+    const { projects, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
     const [menuOpen, setMenuOpen] = useState(false);
     
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
@@ -15,21 +16,6 @@ export default function MasterPipeline() {
         return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[9px] font-bold border border-amber-200"><i className="fas fa-clock"></i> At Risk</span>; 
     };
     const getStateLabel = (s) => { const map = {'1_arb':'1. ARB Intake', '2_architecture':'2. Architecture', '3_planning':'3. Planning', '4_execution':'4. Execution', '5_postlive':'5. Post-Live'}; return map[s] || s; };
-
-    // Built-in updater using the context
-    const handleUpdateProject = (id, field, value) => {
-        setProjects(prev => {
-            const updated = prev.map(p => {
-                if (String(p.id) === String(id)) {
-                    const newProject = { ...p, [field]: value };
-                    fetch('/api/erp/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProject) });
-                    return newProject;
-                }
-                return p;
-            });
-            return updated;
-        });
-    };
 
     const handleSalesExport = () => {
         const headers = ["Customer", "Country", "Phase", "Go-Live Date", "Target MRR", "Overall Health", "Executive Summary"];
@@ -60,11 +46,21 @@ export default function MasterPipeline() {
             <div className="overflow-x-auto w-full bg-slate-50 flex-1">
                 <table className="w-full min-w-[1600px] text-left border-collapse">
                 <thead className="bg-slate-200 text-slate-600 text-[10px] uppercase border-b-2 border-slate-300 tracking-wider">
-                    <tr><th className="px-6 py-4 w-[15%]">Customer / Phase</th><th className="px-4 py-4 w-[8%]">Country</th><th className="px-4 py-4 w-[10%]">Health & Prog</th><th className="px-4 py-4 w-[8%]">MRR / Comp</th><th className="px-4 py-4 w-[12%]">Timeline</th><th className="px-4 py-4 w-[10%]">SA / Partner</th><th className="px-4 py-4 w-[12%]">Scope</th><th className="px-6 py-4">Blockers / Notes</th></tr>
+                    <tr>
+                        <th className="px-6 py-4 w-[15%]">Customer / Phase</th>
+                        <th className="px-4 py-4 w-[8%]">Country</th>
+                        <th className="px-4 py-4 w-[10%]">Health & Prog</th>
+                        <th className="px-4 py-4 w-[8%]">MRR / Comp</th>
+                        <th className="px-4 py-4 w-[12%]">Timeline</th>
+                        <th className="px-4 py-4 w-[10%]">SA / Partner</th>
+                        <th className="px-4 py-4 w-[12%]">Scope</th>
+                        <th className="px-6 py-4">Blockers / Notes</th>
+                        <th className="px-4 py-4 w-[5%] text-center">Action</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white text-xs">
                     {activeProjects.map((p) => (
-                    <tr key={p.id} className="hover:bg-blue-50/50 transition-colors">
+                    <tr key={p.id} className="hover:bg-blue-50/50 transition-colors group">
                         <td className="px-6 py-4 align-top"><div className="font-black text-sm text-slate-800"><EditableCell value={p.name} onSave={v=>handleUpdateProject(p.id,'name',v)} /></div><div className="text-[9px] font-black uppercase mt-1.5 bg-blue-100 text-blue-800 inline-block px-2 py-0.5 rounded border border-blue-200 tracking-widest">{getStateLabel(p.lifecycleState)}</div></td>
                         <td className="px-4 py-4 align-top"><div className="font-bold text-slate-700 flex items-center bg-slate-100 px-2 py-1 rounded w-max border border-slate-200"><i className="fas fa-globe-americas mr-1.5 text-slate-400"></i><EditableCell value={p.country} onSave={v=>handleUpdateProject(p.id,'country',v)} placeholder="Country" /></div></td>
                         <td className="px-4 py-4 align-top"><div className="mb-2"><EditableCell type="select" placeholder="health" value={p.health} onSave={v=>handleUpdateProject(p.id,'health',v)} className="hidden" />{getHealthBadge(p.health)}</div><div className="flex items-center gap-2"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className={`h-full transition-all ${p.health==='Green'?'bg-emerald-500':p.health==='Red'?'bg-rose-500':'bg-amber-500'}`} style={{width: `${parseInt(p.progress)||0}%`}}></div></div><span className="text-[10px] font-black">{p.progress}</span></div></td>
@@ -73,9 +69,19 @@ export default function MasterPipeline() {
                         <td className="px-4 py-4 align-top"><div className="font-black text-blue-700 mb-1.5 truncate"><EditableCell value={p.sa} onSave={v=>handleUpdateProject(p.id,'sa',v)} placeholder="SA Name" /></div><div className="text-[10px] font-bold text-slate-600 bg-slate-100 p-1.5 rounded border border-slate-200">Partner: <EditableCell value={p.partner} onSave={v=>handleUpdateProject(p.id,'partner',v)} placeholder="Partner" /></div></td>
                         <td className="px-4 py-4 align-top"><div className="text-[10px] font-bold text-slate-700 bg-purple-50 p-2 rounded-lg border border-purple-100 leading-relaxed"><EditableCell type="textarea" value={p.scope} onSave={v=>handleUpdateProject(p.id,'scope',v)} /></div></td>
                         <td className="px-6 py-4 align-top"><div className="text-[11px] font-medium text-slate-700 bg-amber-50 p-3 rounded-lg border border-amber-200 h-full min-h-[60px] leading-relaxed shadow-inner"><EditableCell type="textarea" value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} placeholder="Notes / Blocker" /></div></td>
+                        <td className="px-4 py-4 align-middle text-center">
+                            {/* 🚨 NEW: Trash can button to delete orphaned projects */}
+                            <button 
+                                onClick={() => handleDeleteProject(p.id)} 
+                                className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded hover:bg-rose-50"
+                                title="Delete Project"
+                            >
+                                <i className="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
                     </tr>
                     ))}
-                    {activeProjects.length === 0 && <tr><td colSpan="8" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">No active projects in pipeline.</td></tr>}
+                    {activeProjects.length === 0 && <tr><td colSpan="9" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">No active projects in pipeline.</td></tr>}
                 </tbody>
                 </table>
             </div>
