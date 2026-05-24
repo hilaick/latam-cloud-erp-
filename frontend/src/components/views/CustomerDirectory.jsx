@@ -2,11 +2,30 @@ import React, { useState, useEffect, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function CustomerDirectory() {
-    const { customers, projects, onUpdateCustomer, onDeleteCustomer } = useContext(ERPContext);
+    const context = useContext(ERPContext);
+    
+    // 🚨 FIX: Safely fallback to empty arrays if context is still loading
+    const customers = context.customers || [];
+    const projects = context.projects || [];
+    const handleUpdateCustomer = context.handleUpdateCustomer || function(c){ console.log("Updating:", c) };
+    const handleDeleteCustomer = context.handleDeleteCustomer || function(id){ console.log("Deleting:", id) };
+
     const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
     
+    // Auto-select the first customer when data loads
+    useEffect(() => {
+        if (customers.length > 0 && !selectedId) {
+            setSelectedId(customers[0].id);
+        }
+    }, [customers, selectedId]);
+
     const activeCustomer = customers.find(c => c.id === selectedId);
-    const linkedProjects = projects.filter(p => !p.isWaiting && p.name.toLowerCase().includes((activeCustomer?.name || '').toLowerCase().split(' ')[0]));
+    
+    // Safely match linked projects
+    const linkedProjects = projects.filter(p => {
+        if (p.isWaiting || !activeCustomer || !p.name) return false;
+        return p.name.toLowerCase().includes((activeCustomer.name || '').toLowerCase().split(' ')[0]);
+    });
 
     const [ak, setAk] = useState('');
     const [sk, setSk] = useState('');
@@ -17,11 +36,14 @@ export default function CustomerDirectory() {
             setAk(activeCustomer.ak || ''); 
             setSk(activeCustomer.sk || ''); 
             setRegion(activeCustomer.region || 'la-south-2'); 
+        } else {
+            setAk(''); setSk(''); setRegion('la-south-2');
         }
     }, [activeCustomer]);
 
     const handleSaveVault = () => {
-        onUpdateCustomer({ ...activeCustomer, ak, sk, region });
+        if (!activeCustomer) return;
+        handleUpdateCustomer({ ...activeCustomer, ak, sk, region });
         alert("Secure Customer Vault Updated.");
     };
 
@@ -50,7 +72,7 @@ export default function CustomerDirectory() {
                             className="w-full p-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500" 
                         />
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                         {customers.length === 0 && (
                             <div className="p-8 text-center text-xs font-bold text-slate-400 border-2 border-dashed border-slate-200 rounded-xl m-2">
                                 No customers generated yet. Move a lead to the pipeline to auto-generate an account.
@@ -64,7 +86,8 @@ export default function CustomerDirectory() {
                             >
                                 <div className="font-black text-sm text-slate-800 truncate">{c.name}</div>
                                 <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold">
-                                    <i className="fas fa-key text-slate-400 mr-1"></i> {c.ak ? 'Vault Active' : 'Keys Missing'}
+                                    <i className={`fas fa-key mr-1 ${c.ak ? 'text-emerald-500' : 'text-slate-300'}`}></i> 
+                                    {c.ak ? 'Vault Active' : 'Keys Missing'}
                                 </div>
                             </div>
                         ))}
@@ -78,7 +101,7 @@ export default function CustomerDirectory() {
                             <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                                 <h3 className="font-black text-2xl text-slate-800">{activeCustomer.name}</h3>
                                 <button 
-                                    onClick={() => onDeleteCustomer(activeCustomer.id)} 
+                                    onClick={() => handleDeleteCustomer(activeCustomer.id)} 
                                     className="px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
                                 >
                                     <i className="fas fa-trash-alt mr-2"></i> Delete Account
@@ -96,6 +119,7 @@ export default function CustomerDirectory() {
                                             value={ak} 
                                             onChange={e => setAk(e.target.value)} 
                                             className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" 
+                                            placeholder="HW_XXXXXXXXXXXXXXXX"
                                         />
                                     </div>
                                     <div>
@@ -105,6 +129,7 @@ export default function CustomerDirectory() {
                                             value={sk} 
                                             onChange={e => setSk(e.target.value)} 
                                             className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" 
+                                            placeholder="••••••••••••••••••••••••••••••••"
                                         />
                                     </div>
                                     <div>
@@ -114,16 +139,16 @@ export default function CustomerDirectory() {
                                             onChange={e => setRegion(e.target.value)} 
                                             className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-blue-500 outline-none"
                                         >
-                                            <option value="la-south-2">Santiago</option>
-                                            <option value="la-north-2">Mexico</option>
-                                            <option value="sa-brazil-1">Sao Paulo</option>
+                                            <option value="la-south-2">la-south-2 (Mexico / Santiago)</option>
+                                            <option value="la-north-2">la-north-2 (Lima)</option>
+                                            <option value="sa-brazil-1">sa-brazil-1 (Sao Paulo)</option>
                                         </select>
                                     </div>
                                     <button 
                                         onClick={handleSaveVault} 
                                         className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md transition-colors"
                                     >
-                                        Update Vault
+                                        Update Security Vault
                                     </button>
                                 </div>
                                 <div>
@@ -155,10 +180,11 @@ export default function CustomerDirectory() {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-400">
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-400 min-h-[600px]">
                         <div className="text-center">
-                            <i className="fas fa-id-card text-6xl mb-4 opacity-50"></i>
-                            <h3 className="font-black text-xl">Select a Customer Profile</h3>
+                            <i className="fas fa-id-card text-6xl mb-4 opacity-30"></i>
+                            <h3 className="font-black text-xl text-slate-500">Select a Customer Profile</h3>
+                            <p className="text-sm mt-2 font-medium">Choose a customer from the left to manage keys.</p>
                         </div>
                     </div>
                 )}
