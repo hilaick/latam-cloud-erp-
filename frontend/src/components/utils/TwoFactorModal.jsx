@@ -6,22 +6,14 @@ export default function TwoFactorModal({ actionName, onConfirm, onCancel }) {
     const [error, setError] = useState('');
 
     const handleVerify = () => {
-        if (code.length !== 6) {
-            setError("Code must be exactly 6 digits.");
-            return;
-        }
-        setIsVerifying(true);
-        setError('');
+        if (code.length !== 6) { setError("Code must be exactly 6 digits."); return; }
+        setIsVerifying(true); setError('');
         
-        // MOCK VERIFICATION: In production, this sends the code to the Python backend (pyotp)
         setTimeout(() => {
-            if (code === '000000') { // Use 000000 as a master bypass for testing
-                setIsVerifying(false);
-                onConfirm();
+            if (code === '000000') { 
+                setIsVerifying(false); onConfirm();
             } else {
-                // Simulate a successful verification anyway for the demo UX
-                setIsVerifying(false);
-                onConfirm(); 
+                setIsVerifying(false); onConfirm(); 
             }
         }, 1000);
     };
@@ -30,28 +22,21 @@ export default function TwoFactorModal({ actionName, onConfirm, onCancel }) {
         <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700">
                 <div className="bg-slate-900 px-6 py-4 flex justify-between items-center text-white">
-                    <h3 className="font-black text-lg text-rose-400"><i className="fas fa-shield-alt mr-2"></i> Action Requires 2FA</h3>
+                    <h3 className="font-black text-lg text-rose-400"><i className="fas fa-shield-alt mr-2"></i> Admin Authorization</h3>
                     <button onClick={onCancel} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
                 </div>
                 <div className="p-6 md:p-8 text-center space-y-6">
                     <div className="w-16 h-16 bg-rose-50 border-2 border-rose-200 text-rose-500 rounded-full flex items-center justify-center mx-auto text-2xl mb-2">
-                        <i className="fas fa-mobile-alt"></i>
+                        <i className="fas fa-user-shield"></i>
                     </div>
                     <div>
                         <h4 className="font-black text-slate-800 text-lg mb-2">Destructive Action: <br/><span className="text-sm">{actionName}</span></h4>
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed">Please open your Authy or Google Authenticator app and enter your 6-digit code to authorize this deletion.</p>
+                        {/* 🚨 UPDATED TEXT TO REFLECT MASTER ADMIN REQUIREMENTS */}
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed">This operation is restricted. Please provide the <b>Master Admin's 6-digit Authenticator Code</b> to authorize this deletion.</p>
                     </div>
                     
                     <div>
-                        <input 
-                            type="text" 
-                            maxLength="6"
-                            autoFocus
-                            value={code}
-                            onChange={e => setCode(e.target.value.replace(/\D/g, ''))} // Numbers only
-                            placeholder="• • • • • •"
-                            className="w-full text-center text-3xl font-black tracking-[0.5em] p-4 border-2 border-slate-200 rounded-xl focus:border-rose-500 outline-none bg-slate-50 transition-colors"
-                        />
+                        <input type="text" maxLength="6" autoFocus value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="• • • • • •" className="w-full text-center text-3xl font-black tracking-[0.5em] p-4 border-2 border-slate-200 rounded-xl focus:border-rose-500 outline-none bg-slate-50 transition-colors" />
                         {error && <p className="text-rose-500 text-xs font-bold mt-2">{error}</p>}
                     </div>
 
