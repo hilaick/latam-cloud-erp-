@@ -2,15 +2,26 @@ import React, { useState } from 'react';
 import { EditableCell } from '../../utils/helpers';
 
 export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
-    const runbook = activeProject?.runbook || [
-        { id: 1, taskId: "3.1", name: "Shutdown Source DB", start: "2026-04-10T22:00", estHours: 2, actualHours: 0, status: 'Pending', owner: 'Customer' },
-        { id: 2, taskId: "3.2", name: "Final Delta Sync (SMS)", start: "2026-04-10T23:00", estHours: 4, actualHours: 0, status: 'Pending', owner: 'Partner' },
-        { id: 3, taskId: "3.3", name: "DNS Cutover", start: "2026-04-11T03:00", estHours: 1, actualHours: 0, status: 'Pending', owner: 'All' }
-    ];
+    // 🚨 FIX: Removed the hardcoded mock data. It now defaults to an empty array []
+    const runbook = activeProject?.runbook || [];
 
     const handleUpdate = (id, field, value) => {
         const updated = runbook.map(r => r.id === id ? {...r, [field]: value} : r);
         onUpdateProject(activeProject.id, 'runbook', updated);
+    };
+
+    const handleAddManualTask = () => {
+        const newTask = { 
+            id: `rb_${Date.now()}`, 
+            taskId: "Custom", 
+            name: "New Cutover Task", 
+            start: "", 
+            estHours: 0, 
+            actualHours: 0, 
+            status: 'Pending', 
+            owner: 'Unassigned' 
+        };
+        onUpdateProject(activeProject.id, 'runbook', [...runbook, newTask]);
     };
 
     return (
@@ -22,7 +33,7 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                         <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Minute-by-minute scheduling for the downtime window.</p>
                     </div>
                 </div>
-                <div className="flex-1 bg-slate-50 overflow-x-auto">
+                <div className="flex-1 bg-slate-50 overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left min-w-[1000px]">
                         <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 border-b-2 border-slate-300 tracking-wider">
                             <tr>
@@ -47,8 +58,20 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                                     </td>
                                 </tr>
                             ))}
+                            {runbook.length === 0 && (
+                                <tr>
+                                    <td colSpan="5" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">
+                                        No runbook tasks scheduled yet. Add tasks manually or populate from your Master WBS.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
+                </div>
+                <div className="p-4 text-center border-t border-slate-200 bg-white">
+                    <button onClick={handleAddManualTask} className="px-6 py-2 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 font-bold hover:bg-slate-50 hover:border-rose-400 hover:text-rose-600 transition-colors w-full max-w-sm mx-auto">
+                        <i className="fas fa-plus mr-2"></i> Append Runbook Task
+                    </button>
                 </div>
             </div>
         </div>
