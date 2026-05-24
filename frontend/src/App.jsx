@@ -1,6 +1,8 @@
 import React, { useState, useContext } from 'react';
 import { ERPContext } from './context/ERPContext';
 import Sidebar from './components/layout/Sidebar';
+import TopBar from './components/layout/TopBar';
+
 import CustomerDirectory from './components/views/CustomerDirectory';
 import MasterExecutionHub from './components/views/MasterExecutionHub';
 import LiveCloudNOC from './components/views/LiveCloudNOC';
@@ -9,6 +11,10 @@ import MasterPipeline from './components/views/MasterPipeline';
 import PreSalesRadar from './components/views/PreSalesRadar';
 import FinOpsDashboard from './components/views/FinOpsDashboard';
 import ProjectWizard from './components/wizard/ProjectWizard';
+import GlobalDashboard from './components/views/GlobalDashboard';
+import GlobalSchedule from './components/views/GlobalSchedule';
+import GlobalProcessView from './components/views/GlobalProcessView';
+import PlaybookStudio from './components/views/PlaybookStudio';
 
 export default function App() {
     const { activePhase } = useContext(ERPContext);
@@ -17,9 +23,17 @@ export default function App() {
     return (
         <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-800 selection:bg-blue-200">
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-            <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50">
-                <div className="p-4 md:p-8 lg:p-12 pb-24">
-                    {activePhase === 'home' && <RegionalMap />}
+            
+            <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col">
+                {/* INJECT THE TOP BAR HERE */}
+                <TopBar setSidebarOpen={setSidebarOpen} />
+
+                <div className="p-4 md:p-8 lg:p-12 pb-24 flex-1">
+                    {activePhase === 'home' && <GlobalDashboard />}
+                    {activePhase === 'schedule' && <GlobalSchedule />}
+                    {activePhase === 'process' && <GlobalProcessView />}
+                    
+                    {activePhase === 'map' && <RegionalMap />}
                     {activePhase === 'radar' && <PreSalesRadar />}
                     {activePhase === 'pipeline' && <MasterPipeline />}
                     {activePhase === 'crm' && <CustomerDirectory />}
@@ -27,9 +41,9 @@ export default function App() {
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     {activePhase === 'wizard' && <ProjectWizard />}
                     {activePhase === 'finops' && <FinOpsDashboard />}
+                    {activePhase === 'playbooks' && <PlaybookStudio />}
                     
-                    {/* Fallback for components you haven't ported yet */}
-                    {!['home', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops'].includes(activePhase) && (
+                    {!['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks'].includes(activePhase) && (
                         <div className="text-center mt-20 text-slate-400">
                             <h2 className="text-2xl font-bold">View Migration in Progress</h2>
                             <p>This view is currently being ported to the Vite architecture.</p>
