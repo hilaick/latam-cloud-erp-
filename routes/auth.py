@@ -23,7 +23,7 @@ def login():
 
         # Generate JWT (injecting role for RBAC)
         access_token = create_access_token(
-            identity=user.id, 
+            identity=str(user.id), 
             additional_claims={"role": user.role, "name": user.name}
         )
         return jsonify(success=True, token=access_token, user=user.to_dict()), 200

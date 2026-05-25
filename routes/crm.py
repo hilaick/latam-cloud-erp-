@@ -3,7 +3,7 @@ from models import db, ProjectData, Customer
 import json
 
 # 🚨 UPDATED: Using JWT instead of Basic Auth
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 crm_bp = Blueprint('crm', __name__)
 
