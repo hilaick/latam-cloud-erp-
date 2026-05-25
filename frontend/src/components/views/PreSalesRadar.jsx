@@ -1,9 +1,11 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import { EditableCell } from '../../utils/helpers'; 
+import TwoFactorModal from '../utils/TwoFactorModal'; // 🚨 IMPORT 2FA MODAL
 
 export default function PreSalesRadar() {
-    const { projects, handleAddProject, handleUpdateProject } = useContext(ERPContext);
+    // 🚨 EXTRACT handleDeleteProject
+    const { projects, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
     const [newLeadCustomer, setNewLeadCustomer] = useState("");
@@ -16,6 +18,7 @@ export default function PreSalesRadar() {
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
     
     const [editingProject, setEditingProject] = useState(null);
+    const [projectToDelete, setProjectToDelete] = useState(null); // 🚨 STATE FOR 2FA MODAL
 
     const uniqueSAs = useMemo(() => [...new Set((projects || []).map(p => p.sa).filter(Boolean))], [projects]);
     const uniquePartners = useMemo(() => [...new Set((projects || []).map(p => p.partner).filter(Boolean).filter(p => p !== 'TBD' && p !== 'None'))], [projects]);
@@ -34,13 +37,12 @@ export default function PreSalesRadar() {
     ];
 
     const handleAddNewLead = () => { 
-        // 🚨 FIX: Customer Account is no longer strictly required to log a lead!
         if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Project Name, Target Country, and SA are required."); 
         
         const newProj = {
             id: String(Date.now()), 
             name: newLeadName, 
-            customerName: newLeadCustomer.trim(), // Will be empty string if left blank
+            customerName: newLeadCustomer.trim(), 
             isWaiting: true, 
             waitingStage: "prospect", 
             health: "Yellow", 
@@ -63,6 +65,15 @@ export default function PreSalesRadar() {
         handleAddProject(newProj); 
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
     };
+
+    // 🚨 EXECUTE SECURE DELETION
+    const executeDelete = () => {
+        if (projectToDelete) {
+            handleDeleteProject(projectToDelete);
+            setProjectToDelete(null);
+            setEditingProject(null); // Close modal if deleting from inside it
+        }
+    };
     
     const cols = [
         { id: 'prospect', title: 'Early Prospect', color: 'border-slate-300 bg-slate-50' }, 
@@ -84,7 +95,6 @@ export default function PreSalesRadar() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                     <div>
-                        {/* 🚨 FIX: Removed Asterisk to indicate it is optional */}
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Account</label>
                         <input type="text" value={newLeadCustomer} onChange={e=>setNewLeadCustomer(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="Optional for early leads" />
                     </div>
@@ -141,16 +151,22 @@ export default function PreSalesRadar() {
                                         
                                         <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3 mt-2">
                                             <div className="font-black text-base text-slate-800 leading-tight pr-4">
-                                                {/* 🚨 FIX: Cleanly handle missing accounts */}
                                                 <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerName ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
                                                     {p.customerName ? p.customerName : <><i className="fas fa-exclamation-triangle"></i> Account TBD</>}
                                                 </div>
                                                 {p.name}
                                                 {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm align-middle"><i className="fas fa-bolt mr-1"></i> PoC</span>}
                                             </div>
-                                            <button onClick={() => setEditingProject({...p})} className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-sm whitespace-nowrap shrink-0">
-                                                <i className="fas fa-expand-arrows-alt mr-1"></i> Edit
-                                            </button>
+                                            
+                                            {/* 🚨 ACTION BUTTONS (EDIT & DELETE) */}
+                                            <div className="flex gap-2 shrink-0 ml-2">
+                                                <button onClick={() => setEditingProject({...p})} className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-sm whitespace-nowrap">
+                                                    <i className="fas fa-expand-arrows-alt"></i>
+                                                </button>
+                                                <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase tracking-widest bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-sm whitespace-nowrap" title="Delete Prospect">
+                                                    <i className="fas fa-trash-alt"></i>
+                                                </button>
+                                            </div>
                                         </div>
                                         
                                         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -229,7 +245,6 @@ export default function PreSalesRadar() {
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> 1. Basic Information</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                        {/* 🚨 FIX: Made Customer Account optional in modal edit as well */}
                                         <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label><input type="text" placeholder="Optional" value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                         <div>
@@ -286,18 +301,35 @@ export default function PreSalesRadar() {
                             </div>
                         </div>
 
-                        <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
-                            <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors border border-slate-200">Cancel</button>
-                            <button onClick={()=>{
-                                handleUpdateProject(editingProject.id, editingProject);
-                                setEditingProject(null);
-                            }} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors">
-                                <i className="fas fa-save mr-2"></i> Save Assessment
+                        {/* 🚨 MODAL FOOTER WITH SECURE DELETE BUTTON */}
+                        <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex flex-col sm:flex-row justify-between gap-4 shrink-0 items-center">
+                            <button onClick={() => setProjectToDelete(editingProject.id)} className="w-full sm:w-auto px-6 py-2.5 text-xs font-black text-rose-600 uppercase tracking-widest hover:bg-rose-50 rounded-xl transition-colors border border-rose-200">
+                                <i className="fas fa-trash-alt mr-2"></i> Delete Lead
                             </button>
+                            
+                            <div className="flex w-full sm:w-auto gap-3">
+                                <button onClick={()=>setEditingProject(null)} className="flex-1 sm:flex-none px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors border border-slate-200">Cancel</button>
+                                <button onClick={()=>{
+                                    handleUpdateProject(editingProject.id, editingProject);
+                                    setEditingProject(null);
+                                }} className="flex-1 sm:flex-none px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors">
+                                    <i className="fas fa-save mr-2"></i> Save Assessment
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* 🚨 RENDER THE 2FA DELETION MODAL IF TRIGGERED */}
+            {projectToDelete && (
+                <TwoFactorModal 
+                    actionName={`Delete Pre-Sales Lead: ${(projects.find(p=>p.id===projectToDelete)?.name) || 'Unknown'}`} 
+                    onConfirm={executeDelete} 
+                    onCancel={() => setProjectToDelete(null)} 
+                />
+            )}
+
         </div>
     )
 }
