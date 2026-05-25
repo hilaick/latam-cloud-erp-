@@ -1,38 +1,39 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell } from '../utils/EditableCell'; // Using your existing helper
+import { EditableCell } from '../utils/EditableCell';
 
 export default function PlaybookStudio() {
-    // If customPlaybooks isn't explicitly in Context yet, we use a local fallback to prevent crashes
-    const context = useContext(ERPContext);
-    const [localPlaybooks, setLocalPlaybooks] = useState({
-        sap_enterprise_cutover: { name: 'SAP Enterprise Cutover', tasks: [] }
-    });
+    const { customPlaybooks, setCustomPlaybooks } = useContext(ERPContext);
+    const [selectedKey, setSelectedKey] = useState("");
 
-    const safePlaybooks = context.customPlaybooks || localPlaybooks;
-    const updatePlaybooks = context.setCustomPlaybooks || setLocalPlaybooks;
+    // 🚨 FIX: Intelligently select the first available playbook when data loads from DB
+    useEffect(() => {
+        if (customPlaybooks && Object.keys(customPlaybooks).length > 0 && !selectedKey) {
+            setSelectedKey(Object.keys(customPlaybooks)[0]);
+        }
+    }, [customPlaybooks, selectedKey]);
 
-    const [selectedKey, setSelectedKey] = useState("sap_enterprise_cutover");
-    const activePlaybook = safePlaybooks[selectedKey] || { name: 'Unknown Playbook', tasks: [] };
+    const safePlaybooks = customPlaybooks && Object.keys(customPlaybooks).length > 0 ? customPlaybooks : {};
+    const activePlaybook = safePlaybooks[selectedKey] || { name: 'Loading...', tasks: [] };
 
     const handleNewPlaybook = () => {
         const name = prompt("Enter new Playbook Name:");
         if(!name) return;
         const key = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-        updatePlaybooks({...safePlaybooks, [key]: { name, tasks: [] }});
+        setCustomPlaybooks({...safePlaybooks, [key]: { name, tasks: [] }});
         setSelectedKey(key);
     };
 
     const handleTaskUpdate = (taskId, field, value) => {
         const updatedTasks = (activePlaybook.tasks || []).map(t => t.id === taskId ? {...t, [field]: value} : t);
-        updatePlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: updatedTasks}});
+        setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: updatedTasks}});
     };
 
     const handleDeletePlaybook = () => {
-        if(confirm(`Delete playbook '${activePlaybook.name}'?`)) {
+        if(window.confirm(`Delete playbook '${activePlaybook.name}'?`)) {
             const newBooks = {...safePlaybooks};
             delete newBooks[selectedKey];
-            updatePlaybooks(newBooks);
+            setCustomPlaybooks(newBooks);
             setSelectedKey(Object.keys(newBooks)[0] || "");
         }
     };
@@ -42,8 +43,12 @@ export default function PlaybookStudio() {
         if(!newId) return;
         const isParent = !newId.includes('.');
         const newTask = { id: newId, name: "New Task", prog: "0%", resp: "Internal Delivery", start: "", end: "", isParent };
-        updatePlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: [...(activePlaybook.tasks||[]), newTask]}});
+        setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: [...(activePlaybook.tasks||[]), newTask]}});
     };
+
+    if (!customPlaybooks || Object.keys(customPlaybooks).length === 0) {
+        return <div className="p-12 text-center text-slate-500 font-bold">Loading Enterprise Playbooks from Database...</div>;
+    }
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
