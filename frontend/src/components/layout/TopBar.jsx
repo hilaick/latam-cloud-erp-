@@ -1,9 +1,18 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
-export default function TopBar({ setSidebarOpen }) {
+export default function TopBar({ setSidebarOpen, onLogout }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
+    const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
+    
+    // Get logged-in user from localStorage (saved during login)
+    const userStr = localStorage.getItem('erp_user');
+    const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
+    
+    // Get initials for Avatar
+    const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
         <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
@@ -26,19 +35,43 @@ export default function TopBar({ setSidebarOpen }) {
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 relative">
                 <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Production DB</span>
                 </div>
                 
-                {/* 🚨 THE PROFILE / SETTINGS ROUTER */}
-                <div 
-                    onClick={() => { setActiveProjectId('none'); setActivePhase('users'); }}
-                    className="w-10 h-10 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
-                    title="Profile & Settings"
-                >
-                    HY
+                {/* 🚨 PROFILE AVATAR WITH DROPDOWN */}
+                <div className="relative">
+                    <div 
+                        onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                        className="w-10 h-10 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
+                    >
+                        {initials}
+                    </div>
+
+                    {profileMenuOpen && (
+                        <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-slide-up">
+                            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+                                <div className="font-black text-sm text-slate-800">{user.name}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1">{user.role}</div>
+                            </div>
+                            <div className="p-2">
+                                <button 
+                                    onClick={() => { setActiveProjectId('none'); setActivePhase('users'); setProfileMenuOpen(false); }}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center"
+                                >
+                                    <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile Settings
+                                </button>
+                                <button 
+                                    onClick={onLogout}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors flex items-center mt-1"
+                                >
+                                    <i className="fas fa-sign-out-alt w-5 text-center mr-2"></i> Terminate Session
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
