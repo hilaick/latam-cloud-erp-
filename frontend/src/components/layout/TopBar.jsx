@@ -46,6 +46,7 @@ export default function TopBar({ setSidebarOpen, onLogout }) {
                     <div 
                         onClick={() => setProfileMenuOpen(!profileMenuOpen)}
                         className="w-10 h-10 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
+                        title="Profile Menu"
                     >
                         {initials}
                     </div>
@@ -63,16 +64,19 @@ export default function TopBar({ setSidebarOpen, onLogout }) {
                                 >
                                     <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile Settings
                                 </button>
-                                <button 
-                                    onClick={onLogout}
-                                    className="w-full text-left px-4 py-3 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors flex items-center mt-1"
-                                >
-                                    <i className="fas fa-sign-out-alt w-5 text-center mr-2"></i> Terminate Session
-                                </button>
                             </div>
                         </div>
                     )}
                 </div>
+
+                {/* 🚨 EXPLICIT LOGOUT BUTTON */}
+                <button 
+                    onClick={onLogout}
+                    className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 hover:bg-rose-500 hover:text-white transition-colors shadow-sm"
+                    title="Terminate Session (Logout)"
+                >
+                    <i className="fas fa-power-off text-sm"></i>
+                </button>
             </div>
         </div>
     );
