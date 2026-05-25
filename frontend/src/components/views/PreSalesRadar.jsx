@@ -9,13 +9,25 @@ export default function PreSalesRadar() {
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
-    // 🚨 NEW: PoC Toggle State
     const [isPoC, setIsPoC] = useState(false);
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
 
+    // 🚨 NEW: Comprehensive LATAM & Caribbean Country List
+    const targetCountries = [
+        "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Bahamas", "Barbados", 
+        "Belize", "Bermuda", "Bolivia", "Brazil", "British Virgin Islands", "Cayman Islands", 
+        "Chile", "Colombia", "Costa Rica", "Cuba", "Curaçao", "Dominica", "Dominican Republic", 
+        "Ecuador", "El Salvador", "Grenada", "Guadeloupe", "Guatemala", "Guyana", "Haiti", 
+        "Honduras", "Jamaica", "Martinique", "Mexico", "Montserrat", "Nicaragua", "Panama", 
+        "Paraguay", "Peru", "Puerto Rico", "Saint Barthélemy", "Saint Kitts and Nevis", 
+        "Saint Lucia", "Saint Martin", "Saint Vincent and the Grenadines", "Sint Maarten", 
+        "Suriname", "Trinidad and Tobago", "Turks and Caicos Islands", "U.S. Virgin Islands", 
+        "Uruguay", "Venezuela", "Other / TBD"
+    ];
+
     const handleAddNewLead = () => { 
-        if(!newLeadName || !newLeadSA) return alert("Customer Name and Sales Architect are required."); 
+        if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Customer Name, Target Country, and Sales Architect are required."); 
         
         const newProj = {
             id: String(Date.now()), 
@@ -25,13 +37,12 @@ export default function PreSalesRadar() {
             health: "Yellow", 
             mrr: 0, 
             sa: newLeadSA, 
-            country: newLeadCountry || "TBD",
+            country: newLeadCountry,
             partner: "TBD",
             techContact: "TBD",
             blocker: "",
             lifecycleState: '1_arb', 
             progress: '0%',
-            // 🚨 NEW: Inject PoC Metadata
             project_type: isPoC ? 'poc' : 'standard',
             pocCap: isPoC ? 1000 : null,
             pocTtl: isPoC ? '' : null
@@ -61,8 +72,18 @@ export default function PreSalesRadar() {
                         <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="GlobalCorp" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Country</label>
-                        <input type="text" value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="e.g. Mexico" />
+                        {/* 🚨 NEW: Dropdown for Target Country */}
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Country *</label>
+                        <select 
+                            value={newLeadCountry} 
+                            onChange={e=>setNewLeadCountry(e.target.value)} 
+                            className={`p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none focus:border-blue-500 font-bold ${!newLeadCountry ? 'text-slate-400 bg-slate-50' : 'text-slate-800 bg-white'}`}
+                        >
+                            <option value="" disabled>-- Select Target Country --</option>
+                            {targetCountries.map(country => (
+                                <option key={country} value={country} className="text-slate-800">{country}</option>
+                            ))}
+                        </select>
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Sales Architect *</label>
@@ -70,7 +91,6 @@ export default function PreSalesRadar() {
                     </div>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                    {/* 🚨 NEW: PoC Checkbox */}
                     <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 transition-colors">
                         <input type="checkbox" checked={isPoC} onChange={(e) => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" />
                         <div>
@@ -98,7 +118,6 @@ export default function PreSalesRadar() {
                             <div className={`p-5 space-y-5 overflow-y-auto flex-1 custom-scrollbar ${!expanded[col.id] ? 'hidden' : 'block'}`}>
                                 {colProjects.map(p => (
                                     <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-all relative overflow-hidden">
-                                        {/* 🚨 NEW: Small PoC indicator on cards */}
                                         {p.project_type === 'poc' && <div className="absolute top-0 right-0 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-bl-lg"><i className="fas fa-bolt mr-1"></i> PoC</div>}
 
                                         <div className="font-black text-base text-slate-800 leading-tight mb-4 border-b border-slate-100 pb-2 mt-2">
