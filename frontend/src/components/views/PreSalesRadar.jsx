@@ -6,17 +6,17 @@ export default function PreSalesRadar() {
     const { projects, handleAddProject, handleUpdateProject } = useContext(ERPContext);
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
+    const [newLeadCustomer, setNewLeadCustomer] = useState("");
     const [newLeadName, setNewLeadName] = useState(""); 
+    
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
     const [isPoC, setIsPoC] = useState(false);
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
     
-    // 🚨 STATE FOR THE DEEP EDIT MODAL
     const [editingProject, setEditingProject] = useState(null);
 
-    // 🚨 EXTRACT UNIQUE HISTORY FOR AUTOCOMPLETE
     const uniqueSAs = useMemo(() => [...new Set((projects || []).map(p => p.sa).filter(Boolean))], [projects]);
     const uniquePartners = useMemo(() => [...new Set((projects || []).map(p => p.partner).filter(Boolean).filter(p => p !== 'TBD' && p !== 'None'))], [projects]);
     const uniqueTechs = useMemo(() => [...new Set((projects || []).map(p => p.techContact).filter(Boolean).filter(t => t !== 'TBD'))], [projects]);
@@ -34,11 +34,13 @@ export default function PreSalesRadar() {
     ];
 
     const handleAddNewLead = () => { 
-        if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Customer Name, Target Country, and Sales Architect are required."); 
+        // 🚨 FIX: Customer Account is no longer strictly required to log a lead!
+        if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Project Name, Target Country, and SA are required."); 
         
         const newProj = {
             id: String(Date.now()), 
             name: newLeadName, 
+            customerName: newLeadCustomer.trim(), // Will be empty string if left blank
             isWaiting: true, 
             waitingStage: "prospect", 
             health: "Yellow", 
@@ -53,14 +55,13 @@ export default function PreSalesRadar() {
             project_type: isPoC ? 'poc' : 'standard',
             pocCap: isPoC ? 1000 : null,
             pocTtl: isPoC ? '' : null,
-            // Deep Fields Init
             discoveryStatus: "Not Started",
             sizingStatus: "Not Started",
             complexityLevel: "Medium"
         };
 
         handleAddProject(newProj); 
-        setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
+        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
     };
     
     const cols = [
@@ -72,7 +73,6 @@ export default function PreSalesRadar() {
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12 relative">
             
-            {/* 🚨 REUSABLE DATALISTS FOR BROWSER AUTOCOMPLETE */}
             <datalist id="sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
             <datalist id="partner-list">{uniquePartners.map(p => <option key={p} value={p} />)}</datalist>
             <datalist id="tech-list">{uniqueTechs.map(t => <option key={t} value={t} />)}</datalist>
@@ -82,10 +82,15 @@ export default function PreSalesRadar() {
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center">
                     <i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                     <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Name *</label>
-                        <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="GlobalCorp" />
+                        {/* 🚨 FIX: Removed Asterisk to indicate it is optional */}
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Customer Account</label>
+                        <input type="text" value={newLeadCustomer} onChange={e=>setNewLeadCustomer(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="Optional for early leads" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Project Name *</label>
+                        <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="e.g. ERP Cloud Exit" />
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Country *</label>
@@ -102,7 +107,6 @@ export default function PreSalesRadar() {
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Sales Architect *</label>
-                        {/* 🚨 BOUND TO DATALIST */}
                         <input type="text" list="sa-list" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="Start typing SA Name..." />
                     </div>
                 </div>
@@ -135,14 +139,17 @@ export default function PreSalesRadar() {
                                 {colProjects.map(p => (
                                     <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-all relative overflow-hidden">
                                         
-                                        <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-2 mt-2">
-                                            <div className="font-black text-base text-slate-800 leading-tight">
+                                        <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3 mt-2">
+                                            <div className="font-black text-base text-slate-800 leading-tight pr-4">
+                                                {/* 🚨 FIX: Cleanly handle missing accounts */}
+                                                <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerName ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
+                                                    {p.customerName ? p.customerName : <><i className="fas fa-exclamation-triangle"></i> Account TBD</>}
+                                                </div>
                                                 {p.name}
-                                                {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm"><i className="fas fa-bolt mr-1"></i> PoC</span>}
+                                                {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm align-middle"><i className="fas fa-bolt mr-1"></i> PoC</span>}
                                             </div>
-                                            {/* 🚨 DEEP EDIT BUTTON */}
-                                            <button onClick={() => setEditingProject({...p})} className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-sm whitespace-nowrap shrink-0 ml-2">
-                                                <i className="fas fa-expand-arrows-alt mr-1"></i> Assessment
+                                            <button onClick={() => setEditingProject({...p})} className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-sm whitespace-nowrap shrink-0">
+                                                <i className="fas fa-expand-arrows-alt mr-1"></i> Edit
                                             </button>
                                         </div>
                                         
@@ -160,10 +167,16 @@ export default function PreSalesRadar() {
 
                                                 <div className="flex justify-between items-center">
                                                     <div className="text-sm font-black bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg border border-emerald-200 shadow-sm">${p.mrr || 0} /mo</div>
-                                                    <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded ${p.discoveryStatus === 'Completed' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>Discovery: {p.discoveryStatus || 'Pending'}</div>
+                                                    <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded ${p.discoveryStatus === 'Completed' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>Disc: {p.discoveryStatus || 'Pending'}</div>
                                                 </div>
 
                                                 {p.blocker && <div className="text-xs text-slate-600 p-3 bg-amber-50 rounded-xl border border-amber-100 font-medium italic">"{p.blocker}"</div>}
+                                            </div>
+                                        )}
+                                        
+                                        {col.id === 'ready' && (
+                                            <div className="mt-4 bg-purple-50 p-3 rounded-lg border border-purple-200 text-[10px] font-bold text-purple-800 uppercase tracking-widest text-center">
+                                                Verify data before Pipeline Entry
                                             </div>
                                         )}
                                         
@@ -197,7 +210,7 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
-            {/* 🚨 DEEP EDIT MODAL FOR DISCOVERY & SIZING */}
+            {/* DEEP EDIT MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -213,11 +226,12 @@ export default function PreSalesRadar() {
                         <div className="p-8 overflow-y-auto custom-scrollbar bg-slate-50">
                             <div className="space-y-8">
                                 
-                                {/* SECTION 1: Core Details */}
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> 1. Basic Information</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                        <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Name</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                                        {/* 🚨 FIX: Made Customer Account optional in modal edit as well */}
+                                        <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label><input type="text" placeholder="Optional" value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                        <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Country</label>
                                             <select value={editingProject.country || ''} onChange={e=>setEditingProject({...editingProject, country: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold">
@@ -231,7 +245,6 @@ export default function PreSalesRadar() {
                                     </div>
                                 </div>
 
-                                {/* SECTION 2: Discovery & Financials */}
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> 2. Discovery & Financials</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
@@ -245,7 +258,6 @@ export default function PreSalesRadar() {
                                     </div>
                                 </div>
 
-                                {/* SECTION 3: Technical Sizing */}
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2"><i className="fas fa-server text-purple-500 mr-2"></i> 3. Technical Sizing</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
@@ -259,7 +271,6 @@ export default function PreSalesRadar() {
                                     </div>
                                 </div>
 
-                                {/* SECTION 4: Risks & Timelines */}
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2"><i className="fas fa-exclamation-triangle text-amber-500 mr-2"></i> 4. Risks & Timelines</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
@@ -278,12 +289,8 @@ export default function PreSalesRadar() {
                         <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
                             <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors border border-slate-200">Cancel</button>
                             <button onClick={()=>{
-                                // Save all updated fields back to the global projects array
-                                Object.keys(editingProject).forEach(key => {
-                                    handleUpdateProject(editingProject.id, key, editingProject[key]);
-                                });
+                                handleUpdateProject(editingProject.id, editingProject);
                                 setEditingProject(null);
-                                alert("Pre-Sales Assessment Saved!");
                             }} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors">
                                 <i className="fas fa-save mr-2"></i> Save Assessment
                             </button>
