@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from services.excel_ingestor import process_quotation
 
 # 🚨 NEW IMPORTS FOR JWT
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required
 from datetime import timedelta
 
 load_dotenv()
@@ -38,19 +38,23 @@ from routes.auth import auth_bp # 🚨 OUR NEW AUTH BLUEPRINT
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
-app.register_blueprint(auth_bp) # 🚨 REGISTERED
+app.register_blueprint(auth_bp) 
 
-# We will replace your old @requires_auth with the official @jwt_required() from Flask-JWT-Extended
-from flask_jwt_extended import jwt_required
-
+# ==========================================
+# FRONTEND SERVING (NO AUTH REQUIRED HERE)
+# ==========================================
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
+# 🚨 Notice: We completely removed @requires_auth from here!
 def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
     else:
         return send_from_directory(app.static_folder, 'index.html')
 
+# ==========================================
+# PROTECTED API ROUTES
+# ==========================================
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
 @jwt_required() # 🚨 SECURED VIA JWT
 def upload_quotation():
