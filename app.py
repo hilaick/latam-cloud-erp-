@@ -6,8 +6,11 @@ from pathlib import Path
 from models import setup_db
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
-from services.auth import requires_auth
 from services.excel_ingestor import process_quotation
+
+# 🚨 NEW IMPORTS FOR JWT
+from flask_jwt_extended import JWTManager
+from datetime import timedelta
 
 load_dotenv()
 
@@ -18,20 +21,30 @@ app = Flask(__name__, static_folder=dist_folder)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
+# 🚨 JWT CONFIGURATION
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-latam-erp-key-2026") # Change this in production!
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
+jwt = JWTManager(app)
+
 setup_db(app)
 PROJECT_ROOT = Path(__file__).parent
 
+# Register Blueprints
 from routes.crm import crm_bp
 from routes.cloud_ops import cloud_ops_bp
 from routes.sms_migrations import sms_bp
+from routes.auth import auth_bp # 🚨 OUR NEW AUTH BLUEPRINT
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
+app.register_blueprint(auth_bp) # 🚨 REGISTERED
+
+# We will replace your old @requires_auth with the official @jwt_required() from Flask-JWT-Extended
+from flask_jwt_extended import jwt_required
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-@requires_auth
 def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
@@ -39,7 +52,7 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
-@requires_auth
+@jwt_required() # 🚨 SECURED VIA JWT
 def upload_quotation():
     if request.method == 'OPTIONS': return '', 200
     try:
