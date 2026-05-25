@@ -1,5 +1,5 @@
 {
-  "customer": "Sample Sales Quotation",
+  "customer": "T1",
   "delivery_scope": "landing_zone_only",
   "governance": {
     "requires_hypercare": false,
@@ -9,199 +9,549 @@
     "network": [],
     "compute": [
       {
-        "name": "app-web-01",
-        "flavor": "s6.large.2",
-        "is_public": true,
-        "status": "OK",
+        "name": "description",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Web Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 1
         }
       },
       {
-        "name": "app-web-02",
-        "flavor": "s6.large.2",
-        "is_public": true,
-        "status": "OK",
+        "name": "cdp-ad365-01",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Web Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 2
         }
       },
       {
-        "name": "app-api-01",
-        "flavor": "s6.xlarge.2",
-        "is_public": true,
-        "status": "OK",
+        "name": "cdp-appsrv-01",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 4,
-          "ram_gb": 8,
-          "storage_gb": 200,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 3
         }
       },
       {
-        "name": "app-api-02",
-        "flavor": "s6.xlarge.2",
-        "is_public": true,
-        "status": "OK",
+        "name": "cdp-appsrv-03",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 4,
-          "ram_gb": 8,
-          "storage_gb": 200,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 4
         }
       },
       {
-        "name": "db-primary-01",
-        "flavor": "c6.2xlarge.4",
+        "name": "cdp-db-op",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Database Tier",
-          "os_type": "CentOS 8",
-          "cpu_cores": 8,
-          "ram_gb": 16,
-          "storage_gb": 500,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 5
         }
       },
       {
-        "name": "db-replica-01",
-        "flavor": "c6.2xlarge.4",
+        "name": "cdp-dc-1-0",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Database Tier",
-          "os_type": "CentOS 8",
-          "cpu_cores": 8,
-          "ram_gb": 16,
-          "storage_gb": 500,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 6
         }
       },
       {
-        "name": "cache-01",
-        "flavor": "redis.medium.2",
+        "name": "cdp-dc-1-1",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Cache Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 50,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 7
         }
       },
       {
-        "name": "cache-02",
-        "flavor": "redis.medium.2",
+        "name": "cdp-fs-01",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Cache Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 50,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 8
         }
       },
       {
-        "name": "monitoring-01",
-        "flavor": "s6.small.1",
-        "is_public": true,
-        "status": "OK",
+        "name": "cdp-newcrosh-01",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Monitoring",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 1,
-          "ram_gb": 2,
-          "storage_gb": 100,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 9
         }
       },
       {
-        "name": "backup-01",
-        "flavor": "s6.large.2",
+        "name": "cdp-srvme-01",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Backup",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 1000,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 10
         }
       },
       {
-        "name": "bastion-01",
-        "flavor": "s6.small.1",
-        "is_public": true,
-        "status": "OK",
+        "name": "cdp-nw-obras",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
         "metadata": {
-          "tier": "Bastion Host",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 1,
-          "ram_gb": 2,
-          "storage_gb": 50,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 11
         }
       },
       {
-        "name": "nfs-server-01",
-        "flavor": "s6.large.2",
+        "name": "cdp-prtsrv-01",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Storage",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 2000,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 12
         }
       },
       {
-        "name": "missing-flavor-server",
+        "name": "cdp-sap-03",
         "flavor": "MISSING_FLAVOR",
-        "is_public": true,
+        "is_public": false,
         "status": "WARNING",
         "metadata": {
-          "tier": "Application Tier",
-          "os_type": "Ubuntu 20.04",
-          "cpu_cores": 4,
-          "ram_gb": 8,
-          "storage_gb": 200,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 13
         }
       },
       {
-        "name": "legacy-app-01",
-        "flavor": "old.flavor.type",
+        "name": "cdp-sap-04",
+        "flavor": "MISSING_FLAVOR",
         "is_public": false,
-        "status": "OK",
+        "status": "WARNING",
         "metadata": {
-          "tier": "Legacy",
-          "os_type": "Windows",
-          "cpu_cores": 2,
-          "ram_gb": 4,
-          "storage_gb": 100,
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
           "original_row": 14
+        }
+      },
+      {
+        "name": "cdp-sap-05",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 15
+        }
+      },
+      {
+        "name": "cdp-sap-06",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 16
+        }
+      },
+      {
+        "name": "cdp-sap-07",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 17
+        }
+      },
+      {
+        "name": "cdp-sap-08",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 18
+        }
+      },
+      {
+        "name": "cdp-utc-01",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 19
+        }
+      },
+      {
+        "name": "cdp-w10-ca",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 20
+        }
+      },
+      {
+        "name": "cdpspnsvr",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 21
+        }
+      },
+      {
+        "name": "glpi-srvr",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 22
+        }
+      },
+      {
+        "name": "nagios-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 23
+        }
+      },
+      {
+        "name": "new-soft-bd-220",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 24
+        }
+      },
+      {
+        "name": "new-soft-bd-221-245",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 25
+        }
+      },
+      {
+        "name": "newsoft-support",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 26
+        }
+      },
+      {
+        "name": "ocs-srvr-01",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 27
+        }
+      },
+      {
+        "name": "cloud-backup-and-recovery",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 28
+        }
+      },
+      {
+        "name": "virtual-private-network",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 29
+        }
+      },
+      {
+        "name": "nat-gateway",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 30
+        }
+      },
+      {
+        "name": "elastic-ip",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 31
+        }
+      },
+      {
+        "name": "sap-01-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 32
+        }
+      },
+      {
+        "name": "sap-02-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 33
+        }
+      },
+      {
+        "name": "new-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 34
+        }
+      },
+      {
+        "name": "support-plans",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 35
+        }
+      },
+      {
+        "name": "cloud-backup-and-recovery",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 36
+        }
+      },
+      {
+        "name": "consumption-with-no-sap-prod-server",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 43
+        }
+      },
+      {
+        "name": "total-consumption",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 46
+        }
+      },
+      {
+        "name": "daily-consumption-for-april",
+        "flavor": "MISSING_FLAVOR",
+        "is_public": false,
+        "status": "WARNING",
+        "metadata": {
+          "tier": "Standard Compute",
+          "os_type": "Linux",
+          "cpu_cores": 0,
+          "ram_gb": 0,
+          "storage_gb": 0,
+          "original_row": 47
         }
       }
     ],
