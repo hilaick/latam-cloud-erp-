@@ -152,7 +152,6 @@ export const ERPProvider = ({ children }) => {
         setHashParams(activePhase, proj);
     };
 
-    // 🚨 GLOBAL 401 INTERCEPTOR
     const handleAuthError = () => {
         console.warn("Session Expired. Triggering Auto-Logout.");
         localStorage.removeItem('erp_jwt_token');
@@ -166,36 +165,25 @@ export const ERPProvider = ({ children }) => {
             if (!token) return;
 
             try {
-                // 1. Fetch Projects
                 const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
-                
-                // 🚨 CATCH EXPIRED TOKENS IMMEDIATELY
                 if (res.status === 401) return handleAuthError();
-
                 const data = await res.json();
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
-                // 2. Fetch Playbooks
                 const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
-                
-                // 🚨 CATCH EXPIRED TOKENS IMMEDIATELY
                 if (pbRes.status === 401) return handleAuthError();
-
                 const pbData = await pbRes.json();
                 
                 if (pbData.success && pbData.playbooks && Object.keys(pbData.playbooks).length > 0) {
                     const dbPlaybooks = pbData.playbooks;
                     let needsSync = false;
-                    
                     Object.keys(DEFAULT_PLAYBOOKS).forEach(key => {
                         if (!dbPlaybooks[key]) {
                             dbPlaybooks[key] = DEFAULT_PLAYBOOKS[key];
                             needsSync = true;
                         }
                     });
-                    
                     setCustomPlaybooks(dbPlaybooks);
-                    
                     if (needsSync) {
                         fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(dbPlaybooks) });
                     }
@@ -204,7 +192,6 @@ export const ERPProvider = ({ children }) => {
                     fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(DEFAULT_PLAYBOOKS) });
                 }
 
-                // 3. Fetch Customers
                 const savedCust = localStorage.getItem('cac_erp_customers');
                 if (savedCust) setCustomers(JSON.parse(savedCust));
             } catch (err) {
@@ -225,11 +212,23 @@ export const ERPProvider = ({ children }) => {
                 body: JSON.stringify(modifiedProject)
             }).then(r => { if(r.status === 401) handleAuthError(); }).catch(err => console.error("Postgres Sync Error:", err));
 
+            // 🚨 UPDATED: PASSDOWN CRM DATA FROM PRESALES TO CUSTOMER DIRECTORY
             if (field === 'isWaiting' && value === false) {
                 const custName = modifiedProject.name.split('-')[0].trim();
                 setCustomers(prevCusts => {
                     if (!prevCusts.find(c => c.name === custName)) {
-                        const newCust = { id: Date.now(), name: custName, ak: '', sk: '', region: 'la-south-2' };
+                        const newCust = { 
+                            id: Date.now(), 
+                            name: custName, 
+                            ak: '', 
+                            sk: '', 
+                            region: 'la-south-2',
+                            // Pass down extracted values
+                            country: modifiedProject.country || 'TBD',
+                            sa: modifiedProject.sa || 'TBD',
+                            partner: modifiedProject.partner || 'TBD',
+                            techContact: modifiedProject.techContact || 'TBD'
+                        };
                         const updated = [...prevCusts, newCust];
                         localStorage.setItem('cac_erp_customers', JSON.stringify(updated));
                         return updated;
