@@ -184,9 +184,7 @@ export const ERPProvider = ({ children }) => {
                         }
                     });
                     setCustomPlaybooks(dbPlaybooks);
-                    if (needsSync) {
-                        fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(dbPlaybooks) });
-                    }
+                    if (needsSync) fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(dbPlaybooks) });
                 } else {
                     setCustomPlaybooks(DEFAULT_PLAYBOOKS);
                     fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(DEFAULT_PLAYBOOKS) });
@@ -201,29 +199,43 @@ export const ERPProvider = ({ children }) => {
         fetchState();
     }, []);
 
-    const handleUpdateProject = (id, field, value) => {
+    // 🚨 UPDATED: Now elegantly handles both single fields OR full bulk object updates to fix the race condition!
+    const handleUpdateProject = (id, fieldOrObj, value) => {
         setProjects(prevProjects => {
-            const updatedProjects = prevProjects.map(p => String(p.id) === String(id) ? { ...p, [field]: value } : p);
+            const isObj = typeof fieldOrObj === 'object';
+            
+            const updatedProjects = prevProjects.map(p => {
+                if (String(p.id) === String(id)) {
+                    return isObj ? { ...p, ...fieldOrObj } : { ...p, [fieldOrObj]: value };
+                }
+                return p;
+            });
+            
             const modifiedProject = updatedProjects.find(p => String(p.id) === String(id));
 
+            // Atomically save the entire updated JSON blob to Postgres
             fetch('/api/erp/projects', {
                 method: 'POST',
                 headers: getAuthHeaders(),
                 body: JSON.stringify(modifiedProject)
             }).then(r => { if(r.status === 401) handleAuthError(); }).catch(err => console.error("Postgres Sync Error:", err));
 
-            // 🚨 UPDATED: PASSDOWN CRM DATA FROM PRESALES TO CUSTOMER DIRECTORY
-            if (field === 'isWaiting' && value === false) {
-                const custName = modifiedProject.name.split('-')[0].trim();
+            // 🚨 UPDATED: Robust CRM Pass-down with Unique IDs and exact Name matching
+            const isPromoting = isObj ? fieldOrObj.isWaiting === false : (fieldOrObj === 'isWaiting' && value === false);
+            
+            if (isPromoting) {
+                // Ensure we use the explicit customerName we gathered in the PreSales Radar
+                const custName = (modifiedProject.customerName || modifiedProject.name.split('-')[0]).trim();
+                
                 setCustomers(prevCusts => {
-                    if (!prevCusts.find(c => c.name === custName)) {
+                    // Prevent duplicate accounts by checking exact lowercase match
+                    if (!prevCusts.find(c => c.name.toLowerCase() === custName.toLowerCase())) {
                         const newCust = { 
-                            id: Date.now(), 
+                            id: `CUST-${Date.now()}`, // Enforce Unique Primary Key
                             name: custName, 
                             ak: '', 
                             sk: '', 
                             region: 'la-south-2',
-                            // Pass down extracted values
                             country: modifiedProject.country || 'TBD',
                             sa: modifiedProject.sa || 'TBD',
                             partner: modifiedProject.partner || 'TBD',
@@ -231,6 +243,14 @@ export const ERPProvider = ({ children }) => {
                         };
                         const updated = [...prevCusts, newCust];
                         localStorage.setItem('cac_erp_customers', JSON.stringify(updated));
+                        
+                        // Pass CRM profile to Backend
+                        fetch('/api/erp/customers', {
+                            method: 'POST',
+                            headers: getAuthHeaders(),
+                            body: JSON.stringify(newCust)
+                        }).then(r => { if(r.status === 401) handleAuthError(); });
+                        
                         return updated;
                     }
                     return prevCusts;
