@@ -78,7 +78,6 @@ def cleanup():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/status', methods=['GET'])
-@jwt_required()
 def status():
     try:
         deployments = get_all_deployments(str(PROJECT_ROOT / 'deployments'))
