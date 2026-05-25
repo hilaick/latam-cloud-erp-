@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
-from models import db, ProjectData, Customer
+# 🚨 FIX 1: Make sure GlobalPlaybooks is imported here!
+from models import db, ProjectData, Customer, GlobalPlaybooks
 import json
 
-# 🚨 UPDATED: Using JWT instead of Basic Auth
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 crm_bp = Blueprint('crm', __name__)
@@ -105,10 +105,6 @@ def update_delete_customer(c_id):
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ==========================================
-# DISASTER RECOVERY
-# ==========================================
-
 @crm_bp.route('/api/erp/reset', methods=['POST'])
 @jwt_required()
 def hard_reset():
@@ -121,3 +117,36 @@ def hard_reset():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ==========================================
+# 🚨 FIX 2: GLOBAL PLAYBOOK STUDIO MANAGEMENT
+# ==========================================
+
+@crm_bp.route('/api/erp/playbooks', methods=['GET', 'POST'])
+@jwt_required()
+def manage_playbooks():
+    """Handles fetching and updating the Master Playbook templates"""
+    if request.method == 'GET':
+        try:
+            pb = GlobalPlaybooks.query.get("master")
+            if pb:
+                return jsonify({"success": True, "playbooks": json.loads(pb.data)})
+            return jsonify({"success": True, "playbooks": None})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    
+    elif request.method == 'POST':
+        try:
+            data = request.json
+            pb = GlobalPlaybooks.query.get("master")
+            if pb:
+                pb.data = json.dumps(data)
+            else:
+                pb = GlobalPlaybooks(id="master", data=json.dumps(data))
+                db.session.add(pb)
+            db.session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(e)}), 500
