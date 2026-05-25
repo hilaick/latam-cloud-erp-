@@ -1,10 +1,12 @@
 from flask import Blueprint, request, jsonify
-from services.auth import requires_auth
+
+# 🚨 UPDATED: Using JWT instead of Basic Auth
+from flask_jwt_extended import jwt_required
 
 sms_bp = Blueprint('sms_migrations', __name__)
 
 @sms_bp.route('/api/sms/discover', methods=['POST'])
-@requires_auth
+@jwt_required()
 def sms_discover():
     """Discover SMS servers with Huawei Cloud SDK."""
     try:
