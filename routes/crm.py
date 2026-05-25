@@ -2,9 +2,8 @@ from flask import Blueprint, request, jsonify
 from models import db, ProjectData, Customer
 import json
 
-# CRITICAL FIX: We are importing the real, secure auth decorator 
-# from the services module, completely eliminating the dummy proxy.
-from services.auth import requires_auth
+# 🚨 UPDATED: Using JWT instead of Basic Auth
+from flask_jwt_extended import jwt_required
 
 crm_bp = Blueprint('crm', __name__)
 
@@ -13,7 +12,7 @@ crm_bp = Blueprint('crm', __name__)
 # ==========================================
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
-@requires_auth
+@jwt_required()
 def get_state():
     """Returns the full master state of the ERP (All Projects)"""
     try:
@@ -26,7 +25,7 @@ def get_state():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @crm_bp.route('/api/erp/projects', methods=['POST'])
-@requires_auth
+@jwt_required()
 def update_project():
     """Creates or Updates a Project's JSON Blob (WBS, Runbook, State)"""
     try:
@@ -52,7 +51,7 @@ def update_project():
 # ==========================================
 
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
-@requires_auth
+@jwt_required()
 def manage_customers():
     """Handles fetching and creating new Customer profiles"""
     if request.method == 'GET':
@@ -83,7 +82,7 @@ def manage_customers():
             return jsonify({"success": False, "error": str(e)}), 500
 
 @crm_bp.route('/api/erp/customers/<c_id>', methods=['PUT', 'DELETE'])
-@requires_auth
+@jwt_required()
 def update_delete_customer(c_id):
     """Updates Vault Keys or Deletes Customer"""
     try:
@@ -111,7 +110,7 @@ def update_delete_customer(c_id):
 # ==========================================
 
 @crm_bp.route('/api/erp/reset', methods=['POST'])
-@requires_auth
+@jwt_required()
 def hard_reset():
     """Wipes the database for Demo resets"""
     try:
