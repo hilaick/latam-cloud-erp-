@@ -99,7 +99,7 @@ export const ERPProvider = ({ children }) => {
     const [activePhase, setActivePhaseState] = useState(initialParams.phase);
     const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
 
-    // 🚨 NEW: Auth Header Helper
+    // Get JWT Headers
     const getAuthHeaders = () => {
         const token = localStorage.getItem('erp_jwt_token');
         return {
@@ -131,25 +131,32 @@ export const ERPProvider = ({ children }) => {
 
     useEffect(() => {
         const fetchState = async () => {
-            // 🚨 Check for token before fetching to prevent 401s on the login screen
             const token = localStorage.getItem('erp_jwt_token');
             if (!token) return;
 
             try {
-                // 🚨 Inject Auth Headers
+                // 1. Fetch Projects
                 const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
                 const data = await res.json();
-                
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
-                const savedPb = localStorage.getItem('cac_erp_playbooks');
-                if (savedPb && Object.keys(JSON.parse(savedPb)).length > 0) {
-                    setCustomPlaybooks(JSON.parse(savedPb));
+                // 🚨 2. Fetch Playbooks from POSTGRESQL!
+                const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
+                const pbData = await pbRes.json();
+                
+                if (pbData.success && pbData.playbooks && Object.keys(pbData.playbooks).length > 0) {
+                    setCustomPlaybooks(pbData.playbooks);
                 } else {
+                    // Database is empty! Inject the 5 defaults.
                     setCustomPlaybooks(DEFAULT_PLAYBOOKS);
-                    localStorage.setItem('cac_erp_playbooks', JSON.stringify(DEFAULT_PLAYBOOKS));
+                    fetch('/api/erp/playbooks', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify(DEFAULT_PLAYBOOKS)
+                    });
                 }
 
+                // 3. Fetch Customers
                 const savedCust = localStorage.getItem('cac_erp_customers');
                 if (savedCust) setCustomers(JSON.parse(savedCust));
             } catch (err) {
@@ -164,7 +171,6 @@ export const ERPProvider = ({ children }) => {
             const updatedProjects = prevProjects.map(p => String(p.id) === String(id) ? { ...p, [field]: value } : p);
             const modifiedProject = updatedProjects.find(p => String(p.id) === String(id));
 
-            // 🚨 Inject Auth Headers
             fetch('/api/erp/projects', {
                 method: 'POST',
                 headers: getAuthHeaders(),
@@ -183,15 +189,12 @@ export const ERPProvider = ({ children }) => {
                     return prevCusts;
                 });
             }
-
             return updatedProjects;
         });
     };
 
     const handleAddProject = (newProject) => {
         setProjects(prev => [newProject, ...prev]);
-        
-        // 🚨 Inject Auth Headers
         fetch('/api/erp/projects', {
             method: 'POST',
             headers: getAuthHeaders(),
@@ -218,7 +221,6 @@ export const ERPProvider = ({ children }) => {
             const remaining = prevProjects.filter(p => {
                 const isMatch = (p.name || '').toLowerCase().includes(prefix);
                 if (isMatch) {
-                    // 🚨 Inject Auth Headers
                     fetch('/api/erp/projects', {
                         method: 'POST',
                         headers: getAuthHeaders(),
@@ -237,7 +239,6 @@ export const ERPProvider = ({ children }) => {
         setProjects(prevProjects => {
             const projectToDelete = prevProjects.find(p => String(p.id) === String(id));
             if (projectToDelete) {
-                // 🚨 Inject Auth Headers
                 fetch('/api/erp/projects', {
                     method: 'POST',
                     headers: getAuthHeaders(),
@@ -262,7 +263,15 @@ export const ERPProvider = ({ children }) => {
             customPlaybooks,
             setActivePhase,
             setActiveProjectId,
-            setCustomPlaybooks: (pb) => { setCustomPlaybooks(pb); localStorage.setItem('cac_erp_playbooks', JSON.stringify(pb)); },
+            // 🚨 Update save function to push to Postgres
+            setCustomPlaybooks: (pb) => { 
+                setCustomPlaybooks(pb); 
+                fetch('/api/erp/playbooks', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(pb)
+                });
+            },
             handleUpdateProject,
             handleAddProject,
             handleUpdateCustomer,
