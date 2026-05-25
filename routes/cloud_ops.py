@@ -3,7 +3,10 @@ import json
 import subprocess
 from pathlib import Path
 from flask import Blueprint, request, jsonify
-from services.auth import requires_auth
+
+# 🚨 UPDATED: Using JWT instead of Basic Auth
+from flask_jwt_extended import jwt_required
+
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.huawei_load_balancer import HuaweiLoadBalancer
 
@@ -14,7 +17,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
 
 @cloud_ops_bp.route('/api/audit', methods=['POST'])
-@requires_auth
+@jwt_required()
 def run_audit():
     try:
         data = request.get_json()
@@ -33,7 +36,7 @@ def run_audit():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/deploy', methods=['POST'])
-@requires_auth
+@jwt_required()
 def deploy():
     try:
         data = request.get_json()
@@ -57,7 +60,7 @@ def deploy():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cleanup', methods=['POST'])
-@requires_auth
+@jwt_required()
 def cleanup():
     try:
         data = request.get_json()
@@ -76,6 +79,7 @@ def cleanup():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/status', methods=['GET'])
+@jwt_required()
 def status():
     try:
         deployments = get_all_deployments(str(PROJECT_ROOT / 'deployments'))
@@ -88,7 +92,7 @@ def status():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/logs', methods=['GET'])
-@requires_auth
+@jwt_required()
 def get_logs():
     try:
         log_file = PROJECT_ROOT / 'deployments' / 'huawei_resources.log'
@@ -99,7 +103,7 @@ def get_logs():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/huawei/chat', methods=['POST'])
-@requires_auth
+@jwt_required()
 def huawei_chat():
     try:
         message = request.get_json().get('message', '')
@@ -109,7 +113,7 @@ def huawei_chat():
         return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/huawei/keys/status', methods=['GET'])
-@requires_auth
+@jwt_required()
 def huawei_keys_status():
     try:
         return jsonify({
