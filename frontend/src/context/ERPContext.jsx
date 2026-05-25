@@ -99,6 +99,15 @@ export const ERPProvider = ({ children }) => {
     const [activePhase, setActivePhaseState] = useState(initialParams.phase);
     const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
 
+    // 🚨 NEW: Auth Header Helper
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('erp_jwt_token');
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+        };
+    };
+
     useEffect(() => {
         const handlePopState = () => {
             const { phase, proj } = getHashParams();
@@ -122,12 +131,17 @@ export const ERPProvider = ({ children }) => {
 
     useEffect(() => {
         const fetchState = async () => {
+            // 🚨 Check for token before fetching to prevent 401s on the login screen
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) return;
+
             try {
-                const res = await fetch('/api/erp/state');
+                // 🚨 Inject Auth Headers
+                const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
                 const data = await res.json();
+                
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
-                // 🚨 FIX: Load saved playbooks, otherwise inject the DEFAULT_PLAYBOOKS
                 const savedPb = localStorage.getItem('cac_erp_playbooks');
                 if (savedPb && Object.keys(JSON.parse(savedPb)).length > 0) {
                     setCustomPlaybooks(JSON.parse(savedPb));
@@ -150,9 +164,10 @@ export const ERPProvider = ({ children }) => {
             const updatedProjects = prevProjects.map(p => String(p.id) === String(id) ? { ...p, [field]: value } : p);
             const modifiedProject = updatedProjects.find(p => String(p.id) === String(id));
 
+            // 🚨 Inject Auth Headers
             fetch('/api/erp/projects', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(modifiedProject)
             }).catch(err => console.error("Postgres Sync Error:", err));
 
@@ -175,9 +190,11 @@ export const ERPProvider = ({ children }) => {
 
     const handleAddProject = (newProject) => {
         setProjects(prev => [newProject, ...prev]);
+        
+        // 🚨 Inject Auth Headers
         fetch('/api/erp/projects', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify(newProject)
         });
     };
@@ -201,9 +218,10 @@ export const ERPProvider = ({ children }) => {
             const remaining = prevProjects.filter(p => {
                 const isMatch = (p.name || '').toLowerCase().includes(prefix);
                 if (isMatch) {
+                    // 🚨 Inject Auth Headers
                     fetch('/api/erp/projects', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({ ...p, isDeleted: true, lifecycleState: 'archived' })
                     }).catch(e => console.error("Cascade Delete Error:", e));
                 }
@@ -219,9 +237,10 @@ export const ERPProvider = ({ children }) => {
         setProjects(prevProjects => {
             const projectToDelete = prevProjects.find(p => String(p.id) === String(id));
             if (projectToDelete) {
+                // 🚨 Inject Auth Headers
                 fetch('/api/erp/projects', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ ...projectToDelete, isDeleted: true, lifecycleState: 'archived' })
                 }).catch(err => console.error("Postgres Sync Error:", err));
             }
