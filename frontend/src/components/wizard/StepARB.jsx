@@ -31,38 +31,99 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                 {subTab === 'intake' && (
                     <div className="space-y-6 animate-fade-in">
                         
-                        {/* 🚨 NEW: PRE-SALES HANDOVER DOSSIER */}
+                        {/* 🚨 MASSIVE PRE-SALES HANDOVER DOSSIER */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                             <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-                                <h4 className="font-black text-lg text-slate-800"><i className="fas fa-briefcase text-blue-500 mr-2"></i> Pre-Sales Handover Context</h4>
+                                <h4 className="font-black text-xl text-slate-800"><i className="fas fa-briefcase text-blue-500 mr-2"></i> Pre-Sales Handover Context</h4>
                                 <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border border-blue-200">Sales → Delivery</span>
                             </div>
                             
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black mb-1">Customer Account</div><div className="font-bold text-sm text-slate-800">{project.customerName || project.name.split('-')[0] || 'TBD'}</div></div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black mb-1">Target MRR</div><div className="font-black text-sm text-emerald-600">${project.mrr || 0} /mo</div></div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black mb-1">Sales Architect</div><div className="font-bold text-sm text-blue-600">{project.sa || 'TBD'}</div></div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black mb-1">Complexity Level</div><div className="font-bold text-sm text-purple-600">{project.complexityLevel || 'Medium'}</div></div>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="space-y-4">
-                                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2">Technical Sizing Context</h5>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div><span className="block text-[10px] uppercase font-bold text-slate-500">Source Environment</span><span className="font-bold text-sm text-slate-800">{project.sourceEnvironment || 'Unknown'}</span></div>
-                                        <div><span className="block text-[10px] uppercase font-bold text-slate-500">Migration Type</span><span className="font-bold text-sm text-slate-800">{project.migrationType || 'Lift & Shift'}</span></div>
-                                        <div><span className="block text-[10px] uppercase font-bold text-slate-500">Est. Workloads</span><span className="font-bold text-sm text-slate-800">{project.estimatedWorkloads || '0'} VMs</span></div>
-                                        <div><span className="block text-[10px] uppercase font-bold text-slate-500">Est. Labor</span><span className="font-bold text-sm text-slate-800">{project.estimatedMigrationHours || '0'} Hours</span></div>
+                            {/* 1. Basic Information */}
+                            <div className="mb-8">
+                                <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2 mb-4">1. Basic Information</h5>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Customer Account</div><div className="font-black text-sm text-slate-800">{project.customerName || project.name.split('-')[0] || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Target Country</div><div className="font-bold text-sm text-slate-800">{project.country || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Sales Architect</div><div className="font-bold text-sm text-blue-600">{project.sa || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Probability</div><div className="font-bold text-sm text-slate-800">{project.probability || '0'}%</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Delivery Partner</div><div className="font-bold text-sm text-slate-800">{project.partner || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Technical Contact</div><div className="font-bold text-sm text-slate-800">{project.techContact || 'TBD'}</div></div>
+                                    
+                                    <div className={`col-span-2 p-3 rounded-lg border flex items-center justify-between ${project.project_type === 'poc' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                                        <div>
+                                            <div className="text-[10px] uppercase font-bold mb-1 text-slate-500">Fast-Track PoC Status</div>
+                                            <div className={`font-black text-sm ${project.project_type === 'poc' ? 'text-amber-700' : 'text-slate-800'}`}>
+                                                {project.project_type === 'poc' ? 'Active (Skips Governance)' : 'Standard Lifecycle'}
+                                            </div>
+                                        </div>
+                                        {project.project_type === 'poc' && (
+                                            <div className="text-right">
+                                                <div className="text-[10px] uppercase font-bold text-amber-600">Budget Cap / Expiration TTL</div>
+                                                <div className="font-black text-sm text-amber-800">${project.pocCap || 0} / {project.pocTtl || 'No Expiry'}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2">Business Scope & Blockers</h5>
-                                    <div><span className="block text-[10px] uppercase font-bold text-slate-500">Discovery Scope / Notes</span><p className="text-sm font-medium text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 mt-1">{project.discoveryNotes || 'No notes provided by SA.'}</p></div>
-                                    {project.blocker && <div><span className="block text-[10px] uppercase font-bold text-rose-500">Technical/Business Blockers</span><p className="text-sm font-medium text-rose-700 bg-rose-50 p-3 rounded-lg border border-rose-200 mt-1">{project.blocker}</p></div>}
+                            </div>
+
+                            {/* 2. Discovery & Financials */}
+                            <div className="mb-8">
+                                <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2 mb-4">2. Discovery & Financials</h5>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Discovery Status</div><div className="font-bold text-sm text-slate-800">{project.discoveryStatus || 'Pending'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Expected Close Date</div><div className="font-bold text-sm text-slate-800">{project.expectedCloseDate || 'TBD'}</div></div>
+                                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200 shadow-inner"><div className="text-[10px] text-emerald-600 uppercase font-black mb-1">Target MRR</div><div className="font-black text-lg text-emerald-700">${project.mrr || 0} <span className="text-xs font-bold text-emerald-600">/mo</span></div></div>
                                 </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Discovery Scope / Business Requirements</div>
+                                        <div className="text-sm font-medium text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 min-h-[60px] whitespace-pre-wrap">{project.discoveryNotes || 'No notes provided by SA.'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Discovery Document Links</div>
+                                        <div className="text-sm font-bold text-blue-600 bg-blue-50/30 p-3 rounded-lg border border-blue-100 min-h-[60px] break-all">{project.discoveryDocuments ? <a href={project.discoveryDocuments} target="_blank" className="hover:underline">{project.discoveryDocuments}</a> : <span className="text-slate-400 font-medium italic">No external links attached.</span>}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. Technical Sizing */}
+                            <div className="mb-8">
+                                <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2 mb-4">3. Technical Sizing</h5>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Sizing Status</div><div className="font-bold text-sm text-slate-800">{project.sizingStatus || 'Pending'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Source Environment</div><div className="font-bold text-sm text-slate-800">{project.sourceEnvironment || 'Unknown'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Migration Type</div><div className="font-bold text-sm text-slate-800">{project.migrationType || 'Lift & Shift'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Est. Workloads</div><div className="font-bold text-sm text-slate-800">{project.estimatedWorkloads || '0'} VMs</div></div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Sizing Document Links (Raw BoM)</div>
+                                    <div className="text-sm font-bold text-blue-600 bg-blue-50/30 p-3 rounded-lg border border-blue-100 break-all">{project.sizingDocuments ? <a href={project.sizingDocuments} target="_blank" className="hover:underline">{project.sizingDocuments}</a> : <span className="text-slate-400 font-medium italic">No sizing links attached.</span>}</div>
+                                </div>
+                            </div>
+
+                            {/* 4. Risks & Timelines */}
+                            <div>
+                                <h5 className="font-black text-xs uppercase tracking-widest text-slate-400 border-b pb-2 mb-4">4. Risks & Timelines</h5>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Proposed Start</div><div className="font-bold text-sm text-slate-800">{project.proposedStartDate || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Proposed End</div><div className="font-bold text-sm text-slate-800">{project.proposedEndDate || 'TBD'}</div></div>
+                                    <div className="bg-purple-50 p-3 rounded-lg border border-purple-200"><div className="text-[10px] text-purple-600 uppercase font-black mb-1">Complexity Level</div><div className="font-black text-sm text-purple-800">{project.complexityLevel || 'Medium'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Est. Labor</div><div className="font-bold text-sm text-slate-800">{project.estimatedMigrationHours || '0'} hrs</div></div>
+                                </div>
+                                {project.blocker ? (
+                                    <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl shadow-inner">
+                                        <div className="text-[10px] uppercase font-black tracking-widest text-rose-600 mb-1"><i className="fas fa-exclamation-triangle mr-1"></i> Technical & Business Blockers</div>
+                                        <p className="text-sm font-bold text-rose-800">{project.blocker}</p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl">
+                                        <div className="text-sm font-bold text-emerald-800"><i className="fas fa-check-circle mr-2"></i> No technical or business blockers reported.</div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
+                        {/* GATE ARTEFACTS & BLUEPRINT ENGINE */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col justify-between">
                                 <div>
@@ -82,7 +143,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                                         </label>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowUploader(true)} className="mt-8 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-colors uppercase tracking-widest"><i className="fas fa-file-excel mr-2"></i> Upload Sales Quotation</button>
+                                <button onClick={() => setShowUploader(true)} className="mt-8 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-colors uppercase tracking-widest"><i className="fas fa-file-excel mr-2"></i> Upload SA Quotation BoM</button>
                             </div>
 
                             {blueprintData ? (
@@ -98,7 +159,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                             ) : (
                                 <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl p-12 text-center flex flex-col justify-center">
                                     <i className="fas fa-file-invoice text-4xl text-slate-300 mb-3"></i>
-                                    <h4 className="font-black text-slate-500">No Quotation Uploaded</h4>
+                                    <h4 className="font-black text-slate-500">No Target Blueprint Uploaded</h4>
                                 </div>
                             )}
                         </div>
