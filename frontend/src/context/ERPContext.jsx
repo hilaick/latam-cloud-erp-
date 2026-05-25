@@ -73,7 +73,6 @@ const DEFAULT_PLAYBOOKS = {
             { id: "3.3", name: "Update App Connection Strings", prog: "0%", resp: "Customer Dev", start: "", end: "", isParent: false }
         ]
     },
-    // 🚨 NEW DataArts PoC Template
     "dataarts_sql_poc": {
         "name": "DataArts PoC: On-Prem SQL to GaussDB",
         "tasks": [
@@ -81,18 +80,15 @@ const DEFAULT_PLAYBOOKS = {
             { "id": "1.1", "name": "Establish IPsec VPN or EIP access", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "1.2", "name": "Configure On-Prem Firewall (Port 1433)", "prog": "0%", "resp": "Customer IT", "start": "", "end": "", "isParent": false },
             { "id": "1.3", "name": "Verify Telnet/Ping from Cloud VPC", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
-            
             { "id": "2", "name": "Phase 2: Schema Translation (UGO)", "prog": "0%", "resp": "DBA", "start": "", "end": "", "isParent": true },
             { "id": "2.1", "name": "Provision Huawei UGO Instance", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "2.2", "name": "Connect UGO to Source SQL Server", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "2.3", "name": "Generate DDL Scripts via UGO", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "2.4", "name": "Execute DDL on Target GaussDB", "prog": "0%", "resp": "Partner DBA", "start": "", "end": "", "isParent": false },
-            
             { "id": "3", "name": "Phase 3: DataArts & CDM Provisioning", "prog": "0%", "resp": "Data Engineer", "start": "", "end": "", "isParent": true },
             { "id": "3.1", "name": "Create DataArts Studio Workspace", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "3.2", "name": "Provision CDM Cluster in Target VPC", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "3.3", "name": "Configure SG Rules for CDM to GaussDB", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
-            
             { "id": "4", "name": "Phase 4: Data Pipeline Execution", "prog": "0%", "resp": "All", "start": "", "end": "", "isParent": true },
             { "id": "4.1", "name": "Create CDM Source Link (SQL Server)", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
             { "id": "4.2", "name": "Create CDM Target Link (GaussDB)", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
@@ -127,7 +123,6 @@ export const ERPProvider = ({ children }) => {
     const [activePhase, setActivePhaseState] = useState(initialParams.phase);
     const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
 
-    // Get JWT Headers
     const getAuthHeaders = () => {
         const token = localStorage.getItem('erp_jwt_token');
         return {
@@ -157,6 +152,14 @@ export const ERPProvider = ({ children }) => {
         setHashParams(activePhase, proj);
     };
 
+    // 🚨 GLOBAL 401 INTERCEPTOR
+    const handleAuthError = () => {
+        console.warn("Session Expired. Triggering Auto-Logout.");
+        localStorage.removeItem('erp_jwt_token');
+        localStorage.removeItem('erp_user');
+        window.location.reload();
+    };
+
     useEffect(() => {
         const fetchState = async () => {
             const token = localStorage.getItem('erp_jwt_token');
@@ -165,15 +168,22 @@ export const ERPProvider = ({ children }) => {
             try {
                 // 1. Fetch Projects
                 const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
+                
+                // 🚨 CATCH EXPIRED TOKENS IMMEDIATELY
+                if (res.status === 401) return handleAuthError();
+
                 const data = await res.json();
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
-                // 2. Fetch Playbooks from POSTGRESQL!
+                // 2. Fetch Playbooks
                 const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
+                
+                // 🚨 CATCH EXPIRED TOKENS IMMEDIATELY
+                if (pbRes.status === 401) return handleAuthError();
+
                 const pbData = await pbRes.json();
                 
                 if (pbData.success && pbData.playbooks && Object.keys(pbData.playbooks).length > 0) {
-                    // 🚨 NEW: Auto-merge any new defaults into the database seamlessly!
                     const dbPlaybooks = pbData.playbooks;
                     let needsSync = false;
                     
@@ -186,22 +196,12 @@ export const ERPProvider = ({ children }) => {
                     
                     setCustomPlaybooks(dbPlaybooks);
                     
-                    // If we injected the new DataArts template, silently save it back to Postgres
                     if (needsSync) {
-                        fetch('/api/erp/playbooks', {
-                            method: 'POST',
-                            headers: getAuthHeaders(),
-                            body: JSON.stringify(dbPlaybooks)
-                        });
+                        fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(dbPlaybooks) });
                     }
                 } else {
-                    // Database is entirely empty! Inject all defaults.
                     setCustomPlaybooks(DEFAULT_PLAYBOOKS);
-                    fetch('/api/erp/playbooks', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(DEFAULT_PLAYBOOKS)
-                    });
+                    fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(DEFAULT_PLAYBOOKS) });
                 }
 
                 // 3. Fetch Customers
@@ -223,7 +223,7 @@ export const ERPProvider = ({ children }) => {
                 method: 'POST',
                 headers: getAuthHeaders(),
                 body: JSON.stringify(modifiedProject)
-            }).catch(err => console.error("Postgres Sync Error:", err));
+            }).then(r => { if(r.status === 401) handleAuthError(); }).catch(err => console.error("Postgres Sync Error:", err));
 
             if (field === 'isWaiting' && value === false) {
                 const custName = modifiedProject.name.split('-')[0].trim();
@@ -247,7 +247,7 @@ export const ERPProvider = ({ children }) => {
             method: 'POST',
             headers: getAuthHeaders(),
             body: JSON.stringify(newProject)
-        });
+        }).then(r => { if(r.status === 401) handleAuthError(); });
     };
 
     const handleUpdateCustomer = (updatedCustomer) => {
@@ -273,7 +273,7 @@ export const ERPProvider = ({ children }) => {
                         method: 'POST',
                         headers: getAuthHeaders(),
                         body: JSON.stringify({ ...p, isDeleted: true, lifecycleState: 'archived' })
-                    }).catch(e => console.error("Cascade Delete Error:", e));
+                    }).then(r => { if(r.status === 401) handleAuthError(); }).catch(e => console.error("Cascade Delete Error:", e));
                 }
                 return !isMatch;
             });
@@ -291,7 +291,7 @@ export const ERPProvider = ({ children }) => {
                     method: 'POST',
                     headers: getAuthHeaders(),
                     body: JSON.stringify({ ...projectToDelete, isDeleted: true, lifecycleState: 'archived' })
-                }).catch(err => console.error("Postgres Sync Error:", err));
+                }).then(r => { if(r.status === 401) handleAuthError(); }).catch(err => console.error("Postgres Sync Error:", err));
             }
             return prevProjects.filter(p => String(p.id) !== String(id));
         });
@@ -317,7 +317,7 @@ export const ERPProvider = ({ children }) => {
                     method: 'POST',
                     headers: getAuthHeaders(),
                     body: JSON.stringify(pb)
-                });
+                }).then(r => { if(r.status === 401) handleAuthError(); });
             },
             handleUpdateProject,
             handleAddProject,
