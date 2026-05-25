@@ -81,10 +81,10 @@ export default function MasterPipeline() {
                             <td className="px-4 py-4 align-top"><div className="text-[10px] font-bold text-slate-700 bg-purple-50 p-2 rounded-lg border border-purple-100 leading-relaxed"><EditableCell type="textarea" value={p.scope} onSave={v=>handleUpdateProject(p.id,'scope',v)} /></div></td>
                             <td className="px-4 py-4 align-top"><div className="text-[11px] font-medium text-slate-700 bg-amber-50 p-3 rounded-lg border border-amber-200 h-full min-h-[60px] leading-relaxed shadow-inner"><EditableCell type="textarea" value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} placeholder="Notes / Blocker" /></div></td>
                             <td className="px-4 py-4 align-middle text-center">
-                                {/* 🚨 TRIGGER 2FA MODAL ON CLICK */}
+                                {/* 🚨 FIX: REMOVED OPACITY CLASSES. BUTTON IS PERMANENTLY VISIBLE */}
                                 <button 
                                     onClick={() => setProjectToDelete(p.id)} 
-                                    className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded hover:bg-rose-50"
+                                    className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all p-2 rounded shadow-sm border border-slate-200 hover:border-rose-200 bg-white"
                                     title="Delete Project"
                                 >
                                     <i className="fas fa-trash-alt text-lg"></i>
