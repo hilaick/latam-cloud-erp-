@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 
-// --- 5 ENTERPRISE-GRADE PLAYBOOKS ---
+// --- ENTERPRISE-GRADE PLAYBOOKS ---
 const DEFAULT_PLAYBOOKS = {
     "default_vm": {
         name: "Standard VM Lift & Shift (SMS)",
@@ -72,6 +72,34 @@ const DEFAULT_PLAYBOOKS = {
             { id: "3.2", name: "Verify DRS Zero-Lag & Promote Target", prog: "0%", resp: "Partner DBA", start: "", end: "", isParent: false },
             { id: "3.3", name: "Update App Connection Strings", prog: "0%", resp: "Customer Dev", start: "", end: "", isParent: false }
         ]
+    },
+    // 🚨 NEW DataArts PoC Template
+    "dataarts_sql_poc": {
+        "name": "DataArts PoC: On-Prem SQL to GaussDB",
+        "tasks": [
+            { "id": "1", "name": "Phase 1: Hybrid Network Connectivity", "prog": "0%", "resp": "Network Team", "start": "", "end": "", "isParent": true },
+            { "id": "1.1", "name": "Establish IPsec VPN or EIP access", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "1.2", "name": "Configure On-Prem Firewall (Port 1433)", "prog": "0%", "resp": "Customer IT", "start": "", "end": "", "isParent": false },
+            { "id": "1.3", "name": "Verify Telnet/Ping from Cloud VPC", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            
+            { "id": "2", "name": "Phase 2: Schema Translation (UGO)", "prog": "0%", "resp": "DBA", "start": "", "end": "", "isParent": true },
+            { "id": "2.1", "name": "Provision Huawei UGO Instance", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "2.2", "name": "Connect UGO to Source SQL Server", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "2.3", "name": "Generate DDL Scripts via UGO", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "2.4", "name": "Execute DDL on Target GaussDB", "prog": "0%", "resp": "Partner DBA", "start": "", "end": "", "isParent": false },
+            
+            { "id": "3", "name": "Phase 3: DataArts & CDM Provisioning", "prog": "0%", "resp": "Data Engineer", "start": "", "end": "", "isParent": true },
+            { "id": "3.1", "name": "Create DataArts Studio Workspace", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "3.2", "name": "Provision CDM Cluster in Target VPC", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "3.3", "name": "Configure SG Rules for CDM to GaussDB", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            
+            { "id": "4", "name": "Phase 4: Data Pipeline Execution", "prog": "0%", "resp": "All", "start": "", "end": "", "isParent": true },
+            { "id": "4.1", "name": "Create CDM Source Link (SQL Server)", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "4.2", "name": "Create CDM Target Link (GaussDB)", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "4.3", "name": "Map Table/File Migration Job", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "4.4", "name": "Execute Initial Data Sync", "prog": "0%", "resp": "Partner", "start": "", "end": "", "isParent": false },
+            { "id": "4.5", "name": "Validate Record Counts & Integrity", "prog": "0%", "resp": "Customer / Partner", "start": "", "end": "", "isParent": false }
+        ]
     }
 };
 
@@ -140,14 +168,34 @@ export const ERPProvider = ({ children }) => {
                 const data = await res.json();
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
 
-                // 🚨 2. Fetch Playbooks from POSTGRESQL!
+                // 2. Fetch Playbooks from POSTGRESQL!
                 const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
                 const pbData = await pbRes.json();
                 
                 if (pbData.success && pbData.playbooks && Object.keys(pbData.playbooks).length > 0) {
-                    setCustomPlaybooks(pbData.playbooks);
+                    // 🚨 NEW: Auto-merge any new defaults into the database seamlessly!
+                    const dbPlaybooks = pbData.playbooks;
+                    let needsSync = false;
+                    
+                    Object.keys(DEFAULT_PLAYBOOKS).forEach(key => {
+                        if (!dbPlaybooks[key]) {
+                            dbPlaybooks[key] = DEFAULT_PLAYBOOKS[key];
+                            needsSync = true;
+                        }
+                    });
+                    
+                    setCustomPlaybooks(dbPlaybooks);
+                    
+                    // If we injected the new DataArts template, silently save it back to Postgres
+                    if (needsSync) {
+                        fetch('/api/erp/playbooks', {
+                            method: 'POST',
+                            headers: getAuthHeaders(),
+                            body: JSON.stringify(dbPlaybooks)
+                        });
+                    }
                 } else {
-                    // Database is empty! Inject the 5 defaults.
+                    // Database is entirely empty! Inject all defaults.
                     setCustomPlaybooks(DEFAULT_PLAYBOOKS);
                     fetch('/api/erp/playbooks', {
                         method: 'POST',
@@ -263,7 +311,6 @@ export const ERPProvider = ({ children }) => {
             customPlaybooks,
             setActivePhase,
             setActiveProjectId,
-            // 🚨 Update save function to push to Postgres
             setCustomPlaybooks: (pb) => { 
                 setCustomPlaybooks(pb); 
                 fetch('/api/erp/playbooks', {
