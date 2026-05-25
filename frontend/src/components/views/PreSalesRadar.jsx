@@ -9,6 +9,9 @@ export default function PreSalesRadar() {
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
+    // 🚨 NEW: PoC Toggle State
+    const [isPoC, setIsPoC] = useState(false);
+
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
 
     const handleAddNewLead = () => { 
@@ -27,11 +30,15 @@ export default function PreSalesRadar() {
             techContact: "TBD",
             blocker: "",
             lifecycleState: '1_arb', 
-            progress: '0%'
+            progress: '0%',
+            // 🚨 NEW: Inject PoC Metadata
+            project_type: isPoC ? 'poc' : 'standard',
+            pocCap: isPoC ? 1000 : null,
+            pocTtl: isPoC ? '' : null
         };
 
         handleAddProject(newProj); 
-        setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry("");
+        setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
     };
     
     const cols = [
@@ -43,7 +50,7 @@ export default function PreSalesRadar() {
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
             
-            {/* INTAKE FORM (Simplified for Stage 1) */}
+            {/* INTAKE FORM */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center">
                     <i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead
@@ -62,7 +69,16 @@ export default function PreSalesRadar() {
                         <input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="SA Name" />
                     </div>
                 </div>
-                <div className="flex justify-end pt-4 border-t border-slate-100">
+                <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                    {/* 🚨 NEW: PoC Checkbox */}
+                    <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                        <input type="checkbox" checked={isPoC} onChange={(e) => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" />
+                        <div>
+                            <div className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</div>
+                            <div className="text-[10px] text-slate-500 font-bold">Skip Post-Live governance</div>
+                        </div>
+                    </label>
+
                     <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl shadow-md text-xs transition-colors">
                         <i className="fas fa-plus mr-2"></i> Add Lead
                     </button>
@@ -81,8 +97,11 @@ export default function PreSalesRadar() {
                             </div>
                             <div className={`p-5 space-y-5 overflow-y-auto flex-1 custom-scrollbar ${!expanded[col.id] ? 'hidden' : 'block'}`}>
                                 {colProjects.map(p => (
-                                    <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-all">
-                                        <div className="font-black text-base text-slate-800 leading-tight mb-4 border-b border-slate-100 pb-2">
+                                    <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-all relative overflow-hidden">
+                                        {/* 🚨 NEW: Small PoC indicator on cards */}
+                                        {p.project_type === 'poc' && <div className="absolute top-0 right-0 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-bl-lg"><i className="fas fa-bolt mr-1"></i> PoC</div>}
+
+                                        <div className="font-black text-base text-slate-800 leading-tight mb-4 border-b border-slate-100 pb-2 mt-2">
                                             <EditableCell value={p.name} onSave={v=>handleUpdateProject(p.id,'name',v)} />
                                         </div>
                                         
