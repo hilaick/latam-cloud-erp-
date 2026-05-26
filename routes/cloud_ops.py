@@ -9,6 +9,10 @@ from flask_jwt_extended import jwt_required
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.huawei_load_balancer import HuaweiLoadBalancer
 
+# 🚨 NEW IMPORTS for Safe Read-Only Discovery
+from models import Customer
+from services.huawei_discovery import HuaweiDiscovery
+
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -121,3 +125,67 @@ def huawei_keys_status():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# 🚨 NEW: SECURE DISCOVERY ROUTE
+@cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
+@jwt_required()
+def get_live_inventory():
+    """
+    Safely discovers live infrastructure on Huawei Cloud using Read-Only credentials.
+    Triggered by the 'Live Cloud NOC' or 'Pre-Sales Radar' in the frontend.
+    """
+    try:
+        data = request.get_json()
+        customer_id = data.get('customer_id')
+        project_id = data.get('projectId') # Huawei specific project ID
+        
+        # NOTE: Frontend currently sends ak/sk directly in LiveCloudNOC, 
+        # but relying on customer_id + DB lookup is vastly more secure. 
+        # We will attempt DB lookup first, fallback to passed keys for testing.
+        
+        if customer_id:
+            # 1. Fetch the customer's encrypted Vault from Postgres
+            customer = Customer.query.get(customer_id)
+            if not customer or not customer.ak or not customer.sk:
+                return jsonify({"success": False, "error": "Customer missing or Vault keys incomplete."}), 404
+
+            # 2. Get the Master Password (in a real app, this comes from the user's session/JWT)
+            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+
+            # 3. Initialize the Read-Only Discovery Engine
+            discovery_engine = HuaweiDiscovery(
+                encrypted_ak_data=customer.ak,
+                encrypted_sk_data=customer.sk,
+                region=customer.region or data.get('region', 'la-south-2'),
+                master_password=master_password
+            )
+        else:
+            # Fallback for frontend test mode (where raw AK/SK are passed directly)
+            raw_ak = data.get('ak')
+            raw_sk = data.get('sk')
+            region = data.get('region', 'la-south-2')
+            
+            if not raw_ak or not raw_sk:
+                return jsonify({"success": False, "error": "Customer ID or AK/SK required."}), 400
+                
+            from huaweicloudsdkcore.auth.credentials import BasicCredentials
+            discovery_engine = HuaweiDiscovery(None, None, region, None)
+            discovery_engine.credentials = BasicCredentials(raw_ak, raw_sk)
+
+        # 4. Execute the safe scan
+        result = discovery_engine.discover_all()
+        
+        if result.get("success"):
+            return jsonify({
+                "success": True, 
+                "inventory": result.get("inventory"),
+                "message": "Discovery completed safely."
+            })
+        else:
+            return jsonify({"success": False, "error": result.get("error")}), 500
+
+    except ValueError as ve:
+        # Catches decryption errors (e.g., wrong master password or tampered keys)
+        return jsonify({"success": False, "error": str(ve)}), 401
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
