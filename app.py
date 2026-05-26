@@ -41,12 +41,15 @@ app.register_blueprint(sms_bp)
 app.register_blueprint(auth_bp) 
 
 # ==========================================
-# FRONTEND SERVING (NO AUTH REQUIRED HERE)
+# FRONTEND SERVING (BULLETPROOF VITE ROUTING)
 # ==========================================
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-# 🚨 Notice: We completely removed @requires_auth from here!
 def serve(path):
+    # 🚨 FIX: If an API route is missing, return a JSON 404, NEVER an HTML file!
+    if path.startswith('api/'):
+        return jsonify({"success": False, "error": f"API Route Not Found: {path}"}), 404
+        
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
     else:
