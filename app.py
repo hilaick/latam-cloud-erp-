@@ -11,18 +11,33 @@ from services.excel_ingestor import process_quotation
 # 🚨 NEW IMPORTS FOR JWT
 from flask_jwt_extended import JWTManager, jwt_required
 from datetime import timedelta
+import mimetypes
 
 load_dotenv()
+
+# Force Windows/Linux to recognize JS & CSS correctly
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('text/css', '.css')
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')
 app = Flask(__name__, static_folder=dist_folder)
 
+# 🚨 THE ULTIMATE CACHE KILLER
+# This physically forbids the browser from caching the HTML, ensuring Vite updates ALWAYS load!
+@app.after_request
+def add_header(response):
+    if 'text/html' in response.headers.get('Content-Type', ''):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '-1'
+    return response
+
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# 🚨 JWT CONFIGURATION
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-latam-erp-key-2026") # Change this in production!
+# JWT CONFIGURATION
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-latam-erp-key-2026")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
 jwt = JWTManager(app)
 
@@ -33,7 +48,7 @@ PROJECT_ROOT = Path(__file__).parent
 from routes.crm import crm_bp
 from routes.cloud_ops import cloud_ops_bp
 from routes.sms_migrations import sms_bp
-from routes.auth import auth_bp # 🚨 OUR NEW AUTH BLUEPRINT
+from routes.auth import auth_bp
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
@@ -46,20 +61,22 @@ app.register_blueprint(auth_bp)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
-    # 🚨 FIX: If an API route is missing, return a JSON 404, NEVER an HTML file!
+    # 🚨 Prevent HTML from being served to API routes!
     if path.startswith('api/'):
         return jsonify({"success": False, "error": f"API Route Not Found: {path}"}), 404
         
+    # Serve specific assets if they exist
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
     else:
+        # Fallback to index.html
         return send_from_directory(app.static_folder, 'index.html')
 
 # ==========================================
 # PROTECTED API ROUTES
 # ==========================================
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
-@jwt_required() # 🚨 SECURED VIA JWT
+@jwt_required() 
 def upload_quotation():
     if request.method == 'OPTIONS': return '', 200
     try:
