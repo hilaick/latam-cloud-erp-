@@ -1,15 +1,9 @@
 from flask import Blueprint, request, jsonify
-# 🚨 FIX 1: Make sure GlobalPlaybooks is imported here!
 from models import db, ProjectData, Customer, GlobalPlaybooks
 import json
-
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 crm_bp = Blueprint('crm', __name__)
-
-# ==========================================
-# STATE & PROJECT MANAGEMENT
-# ==========================================
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
 @jwt_required()
@@ -17,9 +11,19 @@ def get_state():
     """Returns the full master state of the ERP (All Projects)"""
     try:
         projects = ProjectData.query.all()
+        valid_projects = []
+        
+        # 🚨 FIX: Safely parse JSON and skip corrupted database rows!
+        for p in projects:
+            try:
+                valid_projects.append(json.loads(p.data))
+            except json.JSONDecodeError:
+                print(f"Warning: Skipped corrupted JSON in project {p.id}")
+                continue
+                
         return jsonify({
             "success": True, 
-            "projects": [json.loads(p.data) for p in projects]
+            "projects": valid_projects
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -27,33 +31,24 @@ def get_state():
 @crm_bp.route('/api/erp/projects', methods=['POST'])
 @jwt_required()
 def update_project():
-    """Creates or Updates a Project's JSON Blob (WBS, Runbook, State)"""
     try:
         data = request.json
         project_id = str(data.get('id'))
-        
-        # Check if project exists
         project = ProjectData.query.get(project_id)
         if project:
             project.data = json.dumps(data)
         else:
             project = ProjectData(id=project_id, data=json.dumps(data))
             db.session.add(project)
-            
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
-        db.session.rollback() # Prevent SQLite/Postgres DB Locking
+        db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
-
-# ==========================================
-# CUSTOMER VAULT MANAGEMENT (AK/SK)
-# ==========================================
 
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
 @jwt_required()
 def manage_customers():
-    """Handles fetching and creating new Customer profiles"""
     if request.method == 'GET':
         try:
             customers = Customer.query.all()
@@ -84,7 +79,6 @@ def manage_customers():
 @crm_bp.route('/api/erp/customers/<c_id>', methods=['PUT', 'DELETE'])
 @jwt_required()
 def update_delete_customer(c_id):
-    """Updates Vault Keys or Deletes Customer"""
     try:
         customer = Customer.query.get(c_id)
         if not customer:
@@ -92,7 +86,6 @@ def update_delete_customer(c_id):
             
         if request.method == 'DELETE':
             db.session.delete(customer)
-        
         elif request.method == 'PUT':
             data = request.json
             customer.ak = data.get('ak', customer.ak)
@@ -108,7 +101,6 @@ def update_delete_customer(c_id):
 @crm_bp.route('/api/erp/reset', methods=['POST'])
 @jwt_required()
 def hard_reset():
-    """Wipes the database for Demo resets"""
     try:
         ProjectData.query.delete()
         Customer.query.delete()
@@ -118,20 +110,17 @@ def hard_reset():
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
-
-# ==========================================
-# 🚨 FIX 2: GLOBAL PLAYBOOK STUDIO MANAGEMENT
-# ==========================================
-
 @crm_bp.route('/api/erp/playbooks', methods=['GET', 'POST'])
 @jwt_required()
 def manage_playbooks():
-    """Handles fetching and updating the Master Playbook templates"""
     if request.method == 'GET':
         try:
             pb = GlobalPlaybooks.query.get("master")
             if pb:
-                return jsonify({"success": True, "playbooks": json.loads(pb.data)})
+                try:
+                    return jsonify({"success": True, "playbooks": json.loads(pb.data)})
+                except json.JSONDecodeError:
+                    return jsonify({"success": True, "playbooks": None})
             return jsonify({"success": True, "playbooks": None})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
