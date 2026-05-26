@@ -40,7 +40,10 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }) {
                     </div>
                 </div>
 
-                {/* NOTE: User Management is NO LONGER HERE. It is accessed via TopBar Avatar. */}
+                {/* 🚨 NEW: VERSION FOOTER */}
+                <div className="p-4 border-t border-slate-800 w-64 shrink-0 text-center">
+                    <p className="text-[10px] font-mono tracking-widest uppercase text-slate-500">v2.0.0-Enterprise</p>
+                </div>
             </div>
         </>
     );
