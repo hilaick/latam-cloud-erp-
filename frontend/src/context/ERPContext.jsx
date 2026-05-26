@@ -4,7 +4,7 @@ const DEFAULT_PLAYBOOKS = {
     "default_vm": {
         name: "Standard VM Lift & Shift",
         tasks: [
-            { id: "1", name: "Phase 1: Architecture", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
+            { id: "1", name: "Phase 1: Architecture & Auth", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
             { id: "1.1", name: "Deploy Target VPC", prog: "0%", resp: "Partner", start: "", end: "", isParent: false }
         ]
     }
@@ -55,28 +55,53 @@ export const ERPProvider = ({ children }) => {
         window.location.reload();
     };
 
+    // 🚨 FIX: Indestructible Fetch Logic
     useEffect(() => {
         const fetchState = async () => {
             const token = localStorage.getItem('erp_jwt_token');
             if (!token) return;
 
+            // 1. Fetch Projects (Isolated)
             try {
                 const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
                 if (res.status === 401) return handleAuthError();
-                const data = await res.json();
-                if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
+                }
+            } catch (err) { console.error("Projects Fetch Error:", err); }
 
+            // 2. Fetch Playbooks (Isolated & Guaranteed to Fallback)
+            try {
                 const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
                 if (pbRes.status === 401) return handleAuthError();
-                const pbData = await pbRes.json();
-                if (pbData.success && pbData.playbooks) setCustomPlaybooks(pbData.playbooks);
-                else setCustomPlaybooks(DEFAULT_PLAYBOOKS);
+                
+                let pbData = {};
+                if (pbRes.ok) {
+                    const text = await pbRes.text();
+                    pbData = text ? JSON.parse(text) : {};
+                }
+                
+                if (pbData.success && pbData.playbooks && Object.keys(pbData.playbooks).length > 0) {
+                    setCustomPlaybooks(pbData.playbooks);
+                } else {
+                    setCustomPlaybooks(DEFAULT_PLAYBOOKS);
+                    fetch('/api/erp/playbooks', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(DEFAULT_PLAYBOOKS) });
+                }
+            } catch (err) {
+                console.error("Playbooks Fetch Error:", err);
+                setCustomPlaybooks(DEFAULT_PLAYBOOKS);
+            }
 
+            // 3. Fetch Customers (Isolated)
+            try {
                 const custRes = await fetch('/api/erp/customers', { headers: getAuthHeaders() });
                 if (custRes.status === 401) return handleAuthError();
-                const custData = await custRes.json();
-                if (custData.success && custData.customers) setCustomers(custData.customers);
-            } catch (err) { console.error("Database Fetch Error:", err); }
+                if (custRes.ok) {
+                    const custData = await custRes.json();
+                    if (custData.success && custData.customers) setCustomers(custData.customers);
+                }
+            } catch (err) { console.error("Customers Fetch Error:", err); }
         };
         fetchState();
     }, []);
