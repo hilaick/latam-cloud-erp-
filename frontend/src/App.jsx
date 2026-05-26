@@ -73,7 +73,7 @@ export default function App() {
     // 🚨 IF NOT LOGGED IN, SHOW LOGIN SCREEN
     if (!isAuthenticated) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 selection:bg-blue-500/30">
+            <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 selection:bg-blue-500/30 relative">
                 <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] pointer-events-none mix-blend-overlay"></div>
                 
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative z-10 animate-fade-in">
@@ -107,6 +107,11 @@ export default function App() {
                         </button>
                     </form>
                 </div>
+
+                {/* 🚨 NEW: LOGIN SCREEN VERSION FOOTER */}
+                <div className="absolute bottom-6 left-0 right-0 text-center z-10 pointer-events-none">
+                    <p className="text-[10px] font-mono tracking-widest uppercase text-slate-500/80">LATAM Cloud ERP v2.0.0-Enterprise</p>
+                </div>
             </div>
         );
     }
@@ -117,7 +122,6 @@ export default function App() {
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
             
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col">
-                {/* 🚨 Pass handleLogout to TopBar */}
                 <TopBar setSidebarOpen={setSidebarOpen} onLogout={handleLogout} />
 
                 <div className="p-4 md:p-8 lg:p-12 pb-24 flex-1">
