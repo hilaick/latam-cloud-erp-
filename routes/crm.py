@@ -13,18 +13,15 @@ def get_state():
         projects = ProjectData.query.all()
         valid_projects = []
         
-        # 🚨 FIX: Safely parse JSON and skip corrupted database rows!
+        # 🚨 SAFE PARSER: Bypasses corrupted SQLite data
         for p in projects:
             try:
                 valid_projects.append(json.loads(p.data))
             except json.JSONDecodeError:
-                print(f"Warning: Skipped corrupted JSON in project {p.id}")
+                print(f"Warning: Ignored corrupted JSON in ProjectData {p.id}")
                 continue
                 
-        return jsonify({
-            "success": True, 
-            "projects": valid_projects
-        })
+        return jsonify({"success": True, "projects": valid_projects})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -62,9 +59,19 @@ def manage_customers():
     elif request.method == 'POST':
         try:
             data = request.json
+            new_name = data.get('name', 'Unknown').strip()
+            
+            # 🚨 THE FIX: Check if a customer with this exact name already exists (Case-Insensitive)
+            existing_customer = Customer.query.filter(Customer.name.ilike(new_name)).first()
+            
+            if existing_customer:
+                # Silently intercept and ignore the duplicate request
+                return jsonify({"success": True, "message": "Customer already exists, skipping duplicate creation."})
+
+            # If it's a truly new customer, proceed with creation
             customer = Customer(
                 id=str(data.get('id')), 
-                name=data.get('name', 'Unknown'), 
+                name=new_name, 
                 ak=data.get('ak', ''), 
                 sk=data.get('sk', ''), 
                 region=data.get('region', 'la-south-2')
@@ -83,7 +90,6 @@ def update_delete_customer(c_id):
         customer = Customer.query.get(c_id)
         if not customer:
             return jsonify({"success": False, "error": "Customer not found"}), 404
-            
         if request.method == 'DELETE':
             db.session.delete(customer)
         elif request.method == 'PUT':
@@ -91,7 +97,6 @@ def update_delete_customer(c_id):
             customer.ak = data.get('ak', customer.ak)
             customer.sk = data.get('sk', customer.sk)
             customer.region = data.get('region', customer.region)
-            
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
@@ -118,6 +123,7 @@ def manage_playbooks():
             pb = GlobalPlaybooks.query.get("master")
             if pb:
                 try:
+                    # 🚨 SAFE PARSER: Bypasses corrupted SQLite playbook data
                     return jsonify({"success": True, "playbooks": json.loads(pb.data)})
                 except json.JSONDecodeError:
                     return jsonify({"success": True, "playbooks": None})
