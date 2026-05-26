@@ -1,52 +1,45 @@
 import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
-export default function TopBar({ setSidebarOpen, onLogout }) {
+export default function TopBar({ onLogout }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     
-    // Get logged-in user from localStorage (saved during login)
     const userStr = localStorage.getItem('erp_user');
     const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
-    
-    // Get initials for Avatar
     const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
-        <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
-            <div className="flex items-center gap-4 md:gap-6">
-                <button onClick={() => setSidebarOpen(prev => !prev)} className="text-slate-500 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-slate-100 flex items-center justify-center h-10 w-10 border border-transparent hover:border-slate-200" title="Toggle Sidebar"><i className="fas fa-bars text-xl"></i></button>
-
-                <div className="flex items-center gap-3">
-                    <div className="hidden sm:flex w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 items-center justify-center text-blue-600 shadow-inner"><i className="fas fa-building"></i></div>
-                    <div>
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5 hidden sm:block">Active Project Context</div>
-                        <select 
-                            value={activeProjectId || "none"} 
-                            onChange={(e) => { setActiveProjectId(e.target.value); if (e.target.value !== 'none') setActivePhase('wizard'); }}
-                            className="bg-slate-50 sm:bg-transparent px-2 py-1 sm:p-0 rounded border border-slate-200 sm:border-none font-black text-xs sm:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors max-w-[150px] sm:max-w-[250px] truncate"
-                        >
-                            <option value="none">-- Global View (No Context) --</option>
-                            {activeProjects.map(p => (<option key={p.id} value={p.id}>{p.name} {p.country ? `(${p.country})` : ''}</option>))}
-                        </select>
-                    </div>
+        <div className="bg-white border-b border-slate-200 px-3 md:px-6 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-inner shrink-0">
+                    <i className="fas fa-building text-sm md:text-base"></i>
+                </div>
+                <div className="flex flex-col">
+                    <div className="text-[8px] md:text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5 hidden sm:block">Active Project Context</div>
+                    <select 
+                        value={activeProjectId || "none"} 
+                        onChange={(e) => { setActiveProjectId(e.target.value); if (e.target.value !== 'none') setActivePhase('wizard'); }}
+                        className="bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none font-black text-xs md:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[250px] truncate"
+                    >
+                        <option value="none">-- Global View --</option>
+                        {activeProjects.map(p => (<option key={p.id} value={p.id}>{p.name} {p.country ? `(${p.country})` : ''}</option>))}
+                    </select>
                 </div>
             </div>
 
-            <div className="flex items-center gap-4 relative">
+            <div className="flex items-center gap-2 md:gap-4 relative">
                 <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Production DB</span>
                 </div>
                 
-                {/* 🚨 PROFILE AVATAR WITH DROPDOWN */}
                 <div className="relative">
                     <div 
                         onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                        className="w-10 h-10 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
-                        title="Profile Menu"
+                        className="w-8 h-8 md:w-10 md:h-10 text-xs md:text-base rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
                     >
                         {initials}
                     </div>
@@ -62,20 +55,18 @@ export default function TopBar({ setSidebarOpen, onLogout }) {
                                     onClick={() => { setActiveProjectId('none'); setActivePhase('users'); setProfileMenuOpen(false); }}
                                     className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center"
                                 >
-                                    <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile Settings
+                                    <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile
                                 </button>
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* 🚨 EXPLICIT LOGOUT BUTTON */}
                 <button 
                     onClick={onLogout}
-                    className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 hover:bg-rose-500 hover:text-white transition-colors shadow-sm"
-                    title="Terminate Session (Logout)"
+                    className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 hover:bg-rose-500 hover:text-white transition-colors shadow-sm"
                 >
-                    <i className="fas fa-power-off text-sm"></i>
+                    <i className="fas fa-power-off text-xs md:text-sm"></i>
                 </button>
             </div>
         </div>
