@@ -9,7 +9,8 @@ export default function TopBar({ onLogout }) {
     
     const userStr = localStorage.getItem('erp_user');
     const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
-    const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    // 🚨 FIX 1: Safely handle user initials if name is missing
+    const initials = (user?.name || "System User").split(' ').map(n => n[0] || '').join('').substring(0, 2).toUpperCase();
 
     return (
         <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
@@ -25,10 +26,10 @@ export default function TopBar({ onLogout }) {
                         className="bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none font-black text-xs md:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[250px] truncate"
                     >
                         <option value="none">-- Global View --</option>
-                        {/* 🚨 UPDATED: Now shows Customer Name - Project Name */}
+                        {/* 🚨 FIX 2: Bulletproof the split function against corrupted DB rows */}
                         {activeProjects.map(p => (
                             <option key={p.id} value={p.id}>
-                                {p.customerName || p.name.split('-')[0] || 'No Account'} - {p.name}
+                                {p.customerName || (p.name || '').split('-')[0] || 'No Account'} - {p.name || 'Unnamed Project'}
                             </option>
                         ))}
                     </select>
