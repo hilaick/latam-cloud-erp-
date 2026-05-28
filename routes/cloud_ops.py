@@ -4,6 +4,9 @@ import subprocess
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 
+from werkzeug.utils import secure_filename
+from services.source_resources_parser import parse_source_resources_excel
+
 # 🚨 UPDATED: Using JWT instead of Basic Auth
 from flask_jwt_extended import jwt_required
 from services.resource_parser import parse_resource_log, get_all_deployments
