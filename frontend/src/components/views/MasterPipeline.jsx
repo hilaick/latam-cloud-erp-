@@ -1,12 +1,12 @@
 import React, { useState, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import { EditableCell, formatShortDate } from '../../utils/helpers';
-import TwoFactorModal from '../utils/TwoFactorModal'; // 🚨 IMPORT 2FA MODAL
+import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function MasterPipeline() {
-    const { projects, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
+    const { projects, handleUpdateProject, handleDeleteProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [menuOpen, setMenuOpen] = useState(false);
-    const [projectToDelete, setProjectToDelete] = useState(null); // 🚨 STATE FOR MODAL
+    const [projectToDelete, setProjectToDelete] = useState(null);
     
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
@@ -30,12 +30,16 @@ export default function MasterPipeline() {
         const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", `Sales_Exec_Pipeline_${new Date().toISOString().split('T')[0]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
     };
 
-    // 🚨 2FA DELETION EXECUTION
     const executeDelete = () => {
         if (projectToDelete) {
             handleDeleteProject(projectToDelete);
             setProjectToDelete(null);
         }
+    };
+
+    const navigateToProject = (id) => {
+        setActiveProjectId(id);
+        setActivePhase('wizard');
     };
 
     const targetProjectName = activeProjects.find(p => p.id === projectToDelete)?.name || 'Unknown Project';
@@ -65,23 +69,49 @@ export default function MasterPipeline() {
                             <th className="px-4 py-4 w-[12%]">Timeline</th>
                             <th className="px-4 py-4 w-[10%]">SA / Partner</th>
                             <th className="px-4 py-4 w-[15%]">Scope</th>
-                            <th className="px-4 py-4 min-w-[200px]">Blockers / Notes</th>
+                            <th className="px-4 py-4 min-w-[200px]">Blockers / Notes (Editable)</th>
                             <th className="px-4 py-4 w-[5%] text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white text-xs">
                         {activeProjects.map((p) => (
                         <tr key={p.id} className="hover:bg-blue-50/50 transition-colors group">
-                            <td className="px-4 py-4 align-top"><div className="font-black text-sm text-slate-800"><EditableCell value={p.name} onSave={v=>handleUpdateProject(p.id,'name',v)} /></div><div className="text-[9px] font-black uppercase mt-1.5 bg-blue-100 text-blue-800 inline-block px-2 py-0.5 rounded border border-blue-200 tracking-widest">{getStateLabel(p.lifecycleState)}</div></td>
-                            <td className="px-4 py-4 align-top"><div className="font-bold text-slate-700 flex items-center bg-slate-100 px-2 py-1 rounded w-max border border-slate-200"><i className="fas fa-globe-americas mr-1.5 text-slate-400"></i><EditableCell value={p.country} onSave={v=>handleUpdateProject(p.id,'country',v)} placeholder="Country" /></div></td>
-                            <td className="px-4 py-4 align-top"><div className="mb-2"><EditableCell type="select" placeholder="health" value={p.health} onSave={v=>handleUpdateProject(p.id,'health',v)} className="hidden" />{getHealthBadge(p.health)}</div><div className="flex items-center gap-2"><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className={`h-full transition-all ${p.health==='Green'?'bg-emerald-500':p.health==='Red'?'bg-rose-500':'bg-amber-500'}`} style={{width: `${parseInt(p.progress)||0}%`}}></div></div><span className="text-[10px] font-black">{p.progress}</span></div></td>
-                            <td className="px-4 py-4 align-top"><div className="font-black text-sm bg-emerald-50 text-emerald-800 border border-emerald-200 rounded px-2 py-1 w-max shadow-sm">${p.mrr}</div><div className="text-[9px] font-bold uppercase mt-2 text-slate-500 tracking-wider"><EditableCell type="select" placeholder="complexity" value={p.complexity} onSave={v=>handleUpdateProject(p.id,'complexity',v)} /></div></td>
-                            <td className="px-4 py-4 align-top"><div className="flex flex-col gap-1.5 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-200"><div className="flex items-center justify-between border-b border-slate-200 pb-1.5"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-flag-checkered text-blue-500 mr-1.5"></i> Start:</span> <span className="font-mono font-bold"><EditableCell type="date" value={p.kickoff} onSave={v=>handleUpdateProject(p.id,'kickoff',v)} /></span></div><div className="flex items-center justify-between pt-1"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-rocket text-emerald-500 mr-1.5"></i> Live:</span> <span className="font-mono font-black text-emerald-700"><EditableCell type="date" value={p.date} onSave={v=>handleUpdateProject(p.id,'date',v)} /></span></div></div></td>
-                            <td className="px-4 py-4 align-top"><div className="font-black text-blue-700 mb-1.5 truncate"><EditableCell value={p.sa} onSave={v=>handleUpdateProject(p.id,'sa',v)} placeholder="SA Name" /></div><div className="text-[10px] font-bold text-slate-600 bg-slate-100 p-1.5 rounded border border-slate-200">Partner: <EditableCell value={p.partner} onSave={v=>handleUpdateProject(p.id,'partner',v)} placeholder="Partner" /></div></td>
-                            <td className="px-4 py-4 align-top"><div className="text-[10px] font-bold text-slate-700 bg-purple-50 p-2 rounded-lg border border-purple-100 leading-relaxed"><EditableCell type="textarea" value={p.scope} onSave={v=>handleUpdateProject(p.id,'scope',v)} /></div></td>
-                            <td className="px-4 py-4 align-top"><div className="text-[11px] font-medium text-slate-700 bg-amber-50 p-3 rounded-lg border border-amber-200 h-full min-h-[60px] leading-relaxed shadow-inner"><EditableCell type="textarea" value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} placeholder="Notes / Blocker" /></div></td>
+                            <td className="px-4 py-4 align-top">
+                                <div onClick={() => navigateToProject(p.id)} className="font-black text-sm text-slate-800 cursor-pointer hover:text-blue-600 hover:underline transition-colors" title="Open Project Workspace">{p.name}</div>
+                                <div className="text-[9px] font-black uppercase mt-1.5 bg-blue-100 text-blue-800 inline-block px-2 py-0.5 rounded border border-blue-200 tracking-widest">{getStateLabel(p.lifecycleState)}</div>
+                            </td>
+                            <td className="px-4 py-4 align-top"><div className="font-bold text-slate-700 flex items-center bg-slate-100 px-2 py-1 rounded w-max border border-slate-200"><i className="fas fa-globe-americas mr-1.5 text-slate-400"></i>{p.country || 'TBD'}</div></td>
+                            <td className="px-4 py-4 align-top">
+                                <div className="mb-2">{getHealthBadge(p.health)}</div>
+                                <div className="flex items-center gap-2" title="Auto-calculated from Execution WBS">
+                                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className={`h-full transition-all ${p.health==='Green'?'bg-emerald-500':p.health==='Red'?'bg-rose-500':'bg-amber-500'}`} style={{width: `${parseInt(p.progress)||0}%`}}></div></div>
+                                    <span className="text-[10px] font-black">{p.progress || '0%'}</span>
+                                </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                                <div className="font-black text-sm bg-emerald-50 text-emerald-800 border border-emerald-200 rounded px-2 py-1 w-max shadow-sm">${p.mrr || 0}</div>
+                                <div className="text-[9px] font-bold uppercase mt-2 text-slate-500 tracking-wider">{p.complexity || 'Medium'}</div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                                <div className="flex flex-col gap-1.5 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                    <div className="flex items-center justify-between border-b border-slate-200 pb-1.5"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-flag-checkered text-blue-500 mr-1.5"></i> Start:</span> <span className="font-mono font-bold">{formatShortDate(p.kickoff)}</span></div>
+                                    <div className="flex items-center justify-between pt-1"><span className="font-bold text-slate-500 uppercase tracking-wider"><i className="fas fa-rocket text-emerald-500 mr-1.5"></i> Live:</span> <span className="font-mono font-black text-emerald-700">{formatShortDate(p.date)}</span></div>
+                                </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                                <div className="font-black text-blue-700 mb-1.5 truncate">{p.sa || 'TBD'}</div>
+                                <div className="text-[10px] font-bold text-slate-600 bg-slate-100 p-1.5 rounded border border-slate-200 truncate">Partner: {p.partner || 'TBD'}</div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                                <div className="text-[10px] font-bold text-slate-700 bg-purple-50 p-2 rounded-lg border border-purple-100 leading-relaxed max-h-20 overflow-y-auto custom-scrollbar">{p.scope || p.discoveryNotes || 'No scope provided.'}</div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                                {/* 🚨 ONLY BLOCKERS ARE EDITABLE IN THE PIPELINE */}
+                                <div className="text-[11px] font-medium text-slate-700 bg-amber-50 p-3 rounded-lg border border-amber-200 h-full min-h-[60px] leading-relaxed shadow-inner hover:border-blue-400 transition-colors">
+                                    <EditableCell type="textarea" value={p.blocker} onSave={v=>handleUpdateProject(p.id,'blocker',v)} placeholder="Log escalations or blockers..." />
+                                </div>
+                            </td>
                             <td className="px-4 py-4 align-middle text-center">
-                                {/* 🚨 FIX: REMOVED OPACITY CLASSES. BUTTON IS PERMANENTLY VISIBLE */}
                                 <button 
                                     onClick={() => setProjectToDelete(p.id)} 
                                     className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all p-2 rounded shadow-sm border border-slate-200 hover:border-rose-200 bg-white"
@@ -98,7 +128,6 @@ export default function MasterPipeline() {
                 </div>
             </div>
 
-            {/* 🚨 RENDER THE MODAL IF ACTIVE */}
             {projectToDelete && (
                 <TwoFactorModal 
                     actionName={`Delete Project: ${targetProjectName}`} 
