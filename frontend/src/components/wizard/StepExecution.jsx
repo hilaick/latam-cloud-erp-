@@ -8,7 +8,19 @@ export default function StepExecution({ project, onUpdateProject }) {
     const runbook = project.runbook || [];
 
     const handlePlanUpdate = (taskId, val) => {
-        onUpdateProject(project.id, 'migrationPlan', plan.map(t => String(t.id) === String(taskId) ? {...t, prog: val} : t));
+        const newPlan = plan.map(t => String(t.id) === String(taskId) ? {...t, prog: val} : t);
+        
+        let updatePayload = { migrationPlan: newPlan };
+        
+        // 🚨 AUTO-CALCULATE OVERALL PROGRESS
+        const childTasks = newPlan.filter(t => !t.isParent);
+        if (childTasks.length > 0) {
+            let totalPercent = 0;
+            childTasks.forEach(t => totalPercent += parseInt(t.prog || '0'));
+            updatePayload.progress = Math.round(totalPercent / childTasks.length) + '%';
+        }
+        
+        onUpdateProject(project.id, updatePayload);
     };
 
     const handleRunbookUpdate = (id, val) => {
@@ -25,10 +37,6 @@ export default function StepExecution({ project, onUpdateProject }) {
         
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            if (!token) {
-                throw new Error("Authentication required. Please log in again.");
-            }
-
             const res = await fetch('/api/deploy/landing_zone', { 
                 method: 'POST', 
                 headers: {
@@ -37,10 +45,6 @@ export default function StepExecution({ project, onUpdateProject }) {
                 }, 
                 body: JSON.stringify({ id: project.id }) 
             });
-            
-            if (res.status === 401) {
-                throw new Error("Authentication failed. Please log in again.");
-            }
             
             const data = await res.json();
             
@@ -109,7 +113,7 @@ export default function StepExecution({ project, onUpdateProject }) {
                                                 </td>
                                                 <td className="p-3">
                                                     {rb ? (
-<div className="flex gap-2 items-center bg-slate-50 p-1.5 rounded border border-slate-200">
+                                                        <div className="flex gap-2 items-center bg-slate-50 p-1.5 rounded border border-slate-200">
                                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Est: {rb.estHours}h | Act:</span>
                                                             <input type="number" step="0.5" disabled={t.prog!=='100%'} value={rb.actualHours||''} onChange={e=>handleRunbookUpdate(rb.id, e.target.value)} className="w-16 border border-slate-300 p-1 rounded text-xs font-black disabled:bg-slate-200 outline-none focus:border-emerald-500" placeholder="0.0"/>
                                                         </div>
@@ -149,7 +153,7 @@ export default function StepExecution({ project, onUpdateProject }) {
                             {apiState.loading && <span className="text-emerald-400 animate-pulse">Connection Active...</span>}
                         </div>
                         <div className={`mt-8 whitespace-pre-wrap ${apiState.error ? 'text-rose-400' : 'text-emerald-400'}`}>
-{apiState.logs || "// Terminal Output\n// Awaiting Execution Commands..."}
+                            {apiState.logs || "// Terminal Output\n// Awaiting Execution Commands..."}
                         </div>
                     </div>
                 </div>
