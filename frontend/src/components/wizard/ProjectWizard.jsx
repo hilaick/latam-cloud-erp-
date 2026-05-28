@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import StepARB from './StepARB';
 import StepArchitecture from './StepArchitecture';
@@ -8,16 +8,16 @@ import StepPostLive from './StepPostLive';
 
 export default function ProjectWizard() {
     const { projects, activeProjectId, handleUpdateProject } = useContext(ERPContext);
+    const [editingProject, setEditingProject] = useState(null);
+    
     const project = projects.find(p => String(p.id) === String(activeProjectId));
 
     if (!project) {
         return <div className="p-12 text-center text-slate-500 font-bold bg-white rounded-2xl border border-slate-200 mt-8 shadow-sm">Please select a project from the Pipeline or Radar.</div>;
     }
 
-    // 🚨 DETECT POC
     const isPoC = project.project_type === 'poc';
 
-    // 🚨 DYNAMIC STAGES (PoCs skip Post-Live Governance)
     let stages = [
         { id: '1_arb', name: '1. ARB Intake', icon: 'fa-door-open' },
         { id: '2_architecture', name: '2. Architecture', icon: 'fa-project-diagram' },
@@ -32,13 +32,11 @@ export default function ProjectWizard() {
 
     const handlePromote = () => {
         const currentIndex = stages.findIndex(s => s.id === project.lifecycleState);
-        // Because stages is dynamically filtered, stages.length handles both standard (5) and PoC (4) perfectly!
         if (currentIndex >= 0 && currentIndex < stages.length - 1) {
             const nextState = stages[currentIndex + 1].id;
             handleUpdateProject(project.id, 'lifecycleState', nextState);
             window.scrollTo({ top: 0, behavior: 'smooth' }); 
         } else if (currentIndex === stages.length - 1) {
-            // Ultimate closure for the final stage (Execution for PoCs, Post-Live for Standard)
             handleUpdateProject(project.id, 'lifecycleState', '6_completed');
             alert("Project Closed Successfully!");
         }
@@ -56,9 +54,8 @@ export default function ProjectWizard() {
     };
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in">
+        <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in relative">
             
-            {/* 🚨 NEW: THE AMBER BANNER FOR POCs */}
             {isPoC && (
                 <div className="bg-amber-100 border border-amber-300 text-amber-800 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center shadow-sm animate-fade-in">
                     <i className="fas fa-bolt mr-3 text-amber-600 text-lg"></i> 
@@ -69,12 +66,21 @@ export default function ProjectWizard() {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center group">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-800">{project.name}</h2>
-                    <div className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-bold">SA: {project.sa} | Country: {project.country}</div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center">
+                        {project.name}
+                        <button 
+                            onClick={() => setEditingProject({...project})} 
+                            className="ml-4 text-sm text-slate-300 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100" 
+                            title="Edit Core Project Context"
+                        >
+                            <i className="fas fa-edit"></i>
+                        </button>
+                    </h2>
+                    <div className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-bold">SA: {project.sa || 'TBD'} | Country: {project.country || 'TBD'}</div>
                 </div>
-                <div className="font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-lg shadow-sm">${project.mrr}</div>
+                <div className="font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-lg shadow-sm">${project.mrr || 0}</div>
             </div>
 
             <div className="flex gap-2 bg-slate-200 p-1.5 rounded-xl overflow-x-auto shadow-inner">
@@ -86,6 +92,53 @@ export default function ProjectWizard() {
             </div>
 
             {renderStage()}
+
+            {/* 🚨 THE DEEP EDIT MODAL (Single Source of Truth) */}
+            {editingProject && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
+                        <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white">
+                            <h3 className="font-black text-xl text-blue-400"><i className="fas fa-clipboard-list mr-3"></i> Pre-Sales Context / Core Settings</h3>
+                            <button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="p-8 overflow-y-auto bg-slate-50 space-y-8">
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Project Foundation</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                                    <div className="md:col-span-2"><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label><input type="text" value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div className="md:col-span-2"><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Country</label><input type="text" value={editingProject.country || ''} onChange={e=>setEditingProject({...editingProject, country: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Health</label>
+                                        <select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white">
+                                            <option>Green</option><option>Yellow</option><option>Red</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> Commercials & Timelines</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kickoff / Start Date</label><input type="date" value={editingProject.kickoff || ''} onChange={e=>setEditingProject({...editingProject, kickoff: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Go-Live Date</label><input type="date" value={editingProject.date || ''} onChange={e=>setEditingProject({...editingProject, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Complexity</label><select value={editingProject.complexity || 'Medium'} onChange={e=>setEditingProject({...editingProject, complexity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white"><option>Low</option><option>Medium</option><option>High</option><option>Ultra-High</option></select></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target MRR (USD)</label><input type="number" value={editingProject.mrr || ''} onChange={e=>setEditingProject({...editingProject, mrr: Number(e.target.value)})} className="w-full p-2 border border-emerald-300 rounded bg-emerald-50 text-emerald-900 focus:border-emerald-500 outline-none text-sm font-black" /></div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Scope / Discovery Notes</label><textarea rows="3" value={editingProject.scope || editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, scope: e.target.value, discoveryNotes: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-medium leading-relaxed"></textarea></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
+                            <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                            <button onClick={()=>{ handleUpdateProject(editingProject.id, editingProject); setEditingProject(null); }} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Context</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
