@@ -12,7 +12,7 @@ export default function TopBar({ onLogout }) {
     const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
-        <div className="bg-white border-b border-slate-200 px-3 md:px-6 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
+        <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
                 <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-inner shrink-0">
                     <i className="fas fa-building text-sm md:text-base"></i>
@@ -25,7 +25,12 @@ export default function TopBar({ onLogout }) {
                         className="bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none font-black text-xs md:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[250px] truncate"
                     >
                         <option value="none">-- Global View --</option>
-                        {activeProjects.map(p => (<option key={p.id} value={p.id}>{p.name} {p.country ? `(${p.country})` : ''}</option>))}
+                        {/* 🚨 UPDATED: Now shows Customer Name - Project Name */}
+                        {activeProjects.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.customerName || p.name.split('-')[0] || 'No Account'} - {p.name}
+                            </option>
+                        ))}
                     </select>
                 </div>
             </div>
