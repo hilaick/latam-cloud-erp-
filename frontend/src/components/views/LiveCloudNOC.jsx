@@ -23,12 +23,26 @@ export default function LiveCloudNOC() {
 
         setIsLoading(true);
         try {
+            // Get JWT token from localStorage
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) {
+                throw new Error("Authentication required. Please log in again.");
+            }
+
             const res = await fetch('/api/cloud/inventory', { 
                 method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }, 
                 // We securely pass the vaulted keys
                 body: JSON.stringify({ ak: activeCustomer.ak, sk: activeCustomer.sk, projectId, region: activeCustomer.region || 'la-south-2' }) 
             });
+            
+            if (res.status === 401) {
+                throw new Error("Authentication failed. Please log in again.");
+            }
+            
             const data = await res.json();
             if (data.success) {
                 setInventory(data.inventory);
@@ -36,7 +50,7 @@ export default function LiveCloudNOC() {
                 alert("API Error: " + data.error);
             }
         } catch (err) { 
-            alert("Network Connection Error: Is the Flask backend running?"); 
+            alert("Error: " + err.message); 
         } finally { 
             setIsLoading(false); 
         }

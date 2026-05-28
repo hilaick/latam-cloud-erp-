@@ -1,31 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 
 export default function MgCReconciliationView({ activeProject, onUpdateProject }) {
     const [isScanning, setIsScanning] = useState(false);
+    
+    // 🚨 We need the Context to look up the Customer's ID so the backend can fetch their Vault keys
+    const { customers } = useContext(ERPContext);
 
     // QUOTED (From Sales Architect Excel)
     const quotedCompute = activeProject?.blueprintData?.topology?.compute?.length || 0;
     const quotedDb = activeProject?.blueprintData?.topology?.database?.length || 0;
-    const quotedStorage = parseFloat(activeProject?.blueprintData?.metadata?.estimated_monthly_cost || 0); // Using cost as proxy if size isn't mapped
 
     // DISCOVERED (From Live MgC API)
-    // If we haven't scanned yet, default to null.
     const discoveredCompute = activeProject?.mgcData?.compute || null;
     const discoveredDb = activeProject?.mgcData?.database || null;
 
-    const runMgCDiscovery = () => {
+    const runMgCDiscovery = async () => {
         setIsScanning(true);
-        // MOCK API CALL: In reality, this hits the backend, which looks up the Customer's AK/SK in Postgres, 
-        // triggers MgC, and returns the JSON. 
-        setTimeout(() => {
-            const mockDiscoveredData = {
-                compute: quotedCompute + 4, // Found 4 unquoted rogue servers
-                database: quotedDb + 1,     // Found 1 unquoted dev database
-            };
-            onUpdateProject(activeProject.id, 'mgcData', mockDiscoveredData);
+        
+        // 1. Find the customer profile linked to this project
+        const custName = (activeProject?.customerName || activeProject?.name.split('-')[0] || '').trim().toLowerCase();
+        const customer = customers.find(c => c.name.toLowerCase() === custName);
+
+        if (!customer) {
+            alert("No matching Customer Profile found. Please ensure the customer exists in the Customer Directory so we can access their AK/SK Vault.");
             setIsScanning(false);
-            alert("MgC Discovery Complete. Scope differences detected.");
-        }, 2500);
+            return;
+        }
+
+        try {
+            // 2. Trigger the Real Python Backend Discovery Route
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) {
+                alert("Authentication required. Please log in again.");
+                setIsScanning(false);
+                return;
+            }
+
+            const res = await fetch('/api/cloud/inventory', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    customer_id: customer.id,
+                    region: customer.region || 'la-south-2'
+                })
+            });
+
+            if (res.status === 401) {
+                throw new Error("Authentication failed. Please log in again.");
+            }
+
+            const data = await res.json();
+
+            if (data.success) {
+                // 3. Process the live Huawei Cloud data
+                const inv = data.inventory;
+                const liveData = {
+                    compute: inv.compute ? inv.compute.length : 0,
+                    database: inv.databases ? inv.databases.length : 0,
+                    raw_inventory: inv // We save the raw data in case we want to show a detailed table later
+                };
+                
+                onUpdateProject(activeProject.id, 'mgcData', liveData);
+                alert("MgC Discovery Complete! Live environment scanned successfully.");
+            } else {
+                alert(`API Discovery Failed: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network Connection Error: ${err.message}`);
+        } finally {
+            setIsScanning(false);
+        }
     };
 
     const hasScanned = discoveredCompute !== null;
@@ -75,7 +123,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                     </div>
                                 </div>
                             </div>
-
+                            
                             {/* Database Card */}
                             <div className={`p-6 rounded-2xl border-2 ${dbDiff > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
                                 <h4 className="font-black text-sm uppercase tracking-widest text-slate-700 mb-4 border-b border-slate-200/50 pb-2"><i className="fas fa-database mr-2"></i> Databases</h4>
@@ -89,8 +137,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                 </div>
                             </div>
 
-                             {/* Unmanaged Services */}
-                             <div className="p-6 rounded-2xl border-2 bg-slate-50 border-slate-200 opacity-60">
+                            {/* Unmanaged Services */}
+                            <div className="p-6 rounded-2xl border-2 bg-slate-50 border-slate-200 opacity-60">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-slate-700 mb-4 border-b border-slate-200 pb-2"><i className="fas fa-network-wired mr-2"></i> Network / Subnets</h4>
                                 <div className="text-center pt-4 text-xs font-bold text-slate-500">
                                     Network architectures are mapped visually via the Topology Mapper, not via MgC volume counts.

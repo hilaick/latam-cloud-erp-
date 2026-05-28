@@ -21,14 +21,27 @@ export default function StepExecution({ project, onUpdateProject }) {
 
     const triggerLandingZone = async () => {
         if(!confirm(`Deploy Landing Zone to Huawei Cloud for ${project.name}?`)) return;
-        setApiState({ loading: true, logs: "Parsing Blueprint...\nAuthenticating with Huawei Cloud API...\nPreparing Terraform state...", error: false });
+        setApiState({ loading: true, logs: "Parsing Blueprint...\\nAuthenticating with Huawei Cloud API...\\nPreparing Terraform state...", error: false });
         
         try {
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) {
+                throw new Error("Authentication required. Please log in again.");
+            }
+
             const res = await fetch('/api/deploy/landing_zone', { 
                 method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }, 
                 body: JSON.stringify({ id: project.id }) 
             });
+            
+            if (res.status === 401) {
+                throw new Error("Authentication failed. Please log in again.");
+            }
+            
             const data = await res.json();
             
             if (data.success) {

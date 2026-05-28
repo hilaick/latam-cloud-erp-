@@ -1,26 +1,95 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function Sidebar() {
     const { activePhase, activeProjectId, setActivePhase, setActiveProjectId } = useContext(ERPContext);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [showCurrentBadge, setShowCurrentBadge] = useState(true);
+    const [isScrolling, setIsScrolling] = useState(false);
+    const [scrollTimeout, setScrollTimeout] = useState(null);
     
     const navToPhase = (phase) => {
         setActivePhase(phase);
         setActiveProjectId('none');
+        setMobileMenuOpen(false); // Close menu immediately on selection
+        
+        // Hide current badge temporarily, show again after delay
+        setShowCurrentBadge(false);
+        setTimeout(() => setShowCurrentBadge(true), 3000);
     };
 
     const navItems = [
-        { id: 'home', icon: 'fa-chart-pie', label: 'Dash' },
-        { id: 'pipeline', icon: 'fa-list-alt', label: 'Pipeline' },
-        { id: 'radar', icon: 'fa-satellite-dish', label: 'Radar' },
-        { id: 'master_hub', icon: 'fa-chess-board', label: 'Hub' },
-        { id: 'map', icon: 'fa-globe-americas', label: 'Map' },
-        { id: 'crm', icon: 'fa-building', label: 'CRM' },
-        { id: 'schedule', icon: 'fa-calendar-alt', label: 'Schedule' },
-        { id: 'process', icon: 'fa-route', label: 'Process' },
-        { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks' },
-        { id: 'migration_monitor', icon: 'fa-tv', label: 'NOC' },
+        { id: 'home', icon: 'fa-chart-pie', label: 'Dashboard', mobileLabel: 'Dash' },
+        { id: 'pipeline', icon: 'fa-list-alt', label: 'Pipeline', mobileLabel: 'Pipeline' },
+        { id: 'radar', icon: 'fa-satellite-dish', label: 'Pre-Sales Radar', mobileLabel: 'Radar' },
+        { id: 'master_hub', icon: 'fa-chess-board', label: 'Master Hub', mobileLabel: 'Hub' },
+        { id: 'map', icon: 'fa-globe-americas', label: 'Regional Map', mobileLabel: 'Map' },
+        { id: 'crm', icon: 'fa-building', label: 'CRM', mobileLabel: 'CRM' },
+        { id: 'schedule', icon: 'fa-calendar-alt', label: 'Schedule', mobileLabel: 'Schedule' },
+        { id: 'process', icon: 'fa-route', label: 'Process', mobileLabel: 'Process' },
+        { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
+        { id: 'migration_monitor', icon: 'fa-tv', label: 'Live NOC', mobileLabel: 'NOC' },
     ];
+
+    // Get current active item for mobile FAB
+    const activeItem = navItems.find(item => item.id === activePhase && activeProjectId === 'none') || navItems[0];
+
+    // Auto-close menu when clicking outside (for overlay)
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (mobileMenuOpen && !event.target.closest('.mobile-menu-container')) {
+                setMobileMenuOpen(false);
+            }
+        };
+        
+        if (mobileMenuOpen) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [mobileMenuOpen]);
+
+    // Hide FAB when scrolling (mobile only)
+    useEffect(() => {
+        // Only run on mobile
+        const isMobile = window.innerWidth < 1024; // lg breakpoint
+        
+        if (!isMobile) return; // Skip on desktop
+        
+        const handleScroll = () => {
+            setIsScrolling(true);
+            
+            // Clear any existing timeout
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+            
+            // Set timeout to show FAB again after scrolling stops
+            const timeout = setTimeout(() => {
+                setIsScrolling(false);
+            }, 500); // 500ms delay after scrolling stops
+            
+            setScrollTimeout(timeout);
+        };
+        
+        // Add scroll listener to main content area
+        const mainContent = document.querySelector('main');
+        if (mainContent) {
+            mainContent.addEventListener('scroll', handleScroll);
+        }
+        
+        // Also listen to window scroll for safety
+        window.addEventListener('scroll', handleScroll);
+        
+        return () => {
+            if (mainContent) {
+                mainContent.removeEventListener('scroll', handleScroll);
+            }
+            window.removeEventListener('scroll', handleScroll);
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+        };
+    }, [scrollTimeout]);
 
     return (
         <>
@@ -56,25 +125,162 @@ export default function Sidebar() {
                 </div>
             </div>
 
-            {/* 🚨 MOBILE BOTTOM NAVIGATION (Spotify Style) */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 shadow-[0_-10px_40px_rgba(0,0,0,0.3)] safe-area-pb">
-                {/* Hides scrollbar but allows horizontal swipe */}
-                <div className="flex overflow-x-auto items-center py-2 px-2 gap-1 snap-x [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    {navItems.map(item => {
-                        const isActive = activePhase === item.id && activeProjectId === 'none';
-                        return (
-                            <button
-                                key={item.id}
-                                onClick={() => navToPhase(item.id)}
-                                className={`flex flex-col items-center justify-center min-w-[72px] p-2 rounded-xl transition-all duration-300 snap-center ${
-                                    isActive ? 'text-white bg-white/10 shadow-inner scale-105' : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                            >
-                                <i className={`fas ${item.icon} text-xl mb-1.5 ${isActive ? 'text-blue-400' : ''}`}></i>
-                                <span className={`text-[9px] font-bold tracking-wide ${isActive ? 'text-white' : ''}`}>{item.label}</span>
+            {/* 🚨 MOBILE FLOATING MENU (FAB Pattern) */}
+            <div className={`lg:hidden mobile-menu-container fixed bottom-6 right-6 z-40 transition-all duration-300 ${isScrolling ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0'}`}>
+                {/* Floating Action Button - Smaller on mobile (12x12 instead of 16x16) */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setMobileMenuOpen(!mobileMenuOpen);
+                    }}
+                    onMouseDown={(e) => {
+                        // Add press effect
+                        e.currentTarget.style.transform = 'scale(0.95)';
+                    }}
+                    onMouseUp={(e) => {
+                        e.currentTarget.style.transform = '';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = '';
+                    }}
+                    onTouchStart={(e) => {
+                        // Add touch press effect
+                        e.currentTarget.style.transform = 'scale(0.95)';
+                    }}
+                    onTouchEnd={(e) => {
+                        e.currentTarget.style.transform = '';
+                    }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 ${mobileMenuOpen ? 'bg-gradient-to-br from-blue-600 to-blue-700 rotate-45 scale-110' : 'bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-md hover:from-slate-800/95 hover:to-slate-700/95 active:scale-95'}`}
+                    style={{
+                        boxShadow: mobileMenuOpen 
+                            ? '0 15px 50px rgba(37, 99, 235, 0.5), 0 0 0 4px rgba(37, 99, 235, 0.15), inset 0 2px 10px rgba(255, 255, 255, 0.2)' 
+                            : '0 15px 50px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.1), inset 0 -2px 10px rgba(0, 0, 0, 0.3)',
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                    }}
+                >
+                    {/* Only show icon, not label */}
+                    <i className={`fas ${mobileMenuOpen ? 'fa-times' : activeItem.icon} text-xl ${mobileMenuOpen ? 'text-white' : 'text-blue-300'}`}></i>
+                </button>
+
+                {/* Floating Menu Overlay (Appears when FAB is pressed) */}
+                {mobileMenuOpen && (
+                    <>
+                        {/* Backdrop overlay - closes menu when clicked outside */}
+                        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" onClick={() => setMobileMenuOpen(false)}></div>
+                        
+                        {/* Menu content */}
+                        <div className="absolute bottom-16 right-0 mb-4 bg-gradient-to-b from-slate-900/95 to-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/30 p-3 animate-slide-up-liquid min-w-[200px] z-50" style={{
+                            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+                        }}>
+                            {/* Current view indicator - only shown when menu is open */}
+                            <div className="px-3 py-2 mb-2 border-b border-slate-700/50">
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Current View</div>
+                                <div className="flex items-center gap-2">
+                                    <i className={`fas ${activeItem.icon} text-blue-400`}></i>
+                                    <span className="text-xs font-bold text-white">{activeItem.label}</span>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                                {navItems.map(item => {
+                                    const isActive = activePhase === item.id && activeProjectId === 'none';
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => navToPhase(item.id)}
+                                            onMouseDown={(e) => {
+                                                e.currentTarget.style.transform = 'scale(0.95)';
+                                                e.currentTarget.style.backgroundColor = isActive 
+                                                    ? 'rgba(37, 99, 235, 0.3)' 
+                                                    : 'rgba(255, 255, 255, 0.1)';
+                                            }}
+                                            onMouseUp={(e) => {
+                                                e.currentTarget.style.transform = '';
+                                                e.currentTarget.style.backgroundColor = '';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = '';
+                                                e.currentTarget.style.backgroundColor = '';
+                                            }}
+                                            onTouchStart={(e) => {
+                                                e.currentTarget.style.transform = 'scale(0.95)';
+                                                e.currentTarget.style.backgroundColor = isActive 
+                                                    ? 'rgba(37, 99, 235, 0.3)' 
+                                                    : 'rgba(255, 255, 255, 0.1)';
+                                            }}
+                                            onTouchEnd={(e) => {
+                                                e.currentTarget.style.transform = '';
+                                                e.currentTarget.style.backgroundColor = '';
+                                            }}
+                                            className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200 ${isActive ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'text-slate-300 hover:bg-slate-800/50 hover:text-white border border-transparent'}`}
+                                        >
+                                            <i className={`fas ${item.icon} text-lg mb-1`}></i>
+                                            <span className="text-[9px] font-bold uppercase tracking-wider">{item.mobileLabel || item.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* 🚨 DESKTOP HAMBURGER TOGGLE (New: Collapsible sidebar) */}
+            <div className="hidden lg:flex fixed top-4 left-4 z-50">
+                <button
+                    onClick={() => {
+                        const sidebar = document.querySelector('.desktop-sidebar');
+                        if (sidebar) {
+                            sidebar.classList.toggle('hidden');
+                        }
+                    }}
+                    className="w-10 h-10 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700 flex items-center justify-center text-white shadow-2xl hover:bg-slate-800 transition-colors"
+                >
+                    <i className="fas fa-bars"></i>
+                </button>
+            </div>
+
+            {/* 🚨 DESKTOP SIDEBAR WRAPPER (for toggling) */}
+            <div className="desktop-sidebar hidden lg:flex">
+                {/* Desktop sidebar content (same as above) */}
+                <div className="inset-y-0 left-0 z-50 bg-slate-900 text-white shadow-2xl flex-col w-64 shrink-0">
+                    <div className="p-5 flex justify-between items-center border-b border-slate-800 w-64 shrink-0">
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navToPhase('home')}>
+                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center border border-blue-400 shadow-lg shadow-blue-500/20"><i className="fas fa-cloud text-white text-lg"></i></div>
+                            <div><h1 className="text-base font-black text-white leading-tight">LATAM Cloud</h1><h2 className="text-[9px] text-blue-300 uppercase tracking-widest font-bold">Delivery ERP</h2></div>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                const sidebar = document.querySelector('.desktop-sidebar');
+                                if (sidebar) sidebar.classList.add('hidden');
+                            }}
+                            className="text-slate-400 hover:text-white"
+                        >
+                            <i className="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2 w-64 custom-scrollbar">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 mb-3">Global Overviews</p>
+                        
+                        {navItems.slice(0, 7).map(item => (
+                            <button key={item.id} onClick={() => navToPhase(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase === item.id && activeProjectId === 'none' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}>
+                                <i className={`fas ${item.icon} w-5 text-center`}></i> {item.label}
                             </button>
-                        );
-                    })}
+                        ))}
+                        
+                        <div className="pt-4 mt-4 border-t border-slate-800">
+                            {navItems.slice(7).map(item => (
+                                <button key={item.id} onClick={() => navToPhase(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase === item.id && activeProjectId === 'none' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}>
+                                    <i className={`fas ${item.icon} w-5 text-center`}></i> {item.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="p-4 border-t border-slate-800 w-64 shrink-0 text-center">
+                        <p className="text-[10px] font-mono tracking-widest uppercase text-slate-500">v2.0.0-Enterprise</p>
+                    </div>
                 </div>
             </div>
         </>

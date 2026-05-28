@@ -8,18 +8,31 @@ export default function RegionalMap() {
     const markersLayer = useRef(null);
 
     const countryCoords = {
-        'Mexico': [23.6345, -102.5528], 'Panama': [8.5379, -80.7821], 'Guatemala': [15.7834, -90.2307],
-        'Colombia': [4.5709, -74.2973], 'Chile': [-35.6751, -71.5429], 'Peru': [-9.1899, -75.0152],
-        'Argentina': [-38.4161, -63.6167], 'Brazil': [-14.2350, -51.9253], 'Costa Rica': [9.7489, -83.7534], 'Ecuador': [-1.8312, -78.1834]
+        'Mexico': [23.6345, -102.5528], 'Guatemala': [15.7834, -90.2307], 'Belize': [17.1899, -88.4976], 'El Salvador': [13.7942, -88.8965], 'Honduras': [15.1999, -86.2419], 'Nicaragua': [12.8654, -85.2072], 'Costa Rica': [9.7489, -83.7534], 'Panama': [8.5379, -80.7821],
+        'Colombia': [4.5709, -74.2973], 'Venezuela': [6.4238, -66.5897], 'Ecuador': [-1.8312, -78.1834], 'Peru': [-9.1899, -75.0152], 'Bolivia': [-16.2902, -63.5887], 'Chile': [-35.6751, -71.5429], 'Argentina': [-38.4161, -63.6167], 'Uruguay': [-32.5228, -55.7658], 'Paraguay': [-23.4425, -58.4438], 'Brazil': [-14.2350, -51.9253],
+        'Dominican Republic': [18.7357, -70.1627], 'Haiti': [18.9712, -72.2852], 'Cuba': [21.5218, -77.7812], 'Jamaica': [18.1096, -77.2975], 'Puerto Rico': [18.2208, -66.5901], 'Trinidad and Tobago': [10.6918, -61.2225], 'Bahamas': [25.0343, -77.3963], 'Barbados': [13.1939, -59.5432],
+        'Dominica': [15.4150, -61.3710], 'Grenada': [12.1165, -61.6790], 'Saint Lucia': [13.9094, -60.9789], 'Saint Vincent and the Grenadines': [12.9843, -61.2872], 'Antigua and Barbuda': [17.0608, -61.7964], 'Saint Kitts and Nevis': [17.3578, -62.7829],
+        'Guyana': [4.8604, -58.9302], 'Suriname': [3.9193, -56.0278], 'French Guiana': [3.9339, -53.1258], 'Guadeloupe': [16.2650, -61.5510], 'Martinique': [14.6415, -61.0242], 'Curaçao': [12.1696, -68.9900], 'Aruba': [12.5211, -69.9683], 'Bonaire': [12.1784, -68.2385], 'Sint Maarten': [18.0425, -63.0548],
+        'Saba': [17.6355, -63.2327], 'Sint Eustatius': [17.4890, -62.9736], 'Cayman Islands': [19.3133, -81.2546], 'Turks and Caicos Islands': [21.6940, -71.7979], 'British Virgin Islands': [18.4207, -64.6400], 'US Virgin Islands': [18.3358, -64.8963],
+        'Anguilla': [18.2206, -63.0686], 'Montserrat': [16.7425, -62.1874], 'Bermuda': [32.3078, -64.7505], 'Other / TBD': [0, 0]
     };
 
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
 
     const getBusinessUnit = (country) => {
-        const multiCountry = ['Panama', 'Guatemala', 'Costa Rica', 'El Salvador', 'Honduras', 'Nicaragua', 'Dominican Republic', 'Puerto Rico'];
-        if (country === 'Mexico') return 'Mexico Region';
-        if (multiCountry.includes(country)) return 'Multi-Country Region';
-        if (country === 'Brazil') return 'Brazil Region';
+        const mexicoRegion = ['Mexico'];
+        const multiCountryRegion = ['Guatemala', 'Belize', 'El Salvador', 'Honduras', 'Nicaragua', 'Costa Rica', 'Panama', 
+                                   'Dominican Republic', 'Haiti', 'Cuba', 'Jamaica', 'Puerto Rico', 'Trinidad and Tobago', 
+                                   'Bahamas', 'Barbados', 'Dominica', 'Grenada', 'Saint Lucia', 'Saint Vincent and the Grenadines', 
+                                   'Antigua and Barbuda', 'Saint Kitts and Nevis', 'Guyana', 'Suriname', 'French Guiana', 
+                                   'Guadeloupe', 'Martinique', 'Curaçao', 'Aruba', 'Bonaire', 'Sint Maarten', 'Saba', 
+                                   'Sint Eustatius', 'Cayman Islands', 'Turks and Caicos Islands', 'British Virgin Islands', 
+                                   'US Virgin Islands', 'Anguilla', 'Montserrat', 'Bermuda'];
+        const brazilRegion = ['Brazil'];
+        
+        if (mexicoRegion.includes(country)) return 'Mexico Region';
+        if (multiCountryRegion.includes(country)) return 'Multi-Country Region';
+        if (brazilRegion.includes(country)) return 'Brazil Region';
         return 'South America Region'; 
     };
 
