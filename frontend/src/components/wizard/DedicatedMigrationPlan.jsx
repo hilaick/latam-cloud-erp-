@@ -5,13 +5,26 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
     const handlePlanUpdate = (taskId, field, value) => {
         if(!project) return;
         const newPlan = (project.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
-        onUpdateProject(project.id, 'migrationPlan', newPlan);
+        
+        let updatePayload = { migrationPlan: newPlan };
+        
+        // 🚨 AUTO-CALCULATE OVERALL PROGRESS WHEN A TASK COMPLETES
+        if (field === 'prog') {
+            const childTasks = newPlan.filter(t => !t.isParent);
+            if (childTasks.length > 0) {
+                let totalPercent = 0;
+                childTasks.forEach(t => totalPercent += parseInt(t.prog || '0'));
+                updatePayload.progress = Math.round(totalPercent / childTasks.length) + '%';
+            }
+        }
+        
+        onUpdateProject(project.id, updatePayload);
     };
 
     const injectPlaybook = (playbookKey) => {
         if(!playbookKey || !customPlaybooks[playbookKey]) return;
         if(window.confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
-            onUpdateProject(project.id, 'migrationPlan', JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)));
+            onUpdateProject(project.id, { migrationPlan: JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)), progress: '0%' });
         }
     };
 
@@ -61,7 +74,7 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
                                     <td className="p-3">
                                         {!task.isParent && (
                                             <div className={`px-3 py-1.5 rounded-lg border-2 inline-flex items-center w-full max-w-[80px] shadow-sm ${task.prog==='100%'?'bg-emerald-50 border-emerald-200 text-emerald-800 font-black':task.prog==='0%'?'bg-white border-slate-200 text-slate-500':'bg-blue-50 border-blue-200 text-blue-800 font-black'}`}>
-                                                <EditableCell value={task.prog} onSave={v=>handlePlanUpdate(task.id, 'prog', v)} className="w-full text-center" />
+                                                <EditableCell type="select" placeholder="progress" value={task.prog} onSave={v=>handlePlanUpdate(task.id, 'prog', v)} className="w-full text-center" />
                                             </div>
                                         )}
                                     </td>
