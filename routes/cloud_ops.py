@@ -235,31 +235,49 @@ def get_live_inventory():
         return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
 
+# 🚨 SECURE SOURCE RESOURCES UPLOAD ENDPOINT
 @cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
 @jwt_required()
 def upload_source_resources():
+    """
+    Upload and parse Excel/CSV file containing source environment inventory
+    """
     try:
         if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+            return jsonify({"success": False, "error": "No file uploaded"}), 400
         
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'}), 400
-            
-        upload_dir = PROJECT_ROOT / 'uploads'
-        upload_dir.mkdir(exist_ok=True)
-        temp_path = upload_dir / secure_filename(file.filename)
-        file.save(str(temp_path))
+            return jsonify({"success": False, "error": "No file selected"}), 400
         
-        # Pass the file to your parser
-        result = parse_source_resources_excel(str(temp_path))
+        # Save the uploaded file safely
+        upload_dir = PROJECT_ROOT / 'uploads' / 'source_resources'
+        upload_dir.mkdir(parents=True, exist_ok=True)
         
-        # Clean up the temp file
-        temp_path.unlink(missing_ok=True)
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(file.filename or 'upload.xlsx')
+        file_path = upload_dir / filename
+        file.save(str(file_path))
         
+        # Parse the Excel or CSV file
+        result = parse_source_resources_excel(str(file_path))
+        
+        # Return parsed data
         if result.get("success"):
-            return jsonify(result)
+            return jsonify({
+                "success": True,
+                "filename": filename,
+                "resources": result.get("resources", {}),
+                "counts": result.get("counts", {}),
+                "message": f"Successfully parsed {filename}"
+            })
         else:
-            return jsonify(result), 500
+            # 🚨 CHANGED FROM 500 TO 400
+            # Now React will cleanly alert the error message without triggering a red console crash!
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "Failed to parse the file structure.")
+            }), 400
+            
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": f"Server error processing file: {str(e)}"}), 500
