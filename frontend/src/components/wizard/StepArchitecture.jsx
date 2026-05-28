@@ -23,7 +23,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='summary'?'bg-indigo-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Summary</button>
-                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. Live MgC Diff</button>
+                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. MgC Source Resources</button>
                 <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>2. Topology Mapper</button>
                 <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>3. ORA Profile</button>
             </div>
@@ -32,10 +32,10 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                 <div className="animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm">
-                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">Live MgC Sizing</h4><i className="fas fa-server text-blue-500"></i></div>
-                            <div className="text-xs text-blue-700 mb-4">Reconciliation against source APIs.</div>
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Source Resources</h4><i className="fas fa-server text-blue-500"></i></div>
+                            <div className="text-xs text-blue-700 mb-4">Automated discovery and resource import.</div>
                             <div className="text-xl font-black text-blue-800">{servers.length + databases.length} Total Nodes</div>
-                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View MgC Diff &gt;</button>
+                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View Resources &gt;</button>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Topology Mapped</h4><i className="fas fa-sitemap text-slate-500"></i></div>

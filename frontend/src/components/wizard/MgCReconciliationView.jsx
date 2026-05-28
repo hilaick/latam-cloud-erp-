@@ -85,26 +85,114 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                 <div className="flex justify-between items-center mb-8 border-b border-slate-200 pb-6">
                     <div>
-                        <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-search text-blue-600"></i> Live MgC Reconciliation</h3>
-                        <p className="text-xs text-slate-500 mt-1 font-medium">Verify the SA's Quotation against the actual infrastructure discovered in the source environment.</p>
+                        <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-search text-blue-600"></i> MgC Source Resources</h3>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">Discover and import source environment resources for migration planning.</p>
                     </div>
-                    <button 
-                        onClick={runMgCDiscovery} 
-                        disabled={isScanning}
-                        className="px-6 py-3 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95 disabled:opacity-50"
-                    >
-                        {isScanning ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning APIs...</> : <><i className="fas fa-radar mr-2"></i> Run Automated Discovery</>}
-                    </button>
                 </div>
 
-                {!hasScanned ? (
-                    <div className="p-12 border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50 text-center flex flex-col items-center">
-                        <i className="fas fa-user-secret text-4xl text-slate-400 mb-4"></i>
-                        <h4 className="font-black text-slate-700 text-lg mb-2">Awaiting Discovery</h4>
-                        <p className="text-sm text-slate-500 max-w-md">Click "Run Automated Discovery". The system will securely utilize the Customer's vaulted AK/SK to scan their current environment.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                    {/* Option 1: Automated Discovery */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
+                            <h4 className="font-black text-slate-800 text-lg flex items-center gap-2">
+                                <i className="fas fa-robot text-emerald-600"></i> Automated Discovery
+                            </h4>
+                            <button 
+                                onClick={runMgCDiscovery} 
+                                disabled={isScanning}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-md transition-transform active:scale-95 disabled:opacity-50"
+                            >
+                                {isScanning ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning...</> : <><i className="fas fa-radar mr-2"></i> Run Discovery</>}
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Servers</span>
+                                <span className="font-black text-slate-900">25</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Containers</span>
+                                <span className="font-black text-slate-900">0</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Middleware</span>
+                                <span className="font-black text-slate-900">0</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Databases</span>
+                                <span className="font-black text-slate-900">0</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Big Data</span>
+                                <span className="font-black text-slate-900">0</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-sm font-medium text-slate-700">Network</span>
+                                <span className="font-black text-slate-900">45</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-slate-700">Storage</span>
+                                <span className="font-black text-slate-900">1</span>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-6 text-xs text-slate-500">
+                            <p className="flex items-center gap-2"><i className="fas fa-info-circle"></i> Uses customer's vaulted AK/SK to scan Huawei Cloud APIs</p>
+                        </div>
                     </div>
-                ) : (
-                    <div className="space-y-6">
+
+                    {/* Option 2: Import Resource Data */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
+                            <h4 className="font-black text-slate-800 text-lg flex items-center gap-2">
+                                <i className="fas fa-file-import text-blue-600"></i> Import Resource Data
+                            </h4>
+                            <button 
+                                onClick={() => alert('Excel import functionality coming soon!')}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-md transition-transform active:scale-95"
+                            >
+                                <i className="fas fa-upload mr-2"></i> Upload Excel
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                        <i className="fas fa-file-excel text-blue-600"></i>
+                                    </div>
+                                    <div>
+                                        <h5 className="font-bold text-slate-800 text-sm">Source Resources-20260525142407.xlsx</h5>
+                                        <p className="text-xs text-slate-500">Uploaded just now</p>
+                                    </div>
+                                </div>
+                                <div className="text-xs text-slate-600">
+                                    <p className="mb-2">This Excel file contains the complete source environment inventory including:</p>
+                                    <ul className="list-disc pl-4 space-y-1">
+                                        <li>Server configurations and specifications</li>
+                                        <li>Network topology and VPC details</li>
+                                        <li>Storage volumes and performance metrics</li>
+                                        <li>Application dependencies and middleware</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div className="text-xs text-slate-500">
+                                <p className="flex items-center gap-2"><i className="fas fa-info-circle"></i> Upload Excel files with source environment inventory</p>
+                                <p className="flex items-center gap-2 mt-1"><i className="fas fa-sync-alt"></i> Data will be parsed and integrated with automated discovery results</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Existing discovery results section */}
+                {hasScanned && (
+                    <div className="mt-8 pt-8 border-t border-slate-200">
+                        <h4 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
+                            <i className="fas fa-chart-bar text-emerald-600"></i> Discovery Results
+                        </h4>
+                        
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex gap-3 items-start mb-6">
                             <i className="fas fa-info-circle text-blue-500 mt-0.5"></i>
                             <p className="text-xs text-blue-900 font-bold leading-relaxed">Discovery complete. The data below highlights discrepancies (Scope Creep) between the signed contract and the actual infrastructure. These deltas must be accounted for in Delivery Physics.</p>
@@ -145,6 +233,13 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                 </div>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {!hasScanned && (
+                    <div className="text-center py-12 text-slate-500">
+                        <i className="fas fa-cloud-upload-alt text-4xl mb-4 opacity-50"></i>
+                        <p className="text-sm font-medium">Run Automated Discovery or upload Excel data to see resource analysis.</p>
                     </div>
                 )}
             </div>
