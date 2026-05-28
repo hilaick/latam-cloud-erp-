@@ -130,45 +130,7 @@ def huawei_keys_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 🚨 NEW: SOURCE RESOURCES UPLOAD ENDPOINT
-@cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
-@jwt_required()
-def upload_source_resources():
-    """
-    Upload and parse Excel file containing source environment inventory
-    """
-    try:
-        if 'file' not in request.files:
-            return jsonify({"success": False, "error": "No file uploaded"}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"success": False, "error": "No file selected"}), 400
-        
-        # Save the uploaded file
-        upload_dir = PROJECT_ROOT / 'uploads' / 'source_resources'
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(file.filename or 'upload.xlsx')
-        file_path = upload_dir / filename
-        file.save(str(file_path))
-        
-        # Parse the Excel file
-        result = parse_source_resources_excel(str(file_path))
-        
-        # Return parsed data
-        return jsonify({
-            "success": True,
-            "filename": filename,
-            "resources": result["resources"],
-            "counts": result["counts"],
-            "raw_data": result.get("raw_data", {}),
-            "message": f"Successfully parsed {filename}"
-        })
-        
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+
 
 # 🚨 NEW: SECURE DISCOVERY ROUTE
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
