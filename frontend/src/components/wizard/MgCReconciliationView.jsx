@@ -3,17 +3,19 @@ import { ERPContext } from '../../context/ERPContext';
 
 export default function MgCReconciliationView({ activeProject, onUpdateProject }) {
     const [isScanning, setIsScanning] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
     
-    // 🚨 We need the Context to look up the Customer's ID so the backend can fetch their Vault keys
+    // We need the Context to look up the Customer's ID so the backend can fetch their Vault keys
     const { customers } = useContext(ERPContext);
 
     // QUOTED (From Sales Architect Excel)
     const quotedCompute = activeProject?.blueprintData?.topology?.compute?.length || 0;
     const quotedDb = activeProject?.blueprintData?.topology?.database?.length || 0;
 
-    // DISCOVERED (From Live MgC API)
+    // DISCOVERED (From Live MgC API or Excel Import)
     const discoveredCompute = activeProject?.mgcData?.compute || null;
     const discoveredDb = activeProject?.mgcData?.database || null;
+    const mgcData = activeProject?.mgcData;
 
     const runMgCDiscovery = async () => {
         setIsScanning(true);
@@ -59,9 +61,10 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 // 3. Process the live Huawei Cloud data
                 const inv = data.inventory;
                 const liveData = {
+                    source: 'api',
                     compute: inv.compute ? inv.compute.length : 0,
                     database: inv.databases ? inv.databases.length : 0,
-                    raw_inventory: inv // We save the raw data in case we want to show a detailed table later
+                    raw_inventory: inv
                 };
                 
                 onUpdateProject(activeProject.id, 'mgcData', liveData);
@@ -77,23 +80,51 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     };
 
     const handleExcelUpload = () => {
-        // Create file input element
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xls,.csv';
         
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             
-            // Show upload confirmation
-            alert(`Excel file "${file.name}" selected for import. Processing will begin soon.`);
-            
-            // TODO: Implement actual Excel upload and parsing
-            // For now, just show a success message
-            setTimeout(() => {
-                alert(`Successfully imported ${file.name}! Resource data is now available for analysis.`);
-            }, 1000);
+            setIsImporting(true);
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const token = localStorage.getItem('erp_jwt_token');
+                if (!token) throw new Error("Authentication required. Please log in again.");
+
+                const res = await fetch('/api/source-resources/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                
+                if (res.status === 401) throw new Error("Authentication failed.");
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    const liveData = {
+                        source: 'excel',
+                        compute: data.counts?.servers || 0,
+                        database: data.counts?.databases || 0,
+                        counts: data.counts,
+                        raw_inventory: data.resources
+                    };
+                    
+                    onUpdateProject(activeProject.id, 'mgcData', liveData);
+                    alert(`Successfully imported ${file.name}!`);
+                } else {
+                    alert(`Upload Failed: ${data.error}`);
+                }
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                setIsImporting(false);
+            }
         };
         
         input.click();
@@ -102,6 +133,92 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const hasScanned = discoveredCompute !== null;
     const computeDiff = hasScanned ? (discoveredCompute - quotedCompute) : 0;
     const dbDiff = hasScanned ? (discoveredDb - quotedDb) : 0;
+
+    const renderExpandedList = () => {
+        if (!mgcData || !mgcData.raw_inventory) return null;
+
+        if (mgcData.source === 'excel') {
+            const res = mgcData.raw_inventory;
+            return (
+                <div className="mt-8 pt-8 border-t border-slate-200 animate-fade-in">
+                    <h4 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
+                        <i className="fas fa-list text-blue-600"></i> Expanded Resource List (Imported)
+                    </h4>
+                    
+                    {['servers', 'containers', 'middleware', 'databases', 'big_data', 'network', 'storage'].map(category => {
+                        const items = res[category] || [];
+                        if (items.length === 0) return null;
+                        return (
+                            <div key={category} className="mb-6">
+                                <h5 className="font-bold text-sm uppercase tracking-widest text-slate-600 mb-3 capitalize">{category.replace('_', ' ')} ({items.length})</h5>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden custom-scrollbar overflow-x-auto shadow-sm">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase">
+                                            <tr>
+                                                <th className="p-3 w-64">Name</th>
+                                                <th className="p-3">Specifications</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {items.map((item, idx) => (
+                                                <tr key={idx} className="hover:bg-white transition-colors">
+                                                    <td className="p-3 font-bold text-slate-800">{item.name}</td>
+                                                    <td className="p-3 font-mono text-[10px] text-slate-600">
+                                                        {Object.entries(item.specs || {}).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        } else {
+            const res = mgcData.raw_inventory;
+            return (
+                <div className="mt-8 pt-8 border-t border-slate-200 animate-fade-in">
+                    <h4 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
+                        <i className="fas fa-list text-emerald-600"></i> Expanded Resource List (Live Scan)
+                    </h4>
+                    
+                    {['compute', 'databases', 'network'].map(category => {
+                        const items = res[category] || [];
+                        if (items.length === 0) return null;
+                        return (
+                            <div key={category} className="mb-6">
+                                <h5 className="font-bold text-sm uppercase tracking-widest text-slate-600 mb-3 capitalize">{category} ({items.length})</h5>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden custom-scrollbar overflow-x-auto shadow-sm">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase">
+                                            <tr>
+                                                <th className="p-3 w-64">Name</th>
+                                                <th className="p-3">Details</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {items.map((item, idx) => (
+                                                <tr key={idx} className="hover:bg-white transition-colors">
+                                                    <td className="p-3 font-bold text-slate-800">{item.name}</td>
+                                                    <td className="p-3 font-mono text-[10px] text-slate-600">
+                                                        {category === 'compute' && `Flavor: ${item.flavor}, vCPUs: ${item.vcpus}, RAM: ${item.ram_gb}GB, OS: ${item.os_type}, Status: ${item.status}`}
+                                                        {category === 'databases' && `Engine: ${item.engine} ${item.version}, Vol: ${item.volume_gb}GB, Status: ${item.status}`}
+                                                        {category === 'network' && `CIDR: ${item.cidr}, Status: ${item.status}`}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+    };
 
     return (
         <div className="max-w-[1400px] mx-auto pb-12 animate-fade-in">
@@ -122,7 +239,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             </h4>
                             <button 
                                 onClick={runMgCDiscovery} 
-                                disabled={isScanning}
+                                disabled={isScanning || isImporting}
                                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-md transition-transform active:scale-95 disabled:opacity-50"
                             >
                                 {isScanning ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning...</> : <><i className="fas fa-radar mr-2"></i> Run Discovery</>}
@@ -166,9 +283,10 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             </h4>
                             <button 
                                 onClick={handleExcelUpload}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-md transition-transform active:scale-95"
+                                disabled={isScanning || isImporting}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-md transition-transform active:scale-95 disabled:opacity-50"
                             >
-                                <i className="fas fa-upload mr-2"></i> Upload Excel
+                                {isImporting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Importing...</> : <><i className="fas fa-upload mr-2"></i> Upload Excel</>}
                             </button>
                         </div>
                         
@@ -202,12 +320,27 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     </div>
                 </div>
 
-                {/* Existing discovery results section */}
+                {/* Discovery Results Section */}
                 {hasScanned && (
-                    <div className="mt-8 pt-8 border-t border-slate-200">
+                    <div className="mt-8 pt-8 border-t border-slate-200 animate-fade-in">
                         <h4 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
-                            <i className="fas fa-chart-bar text-emerald-600"></i> Discovery Results
+                            <i className="fas fa-chart-bar text-emerald-600"></i> Discovery Results {mgcData?.source === 'excel' ? '(Imported via Excel)' : '(Live API Scan)'}
                         </h4>
+
+                        {mgcData?.source === 'excel' && (
+                            <div className="mb-6 p-6 rounded-2xl border-2 bg-blue-50 border-blue-200 shadow-inner">
+                                <h4 className="font-black text-sm uppercase tracking-widest text-blue-900 mb-4 border-b border-blue-200/50 pb-2"><i className="fas fa-layer-group mr-2"></i> Imported Resource Counts</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Servers</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.servers || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Containers</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.containers || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Middleware</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.middleware || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Databases</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.databases || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Big Data</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.big_data || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Network</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.network || 0}</div></div>
+                                    <div className="bg-white p-3 rounded-xl shadow-sm text-center"><div className="text-[10px] uppercase font-bold text-slate-500">Storage</div><div className="text-xl font-black text-blue-700">{mgcData.counts?.storage || 0}</div></div>
+                                </div>
+                            </div>
+                        )}
                         
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex gap-3 items-start mb-6">
                             <i className="fas fa-info-circle text-blue-500 mt-0.5"></i>
@@ -249,6 +382,9 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                 </div>
                             </div>
                         </div>
+
+                        {/* Renders the dynamic Expanded List below */}
+                        {renderExpandedList()}
                     </div>
                 )}
 
