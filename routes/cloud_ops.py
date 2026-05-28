@@ -233,3 +233,33 @@ def get_live_inventory():
         return jsonify({"success": False, "error": str(ve)}), 401
     except Exception as e:
         return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
+
+
+@cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
+@jwt_required()
+def upload_source_resources():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+            
+        upload_dir = PROJECT_ROOT / 'uploads'
+        upload_dir.mkdir(exist_ok=True)
+        temp_path = upload_dir / secure_filename(file.filename)
+        file.save(str(temp_path))
+        
+        # Pass the file to your parser
+        result = parse_source_resources_excel(str(temp_path))
+        
+        # Clean up the temp file
+        temp_path.unlink(missing_ok=True)
+        
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
