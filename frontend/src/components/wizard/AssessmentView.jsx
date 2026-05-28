@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 
-export default function AssessmentView({ project, onUpdateProject }) {
-    const [infraControl, setInfraControl] = useState(project?.ora?.infraControl || '0'); 
-    const [itSkills, setItSkills] = useState(project?.ora?.itSkills || '0'); 
-    const [partnerCapability, setPartnerCapability] = useState(project?.ora?.partnerCapability || '0'); 
-    const [downtime, setDowntime] = useState(project?.ora?.downtime || '0'); 
-    const [appArch, setAppArch] = useState(project?.ora?.appArch || '0'); 
-    const [security, setSecurity] = useState(project?.ora?.security || '0');
+export default function AssessmentView({ activeProject, onUpdateProject }) {
+    const [infraControl, setInfraControl] = useState(activeProject?.ora?.infraControl || '0'); 
+    const [itSkills, setItSkills] = useState(activeProject?.ora?.itSkills || '0'); 
+    const [partnerCapability, setPartnerCapability] = useState(activeProject?.ora?.partnerCapability || '0'); 
+    const [downtime, setDowntime] = useState(activeProject?.ora?.downtime || '0'); 
+    const [appArch, setAppArch] = useState(activeProject?.ora?.appArch || '0'); 
+    const [security, setSecurity] = useState(activeProject?.ora?.security || '0');
 
     useEffect(() => { 
-        if(project?.ora) { 
-            const o = project.ora; 
+        if(activeProject?.ora) { 
+            const o = activeProject.ora; 
             setInfraControl(o.infraControl||'0'); 
             setItSkills(o.itSkills||'0'); 
             setPartnerCapability(o.partnerCapability||'0'); 
@@ -18,10 +18,10 @@ export default function AssessmentView({ project, onUpdateProject }) {
             setAppArch(o.appArch||'0'); 
             setSecurity(o.security||'0'); 
         } 
-    }, [project]);
+    }, [activeProject]);
     
     const handleSave = () => { 
-        onUpdateProject(project.id, 'ora', { infraControl, itSkills, partnerCapability, downtime, appArch, security }); 
+        onUpdateProject(activeProject.id, 'ora', { infraControl, itSkills, partnerCapability, downtime, appArch, security }); 
         alert("ORA Profile Saved."); 
     };
 
