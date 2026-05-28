@@ -128,8 +128,14 @@ export default function CustomerDirectory() {
                                         {linkedProjects.length === 0 && (
                                             <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl text-center text-xs font-bold text-slate-400">No active projects found.</div>
                                         )}
+                                        {/* 🚨 UPDATED TO ROUTE TO PROJECT WIZARD */}
                                         {linkedProjects.map(p => (
-                                            <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                                            <div 
+                                                key={p.id} 
+                                                onClick={() => { context.setActiveProjectId(p.id); context.setActivePhase('wizard'); }} 
+                                                className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                                                title="Open Project Workspace"
+                                            >
                                                 <div className="truncate pr-2">
                                                     <div className="font-bold text-sm text-slate-800 truncate">{p.name}</div>
                                                     <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold truncate"><i className="fas fa-globe-americas mr-1"></i> {p.country || 'Global'} | SA: {p.sa}</div>
