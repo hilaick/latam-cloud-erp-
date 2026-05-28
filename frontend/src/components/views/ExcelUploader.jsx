@@ -43,12 +43,29 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
             formData.append('file', selectedFile);
             formData.append('customer_name', customerName);
 
-            const response = await fetch('/api/upload_quotation', { method: 'POST', body: formData });
+            // Get JWT token from localStorage
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) {
+                throw new Error("Authentication required. Please log in again.");
+            }
+
+            const response = await fetch('/api/upload_quotation', { 
+                method: 'POST', 
+                body: formData,
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.status === 401) {
+                throw new Error("Authentication failed. Please log in again.");
+            }
+            
             const result = await response.json();
 
             if (result.success) {
-                setUploadMessage(`✅ ${result.message}`);
-                alert(`✅ Quotation processed successfully!\n\nCustomer: ${result.blueprint.customer}\nServers: ${result.stats.total_servers}\nWarnings: ${result.stats.warnings}\n\nBlueprint has been updated.`);
+                setUploadMessage(`✅ ${result.message || 'Quotation processed successfully!'}`);
+                alert(`✅ Quotation processed successfully!\\n\\nCustomer: ${result.blueprint?.customer || customerName}\\nServers: ${result.stats?.total_servers || 0}\\nWarnings: ${result.stats?.warnings || 0}\\n\\nBlueprint has been updated.`);
                 setTimeout(() => {
                     onClose();
                     if (onUpdateData) onUpdateData(result.blueprint);
@@ -58,8 +75,8 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                 alert(`❌ Upload failed: ${result.error}`);
             }
         } catch (error) {
-            setUploadMessage(`❌ Network error: ${error.message}`);
-            alert(`❌ Network error: ${error.message}`);
+            setUploadMessage(`❌ Error: ${error.message}`);
+            alert(`❌ Upload failed: ${error.message}`);
         } finally {
             setIsUploading(false);
         }

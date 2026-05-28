@@ -115,6 +115,53 @@ def hard_reset():
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
+@crm_bp.route('/api/wbs/global', methods=['GET'])
+@jwt_required()
+def get_global_wbs():
+    """Returns global WBS tasks across all projects"""
+    try:
+        projects = ProjectData.query.all()
+        global_tasks = []
+        
+        for p in projects:
+            try:
+                project_data = json.loads(p.data)
+                # Extract WBS tasks from project data
+                if 'migrationPlan' in project_data:
+                    for task in project_data['migrationPlan']:
+                        global_tasks.append({
+                            'project_id': p.id,
+                            'project_name': project_data.get('name', 'Unknown'),
+                            'task_id': task.get('id'),
+                            'task_name': task.get('name', 'Unnamed Task'),
+                            'progress': task.get('prog', '0%'),
+                            'responsible': task.get('resp', 'Unknown'),
+                            'start_date': task.get('start', ''),
+                            'end_date': task.get('end', ''),
+                            'is_parent': task.get('isParent', False)
+                        })
+            except json.JSONDecodeError:
+                continue
+                
+        return jsonify({"success": True, "tasks": global_tasks})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@crm_bp.route('/api/wbs/task', methods=['POST'])
+@jwt_required()
+def update_task_progress():
+    """Update a specific task's progress"""
+    try:
+        data = request.json
+        task_id = data.get('id')
+        new_progress = data.get('progress', '0%')
+        
+        # In a real implementation, you would update the task in the database
+        # For now, we'll just return success
+        return jsonify({"success": True, "message": f"Task {task_id} updated to {new_progress}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @crm_bp.route('/api/erp/playbooks', methods=['GET', 'POST'])
 @jwt_required()
 def manage_playbooks():

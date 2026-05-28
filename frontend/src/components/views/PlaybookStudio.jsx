@@ -46,8 +46,30 @@ export default function PlaybookStudio() {
         setCustomPlaybooks({...safePlaybooks, [selectedKey]: {...activePlaybook, tasks: [...(activePlaybook.tasks||[]), newTask]}});
     };
 
-    if (!customPlaybooks || Object.keys(customPlaybooks).length === 0) {
+    // Show loading state only if customPlaybooks is null (not yet loaded)
+    if (customPlaybooks === null) {
         return <div className="p-12 text-center text-slate-500 font-bold">Loading Enterprise Playbooks from Database...</div>;
+    }
+
+    // Show empty state if no playbooks exist
+    if (Object.keys(safePlaybooks).length === 0) {
+        return (
+            <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-2xl font-black text-slate-800"><i className="fas fa-book-open text-blue-600 mr-3"></i> Dynamic Playbook Studio</h2>
+                        <p className="text-sm text-slate-500 mt-2">Design, edit, and save standardized LATAM migration methodologies (WBS) to inject into projects.</p>
+                    </div>
+                    <button onClick={handleNewPlaybook} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-plus mr-2"></i> Create Your First Playbook</button>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
+                    <i className="fas fa-book-open text-5xl text-slate-300 mb-4"></i>
+                    <h3 className="text-xl font-black text-slate-700 mb-2">No Playbooks Yet</h3>
+                    <p className="text-slate-500 mb-6">Create your first playbook to get started with standardized migration methodologies.</p>
+                    <button onClick={handleNewPlaybook} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-sm rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-plus mr-2"></i> Create Playbook</button>
+                </div>
+            </div>
+        );
     }
 
     return (

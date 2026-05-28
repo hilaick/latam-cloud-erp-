@@ -17,19 +17,20 @@ import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
 
-export default function App() {
-    const { activePhase } = useContext(ERPContext);
-    
-    // 🚨 AUTHENTICATION STATE
+function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const { activePhase, refreshData } = useContext(ERPContext);
 
+    // Check for existing token on mount
     useEffect(() => {
         const token = localStorage.getItem('erp_jwt_token');
-        if (token) setIsAuthenticated(true);
+        if (token) {
+            setIsAuthenticated(true);
+        }
     }, []);
 
     const handleLogin = async (e) => {
@@ -49,6 +50,10 @@ export default function App() {
                 localStorage.setItem('erp_jwt_token', data.token);
                 localStorage.setItem('erp_user', JSON.stringify(data.user));
                 setIsAuthenticated(true);
+                // Refresh data after successful login
+                if (refreshData) {
+                    refreshData();
+                }
             } else {
                 setLoginError(data.error || "Invalid credentials");
             }
@@ -144,3 +149,5 @@ export default function App() {
         </div>
     );
 }
+
+export default App;

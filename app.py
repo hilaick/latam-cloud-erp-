@@ -49,11 +49,13 @@ from routes.crm import crm_bp
 from routes.cloud_ops import cloud_ops_bp
 from routes.sms_migrations import sms_bp
 from routes.auth import auth_bp
+from routes.master_pipeline import master_pipeline_bp
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
-app.register_blueprint(auth_bp) 
+app.register_blueprint(auth_bp)
+app.register_blueprint(master_pipeline_bp) 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -89,4 +91,4 @@ def upload_quotation():
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=9119, debug=True)
+    app.run(host='0.0.0.0', port=9119, debug=False)

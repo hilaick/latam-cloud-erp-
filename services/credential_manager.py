@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidTag
 import logging
@@ -26,7 +26,7 @@ class CredentialManager:
     
     def derive_key(self, salt: bytes) -> bytes:
         """Derive encryption key from master password"""
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,  # 256-bit key for AES-256
             salt=salt,

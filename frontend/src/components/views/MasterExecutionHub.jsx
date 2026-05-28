@@ -5,8 +5,17 @@ export default function MasterExecutionHub() {
     const { projects } = useContext(ERPContext);
     const [globalTasks, setGlobalTasks] = useState([]);
 
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('erp_jwt_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    };
+
     useEffect(() => {
-        fetch('/api/wbs/global').then(r => r.json()).then(d => { 
+        fetch('/api/wbs/global', { headers: getAuthHeaders() }).then(r => r.json()).then(d => { 
             if (d.success) setGlobalTasks(d.tasks); 
         });
     }, []);
@@ -14,7 +23,7 @@ export default function MasterExecutionHub() {
     const updateTaskProgress = async (taskId, newProgress) => {
         await fetch('/api/wbs/task', { 
             method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
+            headers: getAuthHeaders(), 
             body: JSON.stringify({ id: taskId, progress: newProgress }) 
         });
         setGlobalTasks(globalTasks.map(t => t.id === taskId ? { ...t, progress: newProgress } : t));
