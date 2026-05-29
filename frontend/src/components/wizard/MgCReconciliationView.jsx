@@ -6,7 +6,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [isImporting, setIsImporting] = useState(false);
     const [showPaste, setShowPaste] = useState(false);
     const [pasteText, setPasteText] = useState('');
-    const [isListExpanded, setIsListExpanded] = useState(false); // 🚨 NEW COLLAPSE STATE
+    const [isListExpanded, setIsListExpanded] = useState(false); 
     
     const { customers } = useContext(ERPContext);
 
@@ -17,14 +17,16 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const discoveredDb = rawInv.databases?.length || 0;
     const discoveredObs = (rawInv.storage || []).filter(s => s.type === 'OBS' || s.specs?.type === 'OBS' || !s.type).length;
     const discoveredCbr = (rawInv.storage || []).filter(s => s.type === 'CBR' || s.specs?.type === 'CBR').length;
-    const discoveredVpn = (rawInv.network || []).filter(n => n.type === 'VPN' || n.specs?.type === 'VPN').length;
+    
+    // Calculate total VPN Gateways + Connections + CGWs
+    const discoveredVpn = (rawInv.network || []).filter(n => n.type && n.type.includes('VPN') || n.specs?.type?.includes('VPN') || n.type?.includes('Customer')).length;
 
     const top = activeProject?.blueprintData?.topology || {};
     const quotedCompute = top.compute?.length || 0;
     const quotedDb = top.database?.length || 0;
     const quotedObs = (top.storage || []).filter(s => s.type === 'OBS').length;
     const quotedCbr = (top.storage || []).filter(s => s.type === 'CBR').length;
-    const quotedVpn = (top.network || []).filter(n => n.type === 'VPN').length;
+    const quotedVpn = (top.network || []).filter(n => n.type && n.type.includes('VPN')).length;
 
     const hasScanned = activeProject?.mgcData != null;
 
@@ -85,7 +87,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     }
 
     const renderExpandedList = () => {
-        if (!hasScanned || !isListExpanded) return null; // 🚨 Only renders if toggled OPEN
+        if (!hasScanned || !isListExpanded) return null;
 
         const categories = isExcel ? ['servers', 'containers', 'middleware', 'databases', 'big_data', 'network', 'storage'] : ['compute', 'databases', 'network', 'storage'];
 
@@ -98,29 +100,52 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div key={category} className="mb-6">
                             <h5 className="font-bold text-sm uppercase tracking-widest text-slate-600 mb-3 capitalize">{category.replace('_', ' ')} ({items.length})</h5>
                             <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden custom-scrollbar max-h-[400px] overflow-y-auto shadow-sm">
-                                <table className="w-full text-left text-xs min-w-[800px]">
+                                
+                                {/* 🚨 EXACT 1:1 MAPPING TO TOPOLOGY TABLE */}
+                                <table className="w-full text-left text-xs min-w-[1000px]">
                                     <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase sticky top-0 z-10 shadow-sm">
-                                        <tr><th className="p-4 w-64 font-black">Resource Name / ID</th><th className="p-4 font-black">Specifications & Attributes</th></tr>
+                                        <tr>
+                                            <th className="p-4 w-48 font-black">Resource Name</th>
+                                            <th className="p-4 w-32 font-black">Region</th>
+                                            <th className="p-4 w-28 font-black">Type</th>
+                                            <th className="p-4 w-32 font-black">IP / CIDR</th>
+                                            <th className="p-4 w-40 font-black">Subnet / Zone</th>
+                                            <th className="p-4 font-black">Deep Attributes</th>
+                                        </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {items.map((item, idx) => {
-                                            let specs = item.specs || {};
+                                            
+                                            // Extract Common UI Fields
+                                            const type = item.type || item.specs?.type || (category === 'compute' ? 'ECS' : category === 'databases' ? 'RDS' : 'VPC');
+                                            const region = item.region || item.specs?.region || item.location || 'Unknown';
+                                            const ip = item.cidr || item.private_ip_address || item.public_ip_address || item.specs?.ip || item.specs?.cidr || 'N/A';
+                                            const subnet = item.subnet || item.specs?.subnet || (type === 'ECS' ? 'Compute-Subnet' : type === 'RDS' ? 'Data-Subnet' : 'Cloud-Network');
+
+                                            // Extract Deep Attributes for Final Column
+                                            let deepSpecs = { Status: item.status || 'Active' };
                                             if (!isExcel) {
-                                                if (category === 'compute') specs = { Status: item.status, Flavor: item.flavor, vCPUs: item.vcpus, RAM: `${item.ram_gb}GB`, OS: item.os_type };
-                                                else if (category === 'databases') specs = { Status: item.status, Engine: item.engine, Version: item.version, Volume: `${item.volume_gb}GB` };
-                                                else if (category === 'network') specs = { Type: item.type, Status: item.status, CIDR: item.cidr || 'N/A' };
-                                                else if (category === 'storage') {
-                                                    specs = { Type: item.type, Status: item.status, Location: item.location || item.region || 'Global' };
-                                                    if (item.type === 'CBR') { specs['Allocated Space'] = item.size ? `${item.size}GB` : 'N/A'; specs['Used Space'] = item.used ? `${item.used}GB` : '0GB'; } 
-                                                    else { specs['Capacity'] = item.size || 'Dynamic'; }
+                                                if (category === 'compute') { deepSpecs.Flavor = item.flavor; deepSpecs.vCPUs = item.vcpus; deepSpecs.RAM = `${item.ram_gb}GB`; deepSpecs.OS = item.os_type; }
+                                                else if (category === 'databases') { deepSpecs.Engine = item.engine; deepSpecs.Version = item.version; deepSpecs.Volume = `${item.volume_gb}GB`; }
+                                                else if (category === 'storage') { 
+                                                    if (item.type === 'CBR') { deepSpecs['Allocated Space'] = item.size ? `${item.size}GB` : 'N/A'; deepSpecs['Used Space'] = item.used ? `${item.used}GB` : '0GB'; } 
+                                                    else { deepSpecs['Capacity'] = item.size || 'Dynamic'; }
                                                 }
+                                            } else {
+                                                deepSpecs = { ...deepSpecs, ...item.specs };
                                             }
+
                                             return (
                                                 <tr key={idx} className="hover:bg-white transition-colors">
                                                     <td className="p-4 font-bold text-slate-800 break-all align-top">{item.name || item.id}</td>
+                                                    <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest align-top">{region}</td>
+                                                    <td className="p-4 font-bold text-indigo-700 align-top">{type}</td>
+                                                    <td className="p-4 font-mono text-slate-600 font-bold align-top">{ip}</td>
+                                                    <td className="p-4 font-bold text-slate-600 align-top">{subnet}</td>
+                                                    
                                                     <td className="p-4 font-mono text-[10px] text-slate-600 leading-relaxed">
                                                         <div className="flex flex-wrap gap-2">
-                                                            {Object.entries(specs).filter(([k, v]) => v !== null && v !== '').map(([k, v]) => (
+                                                            {Object.entries(deepSpecs).filter(([k, v]) => v !== null && v !== '' && typeof v !== 'object').map(([k, v]) => (
                                                                 <span key={k} className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-700">
                                                                     <span className="text-slate-400 font-bold mr-1">{k}:</span><span className="font-black">{v}</span>
                                                                 </span>
@@ -197,7 +222,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div className="flex justify-between items-center mb-6">
                             <h4 className="font-black text-slate-800 text-lg flex items-center gap-2"><i className="fas fa-chart-bar text-emerald-600"></i> Discovery Results</h4>
                             <div className="flex gap-3">
-                                {/* 🚨 NEW: Toggle Expand Button */}
                                 <button onClick={() => setIsListExpanded(!isListExpanded)} className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-colors shadow-sm ${isListExpanded ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}>
                                     <i className={`fas ${isListExpanded ? 'fa-compress-arrows-alt' : 'fa-expand-arrows-alt'} mr-2`}></i> {isListExpanded ? 'Collapse Details' : 'Expand Details'}
                                 </button>
@@ -215,7 +239,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             {renderCard("Databases", "fa-database", quotedDb, discoveredDb)}
                             {renderCard("OBS Buckets", "fa-hdd", quotedObs, discoveredObs)}
                             {renderCard("CBR Vaults", "fa-shield-alt", quotedCbr, discoveredCbr)}
-                            {renderCard("VPN Gateways", "fa-route", quotedVpn, discoveredVpn)}
+                            {renderCard("VPN & Gateways", "fa-route", quotedVpn, discoveredVpn)}
                         </div>
 
                         {renderExpandedList()}
