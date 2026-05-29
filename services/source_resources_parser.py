@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
 """
 Source Resources Excel & CSV Parser
-Intelligently handles Huawei MgC Exports, dynamic header detection, and multi-sheet reading.
+Intelligently handles Huawei MgC Exports, dynamic header detection, multi-sheet reading, and duplicated columns.
 """
 
 import pandas as pd
-import json
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 def find_header_row_and_set(df: pd.DataFrame) -> pd.DataFrame:
-    """Finds the true row containing common headers and sets it, ignoring super-headers."""
+    """Finds the true row containing common headers and sets it, bypassing MgC super-headers."""
     header_idx = 0
     for idx, row in df.iterrows():
+        # Check if this row looks like the real header (contains name + id/status/platform)
         row_str = ' '.join([str(x).lower() for x in row.values])
         if 'name' in row_str and ('id' in row_str or 'platform' in row_str or 'status' in row_str):
             header_idx = idx
             break
             
+    # Set the discovered row as the header
     df.columns = df.iloc[header_idx]
     df = df.iloc[header_idx+1:].reset_index(drop=True)
-    # Clean column names safely
-    df.columns = [str(c).strip().lower() for c in df.columns]
+    
+    # CRITICAL FIX: Deduplicate column names. 
+    cols = []
+    counts = {}
+    for c in df.columns:
+        c_clean = str(c).strip().lower()
+        if c_clean in counts:
+            counts[c_clean] += 1
+            cols.append(f"{c_clean}_{counts[c_clean]}")
+        else:
+            counts[c_clean] = 0
+            cols.append(c_clean)
+            
+    df.columns = cols
     return df
 
 def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
@@ -39,7 +52,7 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
         file_lower = str(file_path).lower()
         dfs = {}
         
-        # 1. Detect File Type and Load Without Headers
+        # 1. Detect File Type and Load ALL Sheets
         if file_lower.endswith('.csv'):
             print("📄 Detected CSV format.")
             dfs['Sheet1'] = pd.read_csv(file_path, header=None, dtype=str)
@@ -51,6 +64,7 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
                 xls = pd.ExcelFile(file_path)
                 print(f"📄 Excel Sheets found: {xls.sheet_names}")
                 for sheet in xls.sheet_names:
+                    # Load every sheet into the dictionary
                     dfs[sheet] = pd.read_excel(file_path, sheet_name=sheet, header=None, dtype=str)
             except ImportError:
                 raise Exception("Missing Excel library. Please run in your terminal: pip install openpyxl")
@@ -63,13 +77,17 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
             df = df.fillna('')
             df = find_header_row_and_set(df)
             
-            # Determine category primarily by sheet name, fallback to row types
+            # Determine category primarily by sheet name
             sheet_lower = sheet_name.lower()
             default_category = "servers"
             if 'database' in sheet_lower: default_category = "databases"
             elif 'network' in sheet_lower: default_category = "network"
             elif 'storage' in sheet_lower: default_category = "storage"
             elif 'container' in sheet_lower: default_category = "containers"
+            
+            # Fallback column checking for CSVs (which are always named 'Sheet1')
+            if default_category == "servers" and 'engine' in df.columns and 'version' in df.columns:
+                default_category = "databases"
             
             resource_type_col = next((col for col in df.columns if any(k in col for k in ['type', 'resource_type', 'category', 'resource'])), None)
             
@@ -106,8 +124,7 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
                 if row[col] != '': 
                     name = str(row[col]).strip()
                     break
-        
-        # Fallback to ID
+        # Fallback to ID if no name exists
         if not name and 'id' in row.index and row['id'] != '':
             name = str(row['id']).strip()
             
@@ -121,17 +138,18 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
             if val == '' or str(val).lower() == 'nan' or 'unnamed' in str(col).lower(): continue
             
             col_name = str(col).strip()
+            
             if isinstance(val, (int, float)):
                 resource["specs"][col_name] = float(val) if isinstance(val, float) else int(val)
             else:
                 resource["specs"][col_name] = str(val).strip()
                 
-        # Huawei specific normalization
+        # Huawei specific normalizations for UI clarity
         if category == 'servers':
             if 'cpu_cores' in resource["specs"]: resource["specs"]["cpu"] = parse_numeric(resource["specs"]["cpu_cores"])
             if 'mem' in resource["specs"]: 
                 mem_val = parse_numeric(resource["specs"]["mem"])
-                # Huawei often exports memory in bytes. If > 1,000,000, assume bytes and convert to GB
+                # Huawei MgC often exports memory in bytes. Convert to GB if massive.
                 if mem_val > 1000000:
                     resource["specs"]["ram_gb"] = round(mem_val / (1024**3), 2)
                 else:
@@ -143,6 +161,7 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
         elif category == 'databases':
             if 'engine' in resource["specs"]: resource["specs"]["engine"] = resource["specs"]["engine"]
             if 'version' in resource["specs"]: resource["specs"]["version"] = resource["specs"]["version"]
+            if 'instance_type' in resource["specs"]: resource["specs"]["flavor"] = resource["specs"]["instance_type"]
             
         return resource
     except Exception:

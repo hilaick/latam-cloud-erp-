@@ -191,8 +191,11 @@ def get_live_inventory():
             return jsonify({"success": False, "error": result.get("error")}), 500
 
     except ValueError as ve:
-        # Catches decryption errors (e.g., wrong master password or tampered keys)
-        return jsonify({"success": False, "error": str(ve)}), 401
+        # 🚨 CHANGED TO 400: So React doesn't confuse this with a JWT logout!
+        return jsonify({
+            "success": False, 
+            "error": f"Vault Decryption Failed. Please re-enter and save the AK/SK in the Customer Directory. Details: {str(ve)}"
+        }), 400
     except Exception as e:
         return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
