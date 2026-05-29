@@ -19,7 +19,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         onUpdateProject(activeProject.id, 'mapperNodes', newNodes);
     };
 
-    // 1. Map from SA Quotation (Now captures Network & Storage)
     const generateFromBlueprint = () => {
         if (servers.length === 0 && databases.length === 0 && networks.length === 0) return alert('No blueprint data found in this project.');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
@@ -29,14 +28,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         databases.forEach((d, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: d.name || `Quoted-DB-${i+1}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'Quoted Only' }));
         networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name || `Quoted-${n.type}-${i+1}`, type: n.type || 'VPC', ip: 'N/A', location: 'Cloud-Network', status: 'Quoted Only' }));
         storages.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `Quoted-${st.type}-${i+1}`, type: st.type || 'OBS', ip: 'N/A', location: 'Global', status: 'Quoted Only' }));
-
-        if(newNodes.length === 0 || !newNodes.find(n => n.type === 'VPC')) {
-            newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Quoted Only' });
-        }
         saveNodes(newNodes);
     };
 
-    // 2. Map Actual Data from MgC Only
     const generateFromMgC = () => {
         if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
@@ -48,34 +42,30 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const parseNetwork = (netList) => {
             netList.forEach((net, i) => {
                 const type = net.type || net.specs?.type || 'VPC';
-                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('Subnet') ? 'Subnet' : 'VPC';
+                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('VPN') ? 'VPN' : type.includes('Subnet') ? 'Subnet' : 'VPC';
                 newNodes.push({ id: `net-${Date.now()}-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', status: 'MgC Only' });
             });
         };
 
         const parseStorage = (stList) => {
             stList.forEach((st, i) => {
-                newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `Storage-${i}`, type: 'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', status: 'MgC Only' });
+                const type = st.type || 'OBS';
+                newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `${type}-${i}`, type: type, ip: st.location || st.specs?.location || 'N/A', location: 'Global', status: 'MgC Only' });
             });
         };
 
         if (isExcel) {
             (raw.servers || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
             (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
-            parseNetwork(raw.network || []);
-            parseStorage(raw.storage || []);
         } else {
             (raw.compute || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
             (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
-            parseNetwork(raw.network || []);
-            parseStorage(raw.storage || []);
         }
-        
-        if(newNodes.length === 0) newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' });
+        parseNetwork(raw.network || []);
+        parseStorage(raw.storage || []);
         saveNodes(newNodes);
     };
 
-    // 3. RECONCILIATION ENGINE: Compares SOW vs MgC and labels differences!
     const generateReconciledScope = () => {
         if (!activeProject?.mgcData) return alert('You must run MgC Discovery first to reconcile against the SOW!');
         if (nodes.length > 0 && !window.confirm("This will merge Quoted and MgC scopes, replacing your current table. Proceed?")) return;
@@ -83,43 +73,38 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         const isExcel = activeProject.mgcData.source === 'excel';
         
-        // 1. Gather all MgC Resources
         let mgcNodes = [];
         const parseNetForMerge = (netList) => {
             netList.forEach((net, i) => {
                 const type = net.type || net.specs?.type || 'VPC';
-                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('Subnet') ? 'Subnet' : 'VPC';
+                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('VPN') ? 'VPN' : type.includes('Subnet') ? 'Subnet' : 'VPC';
                 mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network' });
             });
         };
         const parseStorageForMerge = (stList) => {
             stList.forEach((st, i) => {
-                mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `Storage-${i}`, type: 'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global' });
+                const type = st.type || 'OBS';
+                mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `${type}-${i}`, type: type, ip: st.location || st.specs?.location || 'N/A', location: 'Global' });
             });
         };
 
         if (isExcel) {
             (raw.servers || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
             (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' }));
-            parseNetForMerge(raw.network || []);
-            parseStorageForMerge(raw.storage || []);
         } else {
             (raw.compute || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
             (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' }));
-            parseNetForMerge(raw.network || []);
-            parseStorageForMerge(raw.storage || []);
         }
+        parseNetForMerge(raw.network || []);
+        parseStorageForMerge(raw.storage || []);
 
-        // 2. Gather all Quoted Resources
         let quotedNodes = [];
-        servers.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-Server-${i+1}`, type: 'ECS' }));
-        databases.forEach((d, i) => quotedNodes.push({ name: d.name || `Quoted-DB-${i+1}`, type: 'RDS' }));
-        networks.forEach((n, i) => quotedNodes.push({ name: n.name || `Quoted-${n.type}-${i+1}`, type: n.type || 'VPC' }));
-        storages.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-${s.type}-${i+1}`, type: s.type || 'OBS' }));
+        servers.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-Server-${i+1}`, type: 'ECS', loc: 'Compute-Subnet' }));
+        databases.forEach((d, i) => quotedNodes.push({ name: d.name || `Quoted-DB-${i+1}`, type: 'RDS', loc: 'Data-Subnet' }));
+        networks.forEach((n, i) => quotedNodes.push({ name: n.name || `Quoted-${n.type}-${i+1}`, type: n.type || 'VPC', loc: 'Cloud-Network' }));
+        storages.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-${s.type}-${i+1}`, type: s.type || 'OBS', loc: 'Global' }));
 
         const merged = [];
-        
-        // 3. Match MgC against Quoted
         mgcNodes.forEach(mNode => {
             const matchIdx = quotedNodes.findIndex(q => (q.name || '').toLowerCase().includes((mNode.name || '').toLowerCase()) || (mNode.name || '').toLowerCase().includes((q.name || '').toLowerCase()));
             if (matchIdx !== -1) {
@@ -130,30 +115,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             }
         });
 
-        // 4. Leftovers were NOT found in MgC
         quotedNodes.forEach((q, i) => {
-            merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: q.type === 'VPC' ? 'Cloud-Network' : 'Pending-Allocation', status: 'Quoted Only' });
+            merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: q.loc, status: 'Quoted Only' });
         });
-
-        if(!merged.find(n => n.type === 'VPC')) merged.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Matched' });
         saveNodes(merged);
     };
 
-    const handleUpdateNode = (id, field, value) => {
-        const updated = nodes.map(n => n.id === id ? { ...n, [field]: value } : n);
-        saveNodes(updated);
-    };
-
-    const handleAddNode = () => {
-        const newId = `manual-${Date.now()}`;
-        const updated = [...nodes, { id: newId, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', status: 'Manual' }];
-        saveNodes(updated);
-    };
-
-    const handleDeleteNode = (id) => {
-        const updated = nodes.filter(n => n.id !== id);
-        saveNodes(updated);
-    };
+    const handleUpdateNode = (id, field, value) => saveNodes(nodes.map(n => n.id === id ? { ...n, [field]: value } : n));
+    const handleAddNode = () => saveNodes([...nodes, { id: `manual-${Date.now()}`, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', status: 'Manual' }]);
+    const handleDeleteNode = (id) => saveNodes(nodes.filter(n => n.id !== id));
 
     const handleAutoGenerateWBS = () => {
         if (nodes.length === 0) { alert("Please populate the infrastructure scope first."); return; }
@@ -175,16 +145,33 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         }
     };
 
+    // 🚨 FIX: InnoStage Workbench style grouping logic
     const groups = useMemo(() => {
-        const grps = { Edge: [], External: [], Subnets: {}, Global: [], Network: [], Pending: [] };
+        const grps = { EdgeGateways: [], Subnets: {}, Global: [], Pending: [] };
+        
         nodes.forEach(n => {
+            const type = String(n.type).toUpperCase();
             const loc = String(n.location || "");
-            if (loc === 'Pending-Allocation') grps.Pending.push(n);
-            else if (loc === 'Edge') grps.Edge.push(n); 
-            else if (loc.includes('External') || loc.includes('On-Premise')) grps.External.push(n);
-            else if (loc === 'PaaS' || loc === 'Storage' || loc === 'Management' || loc === 'Serverless' || loc === 'Global') grps.Global.push(n); 
-            else if (loc === 'Cloud-Network') grps.Network.push(n); 
-            else { if (!grps.Subnets[loc]) grps.Subnets[loc] = []; grps.Subnets[loc].push(n); }
+
+            if (loc === 'Pending-Allocation') {
+                grps.Pending.push(n);
+            } 
+            // NAT, VPN, EIP, ELB belong on the edge of the VPC boundary
+            else if (['NAT', 'EIP', 'VPN', 'ELB'].includes(type)) {
+                grps.EdgeGateways.push(n);
+            } 
+            // OBS, CBR, SFS belong outside the VPC entirely
+            else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') {
+                grps.Global.push(n);
+            } 
+            // Everything else (ECS, RDS, CCE, Subnets) goes inside the VPC Subnet blocks
+            else {
+                // Ignore raw VPC nodes since the UI now strictly draws the VPC itself
+                if (type !== 'VPC') {
+                    if (!grps.Subnets[loc]) grps.Subnets[loc] = [];
+                    grps.Subnets[loc].push(n);
+                }
+            }
         });
         return grps;
     }, [nodes]);
@@ -193,35 +180,34 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const t = String(type || "").toLowerCase();
         if (t.includes('ecs') || t.includes('vm')) return 'fa-server text-blue-600'; 
         if (t.includes('rds') || t.includes('db')) return 'fa-database text-rose-600';
-        if (t.includes('vpc')) return 'fa-cloud text-indigo-600';
         if (t.includes('subnet')) return 'fa-network-wired text-indigo-400';
-        if (t.includes('sg') || t.includes('security') || t.includes('cbr') || t.includes('backup')) return 'fa-shield-alt text-amber-500';
-        if (t.includes('nat') || t.includes('eip') || t.includes('vpn')) return 'fa-route text-indigo-500';
+        if (t.includes('sg') || t.includes('security')) return 'fa-shield-alt text-amber-500';
+        if (t.includes('nat') || t.includes('eip') || t.includes('vpn')) return 'fa-route text-indigo-600';
         if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
-        if (t.includes('obs') || t.includes('storage') || t.includes('sfs')) return 'fa-hdd text-emerald-600';
+        if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('backup')) return 'fa-hdd text-emerald-600';
         if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
         return 'fa-microchip text-slate-500';
     };
 
     const getStatusBadge = (status) => {
         if(status === 'Matched') return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap"><i className="fas fa-check-circle mr-1"></i>Matched</span>;
-        if(status === 'MgC Only') return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="Found in MgC, missing from SOW"><i className="fas fa-exclamation-triangle mr-1"></i>Unquoted</span>;
-        if(status === 'Quoted Only') return <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded border border-rose-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="In SOW, missing from MgC"><i className="fas fa-times-circle mr-1"></i>Missing</span>;
+        if(status === 'MgC Only') return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="Scope Creep"><i className="fas fa-exclamation-triangle mr-1"></i>Unquoted</span>;
+        if(status === 'Quoted Only') return <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded border border-rose-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="Missing from MgC"><i className="fas fa-times-circle mr-1"></i>Missing</span>;
         if(status === 'Manual') return <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap"><i className="fas fa-edit mr-1"></i>Manual</span>;
         return <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap">Mapped</span>;
     };
 
     const getStatusIcon = (status) => {
-        if(status === 'Matched') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white shadow-sm" title="Matched in both SOW and MgC"></div>;
-        if(status === 'MgC Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-white shadow-sm animate-pulse" title="Scope Creep: Discovered but not quoted"></div>;
-        if(status === 'Quoted Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-white shadow-sm" title="Missing: Quoted but not discovered"></div>;
-        if(status === 'Manual') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-white shadow-sm" title="Manually added"></div>;
+        if(status === 'Matched') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white shadow-sm"></div>;
+        if(status === 'MgC Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-white shadow-sm animate-pulse"></div>;
+        if(status === 'Quoted Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-white shadow-sm"></div>;
+        if(status === 'Manual') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-white shadow-sm"></div>;
         return null;
     };
 
     return (
         <div className={isMaximized ? "fixed inset-0 z-50 bg-[#f8fafc] p-4 md:p-8 flex flex-col overflow-auto animate-fade-in" : "animate-fade-in"}>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[750px] max-h-[900px]">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[800px] max-h-[900px]">
                 <div className="flex flex-wrap justify-between items-center mb-6 border-b border-slate-200 pb-4">
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-sitemap text-indigo-500"></i> Infrastructure Scope Manager</h3>
@@ -250,7 +236,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                         <th className="p-3 w-40 font-black">Resource Name</th>
                                         <th className="p-3 w-28 font-black">Type</th>
                                         <th className="p-3 w-32 font-black">IP / CIDR</th>
-                                        <th className="p-3 w-32 font-black">Target Zone</th>
+                                        <th className="p-3 w-32 font-black">Subnet Zone</th>
                                         <th className="p-3 w-24 font-black">Status</th>
                                         <th className="p-3 w-12 text-center font-black">Act</th>
                                     </tr>
@@ -275,9 +261,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                         <option value="SG">Security Group</option>
                                                         <option value="NAT">NAT Gateway</option>
                                                         <option value="EIP">Elastic IP</option>
-                                                        <option value="VPN">VPN</option>
+                                                        <option value="VPN">VPN Gateway</option>
                                                         <option value="OBS">OBS (Storage)</option>
-                                                        <option value="CBR">Backup (CBR)</option>
+                                                        <option value="CBR">CBR (Backup)</option>
                                                         <option value="ELB">ELB</option>
                                                         <option value="CCE">CCE (K8s)</option>
                                                     </select>
@@ -300,20 +286,20 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         </div>
                     </div>
 
-                    {/* RIGHT SIDE: The Live Visual Canvas */}
+                    {/* RIGHT SIDE: The Live Visual Canvas (InnoStage Style) */}
                     <div className="xl:w-1/2 bg-[#f8fafc] p-6 overflow-auto border border-slate-200 rounded-2xl shadow-inner relative custom-scrollbar">
                         {nodes.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                <i className="fas fa-network-wired text-6xl mb-4 opacity-50"></i>
+                                <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
                                 <p className="font-black text-lg">Awaiting Topology Data</p>
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-4 items-start min-w-[600px]">
+                            <div className="flex flex-col gap-8 items-center min-w-[700px] py-4">
 
                                 {/* Unallocated / Pending Nodes */}
                                 {groups.Pending.length > 0 && (
                                     <div className="w-full border-2 border-rose-200 bg-rose-50/50 rounded-xl p-4 relative mb-4">
-                                        <span className="absolute -top-3 left-3 bg-rose-100 px-3 py-1 rounded-full text-[10px] font-black text-rose-800 uppercase tracking-wider border border-rose-200">Unallocated Quoted Resources</span>
+                                        <span className="absolute -top-3 left-3 bg-rose-100 px-3 py-1 rounded-full text-[10px] font-black text-rose-800 uppercase tracking-wider border border-rose-200">Unallocated Resources (Assign Location)</span>
                                         <div className="flex flex-wrap gap-4 mt-2">
                                             {groups.Pending.map(n => (
                                                 <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center gap-3 min-w-[150px] relative">
@@ -321,7 +307,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     <i className={`${getIcon(n.type)} text-2xl`}></i>
                                                     <div className="truncate">
                                                         <div className="font-bold text-xs text-slate-800 truncate" title={n.name}>{n.name}</div>
-                                                        <div className="text-[10px] font-mono text-rose-600 truncate">Assign to Subnet</div>
+                                                        <div className="text-[10px] font-mono text-rose-600 truncate">Pending Assignment</div>
                                                     </div>
                                                 </div>
                                             ))}
@@ -329,54 +315,71 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     </div>
                                 )}
                                 
-                                {/* Target Cloud VPC */}
-                                <div className="w-full border-4 border-blue-200 bg-blue-50/30 rounded-2xl p-8 relative min-h-[300px]">
-                                    <span className="absolute -top-4 left-6 bg-blue-100 border border-blue-300 px-4 py-1.5 rounded-full text-sm font-black text-blue-800 uppercase tracking-widest shadow-sm"><i className="fas fa-cloud mr-2"></i> Target Infrastructure</span>
+                                {/* 🚨 INNOSTAGE STYLE: The VPC Bounding Box */}
+                                <div className="w-full border-4 border-indigo-200 bg-indigo-50/20 rounded-3xl p-8 pt-12 relative min-h-[400px] shadow-sm">
                                     
-                                    {groups.Network.length > 0 && (
-                                        <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white/60 border border-blue-200 rounded-xl shadow-sm">
-                                            <div className="w-full text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-1"><i className="fas fa-network-wired mr-1"></i> Core Networking</div>
-                                            {groups.Network.map(n => (
-                                                <div key={n.id} className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm flex items-center gap-3 min-w-[150px] hover:border-indigo-400 transition-colors relative">
+                                    <div className="absolute -top-4 left-8 bg-indigo-600 border border-indigo-700 px-6 py-2 rounded-xl text-sm font-black text-white uppercase tracking-widest shadow-md">
+                                        <i className="fas fa-cloud mr-2"></i> Huawei Cloud VPC Boundary
+                                    </div>
+                                    
+                                    {/* Edge Gateways (NAT, VPN, EIP, ELB) pinned to the top border of the VPC */}
+                                    {groups.EdgeGateways.length > 0 && (
+                                        <div className="absolute -top-8 right-8 flex gap-3">
+                                            {groups.EdgeGateways.map(n => (
+                                                <div key={n.id} className="bg-white border-2 border-indigo-300 p-3 rounded-xl shadow-lg flex items-center gap-3 min-w-[160px] hover:border-indigo-500 transition-colors relative">
                                                     {getStatusIcon(n.status)}
-                                                    <i className={`${getIcon(n.type)} text-2xl`}></i>
+                                                    <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
+                                                        <i className={`${getIcon(n.type)} text-xl`}></i>
+                                                    </div>
                                                     <div className="truncate">
-                                                        <div className="font-bold text-xs text-indigo-900 truncate" title={n.name}>{n.name}</div>
-                                                        <div className="text-[10px] font-mono text-indigo-600 truncate">{n.ip}</div>
+                                                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{n.type} Gateway</div>
+                                                        <div className="font-black text-xs text-indigo-900 truncate" title={n.name}>{n.name}</div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-4">
-                                        {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
-                                            <div key={subName} className="border-2 border-dashed border-blue-300 bg-white/80 p-5 rounded-xl relative pt-8 shadow-sm">
-                                                <span className="absolute top-2 left-3 text-[10px] font-black text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{subName}</span>
-                                                <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                                                    {subNodes.map(n => (
-                                                        <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-colors relative">
-                                                            {getStatusIcon(n.status)}
-                                                            <div className="font-bold text-xs truncate pr-2" title={n.name}><i className={`fas ${getIcon(n.type)} mr-2 opacity-80`}></i>{n.name}</div>
-                                                            <div className="text-[10px] font-mono text-slate-500 mt-1">{n.ip}</div>
-                                                        </div>
-                                                    ))}
+                                    {/* Inside the VPC: The Subnet Bounding Boxes */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mt-6">
+                                        {Object.keys(groups.Subnets).length === 0 ? (
+                                             <div className="col-span-2 text-center py-12 text-slate-400 font-bold border-2 border-dashed border-indigo-200 rounded-xl">No subnets configured yet.</div>
+                                        ) : (
+                                            Object.entries(groups.Subnets).map(([subName, subNodes]) => (
+                                                <div key={subName} className="border-2 border-dashed border-blue-400 bg-white/60 p-5 rounded-2xl relative pt-10 shadow-sm hover:border-blue-500 transition-colors">
+                                                    <span className="absolute top-3 left-4 text-[11px] font-black text-blue-800 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-md border border-blue-300">
+                                                        <i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}
+                                                    </span>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto custom-scrollbar pr-2 mt-2">
+                                                        {subNodes.map(n => (
+                                                            <div key={n.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 transition-all hover:-translate-y-0.5 relative flex flex-col items-center text-center">
+                                                                {getStatusIcon(n.status)}
+                                                                <i className={`fas ${getIcon(n.type)} text-3xl mt-2 mb-2 opacity-80`}></i>
+                                                                <div className="font-bold text-xs truncate w-full" title={n.name}>{n.name}</div>
+                                                                <div className="text-[9px] font-black bg-slate-100 text-slate-500 mt-1 px-2 py-0.5 rounded uppercase tracking-wider">{n.type}</div>
+                                                                <div className="text-[10px] font-mono text-slate-400 mt-1">{n.ip}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                                 
-                                {/* PaaS & Global Components */}
+                                {/* External / Global Dependencies (OBS, CBR) */}
                                 {groups.Global.length > 0 && (
-                                    <div className="w-full border-2 border-emerald-200 bg-emerald-50/50 rounded-xl relative pt-6 p-4 mt-4">
-                                        <span className="absolute -top-3 left-3 bg-emerald-100 px-3 py-1 rounded-full text-[10px] font-black text-emerald-800 uppercase tracking-wider border border-emerald-200">PaaS / Global Services</span>
-                                        <div className="flex flex-wrap gap-4">
+                                    <div className="w-full border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl relative pt-10 p-6 mt-4 shadow-sm">
+                                        <span className="absolute -top-4 left-6 bg-emerald-100 px-4 py-1.5 rounded-xl text-xs font-black text-emerald-800 uppercase tracking-widest border border-emerald-400 shadow-sm"><i className="fas fa-globe mr-2"></i> Global & PaaS Services</span>
+                                        <div className="flex flex-wrap gap-5">
                                             {groups.Global.map(n => (
-                                                <div key={n.id} className="bg-white p-4 w-32 rounded-lg border border-slate-200 shadow-sm text-center hover:border-emerald-300 transition-colors relative">
+                                                <div key={n.id} className="bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center hover:border-emerald-400 transition-all hover:-translate-y-0.5 relative">
                                                     {getStatusIcon(n.status)}
-                                                    <i className={`fas ${getIcon(n.type)} text-2xl mb-2 opacity-90`}></i>
-                                                    <div className="font-bold text-[10px] truncate" title={n.name}>{n.name}</div>
+                                                    <div className="w-12 h-12 mx-auto bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-2">
+                                                        <i className={`fas ${getIcon(n.type)} text-2xl`}></i>
+                                                    </div>
+                                                    <div className="font-black text-xs text-slate-800 truncate" title={n.name}>{n.name}</div>
+                                                    <div className="text-[9px] font-black text-emerald-600 mt-1 uppercase tracking-wider bg-emerald-50 rounded px-1 py-0.5">{n.type}</div>
                                                 </div>
                                             ))}
                                         </div>
