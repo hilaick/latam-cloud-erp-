@@ -4,9 +4,7 @@ import { EditableCell } from '../../utils/helpers';
 export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
     const servers = activeProject?.blueprintData?.topology?.compute || [];
     const databases = activeProject?.blueprintData?.topology?.database || [];
-    const discoveredServers = activeProject?.mgcData?.compute || servers.length;
 
-    // We now store structured Array data instead of raw CSV strings
     const [nodes, setNodes] = useState(activeProject?.mapperNodes || []); 
     const [isMaximized, setIsMaximized] = useState(false);
     
@@ -19,7 +17,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         onUpdateProject(activeProject.id, 'mapperNodes', newNodes);
     };
 
-    // 1. Map from SA Quotation (Loads into the Table)
+    // 1. Map from SA Quotation
     const generateFromBlueprint = () => {
         if (servers.length === 0) return alert('No blueprint data found in this project.');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the original SOW quotation. Proceed?")) return;
@@ -36,21 +34,44 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         saveNodes(newNodes);
     };
 
-    // 2. Map from MgC Actuals (Loads into the Table)
+    // 🚨 2. FIX: Map Actual Data from MgC Import (Pulls exact Names and IPs)
     const generateFromMgC = () => {
-        if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery first!');
-        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the Live MgC Discovery data. Proceed?")) return;
+        if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
+        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the MgC data. Proceed?")) return;
         
         const newNodes = [];
-        for(let i=0; i<discoveredServers; i++) {
-            newNodes.push({ id: `act-${Date.now()}-${i}`, name: `Actual-Server-${i+1}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' });
+        const data = activeProject.mgcData;
+        const isExcel = data.source === 'excel';
+        const raw = data.raw_inventory || {};
+
+        if (isExcel) {
+            (raw.servers || []).forEach((srv, i) => {
+                newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet' });
+            });
+            (raw.databases || []).forEach((db, i) => {
+                newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' });
+            });
+            (raw.network || []).forEach((net, i) => {
+                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || '10.0.0.0/16', location: 'Cloud-Network' });
+            });
+        } else {
+            (raw.compute || []).forEach((srv, i) => {
+                newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' });
+            });
+            (raw.databases || []).forEach((db, i) => {
+                newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' });
+            });
+            (raw.network || []).forEach((net, i) => {
+                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network' });
+            });
         }
-        newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network' });
         
+        if(newNodes.length === 0) {
+             newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network' });
+        }
         saveNodes(newNodes);
     };
 
-    // 3. Table Interaction Handlers
     const handleUpdateNode = (id, field, value) => {
         const updated = nodes.map(n => n.id === id ? { ...n, [field]: value } : n);
         saveNodes(updated);
@@ -124,17 +145,18 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                 
                 <div className="flex flex-col xl:flex-row gap-6 flex-1 min-h-0">
                     
-                    {/* LEFT SIDE: The Interactive Table (Replaces CSV/JSON) */}
+                    {/* LEFT SIDE: The Interactive Table */}
                     <div className="xl:w-1/2 flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner">
-                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white">
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white flex-wrap gap-2">
                             <div className="flex gap-2">
-                                <button onClick={generateFromBlueprint} className="py-2 px-4 bg-slate-800 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-md transition-colors"><i className="fas fa-file-invoice mr-1"></i> Load Quoted Scope</button>
-                                <button onClick={generateFromMgC} className="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-md transition-colors"><i className="fas fa-search mr-1"></i> Load MgC Scope</button>
+                                <button onClick={generateFromBlueprint} className="py-2 px-3 bg-slate-800 hover:bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors"><i className="fas fa-file-invoice mr-1"></i> Quoted Scope</button>
+                                <button onClick={generateFromMgC} className="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors"><i className="fas fa-search mr-1"></i> MgC Scope</button>
                             </div>
-                            <button onClick={handleAddNode} className="py-2 px-4 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Resource</button>
+                            <button onClick={handleAddNode} className="py-2 px-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Resource</button>
                         </div>
                         
-                        <div className="flex-1 overflow-auto custom-scrollbar">
+                        {/* 🚨 FIX: Scrollable constraints for large imports */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar max-h-[500px]">
                             <table className="w-full text-left min-w-[600px]">
                                 <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 sticky top-0 z-10 shadow-sm border-b-2 border-slate-300">
                                     <tr>
@@ -165,8 +187,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             </table>
                         </div>
 
-                        <div className="p-4 bg-white border-t border-slate-200">
-                            <button onClick={handleAutoGenerateWBS} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-transform active:scale-95 border border-indigo-500">✨ Generate WBS & Advance to Planning</button>
+                        <div className="p-4 bg-white border-t border-slate-200 mt-auto">
+                            <button onClick={handleAutoGenerateWBS} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition-transform active:scale-95 border border-indigo-500">✨ Generate WBS & Advance to Planning</button>
                         </div>
                     </div>
 
@@ -187,7 +209,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                         {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
                                             <div key={subName} className="border-2 border-dashed border-blue-300 bg-white/80 p-5 rounded-xl relative pt-8 shadow-sm">
                                                 <span className="absolute top-2 left-3 text-[10px] font-black text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{subName}</span>
-                                                <div className="space-y-3">
+                                                <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                                                     {subNodes.map(n => (
                                                         <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-colors">
                                                             <div className="font-bold text-xs truncate" title={n.name}><i className={`fas ${getIcon(n.type)} mr-2 opacity-80`}></i>{n.name}</div>
@@ -202,7 +224,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 
                                 {/* PaaS & Global Components */}
                                 {groups.Global.length > 0 && (
-                                    <div className="w-full border-2 border-emerald-200 bg-emerald-50/50 rounded-xl relative pt-6 p-4">
+                                    <div className="w-full border-2 border-emerald-200 bg-emerald-50/50 rounded-xl relative pt-6 p-4 mt-4">
                                         <span className="absolute -top-3 left-3 bg-emerald-100 px-3 py-1 rounded-full text-[10px] font-black text-emerald-800 uppercase tracking-wider border border-emerald-200">PaaS / Global Services</span>
                                         <div className="flex flex-wrap gap-4">
                                             {groups.Global.map(n => (
