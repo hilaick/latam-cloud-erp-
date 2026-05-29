@@ -5,10 +5,15 @@ import MgCReconciliationView from './MgCReconciliationView';
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
-    const nodes = project.mapperNodes || [];
-    const servers = nodes.filter(n => ['ECS', 'VM'].includes(n.type));
-    const databases = nodes.filter(n => ['RDS', 'GaussDB', 'DB'].includes(n.type));
     
+    // Topology Mapper data
+    const nodes = project.mapperNodes || [];
+    
+    // MgC Data Calculation
+    const rawInv = project.mgcData?.raw_inventory || {};
+    const totalMgcNodes = Object.values(rawInv).reduce((acc, curr) => acc + (Array.isArray(curr) ? curr.length : 0), 0);
+    const hasScanned = !!project.mgcData;
+
     let displayRisk = 'Pending';
     let riskColor = 'text-slate-500';
     if (project.ora) {
@@ -31,23 +36,23 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
             {subTab === 'summary' && (
                 <div className="animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm">
+                        <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm flex flex-col">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Source Resources</h4><i className="fas fa-server text-blue-500"></i></div>
-                            <div className="text-xs text-blue-700 mb-4">Automated discovery and resource import.</div>
-                            <div className="text-xl font-black text-blue-800">{servers.length + databases.length} Total Nodes</div>
-                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-[10px] uppercase font-bold text-blue-600 hover:underline">View Resources &gt;</button>
+                            <div className="text-xs text-blue-700 mb-4 flex-1">Automated discovery and resource import.</div>
+                            <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources Discovered` : 'Pending Discovery'}</div>
+                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-left text-[10px] uppercase font-bold text-blue-600 hover:underline">View Resources &gt;</button>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm">
+                        <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Topology Mapped</h4><i className="fas fa-sitemap text-slate-500"></i></div>
-                            <div className="text-xs text-slate-500 mb-4">Confirmed IaC Target Architecture.</div>
-                            <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? 'Confirmed' : 'Pending'}</div>
-                            <button onClick={()=>setSubTab('mapper')} className="mt-2 text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
+                            <div className="text-xs text-slate-500 mb-4 flex-1">Confirmed IaC Target Architecture.</div>
+                            <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? `${nodes.length} Nodes Mapped` : 'Pending Configuration'}</div>
+                            <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
-                        <div className={`p-6 rounded-2xl shadow-sm border ${displayRisk === 'Pending' ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
+                        <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${displayRisk === 'Pending' ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
                             <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${riskColor}`}>ORA Friction Profile</h4><i className={`fas fa-exclamation-triangle ${riskColor}`}></i></div>
-                            <div className="text-xs mb-4 text-slate-500 font-medium">Stateful workload cutover complexity.</div>
+                            <div className="text-xs mb-4 text-slate-500 font-medium flex-1">Stateful workload cutover complexity.</div>
                             <div className={`text-xl font-black ${riskColor}`}>{displayRisk}</div>
-                            <button onClick={()=>setSubTab('ora')} className={`mt-2 text-[10px] uppercase font-bold ${riskColor} hover:underline`}>Configure Details &gt;</button>
+                            <button onClick={()=>setSubTab('ora')} className={`mt-2 text-left text-[10px] uppercase font-bold ${riskColor} hover:underline`}>Configure Details &gt;</button>
                         </div>
                     </div>
                 </div>
