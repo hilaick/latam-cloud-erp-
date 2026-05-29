@@ -17,7 +17,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         onUpdateProject(activeProject.id, 'mapperNodes', newNodes);
     };
 
-    // 1. Map from SA Quotation Only
     const generateFromBlueprint = () => {
         if (servers.length === 0) return alert('No blueprint data found in this project.');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
@@ -29,7 +28,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         saveNodes(newNodes);
     };
 
-    // 2. Map Actual Data from MgC Only
     const generateFromMgC = () => {
         if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
@@ -38,19 +36,34 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         const isExcel = activeProject.mgcData.source === 'excel';
 
+        const parseNetwork = (netList) => {
+            netList.forEach((net, i) => {
+                const type = net.type || net.specs?.type || 'VPC';
+                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('Subnet') ? 'Subnet' : 'VPC';
+                newNodes.push({ id: `net-${Date.now()}-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', status: 'MgC Only' });
+            });
+        };
+
+        const parseStorage = (stList) => {
+            stList.forEach((st, i) => {
+                newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `Storage-${i}`, type: 'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', status: 'MgC Only' });
+            });
+        };
+
         if (isExcel) {
             (raw.servers || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
             (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
-            (raw.network || []).forEach((net, i) => newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' }));
+            parseNetwork(raw.network || []);
+            parseStorage(raw.storage || []);
         } else {
             (raw.compute || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
             (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
-            (raw.network || []).forEach((net, i) => newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' }));
+            parseNetwork(raw.network || []);
+            parseStorage(raw.storage || []);
         }
         saveNodes(newNodes);
     };
 
-    // 🚨 3. RECONCILIATION ENGINE: Compares SOW vs MgC and labels differences!
     const generateReconciledScope = () => {
         if (!activeProject?.mgcData) return alert('You must run MgC Discovery first to reconcile against the SOW!');
         if (nodes.length > 0 && !window.confirm("This will merge Quoted and MgC scopes, replacing your current table. Proceed?")) return;
@@ -58,39 +71,47 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         const isExcel = activeProject.mgcData.source === 'excel';
         
-        // 1. Gather all MgC Resources
         let mgcNodes = [];
+        const parseNetForMerge = (netList) => {
+            netList.forEach((net, i) => {
+                const type = net.type || net.specs?.type || 'VPC';
+                let shortType = type.includes('Security') ? 'SG' : type.includes('NAT') ? 'NAT' : type.includes('Subnet') ? 'Subnet' : 'VPC';
+                mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network' });
+            });
+        };
+        const parseStorageForMerge = (stList) => {
+            stList.forEach((st, i) => {
+                mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `Storage-${i}`, type: 'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global' });
+            });
+        };
+
         if (isExcel) {
             (raw.servers || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
             (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' }));
-            (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network' }));
+            parseNetForMerge(raw.network || []);
+            parseStorageForMerge(raw.storage || []);
         } else {
             (raw.compute || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
             (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' }));
-            (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network' }));
+            parseNetForMerge(raw.network || []);
+            parseStorageForMerge(raw.storage || []);
         }
 
-        // 2. Gather all Quoted Resources
         let quotedNodes = [];
         servers.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-Server-${i+1}`, type: 'ECS' }));
         databases.forEach((d, i) => quotedNodes.push({ name: d.name || `Quoted-DB-${i+1}`, type: 'RDS' }));
 
         const merged = [];
-        
-        // 3. Match MgC against Quoted
         mgcNodes.forEach(mNode => {
-            // Find a match by name (case insensitive)
             const matchIdx = quotedNodes.findIndex(q => (q.name || '').toLowerCase().includes((mNode.name || '').toLowerCase()) || (mNode.name || '').toLowerCase().includes((q.name || '').toLowerCase()));
-            
             if (matchIdx !== -1) {
                 merged.push({ ...mNode, status: 'Matched' });
-                quotedNodes.splice(matchIdx, 1); // Remove from pool once matched
+                quotedNodes.splice(matchIdx, 1);
             } else {
-                merged.push({ ...mNode, status: 'MgC Only' }); // Scope Creep
+                merged.push({ ...mNode, status: 'MgC Only' });
             }
         });
 
-        // 4. Any quoted nodes leftover were NOT found in MgC
         quotedNodes.forEach((q, i) => {
             merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: 'Pending-Allocation', status: 'Quoted Only' });
         });
@@ -151,12 +172,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const getIcon = (type) => {
         const t = String(type || "").toLowerCase();
-        if (t==='ecs' || t==='vm') return 'fa-server text-blue-600'; 
-        if (t==='rds' || t==='gaussdb' || t==='db') return 'fa-database text-rose-600';
-        if (t==='vpc' || t==='network' || t==='subnet') return 'fa-cloud text-indigo-600';
-        if (t==='elb' || t==='loadbalancer') return 'fa-sitemap text-blue-500';
-        if (t==='obs' || t==='storage') return 'fa-hdd text-emerald-600';
-        if (t==='cce' || t==='k8s') return 'fa-cubes text-blue-500';
+        if (t.includes('ecs') || t.includes('vm')) return 'fa-server text-blue-600'; 
+        if (t.includes('rds') || t.includes('db')) return 'fa-database text-rose-600';
+        if (t.includes('vpc')) return 'fa-cloud text-indigo-600';
+        if (t.includes('subnet')) return 'fa-network-wired text-indigo-400';
+        if (t.includes('sg') || t.includes('security')) return 'fa-shield-alt text-amber-500';
+        if (t.includes('nat')) return 'fa-route text-indigo-500';
+        if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
+        if (t.includes('obs') || t.includes('storage')) return 'fa-hdd text-emerald-600';
+        if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
         return 'fa-microchip text-slate-500';
     };
 
@@ -193,7 +217,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     <div className="xl:w-1/2 flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner">
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white flex-wrap gap-2">
                             <div className="flex gap-2">
-                                {/* 🚨 NEW: The Reconcile Button */}
                                 <button onClick={generateReconciledScope} className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors border border-emerald-500"><i className="fas fa-random mr-1"></i> Reconcile MgC vs SOW</button>
                                 <button onClick={generateFromMgC} className="py-2 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300" title="Load MgC Only"><i className="fas fa-search"></i></button>
                                 <button onClick={generateFromBlueprint} className="py-2 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300" title="Load SOW Only"><i className="fas fa-file-invoice"></i></button>
@@ -221,7 +244,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                             <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                 <td className="p-3 font-bold text-slate-800"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></td>
                                                 <td className="p-3 font-bold text-indigo-700">
-                                                    {/* 🚨 NEW: Explicit Dropdown for Resource Type */}
+                                                    {/* 🚨 Deep Networking added to dropdown */}
                                                     <select 
                                                         value={n.type} 
                                                         onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} 
@@ -229,11 +252,13 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     >
                                                         <option value="ECS">ECS (Compute)</option>
                                                         <option value="RDS">RDS (Database)</option>
-                                                        <option value="VPC">VPC (Network)</option>
+                                                        <option value="VPC">VPC</option>
+                                                        <option value="Subnet">Subnet</option>
+                                                        <option value="SG">Security Group</option>
+                                                        <option value="NAT">NAT Gateway</option>
                                                         <option value="OBS">OBS (Storage)</option>
-                                                        <option value="ELB">ELB (Load Balancer)</option>
-                                                        <option value="CCE">CCE (Kubernetes)</option>
-                                                        <option value="DWS">DWS (Data Warehouse)</option>
+                                                        <option value="ELB">ELB</option>
+                                                        <option value="CCE">CCE (K8s)</option>
                                                     </select>
                                                 </td>
                                                 <td className="p-3 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
