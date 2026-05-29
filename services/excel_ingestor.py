@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
 Excel/CSV Quotation Normalization Engine
-Transforms messy Sales Architect spreadsheets into strict blueprint.json schema
+Transforms messy Sales Architect spreadsheets into strict blueprint.json schema.
+Now dynamically captures Compute, Databases, Networking, and Storage arrays.
 """
 
 import pandas as pd
-import json
-import os
 import re
-from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 
 # ============================================================================
 # FUZZY MATCHING DICTIONARY
@@ -26,7 +24,7 @@ COLUMN_MAP = {
     'storage_gb': ['storage_gb', 'storage', 'disk', 'disk size', 'storage (gb)', 'disk (gb)', 'volume size']
 }
 
-def find_column(df: pd.DataFrame, alias_list: List[str]) -> Optional[str]:
+def find_column(df: pd.DataFrame, alias_list: list) -> Optional[str]:
     for col in df.columns:
         clean_col = str(col).strip().lower()
         for alias in alias_list:
@@ -38,12 +36,12 @@ def find_column(df: pd.DataFrame, alias_list: List[str]) -> Optional[str]:
     return None
 
 def clean_server_name(name: str) -> str:
-    if pd.isna(name): return "unnamed-server"
+    if pd.isna(name): return "unnamed-resource"
     name = str(name).strip()
     name = re.sub(r'[\s_\.]+', '-', name)
     name = re.sub(r'[^a-zA-Z0-9\-]', '', name)
     name = name.lower()
-    return name if name else "unnamed-server"
+    return name if name else "unnamed-resource"
 
 def parse_boolean(val: Any) -> bool:
     if pd.isna(val): return False
@@ -67,7 +65,6 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
     # 🚨 BULLETPROOF HUAWEI DETECTION: Scan deep into the file to bypass title rows
-    is_huawei = False
     try:
         if file_path.lower().endswith('.csv'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -106,7 +103,7 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
     }
     
     for index, row in df.iterrows():
@@ -135,7 +132,6 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
 # ============================================================================
 
 def parse_huawei_specifications(spec_string):
-    import re
     if pd.isna(spec_string): return {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
     spec = str(spec_string)
     result = {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
@@ -166,7 +162,6 @@ def parse_huawei_specifications(spec_string):
 def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"):
     print(f"🔄 Processing Huawei Quotation: {file_path}")
     
-    # 🚨 BULLETPROOF HEADER EXTRACTION: Finds the real header row
     try:
         header_idx = 0
         if file_path.lower().endswith('.csv'):
@@ -192,31 +187,44 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
     }
     
     for index, row in df.iterrows():
         if pd.isna(row.get('Description')): continue
         service_type = str(row.get('Service', '')).strip()
-        if 'Elastic Cloud Server' not in service_type: continue
+        description = clean_server_name(str(row.get('Description', '')).strip())
+        specs = str(row.get('Specifications', ''))
         
-        parsed_specs = parse_huawei_specifications(str(row.get('Specifications', '')))
-        
-        blueprint["topology"]["compute"].append({
-            "name": clean_server_name(str(row.get('Description', '')).strip()),
-            "flavor": parsed_specs['instance_type'] or service_type,
-            "is_public": False,
-            "status": "OK" if parsed_specs['vcpus'] > 0 else "WARNING",
-            "metadata": {
-                "tier": service_type,
-                "os_type": parsed_specs['os'],
-                "cpu_cores": parsed_specs['vcpus'],
-                "ram_gb": parsed_specs['ram_gb'],
-                "storage_gb": parsed_specs['storage_gb'],
-                "region": str(row.get('Region', '')).strip(),
-                "billing_mode": str(row.get('Billing Mode', '')).strip().lower().replace('-', '_'),
-                "original_row": index + 2
-            }
-        })
+        # 1. COMPUTE 
+        if 'Elastic Cloud Server' in service_type or 'Bare Metal' in service_type:
+            parsed_specs = parse_huawei_specifications(specs)
+            blueprint["topology"]["compute"].append({
+                "name": description,
+                "flavor": parsed_specs['instance_type'] or service_type,
+                "is_public": False,
+                "status": "OK" if parsed_specs['vcpus'] > 0 else "WARNING",
+                "metadata": { "tier": service_type, "os_type": parsed_specs['os'], "cpu_cores": parsed_specs['vcpus'], "ram_gb": parsed_specs['ram_gb'] }
+            })
+            
+        # 2. DATABASES
+        elif any(db in service_type for db in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']):
+            blueprint["topology"]["databases"].append({
+                "name": description, "engine": service_type, "version": "Unknown", "status": "OK"
+            })
+            
+        # 3. DEEP NETWORKING
+        elif any(net in service_type for net in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect']):
+            net_type = 'NAT' if 'NAT' in service_type else 'VPN' if 'Virtual Private' in service_type else 'EIP' if 'Elastic IP' in service_type else 'VPC'
+            blueprint["topology"]["network"].append({
+                "name": description, "type": net_type, "cidr": "N/A", "status": "OK"
+            })
+            
+        # 4. STORAGE & BACKUP
+        elif any(st in service_type for st in ['Cloud Backup and Recovery', 'Object Storage', 'SFS']):
+            st_type = 'CBR' if 'Backup' in service_type else 'OBS'
+            blueprint["topology"]["storage"].append({
+                "name": description, "type": st_type, "location": "Global", "status": "OK"
+            })
         
     return blueprint
