@@ -21,6 +21,8 @@ def find_header_row_and_set(df: pd.DataFrame) -> pd.DataFrame:
             
     # Set the discovered row as the header
     df.columns = df.iloc[header_idx]
+    
+    # 🚨 Drops everything above the header, safely bypassing the MgC super-header
     df = df.iloc[header_idx+1:].reset_index(drop=True)
     
     # CRITICAL FIX: Deduplicate column names. 
@@ -54,17 +56,14 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
         
         # 1. Detect File Type and Load ALL Sheets
         if file_lower.endswith('.csv'):
-            print("📄 Detected CSV format.")
             dfs['Sheet1'] = pd.read_csv(file_path, header=None, dtype=str)
         elif file_lower.endswith('.tsv') or file_lower.endswith('.txt'):
-            print("📄 Detected Paste/TSV format.")
             dfs['Sheet1'] = pd.read_csv(file_path, sep='\t', header=None, dtype=str)
         else:
             try:
                 xls = pd.ExcelFile(file_path)
-                print(f"📄 Excel Sheets found: {xls.sheet_names}")
                 for sheet in xls.sheet_names:
-                    # Load every sheet into the dictionary
+                    # 🚨 Load EVERY sheet into the dictionary concurrently
                     dfs[sheet] = pd.read_excel(file_path, sheet_name=sheet, header=None, dtype=str)
             except ImportError:
                 raise Exception("Missing Excel library. Please run in your terminal: pip install openpyxl")
@@ -85,7 +84,7 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
             elif 'storage' in sheet_lower: default_category = "storage"
             elif 'container' in sheet_lower: default_category = "containers"
             
-            # Fallback column checking for CSVs (which are always named 'Sheet1')
+            # Fallback column checking
             if default_category == "servers" and 'engine' in df.columns and 'version' in df.columns:
                 default_category = "databases"
             
@@ -124,6 +123,7 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
                 if row[col] != '': 
                     name = str(row[col]).strip()
                     break
+        
         # Fallback to ID if no name exists
         if not name and 'id' in row.index and row['id'] != '':
             name = str(row['id']).strip()
@@ -182,7 +182,7 @@ def parse_numeric(value) -> float:
     try:
         if value == '' or str(value).lower() == 'nan': return 0.0
         if isinstance(value, (int, float)): return float(value)
-        str_val = str(value)
+        str_val = str(value).replace(',', '')
         match = re.search(r'(\d+(?:\.\d+)?)', str_val)
         if match: return float(match.group(1))
         return 0.0
