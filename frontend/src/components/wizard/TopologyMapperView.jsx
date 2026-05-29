@@ -4,6 +4,8 @@ import { EditableCell } from '../../utils/helpers';
 export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
     const servers = activeProject?.blueprintData?.topology?.compute || [];
     const databases = activeProject?.blueprintData?.topology?.database || [];
+    const networks = activeProject?.blueprintData?.topology?.network || [];
+    const storages = activeProject?.blueprintData?.topology?.storage || [];
 
     const [nodes, setNodes] = useState(activeProject?.mapperNodes || []); 
     const [isMaximized, setIsMaximized] = useState(false);
@@ -17,17 +19,24 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         onUpdateProject(activeProject.id, 'mapperNodes', newNodes);
     };
 
+    // 1. Map from SA Quotation (Now captures Network & Storage)
     const generateFromBlueprint = () => {
-        if (servers.length === 0) return alert('No blueprint data found in this project.');
+        if (servers.length === 0 && databases.length === 0 && networks.length === 0) return alert('No blueprint data found in this project.');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
         
         const newNodes = [];
-        servers.forEach((server, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: server.name || `Quoted-Server-${i+1}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'Quoted Only' }));
-        databases.forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `Quoted-DB-${i+1}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'Quoted Only' }));
-        newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Quoted Only' });
+        servers.forEach((s, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: s.name || `Quoted-Server-${i+1}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'Quoted Only' }));
+        databases.forEach((d, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: d.name || `Quoted-DB-${i+1}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'Quoted Only' }));
+        networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name || `Quoted-${n.type}-${i+1}`, type: n.type || 'VPC', ip: 'N/A', location: 'Cloud-Network', status: 'Quoted Only' }));
+        storages.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `Quoted-${st.type}-${i+1}`, type: st.type || 'OBS', ip: 'N/A', location: 'Global', status: 'Quoted Only' }));
+
+        if(newNodes.length === 0 || !newNodes.find(n => n.type === 'VPC')) {
+            newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Quoted Only' });
+        }
         saveNodes(newNodes);
     };
 
+    // 2. Map Actual Data from MgC Only
     const generateFromMgC = () => {
         if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
@@ -61,9 +70,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             parseNetwork(raw.network || []);
             parseStorage(raw.storage || []);
         }
+        
+        if(newNodes.length === 0) newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' });
         saveNodes(newNodes);
     };
 
+    // 3. RECONCILIATION ENGINE: Compares SOW vs MgC and labels differences!
     const generateReconciledScope = () => {
         if (!activeProject?.mgcData) return alert('You must run MgC Discovery first to reconcile against the SOW!');
         if (nodes.length > 0 && !window.confirm("This will merge Quoted and MgC scopes, replacing your current table. Proceed?")) return;
@@ -71,6 +83,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         const isExcel = activeProject.mgcData.source === 'excel';
         
+        // 1. Gather all MgC Resources
         let mgcNodes = [];
         const parseNetForMerge = (netList) => {
             netList.forEach((net, i) => {
@@ -97,11 +110,16 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             parseStorageForMerge(raw.storage || []);
         }
 
+        // 2. Gather all Quoted Resources
         let quotedNodes = [];
         servers.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-Server-${i+1}`, type: 'ECS' }));
         databases.forEach((d, i) => quotedNodes.push({ name: d.name || `Quoted-DB-${i+1}`, type: 'RDS' }));
+        networks.forEach((n, i) => quotedNodes.push({ name: n.name || `Quoted-${n.type}-${i+1}`, type: n.type || 'VPC' }));
+        storages.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-${s.type}-${i+1}`, type: s.type || 'OBS' }));
 
         const merged = [];
+        
+        // 3. Match MgC against Quoted
         mgcNodes.forEach(mNode => {
             const matchIdx = quotedNodes.findIndex(q => (q.name || '').toLowerCase().includes((mNode.name || '').toLowerCase()) || (mNode.name || '').toLowerCase().includes((q.name || '').toLowerCase()));
             if (matchIdx !== -1) {
@@ -112,12 +130,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             }
         });
 
+        // 4. Leftovers were NOT found in MgC
         quotedNodes.forEach((q, i) => {
-            merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: 'Pending-Allocation', status: 'Quoted Only' });
+            merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: q.type === 'VPC' ? 'Cloud-Network' : 'Pending-Allocation', status: 'Quoted Only' });
         });
 
-        if(merged.length === 0) merged.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Matched' });
-        
+        if(!merged.find(n => n.type === 'VPC')) merged.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Matched' });
         saveNodes(merged);
     };
 
@@ -158,10 +176,11 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     };
 
     const groups = useMemo(() => {
-        const grps = { Edge: [], External: [], Subnets: {}, Global: [], Network: [] };
+        const grps = { Edge: [], External: [], Subnets: {}, Global: [], Network: [], Pending: [] };
         nodes.forEach(n => {
             const loc = String(n.location || "");
-            if (loc === 'Edge') grps.Edge.push(n); 
+            if (loc === 'Pending-Allocation') grps.Pending.push(n);
+            else if (loc === 'Edge') grps.Edge.push(n); 
             else if (loc.includes('External') || loc.includes('On-Premise')) grps.External.push(n);
             else if (loc === 'PaaS' || loc === 'Storage' || loc === 'Management' || loc === 'Serverless' || loc === 'Global') grps.Global.push(n); 
             else if (loc === 'Cloud-Network') grps.Network.push(n); 
@@ -176,10 +195,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         if (t.includes('rds') || t.includes('db')) return 'fa-database text-rose-600';
         if (t.includes('vpc')) return 'fa-cloud text-indigo-600';
         if (t.includes('subnet')) return 'fa-network-wired text-indigo-400';
-        if (t.includes('sg') || t.includes('security')) return 'fa-shield-alt text-amber-500';
-        if (t.includes('nat')) return 'fa-route text-indigo-500';
+        if (t.includes('sg') || t.includes('security') || t.includes('cbr') || t.includes('backup')) return 'fa-shield-alt text-amber-500';
+        if (t.includes('nat') || t.includes('eip') || t.includes('vpn')) return 'fa-route text-indigo-500';
         if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
-        if (t.includes('obs') || t.includes('storage')) return 'fa-hdd text-emerald-600';
+        if (t.includes('obs') || t.includes('storage') || t.includes('sfs')) return 'fa-hdd text-emerald-600';
         if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
         return 'fa-microchip text-slate-500';
     };
@@ -244,7 +263,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                             <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                 <td className="p-3 font-bold text-slate-800"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></td>
                                                 <td className="p-3 font-bold text-indigo-700">
-                                                    {/* 🚨 Deep Networking added to dropdown */}
                                                     <select 
                                                         value={n.type} 
                                                         onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} 
@@ -256,7 +274,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                         <option value="Subnet">Subnet</option>
                                                         <option value="SG">Security Group</option>
                                                         <option value="NAT">NAT Gateway</option>
+                                                        <option value="EIP">Elastic IP</option>
+                                                        <option value="VPN">VPN</option>
                                                         <option value="OBS">OBS (Storage)</option>
+                                                        <option value="CBR">Backup (CBR)</option>
                                                         <option value="ELB">ELB</option>
                                                         <option value="CCE">CCE (K8s)</option>
                                                     </select>
@@ -288,6 +309,25 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             </div>
                         ) : (
                             <div className="flex flex-col gap-4 items-start min-w-[600px]">
+
+                                {/* Unallocated / Pending Nodes */}
+                                {groups.Pending.length > 0 && (
+                                    <div className="w-full border-2 border-rose-200 bg-rose-50/50 rounded-xl p-4 relative mb-4">
+                                        <span className="absolute -top-3 left-3 bg-rose-100 px-3 py-1 rounded-full text-[10px] font-black text-rose-800 uppercase tracking-wider border border-rose-200">Unallocated Quoted Resources</span>
+                                        <div className="flex flex-wrap gap-4 mt-2">
+                                            {groups.Pending.map(n => (
+                                                <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center gap-3 min-w-[150px] relative">
+                                                    {getStatusIcon(n.status)}
+                                                    <i className={`${getIcon(n.type)} text-2xl`}></i>
+                                                    <div className="truncate">
+                                                        <div className="font-bold text-xs text-slate-800 truncate" title={n.name}>{n.name}</div>
+                                                        <div className="text-[10px] font-mono text-rose-600 truncate">Assign to Subnet</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 
                                 {/* Target Cloud VPC */}
                                 <div className="w-full border-4 border-blue-200 bg-blue-50/30 rounded-2xl p-8 relative min-h-[300px]">
