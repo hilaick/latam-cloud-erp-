@@ -17,8 +17,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const [nodes, setNodes] = useState(activeProject?.mapperNodes || []); 
     const [activeTab, setActiveTab] = useState('table'); 
     const [regionFilter, setRegionFilter] = useState('All');
-    
-    // 🚨 STATE FOR THE CONFIGURATION DRAWER
     const [selectedNode, setSelectedNode] = useState(null);
     
     useEffect(()=>{ setNodes(activeProject?.mapperNodes || []); }, [activeProject]);
@@ -31,6 +29,18 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         else document.exitFullscreen();
     };
 
+    const getShortNetType = (type) => {
+        const t = String(type || 'VPC');
+        if (t.includes('Security') || t === 'SG') return 'SG';
+        if (t.includes('NAT')) return 'NAT';
+        if (t.includes('Customer Gateway')) return 'CGW';
+        if (t.includes('Connection')) return 'VPN-Conn';
+        if (t.includes('VPN')) return 'VPN';
+        if (t.includes('EIP')) return 'EIP';
+        if (t.includes('Subnet')) return 'Subnet';
+        return 'VPC';
+    };
+
     const generateFromBlueprint = () => {
         if (servers.length === 0 && databases.length === 0 && networks.length === 0) return alert('No blueprint data found in this project.');
         if (nodes.length > 0 && !window.confirm("Overwrite your current architecture table?")) return;
@@ -39,7 +49,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const newNodes = [];
         servers.forEach((s, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: s.name, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, status: 'Quoted Only', config: { os: s.metadata?.os_type || 'Unknown' } }));
         databases.forEach((d, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: d.name, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name, type: n.type || 'VPC', ip: 'N/A', location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
+        networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name, type: getShortNetType(n.type), ip: 'N/A', location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
         storages.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name, type: st.type || 'OBS', ip: 'N/A', location: 'Global', region: st.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
         saveNodes(newNodes);
     };
@@ -52,8 +62,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         
         const parseNet = (netList) => netList.forEach((net, i) => {
-            let shortType = (net.type||'VPC').includes('Security') ? 'SG' : (net.type||'VPC').includes('NAT') ? 'NAT' : (net.type||'VPC').includes('VPN') ? 'VPN' : (net.type||'VPC').includes('Subnet') ? 'Subnet' : 'VPC';
-            newNodes.push({ id: `net-${Date.now()}-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', status: 'Live Only', config: {} });
+            newNodes.push({ id: `net-${Date.now()}-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', status: 'Live Only', config: {} });
         });
         const parseStorage = (stList) => stList.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', status: 'Live Only', config: {} }));
 
@@ -67,7 +76,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         saveNodes(newNodes);
     };
 
-    // 🚨 ADVANCED NORMALIZATION Deduplication Strategy
+    // 🚨 2-PASS RECONCILIATION ENGINE (DUPLICATE FIX)
     const normalizeStr = (str) => String(str || "").toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const generateReconciledScope = () => {
@@ -77,43 +86,55 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const raw = activeProject.mgcData.raw_inventory || {};
         let mgcNodes = [];
         
-        const parseNetForMerge = (netList) => netList.forEach((net, i) => {
-            let shortType = (net.type||'VPC').includes('Security') ? 'SG' : (net.type||'VPC').includes('NAT') ? 'NAT' : (net.type||'VPC').includes('VPN') ? 'VPN' : (net.type||'VPC').includes('Subnet') ? 'Subnet' : 'VPC';
-            mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `${shortType}-${i}`, type: shortType, ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', config: {} });
-        });
-        const parseStorageForMerge = (stList) => stList.forEach((st, i) => mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', config: {} }));
-
-        const extractCompute = (list) => list.forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || activeProject?.region || 'Unknown', config: { os: srv.os_type || srv.specs?.os || 'Unknown' } }));
-        const extractDb = (list) => list.forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || activeProject?.region || 'Unknown', config: { engine: db.engine || db.specs?.engine || 'Unknown' } }));
-
-        extractCompute(raw.servers || raw.compute || []);
-        extractDb(raw.databases || []);
-        parseNetForMerge(raw.network || []);
-        parseStorageForMerge(raw.storage || []);
+        (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', config: {} }));
+        (raw.storage || []).forEach((st, i) => mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', config: {} }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || activeProject?.region || 'Unknown', config: { os: srv.os_type || srv.specs?.os || 'Unknown' } }));
+        (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || activeProject?.region || 'Unknown', config: { engine: db.engine || db.specs?.engine || 'Unknown' } }));
 
         const fallbackRegion = activeProject?.region || 'la-south-2';
         let quotedNodes = [];
-        servers.forEach((s) => quotedNodes.push({ name: s.name, type: 'ECS', loc: 'Compute-Subnet', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        databases.forEach((d) => quotedNodes.push({ name: d.name, type: 'RDS', loc: 'Data-Subnet', reg: d.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        networks.forEach((n) => quotedNodes.push({ name: n.name, type: n.type || 'VPC', loc: 'Cloud-Network', reg: n.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        storages.forEach((s) => quotedNodes.push({ name: s.name, type: s.type || 'OBS', loc: 'Global', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        servers.forEach(s => quotedNodes.push({ name: s.name, type: 'ECS', loc: 'Compute-Subnet', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        databases.forEach(d => quotedNodes.push({ name: d.name, type: 'RDS', loc: 'Data-Subnet', reg: d.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        networks.forEach(n => quotedNodes.push({ name: n.name, type: getShortNetType(n.type), loc: 'Cloud-Network', reg: n.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        storages.forEach(s => quotedNodes.push({ name: s.name, type: s.type || 'OBS', loc: 'Global', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
 
         const merged = [];
-        
+        const unmatchedMgc = [];
+
+        // PASS 1: Exact Name Match or Exact IP Match
         mgcNodes.forEach(mNode => {
             const mNameNorm = normalizeStr(mNode.name);
             const mIp = (mNode.ip && mNode.ip !== 'N/A' && mNode.ip !== 'TBD') ? mNode.ip : null;
 
-            // Fuzzy Match logic: If sanitized strings match, or valid IPs match, it's the same resource!
             const matchIdx = quotedNodes.findIndex(q => {
                 const qNameNorm = normalizeStr(q.name);
-                const isNameMatch = (qNameNorm === mNameNorm) || (mNameNorm.length > 4 && qNameNorm.includes(mNameNorm)) || (qNameNorm.length > 4 && mNameNorm.includes(qNameNorm));
-                const isIpMatch = mIp && q.ip === mIp;
-                return isNameMatch || isIpMatch;
+                const isTypeCompat = (q.type === mNode.type) || (q.type === 'ECS' && mNode.type === 'ECS');
+                return ((qNameNorm === mNameNorm) || (mIp && q.ip === mIp)) && isTypeCompat;
             });
 
             if (matchIdx !== -1) { 
-                merged.push({ ...mNode, name: quotedNodes[matchIdx].name, status: 'Matched' }); // Prefer the SOW name
+                merged.push({ ...mNode, name: quotedNodes[matchIdx].name, status: 'Matched' }); 
+                quotedNodes.splice(matchIdx, 1); 
+            } else { 
+                unmatchedMgc.push(mNode); 
+            }
+        });
+
+        // PASS 2: Fuzzy Substring Match (Strip "server", "ecs", and trailing numbers)
+        unmatchedMgc.forEach(mNode => {
+            const mNameClean = normalizeStr(mNode.name).replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
+            if(mNameClean.length < 4) { merged.push({ ...mNode, status: 'Live Only' }); return; }
+
+            const matchIdx = quotedNodes.findIndex(q => {
+                const qNameClean = normalizeStr(q.name).replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
+                if(qNameClean.length < 4) return false;
+                const isFuzzy = qNameClean.includes(mNameClean) || mNameClean.includes(qNameClean);
+                const isTypeCompat = (q.type === mNode.type) || (q.type === 'ECS' && mNode.type === 'ECS');
+                return isFuzzy && isTypeCompat;
+            });
+
+            if (matchIdx !== -1) { 
+                merged.push({ ...mNode, name: quotedNodes[matchIdx].name, status: 'Matched' }); 
                 quotedNodes.splice(matchIdx, 1); 
             } else { 
                 merged.push({ ...mNode, status: 'Live Only' }); 
@@ -134,7 +155,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             const type = String(n.type).toUpperCase();
             const loc = String(n.location || "");
             if (loc === 'Pending-Allocation') grps.Pending.push(n);
-            else if (['NAT', 'EIP', 'VPN', 'ELB'].includes(type)) grps.EdgeGateways.push(n);
+            else if (['NAT', 'EIP', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) grps.EdgeGateways.push(n);
             else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') grps.Global.push(n);
             else if (type !== 'VPC') {
                 if (!grps.Subnets[loc]) grps.Subnets[loc] = [];
@@ -150,7 +171,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         if (t.includes('rds') || t.includes('db')) return 'fa-database text-rose-600';
         if (t.includes('subnet')) return 'fa-network-wired text-indigo-400';
         if (t.includes('sg') || t.includes('security')) return 'fa-shield-alt text-amber-500';
-        if (t.includes('nat') || t.includes('eip') || t.includes('vpn')) return 'fa-route text-indigo-600';
+        if (t.includes('nat') || t.includes('eip') || t.includes('vpn') || t.includes('cgw')) return 'fa-route text-indigo-600';
         if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
         if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('backup')) return 'fa-hdd text-emerald-600';
         if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
@@ -171,7 +192,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 relative overflow-hidden">
                 
-                {/* Header & Tabs */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-200 pb-4 gap-4">
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-sitemap text-indigo-500"></i> Infrastructure Scope Manager</h3>
@@ -183,7 +203,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 </div>
 
-                {/* TAB 1: INTERACTIVE TABLE */}
                 {activeTab === 'table' && (
                     <div id="table-container" className="flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-fade-in min-h-[600px] bg-white">
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white">
@@ -218,21 +237,19 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     {getStatusIcon(n.status)}
                                                     <div className="ml-4"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest">
-                                                    <EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} />
-                                                </td>
+                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
                                                 <td className="p-4 font-bold text-indigo-700">
                                                     <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
                                                         <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
                                                         <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
-                                                        <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="OBS">OBS (Storage)</option>
-                                                        <option value="CBR">CBR (Backup)</option><option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
+                                                        <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
+                                                        <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
+                                                        <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
                                                     </select>
                                                 </td>
                                                 <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
                                                 <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
                                                 <td className="p-4 text-center space-x-3">
-                                                    {/* 🚨 THE CONFIG GEAR ICON */}
                                                     <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
                                                     <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
                                                 </td>
@@ -245,7 +262,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 )}
 
-                {/* TAB 2: VISUAL CANVAS */}
                 {activeTab === 'canvas' && (
                     <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in min-h-[700px] overflow-hidden">
                         
@@ -285,7 +301,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                             <i className={`${getIcon(n.type)} text-lg`}></i>
                                                         </div>
                                                         <div className="truncate">
-                                                            <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type} Gateway</div>
+                                                            <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div>
                                                             <div className="font-bold text-[10px] text-indigo-900 truncate" title={n.name}>{n.name}</div>
                                                         </div>
                                                     </div>
@@ -337,7 +353,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 )}
                 
-                {/* 🚨 THE NODE PROPERTIES / CONFIGURATION DRAWER */}
                 {selectedNode && (
                     <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-left rounded-r-2xl overflow-hidden">
                         <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center">
@@ -349,7 +364,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
-                            
                             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                                 <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Core Identity</h4>
                                 <div className="space-y-3">
@@ -357,47 +371,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     <div><label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Location Zone</label><div className="font-bold text-xs text-slate-800">{selectedNode.location}</div></div>
                                 </div>
                             </div>
-
                             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                                 <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Configuration / Dependencies</h4>
                                 <div className="space-y-4">
-                                    {/* Dynamic Fields based on Type */}
-                                    {selectedNode.type === 'CBR' && (
-                                        <>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 block mb-1">Backup Retention (Days)</label>
-                                                <input type="number" defaultValue={(selectedNode.config || {}).retention_days || 30} onChange={e => handleUpdateNode(selectedNode.id, 'config', { ...selectedNode.config, retention_days: e.target.value })} className="w-full p-2 text-xs border border-slate-300 rounded outline-none focus:border-blue-500" />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 block mb-1">Incremental Frequency</label>
-                                                <select defaultValue={(selectedNode.config || {}).frequency || 'Daily'} onChange={e => handleUpdateNode(selectedNode.id, 'config', { ...selectedNode.config, frequency: e.target.value })} className="w-full p-2 text-xs border border-slate-300 rounded outline-none focus:border-blue-500">
-                                                    <option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Hourly">Hourly</option>
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
-                                    
-                                    {selectedNode.type === 'VPN' && (
-                                        <>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 block mb-1">Connection Type</label>
-                                                <select defaultValue={(selectedNode.config || {}).vpn_type || 'IPsec'} onChange={e => handleUpdateNode(selectedNode.id, 'config', { ...selectedNode.config, vpn_type: e.target.value })} className="w-full p-2 text-xs border border-slate-300 rounded outline-none focus:border-blue-500">
-                                                    <option value="IPsec">IPsec Site-to-Site</option><option value="SSL">SSL Client</option>
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {selectedNode.type === 'ECS' && (
-                                        <>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 block mb-1">Operating System</label>
-                                                <input type="text" defaultValue={(selectedNode.config || {}).os || ''} onChange={e => handleUpdateNode(selectedNode.id, 'config', { ...selectedNode.config, os: e.target.value })} className="w-full p-2 text-xs border border-slate-300 rounded outline-none focus:border-blue-500" />
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* Generic JSON Meta field for anything else */}
                                     <div>
                                         <label className="text-[10px] font-bold text-slate-600 block mb-1">Custom Metadata (JSON)</label>
                                         <textarea 
@@ -405,11 +381,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                             onChange={e => { try { handleUpdateNode(selectedNode.id, 'config', JSON.parse(e.target.value)); } catch(e){} }}
                                             className="w-full h-32 p-2 text-[10px] font-mono border border-slate-300 rounded outline-none focus:border-blue-500 custom-scrollbar"
                                         ></textarea>
-                                        <p className="text-[8px] text-slate-400 mt-1 italic">Edits apply immediately but must be valid JSON.</p>
                                     </div>
                                 </div>
                             </div>
-
                         </div>
                         <div className="p-4 bg-white border-t border-slate-200">
                             <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close Drawer</button>
