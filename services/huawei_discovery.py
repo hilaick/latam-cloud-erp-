@@ -25,11 +25,18 @@ except ImportError:
     HAS_CBR = False
 
 try:
-    from huaweicloudsdkvpn.v5 import VpnClient, ListVpnGatewaysRequest
+    from huaweicloudsdkvpn.v5 import VpnClient, ListVpnGatewaysRequest, ListCustomerGatewaysRequest, ListVpnConnectionsRequest
     from huaweicloudsdkvpn.v5.region.vpn_region import VpnRegion
     HAS_VPN = True
 except ImportError:
     HAS_VPN = False
+
+try:
+    from huaweicloudsdkeip.v2 import EipClient, ListPublicipsRequest
+    from huaweicloudsdkeip.v2.region.eip_region import EipRegion
+    HAS_EIP = True
+except ImportError:
+    HAS_EIP = False
 
 try:
     from obs import ObsClient
@@ -57,7 +64,6 @@ class HuaweiDiscovery:
                 logger.error(f"Failed to decrypt vault: {str(e)}")
                 raise ValueError("Invalid vault credentials format.")
 
-        # 🚨 AUTO-RESOLVE PROJECT IDs VIA IAM
         self.project_ids = {}
         try:
             global_creds = GlobalCredentials(self.raw_ak, self.raw_sk)
@@ -75,11 +81,8 @@ class HuaweiDiscovery:
 
         try:
             for target_region in self.regions:
-                # 🚨 Use auto-resolved Project ID for this specific region
                 target_project_id = self.project_ids.get(target_region)
-                if not target_project_id:
-                    logger.warning(f"Skipping region {target_region}: No Project ID mapped.")
-                    continue
+                if not target_project_id: continue
 
                 region_creds = BasicCredentials(self.raw_ak, self.raw_sk, target_project_id)
                 
@@ -99,7 +102,7 @@ class HuaweiDiscovery:
                     for db in rds_res.instances:
                         inventory["databases"].append({ "id": db.id, "name": db.name, "type": "RDS", "engine": db.datastore.type, "version": db.datastore.version, "status": db.status, "volume_gb": db.volume.size, "region": target_region })
 
-                # 3. NETWORK (VPC, Subnets, SG)
+                # 3. NETWORK CORE (VPC, Subnets, SG)
                 from huaweicloudsdkvpc.v2.region.vpc_region import VpcRegion
                 vpc_client = VpcClient.new_builder().with_credentials(region_creds).with_region(VpcRegion.value_of(target_region)).build()
                 
@@ -110,17 +113,25 @@ class HuaweiDiscovery:
                 for sg in vpc_client.list_security_groups(ListSecurityGroupsRequest(limit=100)).security_groups or []:
                     inventory["network"].append({"id": sg.id, "name": sg.name, "type": "SG", "cidr": "N/A", "status": "Active", "region": target_region})
 
-                # 4. EDGE GATEWAYS (NAT & VPN)
+                # 4. EDGE GATEWAYS (NAT, EIP, VPN, Customer Gateways)
                 if HAS_NAT:
                     nat_client = NatClient.new_builder().with_credentials(region_creds).with_region(NatRegion.value_of(target_region)).build()
                     for nat in nat_client.list_nat_gateways(ListNatGatewaysRequest(limit=100)).nat_gateways or []:
-                        inventory["network"].append({"id": nat.id, "name": nat.name, "type": "NAT", "cidr": "N/A", "status": nat.status, "region": target_region})
+                        inventory["network"].append({"id": nat.id, "name": nat.name, "type": "NAT Gateway", "cidr": "N/A", "status": nat.status, "region": target_region})
+
+                if HAS_EIP:
+                    eip_client = EipClient.new_builder().with_credentials(region_creds).with_region(EipRegion.value_of(target_region)).build()
+                    for eip in eip_client.list_publicips(ListPublicipsRequest(limit=100)).publicips or []:
+                        inventory["network"].append({"id": eip.id, "name": eip.alias or eip.public_ip_address, "type": "EIP", "cidr": eip.public_ip_address, "status": eip.status, "region": target_region})
 
                 if HAS_VPN:
                     vpn_client = VpnClient.new_builder().with_credentials(region_creds).with_region(VpnRegion.value_of(target_region)).build()
                     for vpn in vpn_client.list_vpn_gateways(ListVpnGatewaysRequest(limit=100)).vpn_gateways or []:
-                        flavor = getattr(vpn, 'flavor', 'Standard')
-                        inventory["network"].append({"id": vpn.id, "name": vpn.name, "type": "VPN", "cidr": "N/A", "status": vpn.status, "flavor": flavor, "region": target_region})
+                        inventory["network"].append({"id": vpn.id, "name": vpn.name, "type": "Enterprise VPN Gateway", "cidr": "N/A", "status": vpn.status, "region": target_region})
+                    for cgw in vpn_client.list_customer_gateways(ListCustomerGatewaysRequest(limit=100)).customer_gateways or []:
+                        inventory["network"].append({"id": cgw.id, "name": cgw.name, "type": "Customer Gateway", "cidr": cgw.bgp_asn or 'N/A', "status": "Active", "region": target_region})
+                    for conn in vpn_client.list_vpn_connections(ListVpnConnectionsRequest(limit=100)).vpn_connections or []:
+                        inventory["network"].append({"id": conn.id, "name": conn.name, "type": "VPN Connection", "cidr": "N/A", "status": conn.status, "region": target_region})
 
                 # 5. STORAGE & BACKUP (OBS & CBR)
                 if HAS_CBR:
