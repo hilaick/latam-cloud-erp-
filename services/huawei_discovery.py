@@ -1,6 +1,5 @@
 import logging
 from typing import Dict, Any, List
-from services.credential_manager import get_credential_manager
 
 # Huawei Cloud SDK Imports
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
@@ -17,23 +16,27 @@ class HuaweiDiscovery:
     Maps customer source environments safely to reduce discovery from 5 days to 15 minutes.
     """
     
-    def __init__(self, encrypted_ak_data: dict, encrypted_sk_data: dict, region: str, master_password: str):
+    def __init__(self, encrypted_ak_data: Any, encrypted_sk_data: Any, region: str, master_password: str):
         self.region = region
         
-        # 1. Safely decrypt credentials in memory
-        cred_manager = get_credential_manager(master_password)
-        
-        # Assuming your credential manager returns the raw strings
-        # Adjust this slightly based on your exact credential_manager.py decrypt method signature
-        try:
-            self.raw_ak, self.raw_sk = cred_manager.decrypt_credentials({
-                'encrypted_ak': encrypted_ak_data,
-                'encrypted_sk': encrypted_sk_data,
-                # Include salt/nonce here depending on your exact AES-GCM implementation
-            })
-        except Exception as e:
-            logger.error(f"Failed to decrypt customer vault credentials: {str(e)}")
-            raise ValueError("Unauthorized: Invalid vault credentials.")
+        ak_str = str(encrypted_ak_data).strip()
+        sk_str = str(encrypted_sk_data).strip()
+
+        # 🚨 SMART DETECTION: If keys are plain text (not JSON dicts), bypass AES Decryption and use directly.
+        if not ak_str.startswith('{') and len(ak_str) > 5:
+            self.raw_ak = ak_str
+            self.raw_sk = sk_str
+        else:
+            try:
+                from services.credential_manager import get_credential_manager
+                cred_manager = get_credential_manager(master_password)
+                self.raw_ak, self.raw_sk = cred_manager.decrypt_credentials({
+                    'encrypted_ak': encrypted_ak_data,
+                    'encrypted_sk': encrypted_sk_data,
+                })
+            except Exception as e:
+                logger.error(f"Failed to decrypt customer vault credentials: {str(e)}")
+                raise ValueError(f"Invalid vault credentials format. Details: {str(e)}")
 
         # 2. Initialize strict Read-Only Credentials
         self.credentials = BasicCredentials(self.raw_ak, self.raw_sk)
@@ -74,7 +77,7 @@ class HuaweiDiscovery:
         try:
             # --- 1. DISCOVER COMPUTE (ECS) ---
             ecs_client = self._get_ecs_client()
-            ecs_req = ListServersDetailsRequest(limit=100) # Pagination limit for safety
+            ecs_req = ListServersDetailsRequest(limit=100)
             ecs_res = ecs_client.list_servers_details(ecs_req)
             
             if ecs_res.servers:
