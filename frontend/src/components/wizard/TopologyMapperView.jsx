@@ -34,7 +34,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         saveNodes(newNodes);
     };
 
-    // 🚨 2. FIX: Map Actual Data from MgC Import (Pulls exact Names and IPs)
+    // 2. Map Actual Data from MgC Import
     const generateFromMgC = () => {
         if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
         if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the MgC data. Proceed?")) return;
@@ -52,7 +52,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                 newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' });
             });
             (raw.network || []).forEach((net, i) => {
-                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || '10.0.0.0/16', location: 'Cloud-Network' });
+                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network' });
             });
         } else {
             (raw.compute || []).forEach((srv, i) => {
@@ -110,14 +110,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         }
     };
 
+    // 🚨 FIX: Now correctly captures and exposes the Network bucket
     const groups = useMemo(() => {
-        const grps = { Edge: [], External: [], Subnets: {}, Global: [] };
+        const grps = { Edge: [], External: [], Subnets: {}, Global: [], Network: [] };
         nodes.forEach(n => {
             const loc = String(n.location || "");
             if (loc === 'Edge') grps.Edge.push(n); 
             else if (loc.includes('External') || loc.includes('On-Premise')) grps.External.push(n);
             else if (loc === 'PaaS' || loc === 'Storage' || loc === 'Management' || loc === 'Serverless' || loc === 'Global') grps.Global.push(n); 
-            else if (loc === 'Cloud-Network') { /* Ignore Base VPC for subnets */ }
+            else if (loc === 'Cloud-Network') grps.Network.push(n); 
             else { if (!grps.Subnets[loc]) grps.Subnets[loc] = []; grps.Subnets[loc].push(n); }
         });
         return grps;
@@ -127,7 +128,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const t = String(type || "").toLowerCase();
         if (t==='ecs' || t==='vm') return 'fa-server text-blue-600'; 
         if (t==='rds' || t==='gaussdb' || t==='db') return 'fa-database text-rose-600';
-        if (t==='vpc') return 'fa-cloud text-indigo-600';
+        if (t==='vpc' || t==='network' || t==='subnet') return 'fa-cloud text-indigo-600';
         if (t==='elb' || t==='loadbalancer') return 'fa-sitemap text-blue-500';
         return 'fa-microchip text-slate-500';
     };
@@ -155,7 +156,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <button onClick={handleAddNode} className="py-2 px-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Resource</button>
                         </div>
                         
-                        {/* 🚨 FIX: Scrollable constraints for large imports */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar max-h-[500px]">
                             <table className="w-full text-left min-w-[600px]">
                                 <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 sticky top-0 z-10 shadow-sm border-b-2 border-slate-300">
@@ -205,6 +205,23 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 {/* Target Cloud VPC */}
                                 <div className="w-full border-4 border-blue-200 bg-blue-50/30 rounded-2xl p-8 relative min-h-[300px]">
                                     <span className="absolute -top-4 left-6 bg-blue-100 border border-blue-300 px-4 py-1.5 rounded-full text-sm font-black text-blue-800 uppercase tracking-widest shadow-sm"><i className="fas fa-cloud mr-2"></i> Target Infrastructure</span>
+                                    
+                                    {/* 🚨 FIX: New Render Block for Core Networking Components */}
+                                    {groups.Network.length > 0 && (
+                                        <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white/60 border border-blue-200 rounded-xl shadow-sm">
+                                            <div className="w-full text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-1"><i className="fas fa-network-wired mr-1"></i> Core Networking</div>
+                                            {groups.Network.map(n => (
+                                                <div key={n.id} className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm flex items-center gap-3 min-w-[150px] hover:border-indigo-400 transition-colors">
+                                                    <i className={`${getIcon(n.type)} text-2xl`}></i>
+                                                    <div className="truncate">
+                                                        <div className="font-bold text-xs text-indigo-900 truncate" title={n.name}>{n.name}</div>
+                                                        <div className="text-[10px] font-mono text-indigo-600 truncate">{n.ip}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-4">
                                         {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
                                             <div key={subName} className="border-2 border-dashed border-blue-300 bg-white/80 p-5 rounded-xl relative pt-8 shadow-sm">
