@@ -326,4 +326,171 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     <EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} />
                                                 </td>
                                                 <td className="p-4 font-bold text-indigo-700">
-                                                    <select value={n.type} onChange={e => handleUpdateNode(n.id, '
+                                                    <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
+                                                        <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
+                                                        <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
+                                                        <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
+                                                        <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
+                                                        <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
+                                                    </select>
+                                                </td>
+                                                <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
+                                                <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
+                                                <td className="p-4 text-center space-x-3">
+                                                    <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
+                                                    <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* TAB: VISUAL CANVAS */}
+                {activeTab === 'canvas' && (
+                    <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in min-h-[700px] overflow-hidden">
+                        
+                        <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20">
+                            <div className="flex items-center gap-3">
+                                <i className="fas fa-filter text-slate-400"></i>
+                                <div className="flex gap-2">
+                                    {uniqueRegions.map(r => (
+                                        <button key={r} onClick={()=>setRegionFilter(r)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors border ${regionFilter === r ? 'bg-indigo-100 text-indigo-800 border-indigo-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                                            {r}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <button onClick={()=>toggleFullScreen('canvas-container')} className="py-2 px-4 bg-slate-800 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-700 transition-colors"><i className="fas fa-expand mr-2"></i> Full Screen</button>
+                        </div>
+
+                        <div className="p-6 overflow-auto custom-scrollbar flex-1 relative">
+                            {localNodes.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 mt-20">
+                                    <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
+                                    <p className="font-black text-lg">Awaiting Topology Data</p>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-10 items-center min-w-[800px] py-8">
+                                    <div className="w-full max-w-5xl border-4 border-indigo-200 bg-indigo-50/20 rounded-3xl p-8 pt-16 relative shadow-sm">
+                                        <div className="absolute -top-5 left-8 bg-indigo-600 border border-indigo-700 px-6 py-2 rounded-xl text-sm font-black text-white uppercase tracking-widest shadow-md">
+                                            <i className="fas fa-cloud mr-2"></i> {regionFilter === 'All' ? 'Huawei Cloud VPC' : `VPC: ${regionFilter}`}
+                                        </div>
+                                        
+                                        <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
+                                            {groups.EIPs.length > 0 && (
+                                                <div className="bg-white border-2 border-sky-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative cursor-help">
+                                                    <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100">
+                                                        <i className="fas fa-wifi text-sky-600 text-lg"></i>
+                                                    </div>
+                                                    <div className="truncate">
+                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">EIP Pool</div>
+                                                        <div className="font-bold text-[10px] text-sky-900 truncate">{groups.EIPs.length} Allocated IPs</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {groups.EdgeGateways.map(n => (
+                                                <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white border-2 border-indigo-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] hover:border-indigo-500 transition-colors relative cursor-pointer hover:-translate-y-1">
+                                                    {getStatusIcon(n.status)}
+                                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
+                                                        <i className={`${getIcon(n.type)} text-lg`}></i>
+                                                    </div>
+                                                    <div className="truncate">
+                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div>
+                                                        <div className="font-bold text-[10px] text-indigo-900 truncate" title={n.name}>{n.name}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+                                            {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
+                                                <div key={subName} className="border-2 border-dashed border-blue-400 bg-white/60 p-5 rounded-2xl relative pt-10 shadow-sm">
+                                                    <span className="absolute top-3 left-4 text-[10px] font-black text-blue-800 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-md border border-blue-300 shadow-sm">
+                                                        <i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}
+                                                    </span>
+                                                    <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2 mt-2">
+                                                        {subNodes.map(n => (
+                                                            <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-500 hover:-translate-y-1 transition-all relative flex flex-col items-center text-center cursor-pointer">
+                                                                {getStatusIcon(n.status)}
+                                                                <i className={`fas ${getIcon(n.type)} text-3xl mt-2 mb-2 opacity-80`}></i>
+                                                                <div className="font-bold text-[10px] truncate w-full text-slate-800" title={n.name}>{n.name}</div>
+                                                                <div className="text-[9px] font-black bg-slate-100 text-slate-500 mt-1.5 px-2 py-0.5 rounded uppercase tracking-wider">{n.type}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    {groups.Global.length > 0 && (
+                                        <div className="w-full max-w-5xl border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl relative pt-10 p-6 shadow-sm">
+                                            <span className="absolute -top-4 left-6 bg-emerald-100 px-4 py-1.5 rounded-xl text-xs font-black text-emerald-800 uppercase tracking-widest border border-emerald-400 shadow-sm"><i className="fas fa-globe mr-2"></i> Global / External Services</span>
+                                            <div className="flex flex-wrap gap-5">
+                                                {groups.Global.map(n => (
+                                                    <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center hover:border-emerald-500 hover:-translate-y-1 transition-all relative cursor-pointer">
+                                                        {getStatusIcon(n.status)}
+                                                        <div className="w-12 h-12 mx-auto bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-2">
+                                                            <i className={`fas ${getIcon(n.type)} text-2xl`}></i>
+                                                        </div>
+                                                        <div className="font-black text-[10px] text-slate-800 truncate" title={n.name}>{n.name}</div>
+                                                        <div className="text-[9px] font-black text-emerald-600 mt-1 uppercase tracking-wider bg-emerald-50 rounded px-1 py-0.5">{n.type}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+                
+                {/* DRAWER */}
+                {selectedNode && (
+                    <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-left rounded-r-2xl overflow-hidden">
+                        <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center">
+                            <div>
+                                <h3 className="font-black text-lg"><i className="fas fa-sliders-h text-blue-400 mr-2"></i> Node Properties</h3>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">{selectedNode.name}</p>
+                            </div>
+                            <button onClick={()=>setSelectedNode(null)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Core Identity</h4>
+                                <div className="space-y-3">
+                                    <div><label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Resource Type</label><div className="font-black text-xs text-indigo-700">{selectedNode.type}</div></div>
+                                    <div><label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Location Zone</label><div className="font-bold text-xs text-slate-800">{selectedNode.location}</div></div>
+                                </div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Configuration / Dependencies</h4>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Custom Metadata (JSON)</label>
+                                        <textarea 
+                                            defaultValue={JSON.stringify(selectedNode.config || {}, null, 2)} 
+                                            onChange={e => { try { handleUpdateNode(selectedNode.id, 'config', JSON.parse(e.target.value)); } catch(e){} }}
+                                            className="w-full h-32 p-2 text-[10px] font-mono border border-slate-300 rounded outline-none focus:border-blue-500 custom-scrollbar"
+                                        ></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 bg-white border-t border-slate-200 flex gap-2">
+                            <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
+                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
