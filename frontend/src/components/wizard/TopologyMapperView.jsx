@@ -17,59 +17,87 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         onUpdateProject(activeProject.id, 'mapperNodes', newNodes);
     };
 
-    // 1. Map from SA Quotation
+    // 1. Map from SA Quotation Only
     const generateFromBlueprint = () => {
         if (servers.length === 0) return alert('No blueprint data found in this project.');
-        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the original SOW quotation. Proceed?")) return;
+        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
         
         const newNodes = [];
-        servers.forEach((server, i) => {
-            newNodes.push({ id: `srv-${Date.now()}-${i}`, name: server.name || `Quoted-Server-${i+1}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' });
-        });
-        databases.forEach((db, i) => {
-            newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `Quoted-DB-${i+1}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' });
-        });
-        newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network' });
-        
+        servers.forEach((server, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: server.name || `Quoted-Server-${i+1}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'Quoted Only' }));
+        databases.forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `Quoted-DB-${i+1}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'Quoted Only' }));
+        newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Quoted Only' });
         saveNodes(newNodes);
     };
 
-    // 2. Map Actual Data from MgC Import
+    // 2. Map Actual Data from MgC Only
     const generateFromMgC = () => {
         if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
-        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table with the MgC data. Proceed?")) return;
+        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
         
         const newNodes = [];
-        const data = activeProject.mgcData;
-        const isExcel = data.source === 'excel';
-        const raw = data.raw_inventory || {};
+        const raw = activeProject.mgcData.raw_inventory || {};
+        const isExcel = activeProject.mgcData.source === 'excel';
 
         if (isExcel) {
-            (raw.servers || []).forEach((srv, i) => {
-                newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet' });
-            });
-            (raw.databases || []).forEach((db, i) => {
-                newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' });
-            });
-            (raw.network || []).forEach((net, i) => {
-                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network' });
-            });
+            (raw.servers || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
+            (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
+            (raw.network || []).forEach((net, i) => newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' }));
         } else {
-            (raw.compute || []).forEach((srv, i) => {
-                newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' });
-            });
-            (raw.databases || []).forEach((db, i) => {
-                newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' });
-            });
-            (raw.network || []).forEach((net, i) => {
-                newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network' });
-            });
-        }
-        
-        if(newNodes.length === 0) {
-             newNodes.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network' });
+            (raw.compute || []).forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', status: 'MgC Only' }));
+            (raw.databases || []).forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'MgC Only' }));
+            (raw.network || []).forEach((net, i) => newNodes.push({ id: `vpc-${Date.now()}-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network', status: 'MgC Only' }));
         }
         saveNodes(newNodes);
+    };
+
+    // 🚨 3. RECONCILIATION ENGINE: Compares SOW vs MgC and labels differences!
+    const generateReconciledScope = () => {
+        if (!activeProject?.mgcData) return alert('You must run MgC Discovery first to reconcile against the SOW!');
+        if (nodes.length > 0 && !window.confirm("This will merge Quoted and MgC scopes, replacing your current table. Proceed?")) return;
+
+        const raw = activeProject.mgcData.raw_inventory || {};
+        const isExcel = activeProject.mgcData.source === 'excel';
+        
+        // 1. Gather all MgC Resources
+        let mgcNodes = [];
+        if (isExcel) {
+            (raw.servers || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
+            (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet' }));
+            (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.specs?.cidr || net.specs?.ip || '10.0.0.0/16', location: 'Cloud-Network' }));
+        } else {
+            (raw.compute || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name || `Server-${i}`, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet' }));
+            (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name || `DB-${i}`, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet' }));
+            (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `VPC-${i}`, type: 'VPC', ip: net.cidr || '10.0.0.0/16', location: 'Cloud-Network' }));
+        }
+
+        // 2. Gather all Quoted Resources
+        let quotedNodes = [];
+        servers.forEach((s, i) => quotedNodes.push({ name: s.name || `Quoted-Server-${i+1}`, type: 'ECS' }));
+        databases.forEach((d, i) => quotedNodes.push({ name: d.name || `Quoted-DB-${i+1}`, type: 'RDS' }));
+
+        const merged = [];
+        
+        // 3. Match MgC against Quoted
+        mgcNodes.forEach(mNode => {
+            // Find a match by name (case insensitive)
+            const matchIdx = quotedNodes.findIndex(q => (q.name || '').toLowerCase().includes((mNode.name || '').toLowerCase()) || (mNode.name || '').toLowerCase().includes((q.name || '').toLowerCase()));
+            
+            if (matchIdx !== -1) {
+                merged.push({ ...mNode, status: 'Matched' });
+                quotedNodes.splice(matchIdx, 1); // Remove from pool once matched
+            } else {
+                merged.push({ ...mNode, status: 'MgC Only' }); // Scope Creep
+            }
+        });
+
+        // 4. Any quoted nodes leftover were NOT found in MgC
+        quotedNodes.forEach((q, i) => {
+            merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: 'TBD', location: 'Pending-Allocation', status: 'Quoted Only' });
+        });
+
+        if(merged.length === 0) merged.push({ id: `vpc-${Date.now()}`, name: 'VPC-Main', type: 'VPC', ip: '10.0.0.0/16', location: 'Cloud-Network', status: 'Matched' });
+        
+        saveNodes(merged);
     };
 
     const handleUpdateNode = (id, field, value) => {
@@ -79,7 +107,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const handleAddNode = () => {
         const newId = `manual-${Date.now()}`;
-        const updated = [...nodes, { id: newId, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet' }];
+        const updated = [...nodes, { id: newId, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', status: 'Manual' }];
         saveNodes(updated);
     };
 
@@ -90,9 +118,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const handleAutoGenerateWBS = () => {
         if (nodes.length === 0) { alert("Please populate the infrastructure scope first."); return; }
-        
         if(window.confirm("This will generate a new WBS Task List based on the infrastructure scope below. Once approved, the project will automatically advance to Step 3: Planning. Proceed?")) {
-            
             let newTasks = [
                 { id: "1", name: "Phase 1: Landing Zone & Security", prog: "0%", resp: "Partner", start: "", end: "", isParent: true },
                 { id: "1.1", name: "Deploy Target VPC & Subnets", prog: "0%", resp: "Partner", start: "", end: "", isParent: false }
@@ -110,7 +136,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         }
     };
 
-    // 🚨 FIX: Now correctly captures and exposes the Network bucket
     const groups = useMemo(() => {
         const grps = { Edge: [], External: [], Subnets: {}, Global: [], Network: [] };
         nodes.forEach(n => {
@@ -130,7 +155,25 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         if (t==='rds' || t==='gaussdb' || t==='db') return 'fa-database text-rose-600';
         if (t==='vpc' || t==='network' || t==='subnet') return 'fa-cloud text-indigo-600';
         if (t==='elb' || t==='loadbalancer') return 'fa-sitemap text-blue-500';
+        if (t==='obs' || t==='storage') return 'fa-hdd text-emerald-600';
+        if (t==='cce' || t==='k8s') return 'fa-cubes text-blue-500';
         return 'fa-microchip text-slate-500';
+    };
+
+    const getStatusBadge = (status) => {
+        if(status === 'Matched') return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap"><i className="fas fa-check-circle mr-1"></i>Matched</span>;
+        if(status === 'MgC Only') return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="Found in MgC, missing from SOW"><i className="fas fa-exclamation-triangle mr-1"></i>Unquoted</span>;
+        if(status === 'Quoted Only') return <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded border border-rose-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap" title="In SOW, missing from MgC"><i className="fas fa-times-circle mr-1"></i>Missing</span>;
+        if(status === 'Manual') return <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap"><i className="fas fa-edit mr-1"></i>Manual</span>;
+        return <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200 text-[9px] font-black uppercase tracking-wider whitespace-nowrap">Mapped</span>;
+    };
+
+    const getStatusIcon = (status) => {
+        if(status === 'Matched') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white shadow-sm" title="Matched in both SOW and MgC"></div>;
+        if(status === 'MgC Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-white shadow-sm animate-pulse" title="Scope Creep: Discovered but not quoted"></div>;
+        if(status === 'Quoted Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-white shadow-sm" title="Missing: Quoted but not discovered"></div>;
+        if(status === 'Manual') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-white shadow-sm" title="Manually added"></div>;
+        return null;
     };
 
     return (
@@ -139,7 +182,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                 <div className="flex flex-wrap justify-between items-center mb-6 border-b border-slate-200 pb-4">
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-sitemap text-indigo-500"></i> Infrastructure Scope Manager</h3>
-                        <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold">Manage the Approved Delivery Scope</p>
+                        <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold">Reconcile and Manage the Approved Delivery Scope</p>
                     </div>
                     <button onClick={()=>setIsMaximized(!isMaximized)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black shadow-sm"><i className={`fas ${isMaximized ? 'fa-compress' : 'fa-expand'} mr-2`}></i>{isMaximized ? 'Restore' : 'Full Screen'}</button>
                 </div>
@@ -150,33 +193,52 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     <div className="xl:w-1/2 flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner">
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white flex-wrap gap-2">
                             <div className="flex gap-2">
-                                <button onClick={generateFromBlueprint} className="py-2 px-3 bg-slate-800 hover:bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors"><i className="fas fa-file-invoice mr-1"></i> Quoted Scope</button>
-                                <button onClick={generateFromMgC} className="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors"><i className="fas fa-search mr-1"></i> MgC Scope</button>
+                                {/* 🚨 NEW: The Reconcile Button */}
+                                <button onClick={generateReconciledScope} className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[9px] uppercase tracking-widest rounded-lg shadow-md transition-colors border border-emerald-500"><i className="fas fa-random mr-1"></i> Reconcile MgC vs SOW</button>
+                                <button onClick={generateFromMgC} className="py-2 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300" title="Load MgC Only"><i className="fas fa-search"></i></button>
+                                <button onClick={generateFromBlueprint} className="py-2 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300" title="Load SOW Only"><i className="fas fa-file-invoice"></i></button>
                             </div>
-                            <button onClick={handleAddNode} className="py-2 px-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-slate-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Resource</button>
+                            <button onClick={handleAddNode} className="py-2 px-3 bg-white border-2 border-slate-300 hover:border-indigo-400 text-indigo-700 font-black text-[9px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Resource</button>
                         </div>
                         
                         <div className="flex-1 overflow-y-auto custom-scrollbar max-h-[500px]">
-                            <table className="w-full text-left min-w-[600px]">
+                            <table className="w-full text-left min-w-[700px]">
                                 <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 sticky top-0 z-10 shadow-sm border-b-2 border-slate-300">
                                     <tr>
                                         <th className="p-3 w-40 font-black">Resource Name</th>
-                                        <th className="p-3 w-24 font-black">Type</th>
+                                        <th className="p-3 w-28 font-black">Type</th>
                                         <th className="p-3 w-32 font-black">IP / CIDR</th>
-                                        <th className="p-3 w-40 font-black">Target Zone</th>
+                                        <th className="p-3 w-32 font-black">Target Zone</th>
+                                        <th className="p-3 w-24 font-black">Status</th>
                                         <th className="p-3 w-12 text-center font-black">Act</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 text-xs bg-white">
                                     {nodes.length === 0 ? (
-                                        <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">No infrastructure mapped. Load data from the buttons above.</td></tr>
+                                        <tr><td colSpan="6" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">Click "Reconcile MgC vs SOW" to map your infrastructure.</td></tr>
                                     ) : (
                                         nodes.map(n => (
                                             <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                 <td className="p-3 font-bold text-slate-800"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></td>
-                                                <td className="p-3 font-bold text-indigo-700"><EditableCell type="select" placeholder="ECS" value={n.type} onSave={v=>handleUpdateNode(n.id, 'type', v)} /></td>
+                                                <td className="p-3 font-bold text-indigo-700">
+                                                    {/* 🚨 NEW: Explicit Dropdown for Resource Type */}
+                                                    <select 
+                                                        value={n.type} 
+                                                        onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} 
+                                                        className="border border-slate-200 rounded p-1 text-xs font-bold text-indigo-700 bg-white shadow-sm outline-none cursor-pointer w-full focus:border-indigo-500"
+                                                    >
+                                                        <option value="ECS">ECS (Compute)</option>
+                                                        <option value="RDS">RDS (Database)</option>
+                                                        <option value="VPC">VPC (Network)</option>
+                                                        <option value="OBS">OBS (Storage)</option>
+                                                        <option value="ELB">ELB (Load Balancer)</option>
+                                                        <option value="CCE">CCE (Kubernetes)</option>
+                                                        <option value="DWS">DWS (Data Warehouse)</option>
+                                                    </select>
+                                                </td>
                                                 <td className="p-3 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
                                                 <td className="p-3 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
+                                                <td className="p-3">{getStatusBadge(n.status)}</td>
                                                 <td className="p-3 text-center">
                                                     <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><i className="fas fa-trash-alt"></i></button>
                                                 </td>
@@ -206,12 +268,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 <div className="w-full border-4 border-blue-200 bg-blue-50/30 rounded-2xl p-8 relative min-h-[300px]">
                                     <span className="absolute -top-4 left-6 bg-blue-100 border border-blue-300 px-4 py-1.5 rounded-full text-sm font-black text-blue-800 uppercase tracking-widest shadow-sm"><i className="fas fa-cloud mr-2"></i> Target Infrastructure</span>
                                     
-                                    {/* 🚨 FIX: New Render Block for Core Networking Components */}
                                     {groups.Network.length > 0 && (
                                         <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white/60 border border-blue-200 rounded-xl shadow-sm">
                                             <div className="w-full text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-1"><i className="fas fa-network-wired mr-1"></i> Core Networking</div>
                                             {groups.Network.map(n => (
-                                                <div key={n.id} className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm flex items-center gap-3 min-w-[150px] hover:border-indigo-400 transition-colors">
+                                                <div key={n.id} className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm flex items-center gap-3 min-w-[150px] hover:border-indigo-400 transition-colors relative">
+                                                    {getStatusIcon(n.status)}
                                                     <i className={`${getIcon(n.type)} text-2xl`}></i>
                                                     <div className="truncate">
                                                         <div className="font-bold text-xs text-indigo-900 truncate" title={n.name}>{n.name}</div>
@@ -228,8 +290,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                 <span className="absolute top-2 left-3 text-[10px] font-black text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{subName}</span>
                                                 <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                                                     {subNodes.map(n => (
-                                                        <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-colors">
-                                                            <div className="font-bold text-xs truncate" title={n.name}><i className={`fas ${getIcon(n.type)} mr-2 opacity-80`}></i>{n.name}</div>
+                                                        <div key={n.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:border-blue-400 transition-colors relative">
+                                                            {getStatusIcon(n.status)}
+                                                            <div className="font-bold text-xs truncate pr-2" title={n.name}><i className={`fas ${getIcon(n.type)} mr-2 opacity-80`}></i>{n.name}</div>
                                                             <div className="text-[10px] font-mono text-slate-500 mt-1">{n.ip}</div>
                                                         </div>
                                                     ))}
@@ -245,7 +308,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                         <span className="absolute -top-3 left-3 bg-emerald-100 px-3 py-1 rounded-full text-[10px] font-black text-emerald-800 uppercase tracking-wider border border-emerald-200">PaaS / Global Services</span>
                                         <div className="flex flex-wrap gap-4">
                                             {groups.Global.map(n => (
-                                                <div key={n.id} className="bg-white p-4 w-32 rounded-lg border border-slate-200 shadow-sm text-center hover:border-emerald-300 transition-colors">
+                                                <div key={n.id} className="bg-white p-4 w-32 rounded-lg border border-slate-200 shadow-sm text-center hover:border-emerald-300 transition-colors relative">
+                                                    {getStatusIcon(n.status)}
                                                     <i className={`fas ${getIcon(n.type)} text-2xl mb-2 opacity-90`}></i>
                                                     <div className="font-bold text-[10px] truncate" title={n.name}>{n.name}</div>
                                                 </div>
