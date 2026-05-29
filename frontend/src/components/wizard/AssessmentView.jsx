@@ -45,9 +45,9 @@ export default function AssessmentView({ activeProject, onUpdateProject }) {
                         <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-clipboard-check text-purple-600"></i> Operational Readiness (ORA)</h3>
                         <p className="text-xs text-slate-500 mt-1 font-medium">Calculate human and architectural friction constraints.</p>
                     </div>
-                    <button onClick={handleSave} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i>Save ORA</button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-8">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-10">
                     <div className="space-y-8">
                         <div><label className="font-black text-sm text-slate-800 mb-2 block">1. Infra Control</label><input type="range" min="0" max="100" step="50" value={infraControl} onChange={e=>setInfraControl(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>3rd Party</span><span>Partial</span><span>Full Root</span></div></div>
                         <div><label className="font-black text-sm text-slate-800 mb-2 block">2. IT Skills</label><input type="range" min="0" max="100" step="50" value={itSkills} onChange={e=>setItSkills(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>None</span><span>Basic</span><span>Experts</span></div></div>
@@ -59,11 +59,18 @@ export default function AssessmentView({ activeProject, onUpdateProject }) {
                         <div><label className="font-black text-sm text-slate-800 mb-2 block">6. Security/Compliance</label><input type="range" min="0" max="100" step="50" value={security} onChange={e=>setSecurity(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg accent-purple-600 cursor-pointer" /><div className="flex justify-between text-[10px] mt-2 font-bold text-slate-400 uppercase tracking-widest"><span>Gov/PCI</span><span>PII</span><span>Standard</span></div></div>
                     </div>
                 </div>
-                <div className={`p-8 rounded-2xl border-4 text-center shadow-inner ${bgColor}`}>
+                
+                {/* Save button centered right under the score card! */}
+                <div className={`p-8 rounded-2xl border-4 text-center shadow-inner flex flex-col items-center justify-center ${bgColor}`}>
                     <div className="text-xs font-black uppercase tracking-widest opacity-80 mb-2">Global Friction Score</div>
                     <div className="text-6xl font-black">{score}/100</div>
-                    <div className="text-sm font-black mt-4 tracking-widest uppercase bg-white/50 inline-block px-4 py-2 rounded-xl shadow-sm">Mandatory Timeline Buffer: {timeBuffer}</div>
+                    <div className="text-sm font-black mt-4 mb-8 tracking-widest uppercase bg-white/50 inline-block px-4 py-2 rounded-xl shadow-sm">Mandatory Timeline Buffer: {timeBuffer}</div>
+                    
+                    <button onClick={handleSave} className="px-10 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-transform active:scale-95">
+                        <i className="fas fa-save mr-2"></i>Save ORA Profile
+                    </button>
                 </div>
+
             </div>
         </div>
     )
