@@ -17,8 +17,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const discoveredDb = rawInv.databases?.length || 0;
     const discoveredObs = (rawInv.storage || []).filter(s => s.type === 'OBS' || s.specs?.type === 'OBS' || !s.type).length;
     const discoveredCbr = (rawInv.storage || []).filter(s => s.type === 'CBR' || s.specs?.type === 'CBR').length;
-    
-    // Calculate total VPN Gateways + Connections + CGWs
     const discoveredVpn = (rawInv.network || []).filter(n => n.type && n.type.includes('VPN') || n.specs?.type?.includes('VPN') || n.type?.includes('Customer')).length;
 
     const top = activeProject?.blueprintData?.topology || {};
@@ -100,29 +98,28 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div key={category} className="mb-6">
                             <h5 className="font-bold text-sm uppercase tracking-widest text-slate-600 mb-3 capitalize">{category.replace('_', ' ')} ({items.length})</h5>
                             <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden custom-scrollbar max-h-[400px] overflow-y-auto shadow-sm">
-                                
-                                {/* 🚨 EXACT 1:1 MAPPING TO TOPOLOGY TABLE */}
                                 <table className="w-full text-left text-xs min-w-[1000px]">
                                     <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase sticky top-0 z-10 shadow-sm">
                                         <tr>
                                             <th className="p-4 w-48 font-black">Resource Name</th>
                                             <th className="p-4 w-32 font-black">Region</th>
                                             <th className="p-4 w-28 font-black">Type</th>
-                                            <th className="p-4 w-32 font-black">IP / CIDR</th>
+                                            <th className="p-4 w-40 font-black">IP / CIDR</th>
                                             <th className="p-4 w-40 font-black">Subnet / Zone</th>
                                             <th className="p-4 font-black">Deep Attributes</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {items.map((item, idx) => {
-                                            
-                                            // Extract Common UI Fields
                                             const type = item.type || item.specs?.type || (category === 'compute' ? 'ECS' : category === 'databases' ? 'RDS' : 'VPC');
                                             const region = item.region || item.specs?.region || item.location || 'Unknown';
-                                            const ip = item.cidr || item.private_ip_address || item.public_ip_address || item.specs?.ip || item.specs?.cidr || 'N/A';
-                                            const subnet = item.subnet || item.specs?.subnet || (type === 'ECS' ? 'Compute-Subnet' : type === 'RDS' ? 'Data-Subnet' : 'Cloud-Network');
+                                            
+                                            // 🚨 EXACT IP & SUBNET EXTRACTION FIX
+                                            const publicIp = item.public_ip_address || item.specs?.public_ip_address;
+                                            const privateIp = item.private_ip_address || item.cidr || item.specs?.private_ip_address || item.specs?.ip || item.specs?.cidr;
+                                            const ipDisplay = publicIp ? `${privateIp || ''} (Pub: ${publicIp})` : (privateIp || 'N/A');
+                                            const subnet = item.subnet || item.vpc_id || item.specs?.subnet || item.specs?.vpc || (type === 'ECS' ? 'Compute-Subnet' : type === 'RDS' ? 'Data-Subnet' : 'Cloud-Network');
 
-                                            // Extract Deep Attributes for Final Column
                                             let deepSpecs = { Status: item.status || 'Active' };
                                             if (!isExcel) {
                                                 if (category === 'compute') { deepSpecs.Flavor = item.flavor; deepSpecs.vCPUs = item.vcpus; deepSpecs.RAM = `${item.ram_gb}GB`; deepSpecs.OS = item.os_type; }
@@ -140,9 +137,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                                     <td className="p-4 font-bold text-slate-800 break-all align-top">{item.name || item.id}</td>
                                                     <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest align-top">{region}</td>
                                                     <td className="p-4 font-bold text-indigo-700 align-top">{type}</td>
-                                                    <td className="p-4 font-mono text-slate-600 font-bold align-top">{ip}</td>
+                                                    <td className="p-4 font-mono text-slate-600 font-bold align-top">{ipDisplay}</td>
                                                     <td className="p-4 font-bold text-slate-600 align-top">{subnet}</td>
-                                                    
                                                     <td className="p-4 font-mono text-[10px] text-slate-600 leading-relaxed">
                                                         <div className="flex flex-wrap gap-2">
                                                             {Object.entries(deepSpecs).filter(([k, v]) => v !== null && v !== '' && typeof v !== 'object').map(([k, v]) => (
@@ -176,7 +172,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    {/* Automated Discovery Card */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
                         <div className="flex items-center justify-between mb-6">
                             <h4 className="font-black text-slate-800 text-lg flex items-center gap-2"><i className="fas fa-robot text-emerald-600"></i> Automated Discovery</h4>
@@ -192,7 +187,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         </div>
                     </div>
 
-                    {/* Import Resource Data Card */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                             <h4 className="font-black text-slate-800 text-lg flex items-center gap-2 shrink-0"><i className="fas fa-file-import text-blue-600"></i> Import Data</h4>
