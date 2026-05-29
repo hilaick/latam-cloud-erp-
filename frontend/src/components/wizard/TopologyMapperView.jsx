@@ -14,13 +14,23 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const networks = activeProject?.blueprintData?.topology?.network || [];
     const storages = activeProject?.blueprintData?.topology?.storage || [];
 
-    const [nodes, setNodes] = useState(activeProject?.mapperNodes || []); 
-    const [activeTab, setActiveTab] = useState('table'); 
+    // 🚨 EXPLICIT SAVE STATE
+    const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
+    const [activeTab, setActiveTab] = useState('table'); // 'table', 'reconcile', 'canvas'
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
     
-    useEffect(()=>{ setNodes(activeProject?.mapperNodes || []); }, [activeProject]);
-    const saveNodes = (newNodes) => { setNodes(newNodes); onUpdateProject(activeProject.id, 'mapperNodes', newNodes); };
+    // Reconciliation State
+    const [quotedNodes, setQuotedNodes] = useState([]);
+    const [liveNodes, setLiveNodes] = useState([]);
+    
+    useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
+    
+    // 🚨 NEW: Explicit Save Button
+    const saveArchitecture = () => {
+        onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
+        alert("Architecture Configuration Saved Successfully.");
+    };
 
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
@@ -41,121 +51,86 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return 'VPC';
     };
 
-    const generateFromBlueprint = () => {
-        if (servers.length === 0 && databases.length === 0 && networks.length === 0) return alert('No blueprint data found in this project.');
-        if (nodes.length > 0 && !window.confirm("Overwrite your current architecture table?")) return;
+    // 🚨 DUAL-PANE RECONCILIATION
+    const openReconciliationView = () => {
+        if (!activeProject?.mgcData) return alert('Run MgC Discovery first to reconcile against the SOW!');
         
         const fallbackRegion = activeProject?.region || 'la-south-2';
-        const newNodes = [];
-        servers.forEach((s, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: s.name, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, status: 'Quoted Only', config: { os: s.metadata?.os_type || 'Unknown' } }));
-        databases.forEach((d, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: d.name, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name, type: getShortNetType(n.type), ip: 'N/A', location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        storages.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name, type: st.type || 'OBS', ip: 'N/A', location: 'Global', region: st.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        saveNodes(newNodes);
+        
+        // 1. Load Quoted
+        let qNodes = [];
+        servers.forEach(s => qNodes.push({ name: s.name, type: 'ECS', loc: 'Compute-Subnet', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        databases.forEach(d => qNodes.push({ name: d.name, type: 'RDS', loc: 'Data-Subnet', reg: d.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        networks.forEach(n => qNodes.push({ name: n.name, type: getShortNetType(n.type), loc: 'Cloud-Network', reg: n.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        storages.forEach(s => qNodes.push({ name: s.name, type: s.type || 'OBS', loc: 'Global', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        setQuotedNodes(qNodes);
+
+        // 2. Load Live
+        const raw = activeProject.mgcData.raw_inventory || {};
+        let mNodes = [];
+        (raw.network || []).forEach((net, i) => mNodes.push({ name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global' }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ name: srv.name, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion }));
+        (raw.databases || []).forEach((db, i) => mNodes.push({ name: db.name, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion }));
+        setLiveNodes(mNodes);
+        
+        setActiveTab('reconcile');
     };
 
-    const generateFromMgC = () => {
-        if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
-        if (nodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
-        
-        const newNodes = [];
-        const raw = activeProject.mgcData.raw_inventory || {};
-        
-        const parseNet = (netList) => netList.forEach((net, i) => {
-            newNodes.push({ id: `net-${Date.now()}-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', status: 'Live Only', config: {} });
-        });
-        const parseStorage = (stList) => stList.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', status: 'Live Only', config: {} }));
-
-        const extractCompute = (list) => list.forEach((srv, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: srv.name, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || activeProject?.region || 'Unknown', status: 'Live Only', config: { os: srv.os_type || srv.specs?.os || 'Unknown' } }));
-        const extractDb = (list) => list.forEach((db, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: db.name, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || activeProject?.region || 'Unknown', status: 'Live Only', config: { engine: db.engine || db.specs?.engine || 'Unknown' } }));
-
-        extractCompute(raw.servers || raw.compute || []);
-        extractDb(raw.databases || []);
-        parseNet(raw.network || []);
-        parseStorage(raw.storage || []);
-        saveNodes(newNodes);
-    };
-
-    // 🚨 2-PASS RECONCILIATION ENGINE (DUPLICATE FIX)
-    const normalizeStr = (str) => String(str || "").toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    const generateReconciledScope = () => {
-        if (!activeProject?.mgcData) return alert('Run MgC Discovery first to reconcile against SOW!');
-        if (nodes.length > 0 && !window.confirm("Merge Quoted and Live scopes, replacing your current table?")) return;
-
-        const raw = activeProject.mgcData.raw_inventory || {};
-        let mgcNodes = [];
-        
-        (raw.network || []).forEach((net, i) => mgcNodes.push({ id: `mgc-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || activeProject?.region || 'Unknown', config: {} }));
-        (raw.storage || []).forEach((st, i) => mgcNodes.push({ id: `mgc-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', config: {} }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mgcNodes.push({ id: `mgc-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || activeProject?.region || 'Unknown', config: { os: srv.os_type || srv.specs?.os || 'Unknown' } }));
-        (raw.databases || []).forEach((db, i) => mgcNodes.push({ id: `mgc-db-${i}`, name: db.name, type: 'RDS', ip: db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || activeProject?.region || 'Unknown', config: { engine: db.engine || db.specs?.engine || 'Unknown' } }));
-
-        const fallbackRegion = activeProject?.region || 'la-south-2';
-        let quotedNodes = [];
-        servers.forEach(s => quotedNodes.push({ name: s.name, type: 'ECS', loc: 'Compute-Subnet', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        databases.forEach(d => quotedNodes.push({ name: d.name, type: 'RDS', loc: 'Data-Subnet', reg: d.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        networks.forEach(n => quotedNodes.push({ name: n.name, type: getShortNetType(n.type), loc: 'Cloud-Network', reg: n.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        storages.forEach(s => quotedNodes.push({ name: s.name, type: s.type || 'OBS', loc: 'Global', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
-
+    const finalizeReconciliation = () => {
         const merged = [];
-        const unmatchedMgc = [];
-
-        // PASS 1: Exact Name Match or Exact IP Match
-        mgcNodes.forEach(mNode => {
-            const mNameNorm = normalizeStr(mNode.name);
+        let tempQuoted = [...quotedNodes];
+        
+        liveNodes.forEach((mNode, index) => {
+            const mNameNorm = String(mNode.name || "").toLowerCase().replace(/[^a-z0-9]/g, '');
             const mIp = (mNode.ip && mNode.ip !== 'N/A' && mNode.ip !== 'TBD') ? mNode.ip : null;
 
-            const matchIdx = quotedNodes.findIndex(q => {
-                const qNameNorm = normalizeStr(q.name);
-                const isTypeCompat = (q.type === mNode.type) || (q.type === 'ECS' && mNode.type === 'ECS');
-                return ((qNameNorm === mNameNorm) || (mIp && q.ip === mIp)) && isTypeCompat;
+            // Pass 1: Exact Name or IP Match
+            let matchIdx = tempQuoted.findIndex(q => {
+                const qNameNorm = String(q.name || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                return ((qNameNorm === mNameNorm) || (mIp && q.ip === mIp));
             });
 
+            // Pass 2: Fuzzy Match
+            if (matchIdx === -1) {
+                const mNameClean = mNameNorm.replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
+                if(mNameClean.length >= 4) {
+                    matchIdx = tempQuoted.findIndex(q => {
+                        const qNameClean = String(q.name || "").toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
+                        return qNameClean.length >= 4 && (qNameClean.includes(mNameClean) || mNameClean.includes(qNameClean));
+                    });
+                }
+            }
+
             if (matchIdx !== -1) { 
-                merged.push({ ...mNode, name: quotedNodes[matchIdx].name, status: 'Matched' }); 
-                quotedNodes.splice(matchIdx, 1); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, status: 'Matched' }); 
+                tempQuoted.splice(matchIdx, 1); 
             } else { 
-                unmatchedMgc.push(mNode); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only' }); 
             }
         });
 
-        // PASS 2: Fuzzy Substring Match (Strip "server", "ecs", and trailing numbers)
-        unmatchedMgc.forEach(mNode => {
-            const mNameClean = normalizeStr(mNode.name).replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
-            if(mNameClean.length < 4) { merged.push({ ...mNode, status: 'Live Only' }); return; }
-
-            const matchIdx = quotedNodes.findIndex(q => {
-                const qNameClean = normalizeStr(q.name).replace(/(ecs|rds|server|vm|node|0+.*)$/g, '');
-                if(qNameClean.length < 4) return false;
-                const isFuzzy = qNameClean.includes(mNameClean) || mNameClean.includes(qNameClean);
-                const isTypeCompat = (q.type === mNode.type) || (q.type === 'ECS' && mNode.type === 'ECS');
-                return isFuzzy && isTypeCompat;
-            });
-
-            if (matchIdx !== -1) { 
-                merged.push({ ...mNode, name: quotedNodes[matchIdx].name, status: 'Matched' }); 
-                quotedNodes.splice(matchIdx, 1); 
-            } else { 
-                merged.push({ ...mNode, status: 'Live Only' }); 
-            }
-        });
-
-        quotedNodes.forEach((q, i) => merged.push({ id: `quo-only-${Date.now()}-${i}`, name: q.name, type: q.type, ip: q.ip, location: q.loc, region: q.reg, status: 'Quoted Only', config: {} }));
-        saveNodes(merged);
+        tempQuoted.forEach((q, i) => merged.push({ id: `quo-${Date.now()}-${i}`, name: q.name, type: q.type, ip: q.ip, location: q.loc, region: q.reg, status: 'Quoted Only', config: {} }));
+        
+        setLocalNodes(merged);
+        setActiveTab('table');
+        alert("Reconciliation Complete. Please review the final table and click Save Architecture.");
     };
 
-    const handleUpdateNode = (id, field, value) => saveNodes(nodes.map(n => n.id === id ? { ...n, [field]: value } : n));
-    const handleAddNode = () => saveNodes([...nodes, { id: `manual-${Date.now()}`, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', region: activeProject?.region || 'la-south-2', status: 'Manual', config: {} }]);
-    const handleDeleteNode = (id) => saveNodes(nodes.filter(n => n.id !== id));
+    const handleUpdateNode = (id, field, value) => setLocalNodes(localNodes.map(n => n.id === id ? { ...n, [field]: value } : n));
+    const handleAddNode = () => setLocalNodes([...localNodes, { id: `manual-${Date.now()}`, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', region: activeProject?.region || 'la-south-2', status: 'Manual', config: {} }]);
+    const handleDeleteNode = (id) => setLocalNodes(localNodes.filter(n => n.id !== id));
 
     const groups = useMemo(() => {
-        const grps = { EdgeGateways: [], Subnets: {}, Global: [], Pending: [] };
-        nodes.filter(n => regionFilter === 'All' || n.region === regionFilter).forEach(n => {
+        const grps = { EdgeGateways: [], EIPs: [], Subnets: {}, Global: [], Pending: [] };
+        localNodes.filter(n => regionFilter === 'All' || n.region === regionFilter).forEach(n => {
             const type = String(n.type).toUpperCase();
             const loc = String(n.location || "");
+            
             if (loc === 'Pending-Allocation') grps.Pending.push(n);
-            else if (['NAT', 'EIP', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) grps.EdgeGateways.push(n);
+            // 🚨 EIPs GROUPED SEPARATELY TO PREVENT CLUTTER
+            else if (['EIP'].includes(type)) grps.EIPs.push(n);
+            else if (['NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) grps.EdgeGateways.push(n);
             else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') grps.Global.push(n);
             else if (type !== 'VPC') {
                 if (!grps.Subnets[loc]) grps.Subnets[loc] = [];
@@ -163,7 +138,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             }
         });
         return grps;
-    }, [nodes, regionFilter]);
+    }, [localNodes, regionFilter]);
 
     const getIcon = (type) => {
         const t = String(type || "").toLowerCase();
@@ -180,13 +155,13 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const getStatusIcon = (status) => {
         if(status === 'Matched') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white shadow-sm" title="Matched in Quotation and Live"></div>;
-        if(status === 'Live Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-white shadow-sm animate-pulse" title="Scope Creep: Found Live but not in Quotation"></div>;
-        if(status === 'Quoted Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-white shadow-sm" title="Missing: Quoted but not found Live"></div>;
+        if(status === 'Live Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-white shadow-sm animate-pulse" title="Scope Creep"></div>;
+        if(status === 'Quoted Only') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-white shadow-sm" title="Missing"></div>;
         if(status === 'Manual') return <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-white shadow-sm" title="Manually added"></div>;
         return null;
     };
 
-    const uniqueRegions = ['All', ...new Set(nodes.map(n => n.region).filter(r => r && r !== 'TBD' && r !== 'Global'))];
+    const uniqueRegions = ['All', ...new Set(localNodes.map(n => n.region).filter(r => r && r !== 'TBD' && r !== 'Global'))];
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
@@ -203,16 +178,65 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 </div>
 
+                {/* 🚨 TAB: DUAL-PANE RECONCILIATION */}
+                {activeTab === 'reconcile' && (
+                    <div className="animate-fade-in flex flex-col min-h-[600px]">
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex justify-between items-center">
+                            <div>
+                                <h4 className="font-black text-blue-900"><i className="fas fa-random mr-2"></i> Dual-Pane Reconciliation Mode</h4>
+                                <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery. Click Merge when ready.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
+                                <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge & Finalize</button>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col xl:flex-row gap-6 flex-1">
+                            <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
+                                <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
+                                <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
+                                    {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
+                                    {quotedNodes.map((n, i) => (
+                                        <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i>
+                                                <div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type}</div></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div className="xl:w-1/2 bg-indigo-50/50 border border-indigo-200 rounded-2xl p-4 flex flex-col shadow-inner">
+                                <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-indigo-200">2. Discovered Scope (MgC/Live)</h4>
+                                <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
+                                    {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
+                                    {liveNodes.map((n, i) => (
+                                        <div key={i} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i>
+                                                <div><div className="font-bold text-xs text-indigo-900">{n.name}</div><div className="text-[10px] text-indigo-500 uppercase">{n.type} | {n.ip}</div></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* TAB: RESOURCE LIST */}
                 {activeTab === 'table' && (
                     <div id="table-container" className="flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-fade-in min-h-[600px] bg-white">
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white">
                             <div className="flex gap-2 flex-wrap">
-                                <button onClick={generateReconciledScope} className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-emerald-500"><i className="fas fa-random mr-2"></i> Reconcile Quotation vs Live</button>
-                                <button onClick={generateFromMgC} className="py-2 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300"><i className="fas fa-search mr-2"></i> Load Live Discovery</button>
-                                <button onClick={generateFromBlueprint} className="py-2 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-slate-300"><i className="fas fa-file-invoice mr-2"></i> Load Quotation</button>
+                                <button onClick={openReconciliationView} className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-emerald-500"><i className="fas fa-random mr-2"></i> Reconcile Quotation vs Live</button>
                                 <button onClick={handleAddNode} className="py-2 px-4 bg-white border border-slate-300 hover:border-indigo-400 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-2"></i> Add Resource</button>
+                                {/* 🚨 EXPLICIT SAVE BUTTON */}
+                                <button onClick={saveArchitecture} className="py-2 px-6 bg-slate-800 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95 ml-4"><i className="fas fa-save mr-2"></i> Save Architecture</button>
                             </div>
-                            <button onClick={()=>toggleFullScreen('table-container')} className="py-2 px-4 bg-slate-800 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-700 transition-colors"><i className="fas fa-expand mr-2"></i> Full Screen</button>
+                            <button onClick={()=>toggleFullScreen('table-container')} className="py-2 px-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-200 transition-colors border border-slate-300"><i className="fas fa-expand mr-2"></i> Full Screen</button>
                         </div>
                         
                         <div className="flex-1 overflow-auto custom-scrollbar max-h-[700px] bg-white relative">
@@ -228,16 +252,18 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
-                                    {nodes.length === 0 ? (
-                                        <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">Click a button above to map your infrastructure.</td></tr>
+                                    {localNodes.length === 0 ? (
+                                        <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">Click "Reconcile" above to begin mapping.</td></tr>
                                     ) : (
-                                        nodes.map(n => (
+                                        localNodes.map(n => (
                                             <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                 <td className="p-4 font-bold text-slate-800 relative">
                                                     {getStatusIcon(n.status)}
                                                     <div className="ml-4"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
+                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest">
+                                                    <EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} />
+                                                </td>
                                                 <td className="p-4 font-bold text-indigo-700">
                                                     <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
                                                         <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
@@ -262,6 +288,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 )}
 
+                {/* TAB: VISUAL CANVAS */}
                 {activeTab === 'canvas' && (
                     <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in min-h-[700px] overflow-hidden">
                         
@@ -280,7 +307,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         </div>
 
                         <div className="p-6 overflow-auto custom-scrollbar flex-1 relative">
-                            {nodes.length === 0 ? (
+                            {localNodes.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 mt-20">
                                     <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
                                     <p className="font-black text-lg">Awaiting Topology Data</p>
@@ -292,22 +319,34 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                             <i className="fas fa-cloud mr-2"></i> {regionFilter === 'All' ? 'Huawei Cloud VPC' : `VPC: ${regionFilter}`}
                                         </div>
                                         
-                                        {groups.EdgeGateways.length > 0 && (
-                                            <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
-                                                {groups.EdgeGateways.map(n => (
-                                                    <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white border-2 border-indigo-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] hover:border-indigo-500 transition-colors relative cursor-pointer hover:-translate-y-1">
-                                                        {getStatusIcon(n.status)}
-                                                        <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
-                                                            <i className={`${getIcon(n.type)} text-lg`}></i>
-                                                        </div>
-                                                        <div className="truncate">
-                                                            <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div>
-                                                            <div className="font-bold text-[10px] text-indigo-900 truncate" title={n.name}>{n.name}</div>
-                                                        </div>
+                                        <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
+                                            {/* 🚨 DEDICATED EIP POOL BLOCK */}
+                                            {groups.EIPs.length > 0 && (
+                                                <div className="bg-white border-2 border-sky-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative cursor-help">
+                                                    <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100">
+                                                        <i className="fas fa-wifi text-sky-600 text-lg"></i>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                    <div className="truncate">
+                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">EIP Pool</div>
+                                                        <div className="font-bold text-[10px] text-sky-900 truncate">{groups.EIPs.length} Allocated IPs</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Other Edge Gateways */}
+                                            {groups.EdgeGateways.map(n => (
+                                                <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white border-2 border-indigo-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] hover:border-indigo-500 transition-colors relative cursor-pointer hover:-translate-y-1">
+                                                    {getStatusIcon(n.status)}
+                                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
+                                                        <i className={`${getIcon(n.type)} text-lg`}></i>
+                                                    </div>
+                                                    <div className="truncate">
+                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div>
+                                                        <div className="font-bold text-[10px] text-indigo-900 truncate" title={n.name}>{n.name}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
                                             {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
@@ -353,6 +392,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 )}
                 
+                {/* DRAWER */}
                 {selectedNode && (
                     <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-left rounded-r-2xl overflow-hidden">
                         <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center">
@@ -385,8 +425,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 </div>
                             </div>
                         </div>
-                        <div className="p-4 bg-white border-t border-slate-200">
-                            <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close Drawer</button>
+                        <div className="p-4 bg-white border-t border-slate-200 flex gap-2">
+                            <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
+                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save</button>
                         </div>
                     </div>
                 )}
