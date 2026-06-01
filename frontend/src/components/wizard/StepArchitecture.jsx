@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AssessmentView from './AssessmentView';
 import TopologyMapperView from './TopologyMapperView';
 import MgCReconciliationView from './MgCReconciliationView';
+import DTRBReviewView from './DTRBReviewView'; // 🚨 IMPORT DTRB ENGINE
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
@@ -9,9 +10,9 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
     const nodes = project.mapperNodes || [];
     const rawInv = project.mgcData?.raw_inventory || {};
     
-    // Explicitly count ONLY discovered resources
     const totalMgcNodes = Object.keys(rawInv).filter(k => k !== 'diagnostics' && k !== 'summary').reduce((acc, curr) => acc + (Array.isArray(rawInv[curr]) ? rawInv[curr].length : 0), 0);
     const hasScanned = !!project.mgcData;
+    const isLocked = project.status === 'Approved' || project.status === 'Locked';
 
     let displayRisk = 'Pending';
     let riskColor = 'text-slate-500';
@@ -27,38 +28,65 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='summary'?'bg-indigo-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Summary</button>
-                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. MgC Source Resources</button>
-                <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>2. Topology Mapper</button>
-                <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>3. ORA Profile</button>
+                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. MgC Discovery</button>
+                <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>2. ORA Profile</button>
+                <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>3. Target Architecture</button>
+                
+                {/* 🚨 THE NEW DTRB TAB */}
+                <button onClick={()=>setSubTab('dtrb')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${subTab==='dtrb'?'bg-slate-800 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+                    4. DTRB Sign-off {isLocked && <i className="fas fa-lock text-emerald-400"></i>}
+                </button>
             </div>
 
             {subTab === 'summary' && (
                 <div className="animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm flex flex-col">
-                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Source Discovery</h4><i className="fas fa-search text-blue-500"></i></div>
-                            <div className="text-xs text-blue-700 mb-4 flex-1">Raw inventory found in the source environment.</div>
-                            <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources Discovered` : 'Pending Discovery Scan'}</div>
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Discovery</h4><i className="fas fa-search text-blue-500"></i></div>
+                            <div className="text-xs text-blue-700 mb-4 flex-1">Raw inventory found in live env.</div>
+                            <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources` : 'Pending'}</div>
                             <button onClick={()=>setSubTab('mgc')} className="mt-2 text-left text-[10px] uppercase font-bold text-blue-600 hover:underline">View Live Data &gt;</button>
+                        </div>
+                        <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${displayRisk === 'Pending' ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
+                            <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${riskColor}`}>ORA Profile</h4><i className={`fas fa-exclamation-triangle ${riskColor}`}></i></div>
+                            <div className="text-xs mb-4 text-slate-500 font-medium flex-1">Stateful cutover complexity.</div>
+                            <div className={`text-xl font-black ${riskColor}`}>{displayRisk}</div>
+                            <button onClick={()=>setSubTab('ora')} className={`mt-2 text-left text-[10px] uppercase font-bold ${riskColor} hover:underline`}>Configure Details &gt;</button>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Target Topology</h4><i className="fas fa-sitemap text-slate-500"></i></div>
-                            <div className="text-xs text-slate-500 mb-4 flex-1">Final reconciled execution architecture.</div>
-                            <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? `${nodes.length} Nodes Mapped` : 'Pending Configuration'}</div>
+                            <div className="text-xs text-slate-500 mb-4 flex-1">Final execution architecture.</div>
+                            <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? `${nodes.length} Nodes` : 'Pending'}</div>
                             <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
-                        <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${displayRisk === 'Pending' ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
-                            <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${riskColor}`}>ORA Friction Profile</h4><i className={`fas fa-exclamation-triangle ${riskColor}`}></i></div>
-                            <div className="text-xs mb-4 text-slate-500 font-medium flex-1">Stateful workload cutover complexity.</div>
-                            <div className={`text-xl font-black ${riskColor}`}>{displayRisk}</div>
-                            <button onClick={()=>setSubTab('ora')} className={`mt-2 text-left text-[10px] uppercase font-bold ${riskColor} hover:underline`}>Configure Details &gt;</button>
+                        <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${isLocked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                            <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${isLocked ? 'text-emerald-800' : 'text-slate-700'}`}>DTRB Approval</h4>{isLocked ? <i className="fas fa-lock text-emerald-600"></i> : <i className="fas fa-unlock-alt text-slate-400"></i>}</div>
+                            <div className={`text-xs mb-4 font-medium flex-1 ${isLocked ? 'text-emerald-700' : 'text-slate-500'}`}>Delivery feasibility review.</div>
+                            <div className={`text-xl font-black ${isLocked ? 'text-emerald-600' : 'text-slate-400'}`}>{isLocked ? 'Locked' : 'Draft'}</div>
+                            <button onClick={()=>setSubTab('dtrb')} className={`mt-2 text-left text-[10px] uppercase font-bold hover:underline ${isLocked ? 'text-emerald-700' : 'text-slate-600'}`}>Review Governance &gt;</button>
                         </div>
                     </div>
                 </div>
             )}
+            
             {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />}
             {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
+            {/* 🚨 DISABLE MAPPER EDITS IF LOCKED */}
+            {subTab === 'mapper' && (
+                <div className="relative">
+                    {isLocked && (
+                        <div className="absolute top-0 left-0 w-full h-full z-50 bg-white/40 backdrop-blur-[1px] flex items-center justify-center" title="Architecture is Locked by DTRB">
+                            <div className="bg-slate-800 text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-700">
+                                <i className="fas fa-lock text-4xl mb-3 text-emerald-400"></i>
+                                <div className="font-black uppercase tracking-widest text-sm">Blueprint Locked</div>
+                                <div className="text-xs text-slate-300 mt-1">Unlock in the DTRB Sign-off tab to make edits.</div>
+                            </div>
+                        </div>
+                    )}
+                    <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />
+                </div>
+            )}
+            {subTab === 'dtrb' && <DTRBReviewView activeProject={project} onUpdateProject={onUpdateProject} />}
         </div>
     );
 }
