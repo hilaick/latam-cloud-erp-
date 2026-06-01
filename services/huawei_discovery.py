@@ -12,36 +12,12 @@ from huaweicloudsdkrds.v3 import RdsClient, ListInstancesRequest
 
 try:
     from huaweicloudsdknat.v2 import NatClient, ListNatGatewaysRequest
-    from huaweicloudsdknat.v2.region.nat_region import NatRegion
     HAS_NAT = True; NAT_ERR = ""
 except Exception as e:
     HAS_NAT = False; NAT_ERR = str(e)
 
-# 🚨 DYNAMIC CBR IMPORT
-try:
-    from huaweicloudsdkcbr.v3 import CbrClient, ListVaultsRequest
-    from huaweicloudsdkcbr.v3.region.cbr_region import CbrRegion
-    HAS_CBR = True; CBR_ERR = ""
-except Exception as e:
-    try:
-        from huaweicloudsdkcbr.v1 import CbrClient, ListVaultsRequest
-        from huaweicloudsdkcbr.v1.region.cbr_region import CbrRegion
-        HAS_CBR = True; CBR_ERR = ""
-    except Exception as e2:
-        HAS_CBR = False; CBR_ERR = str(e)
-
-# 🚨 DYNAMIC VPN IMPORT (REFLECTION)
-try:
-    from huaweicloudsdkvpn.v5 import VpnClient
-    from huaweicloudsdkvpn.v5.region.vpn_region import VpnRegion
-    import huaweicloudsdkvpn.v5 as vpn_module
-    HAS_VPN = True; VPN_ERR = ""
-except Exception as e:
-    HAS_VPN = False; VPN_ERR = str(e)
-
 try:
     from huaweicloudsdkeip.v2 import EipClient, ListPublicipsRequest
-    from huaweicloudsdkeip.v2.region.eip_region import EipRegion
     HAS_EIP = True; EIP_ERR = ""
 except Exception as e:
     HAS_EIP = False; EIP_ERR = str(e)
@@ -51,6 +27,26 @@ try:
     HAS_OBS = True; OBS_ERR = ""
 except Exception as e:
     HAS_OBS = False; OBS_ERR = str(e)
+
+# 🚨 DYNAMIC CBR REFLECTION (Hunts for v3, v2, or v1)
+HAS_CBR = False; CBR_ERR = ""; cbr_version = None; cbr_module = None
+for v in ['v3', 'v2', 'v1']:
+    try:
+        cbr_module = __import__(f"huaweicloudsdkcbr.{v}", fromlist=['*'])
+        cbr_version = v
+        HAS_CBR = True
+        break
+    except ImportError as e:
+        CBR_ERR = str(e)
+
+# 🚨 DYNAMIC VPN REFLECTION (Extracts module without strict class names)
+HAS_VPN = False; VPN_ERR = ""; vpn_module = None
+try:
+    vpn_module = __import__(f"huaweicloudsdkvpn.v5", fromlist=['*'])
+    HAS_VPN = True
+except ImportError as e:
+    VPN_ERR = str(e)
+
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +82,9 @@ class HuaweiDiscovery:
     def discover_all(self) -> Dict[str, Any]:
         inventory = { "compute": [], "network": [], "databases": [], "storage": [], "diagnostics": [] }
 
-        if not HAS_CBR: inventory["diagnostics"].append(f"CBR SDK Failed: {CBR_ERR}")
-        if not HAS_VPN: inventory["diagnostics"].append(f"VPN SDK Failed: {VPN_ERR}")
-        if not HAS_EIP: inventory["diagnostics"].append(f"EIP SDK Failed: {EIP_ERR}")
+        # Log to UI if modules completely fail to import
+        if not HAS_CBR: inventory["diagnostics"].append(f"CBR Module Failed: {CBR_ERR}")
+        if not HAS_VPN: inventory["diagnostics"].append(f"VPN Module Failed: {VPN_ERR}")
 
         try:
             for target_region in self.regions:
@@ -104,20 +100,17 @@ class HuaweiDiscovery:
                     ecs_region = Region(id=target_region, endpoint=f"https://ecs.{target_region}.myhuaweicloud.com")
                     ecs_client = EcsClient.new_builder().with_credentials(region_creds).with_region(ecs_region).build()
                     for s in ecs_client.list_servers_details(ListServersDetailsRequest(limit=100)).servers or []:
-                        try:
-                            private_ip = 'N/A'
-                            if getattr(s, 'addresses', None):
-                                vals = list(s.addresses.values())
-                                if vals and len(vals) > 0 and len(vals[0]) > 0:
-                                    private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
-                            
-                            f_name = s.flavor.name if getattr(s, 'flavor', None) else 'Unknown'
-                            f_vcpus = int(s.flavor.vcpus) if getattr(s, 'flavor', None) and getattr(s.flavor, 'vcpus', None) else 0
-                            f_ram = int(s.flavor.ram)/1024 if getattr(s, 'flavor', None) and getattr(s.flavor, 'ram', None) else 0
-                            os_type = s.metadata.get('os_type', 'Unknown') if getattr(s, 'metadata', None) and isinstance(s.metadata, dict) else 'Unknown'
-                            inventory["compute"].append({ "id": s.id, "name": s.name, "type": "ECS", "status": s.status, "flavor": f_name, "vcpus": f_vcpus, "ram_gb": f_ram, "os_type": os_type, "private_ip_address": private_ip, "region": target_region })
-                        except Exception as inner_e:
-                            inventory["diagnostics"].append(f"ECS Parse Error: {str(inner_e)}")
+                        private_ip = 'N/A'
+                        if getattr(s, 'addresses', None):
+                            vals = list(s.addresses.values())
+                            if vals and len(vals) > 0 and len(vals[0]) > 0:
+                                private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
+                        
+                        f_name = s.flavor.name if getattr(s, 'flavor', None) else 'Unknown'
+                        f_vcpus = int(s.flavor.vcpus) if getattr(s, 'flavor', None) and getattr(s.flavor, 'vcpus', None) else 0
+                        f_ram = int(s.flavor.ram)/1024 if getattr(s, 'flavor', None) and getattr(s.flavor, 'ram', None) else 0
+                        os_type = s.metadata.get('os_type', 'Unknown') if getattr(s, 'metadata', None) and isinstance(s.metadata, dict) else 'Unknown'
+                        inventory["compute"].append({ "id": s.id, "name": s.name, "type": "ECS", "status": s.status, "flavor": f_name, "vcpus": f_vcpus, "ram_gb": f_ram, "os_type": os_type, "private_ip_address": private_ip, "region": target_region })
                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] ECS Connect Error: {str(e)}")
 
                 # 2. DATABASES
@@ -147,56 +140,75 @@ class HuaweiDiscovery:
                         nat_region = Region(id=target_region, endpoint=f"https://nat.{target_region}.myhuaweicloud.com")
                         nat_client = NatClient.new_builder().with_credentials(region_creds).with_region(nat_region).build()
                         for nat in nat_client.list_nat_gateways(ListNatGatewaysRequest(limit=100)).nat_gateways or []: inventory["network"].append({"id": nat.id, "name": nat.name, "type": "NAT Gateway", "cidr": "N/A", "status": nat.status, "region": target_region})
-                    except Exception as e: inventory["diagnostics"].append(f"[{target_region}] NAT API Error: {str(e)}")
+                    except Exception as e: pass
 
                 if HAS_EIP:
                     try:
                         eip_region = Region(id=target_region, endpoint=f"https://vpc.{target_region}.myhuaweicloud.com")
                         eip_client = EipClient.new_builder().with_credentials(region_creds).with_region(eip_region).build()
                         for eip in eip_client.list_publicips(ListPublicipsRequest(limit=100)).publicips or []: inventory["network"].append({"id": eip.id, "name": eip.alias or eip.public_ip_address, "type": "EIP", "public_ip_address": eip.public_ip_address, "status": eip.status, "region": target_region})
-                    except Exception as e: inventory["diagnostics"].append(f"[{target_region}] EIP API Error: {str(e)}")
+                    except Exception as e: pass
 
-                # 🚨 ADVANCED REFLECTION FOR VPN
+                # 🚨 DEEP REFLECTION FOR VPN
                 if HAS_VPN:
                     try:
                         vpn_region = Region(id=target_region, endpoint=f"https://vpn.{target_region}.myhuaweicloud.com")
-                        vpn_client = VpnClient.new_builder().with_credentials(region_creds).with_region(vpn_region).build()
-                        
-                        VgwClass = getattr(vpn_module, 'ListVpnGatewaysRequest', getattr(vpn_module, 'ListVgwsRequest', None))
-                        vgw_method = getattr(vpn_client, 'list_vpn_gateways', getattr(vpn_client, 'list_vgws', None))
-                        if VgwClass and vgw_method:
-                            try:
-                                res = vgw_method(VgwClass())
-                                items = getattr(res, 'vpn_gateways', getattr(res, 'vgws', [])) or []
-                                for v in items: inventory["network"].append({"id": v.id, "name": v.name, "type": "Enterprise VPN Gateway", "cidr": "N/A", "status": v.status, "region": target_region})
-                            except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Gateways Error: {str(e)}")
+                        vpn_client_class = getattr(vpn_module, 'VpnClient', None)
+                        if vpn_client_class:
+                            vpn_client = vpn_client_class.new_builder().with_credentials(region_creds).with_region(vpn_region).build()
+                            
+                            # Safely extract VGW
+                            vgw_class = getattr(vpn_module, 'ListVpnGatewaysRequest', getattr(vpn_module, 'ListVgwsRequest', None))
+                            vgw_method = getattr(vpn_client, 'list_vpn_gateways', getattr(vpn_client, 'list_vgws', None))
+                            if vgw_class and vgw_method:
+                                try:
+                                    res = vgw_method(vgw_class())
+                                    items = getattr(res, 'vpn_gateways', getattr(res, 'vgws', [])) or []
+                                    for v in items: inventory["network"].append({"id": v.id, "name": v.name, "type": "Enterprise VPN Gateway", "cidr": "N/A", "status": v.status, "region": target_region})
+                                except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Gateway Fetch Error: {str(e)}")
+                            else:
+                                inventory["diagnostics"].append(f"Could not find VPN Gateways class. Available v5 classes: {', '.join([c for c in dir(vpn_module) if 'List' in c and ('Vgw' in c or 'Vpn' in c)])}")
 
-                        CgwClass = getattr(vpn_module, 'ListCustomerGatewaysRequest', getattr(vpn_module, 'ListCgwsRequest', None))
-                        cgw_method = getattr(vpn_client, 'list_customer_gateways', getattr(vpn_client, 'list_cgws', None))
-                        if CgwClass and cgw_method:
-                            try:
-                                res = cgw_method(CgwClass())
-                                items = getattr(res, 'customer_gateways', getattr(res, 'cgws', [])) or []
-                                for c in items: inventory["network"].append({"id": c.id, "name": c.name, "type": "Customer Gateway", "cidr": getattr(c, 'bgp_asn', 'N/A') or 'N/A', "status": "Active", "region": target_region})
-                            except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Customer Gateways Error: {str(e)}")
+                            # Safely extract CGW
+                            cgw_class = getattr(vpn_module, 'ListCustomerGatewaysRequest', getattr(vpn_module, 'ListCgwsRequest', None))
+                            cgw_method = getattr(vpn_client, 'list_customer_gateways', getattr(vpn_client, 'list_cgws', None))
+                            if cgw_class and cgw_method:
+                                try:
+                                    res = cgw_method(cgw_class())
+                                    items = getattr(res, 'customer_gateways', getattr(res, 'cgws', [])) or []
+                                    for c in items: inventory["network"].append({"id": c.id, "name": c.name, "type": "Customer Gateway", "cidr": getattr(c, 'bgp_asn', 'N/A') or 'N/A', "status": "Active", "region": target_region})
+                                except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CGW Fetch Error: {str(e)}")
 
-                        ConnClass = getattr(vpn_module, 'ListVpnConnectionsRequest', None)
-                        if ConnClass:
-                            try:
-                                for conn in vpn_client.list_vpn_connections(ConnClass()).vpn_connections or []: inventory["network"].append({"id": conn.id, "name": conn.name, "type": "VPN Connection", "cidr": "N/A", "status": conn.status, "region": target_region})
-                            except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Connections Error: {str(e)}")
+                            # Safely extract Connections
+                            conn_class = getattr(vpn_module, 'ListVpnConnectionsRequest', getattr(vpn_module, 'ListIpsecConnectionsRequest', None))
+                            conn_method = getattr(vpn_client, 'list_vpn_connections', getattr(vpn_client, 'list_ipsec_connections', None))
+                            if conn_class and conn_method:
+                                try:
+                                    res = conn_method(conn_class())
+                                    items = getattr(res, 'vpn_connections', getattr(res, 'ipsec_connections', [])) or []
+                                    for conn in items: inventory["network"].append({"id": conn.id, "name": conn.name, "type": "VPN Connection", "cidr": "N/A", "status": conn.status, "region": target_region})
+                                except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Conn Fetch Error: {str(e)}")
+
                     except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Client Build Error: {str(e)}")
 
-                # 5. STORAGE & BACKUP
+                # 🚨 DEEP REFLECTION FOR CBR
                 if HAS_CBR:
                     try:
                         cbr_region = Region(id=target_region, endpoint=f"https://cbr.{target_region}.myhuaweicloud.com")
-                        cbr_client = CbrClient.new_builder().with_credentials(region_creds).with_region(cbr_region).build()
-                        for vault in cbr_client.list_vaults(ListVaultsRequest(limit=100)).vaults or []:
-                            allocated = vault.billing.size if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'size', 0)
-                            used = vault.billing.used if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'used', 0)
-                            inventory["storage"].append({"id": vault.id, "name": vault.name, "type": "CBR", "location": target_region, "status": "Active", "size": allocated, "used": used})
-                    except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CBR API Error: {str(e)}")
+                        cbr_client_class = getattr(cbr_module, 'CbrClient', None)
+                        if cbr_client_class:
+                            cbr_client = cbr_client_class.new_builder().with_credentials(region_creds).with_region(cbr_region).build()
+                            vaults_class = getattr(cbr_module, 'ListVaultsRequest', None)
+                            if vaults_class:
+                                try:
+                                    for vault in cbr_client.list_vaults(vaults_class()).vaults or []:
+                                        allocated = vault.billing.size if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'size', 0)
+                                        used = vault.billing.used if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'used', 0)
+                                        inventory["storage"].append({"id": vault.id, "name": vault.name, "type": "CBR", "location": target_region, "status": "Active", "size": allocated, "used": used})
+                                except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CBR Fetch Error: {str(e)}")
+                            else:
+                                inventory["diagnostics"].append(f"Could not find ListVaultsRequest. Available in {cbr_version}: {', '.join([c for c in dir(cbr_module) if 'List' in c])}")
+                    except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CBR Client Build Error: {str(e)}")
 
             if HAS_OBS:
                 try:
