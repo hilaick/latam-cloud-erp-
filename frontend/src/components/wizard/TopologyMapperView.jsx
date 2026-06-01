@@ -12,21 +12,14 @@ export const HUAWEI_REGIONS = [
 export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
     const { customers } = useContext(ERPContext); 
 
-    const servers = activeProject?.blueprintData?.topology?.compute || [];
-    const databases = activeProject?.blueprintData?.topology?.database || [];
-    const networks = activeProject?.blueprintData?.topology?.network || [];
-    const storages = activeProject?.blueprintData?.topology?.storage || [];
-
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
     const [activeTab, setActiveTab] = useState('table'); 
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
     
     // Reconciliation State
-    const [quotedNodes, setQuotedNodes] = useState([]);
-    const [liveNodes, setLiveNodes] = useState([]);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [reconcileView, setReconcileView] = useState('table'); // 🚨 NEW: 'table' or 'canvas' toggle
+    const [reconcileView, setReconcileView] = useState('table'); 
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
     
@@ -54,14 +47,27 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return 'VPC';
     };
 
-    const extractLiveNodesFromPayload = (raw, fallbackRegion) => {
-        let mNodes = [];
-        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global' }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion }));
-        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion }));
+    // 🚨 FIX: Pure Derived State (useMemo) perfectly forces React to repaint the Dual Pane Diagrams when API returns
+    const quotedNodes = useMemo(() => {
+        const fallbackRegion = activeProject?.region || 'la-south-2';
+        const qNodes = [];
+        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        return qNodes;
+    }, [activeProject?.blueprintData, activeProject?.region]);
+
+    const liveNodes = useMemo(() => {
+        const raw = activeProject?.mgcData?.raw_inventory || {};
+        const fallbackRegion = activeProject?.region || 'la-south-2';
+        const mNodes = [];
+        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion, status: 'Live Only' }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', status: 'Live Only' }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion, status: 'Live Only' }));
+        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion, status: 'Live Only' }));
         return mNodes;
-    };
+    }, [activeProject?.mgcData, activeProject?.region]);
 
     const refreshLiveDiscovery = async () => {
         setIsRefreshing(true);
@@ -79,29 +85,16 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
             const data = await res.json();
             if (data.success) { 
+                // Global update inherently triggers the liveNodes useMemo to flawlessly redraw canvases
                 onUpdateProject(activeProject.id, 'mgcData', { source: 'api', raw_inventory: data.inventory }); 
-                const freshLiveNodes = extractLiveNodesFromPayload(data.inventory, activeProject?.region || 'la-south-2');
-                setLiveNodes(freshLiveNodes);
-            } 
-            else { alert(`API Discovery Failed: ${data.error}`); }
+            } else { 
+                alert(`API Discovery Failed: ${data.error}`); 
+            }
         } catch (err) { alert(`Error: ${err.message}`); } finally { setIsRefreshing(false); }
     };
 
     const openReconciliationView = () => {
         if (!activeProject?.mgcData) return alert('Run MgC Discovery first to reconcile against the SOW!');
-        const fallbackRegion = activeProject?.region || 'la-south-2';
-        
-        // Ensure we explicitly use location and region properties so Canvas works flawlessly
-        let qNodes = [];
-        servers.forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        databases.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        networks.forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        storages.forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        setQuotedNodes(qNodes);
-
-        const raw = activeProject.mgcData.raw_inventory || {};
-        setLiveNodes(extractLiveNodesFromPayload(raw, fallbackRegion));
-        
         setActiveTab('reconcile');
     };
 
@@ -129,10 +122,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             }
 
             if (matchIdx !== -1) { 
-                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, status: 'Matched' }); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, status: 'Matched', config: {} }); 
                 tempQuoted.splice(matchIdx, 1); 
             } else { 
-                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only' }); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only', config: {} }); 
             }
         });
 
@@ -168,10 +161,13 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return null;
     };
 
-    const uniqueRegions = ['All', ...new Set(localNodes.map(n => n.region).filter(r => r && r !== 'TBD' && r !== 'Global'))];
+    // 🚨 Extended unique region pool ensures dual-pane filters properly
+    const uniqueRegions = ['All', ...new Set([
+        ...localNodes.map(n => n.region), 
+        ...quotedNodes.map(n => n.region), 
+        ...liveNodes.map(n => n.region)
+    ].filter(r => r && r !== 'TBD' && r !== 'Global'))];
 
-    // 🚨 REUSABLE CANVAS COMPONENT
-    // This allows us to spawn full Architecture Diagrams dynamically for Quoted, Live, and Merged states!
     const renderCanvasPane = (title, paneNodes, theme, onNodeClick, currentRegionFilter) => {
         const paneGroups = { EdgeGateways: [], EIPs: [], Subnets: {}, Global: [], Pending: [] };
         paneNodes.filter(n => currentRegionFilter === 'All' || n.region === currentRegionFilter).forEach(n => {
@@ -221,8 +217,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
                         {Object.entries(paneGroups.Subnets).map(([subName, subNodes]) => (
-                            <div key={subName} className="border-2 border-dashed border-slate-300 bg-white/80 p-5 rounded-2xl relative pt-10 shadow-sm">
-                                <span className="absolute top-3 left-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-md border border-slate-200 shadow-sm"><i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}</span>
+                            <div key={subName} className="border-2 border-dashed border-slate-400 bg-white/80 p-5 rounded-2xl relative pt-10 shadow-sm">
+                                <span className="absolute top-3 left-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-md border border-slate-300 shadow-sm"><i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}</span>
                                 <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2 mt-2">
                                     {subNodes.map(n => (
                                         <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm relative flex flex-col items-center text-center ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-all' : ''}`}>
@@ -239,15 +235,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                 </div>
                 
                 {paneGroups.Global.length > 0 && (
-                    <div className="w-full max-w-5xl border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl relative pt-10 p-6 shadow-sm mt-4">
-                        <span className="absolute -top-4 left-6 bg-emerald-100 px-4 py-1.5 rounded-xl text-xs font-black text-emerald-800 uppercase tracking-widest border border-emerald-400 shadow-sm"><i className="fas fa-globe mr-2"></i> Global / External Services</span>
+                    <div className={`w-full max-w-5xl border-2 ${theme === 'slate' ? 'border-slate-300 bg-slate-100/50' : 'border-emerald-300 bg-emerald-50/50'} rounded-2xl relative pt-10 p-6 shadow-sm mt-4`}>
+                        <span className={`absolute -top-4 left-6 ${theme === 'slate' ? 'bg-slate-200 text-slate-700 border-slate-400' : 'bg-emerald-100 text-emerald-800 border-emerald-400'} px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest border shadow-sm`}><i className="fas fa-globe mr-2"></i> Global / External Services</span>
                         <div className="flex flex-wrap gap-5">
                             {paneGroups.Global.map(n => (
                                 <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center relative ${onNodeClick ? 'cursor-pointer hover:border-emerald-500 hover:-translate-y-1 transition-all' : ''}`}>
                                     {getStatusIcon(n.status)}
-                                    <div className="w-12 h-12 mx-auto bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-2"><i className={`fas ${getIcon(n.type)} text-2xl`}></i></div>
+                                    <div className={`w-12 h-12 mx-auto ${theme === 'slate' ? 'bg-slate-100 border-slate-200' : 'bg-emerald-50 border-emerald-100'} rounded-full flex items-center justify-center border mb-2`}><i className={`fas ${getIcon(n.type)} text-2xl`}></i></div>
                                     <div className="font-black text-[10px] text-slate-800 truncate" title={n.name}>{n.name}</div>
-                                    <div className="text-[9px] font-black text-emerald-600 mt-1 uppercase tracking-wider bg-emerald-50 rounded px-1 py-0.5">{n.type}</div>
+                                    <div className={`text-[9px] font-black ${theme === 'slate' ? 'text-slate-600 bg-slate-100' : 'text-emerald-600 bg-emerald-50'} mt-1 uppercase tracking-wider rounded px-1 py-0.5`}>{n.type}</div>
                                 </div>
                             ))}
                         </div>
@@ -272,7 +268,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 </div>
 
-                {/* 🚨 TAB: DUAL-PANE RECONCILIATION */}
+                {/* TAB: DUAL-PANE RECONCILIATION */}
                 {activeTab === 'reconcile' && (
                     <div className="animate-fade-in flex flex-col min-h-[600px]">
                         <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -281,19 +277,17 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery. Click Merge when ready.</p>
                             </div>
                             <div className="flex gap-4 items-center w-full md:w-auto">
-                                {/* 🚨 VIEW TOGGLE (LIST VS DIAGRAM) */}
                                 <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm">
                                     <button onClick={()=>setReconcileView('table')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'table' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-list mr-1"></i> List</button>
                                     <button onClick={()=>setReconcileView('canvas')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'canvas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-1"></i> Diagram</button>
                                 </div>
                                 <div className="flex gap-2 border-l border-blue-200 pl-4">
                                     <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
-                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge</button>
+                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge & Finalize</button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* LIST VIEW */}
                         {reconcileView === 'table' && (
                             <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in">
                                 <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
@@ -328,16 +322,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             </div>
                         )}
 
-                        {/* DIAGRAM VIEW */}
                         {reconcileView === 'canvas' && (
                             <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-x-auto custom-scrollbar animate-fade-in pb-4">
-                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col">
+                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
                                     <div className="p-4 border-b border-slate-200 bg-white"><h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] text-center">1. Quoted Diagram (SOW)</h4></div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-100/50">
                                         {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div> : renderCanvasPane('Quoted Infrastructure', quotedNodes, 'slate', null, regionFilter)}
                                     </div>
                                 </div>
-                                <div className="xl:w-1/2 bg-indigo-50/30 border border-indigo-200 rounded-2xl shadow-inner overflow-hidden flex flex-col">
+                                <div className="xl:w-1/2 bg-indigo-50/30 border border-indigo-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
                                     <div className="p-4 border-b border-indigo-200 bg-white flex justify-between items-center">
                                         <div className="w-20"></div>
                                         <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4>
@@ -388,7 +381,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     {getStatusIcon(n.status)}
                                                     <div className="ml-4"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
+                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest">
+                                                    <EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} />
+                                                </td>
                                                 <td className="p-4 font-bold text-indigo-700">
                                                     <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
                                                         <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
