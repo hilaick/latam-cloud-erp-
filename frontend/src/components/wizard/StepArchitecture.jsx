@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import AssessmentView from './AssessmentView';
 import TopologyMapperView from './TopologyMapperView';
 import MgCReconciliationView from './MgCReconciliationView';
-import DTRBReviewView from './DTRBReviewView'; // 🚨 IMPORT DTRB ENGINE
+import GovernanceAndCRView from './GovernanceAndCRView'; // 🚨 IMPORT NEW MODULE
 
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
@@ -32,9 +32,9 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                 <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>2. ORA Profile</button>
                 <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>3. Target Architecture</button>
                 
-                {/* 🚨 THE NEW DTRB TAB */}
-                <button onClick={()=>setSubTab('dtrb')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${subTab==='dtrb'?'bg-slate-800 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
-                    4. DTRB Sign-off {isLocked && <i className="fas fa-lock text-emerald-400"></i>}
+                {/* 🚨 UPDATED TAB TEXT */}
+                <button onClick={()=>setSubTab('gov')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${subTab==='gov'?'bg-slate-800 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+                    4. Governance & CRs {isLocked && <i className="fas fa-lock text-emerald-400"></i>}
                 </button>
             </div>
 
@@ -60,10 +60,10 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                             <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
                         <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${isLocked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
-                            <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${isLocked ? 'text-emerald-800' : 'text-slate-700'}`}>DTRB Approval</h4>{isLocked ? <i className="fas fa-lock text-emerald-600"></i> : <i className="fas fa-unlock-alt text-slate-400"></i>}</div>
-                            <div className={`text-xs mb-4 font-medium flex-1 ${isLocked ? 'text-emerald-700' : 'text-slate-500'}`}>Delivery feasibility review.</div>
+                            <div className="flex justify-between items-start mb-2"><h4 className={`font-black text-sm ${isLocked ? 'text-emerald-800' : 'text-slate-700'}`}>Governance</h4>{isLocked ? <i className="fas fa-lock text-emerald-600"></i> : <i className="fas fa-unlock-alt text-slate-400"></i>}</div>
+                            <div className={`text-xs mb-4 font-medium flex-1 ${isLocked ? 'text-emerald-700' : 'text-slate-500'}`}>Financials & CR Control.</div>
                             <div className={`text-xl font-black ${isLocked ? 'text-emerald-600' : 'text-slate-400'}`}>{isLocked ? 'Locked' : 'Draft'}</div>
-                            <button onClick={()=>setSubTab('dtrb')} className={`mt-2 text-left text-[10px] uppercase font-bold hover:underline ${isLocked ? 'text-emerald-700' : 'text-slate-600'}`}>Review Governance &gt;</button>
+                            <button onClick={()=>setSubTab('gov')} className={`mt-2 text-left text-[10px] uppercase font-bold hover:underline ${isLocked ? 'text-emerald-700' : 'text-slate-600'}`}>Manage Financials &gt;</button>
                         </div>
                     </div>
                 </div>
@@ -71,22 +71,25 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
             
             {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
-            {/* 🚨 DISABLE MAPPER EDITS IF LOCKED */}
+            
+            {/* 🚨 MAPPER LOCK OVERLAY */}
             {subTab === 'mapper' && (
                 <div className="relative">
                     {isLocked && (
-                        <div className="absolute top-0 left-0 w-full h-full z-50 bg-white/40 backdrop-blur-[1px] flex items-center justify-center" title="Architecture is Locked by DTRB">
-                            <div className="bg-slate-800 text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-700">
+                        <div className="absolute top-0 left-0 w-full h-full z-50 bg-white/40 backdrop-blur-[1px] flex items-center justify-center" title="Architecture is Locked by Governance">
+                            <div className="bg-slate-800 text-white px-8 py-5 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-700">
                                 <i className="fas fa-lock text-4xl mb-3 text-emerald-400"></i>
                                 <div className="font-black uppercase tracking-widest text-sm">Blueprint Locked</div>
-                                <div className="text-xs text-slate-300 mt-1">Unlock in the DTRB Sign-off tab to make edits.</div>
+                                <div className="text-xs text-slate-300 mt-2">You must raise a Change Request (CR)<br/>in the Governance tab to make edits.</div>
                             </div>
                         </div>
                     )}
                     <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />
                 </div>
             )}
-            {subTab === 'dtrb' && <DTRBReviewView activeProject={project} onUpdateProject={onUpdateProject} />}
+            
+            {/* 🚨 MOUNT NEW GOVERNANCE MODULE */}
+            {subTab === 'gov' && <GovernanceAndCRView activeProject={project} onUpdateProject={onUpdateProject} />}
         </div>
     );
 }
