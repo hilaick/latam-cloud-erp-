@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext'; 
 
-export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
+export const HUAWEI_REGIONS = [
+    { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] },
+    { group: "Europe, Middle East & Africa", options: [{ id: "eu-west-101", name: "EU-Dublin" }, { id: "tr-west-1", name: "TR-Istanbul" }, { id: "me-east-1", name: "ME-Riyadh" }, { id: "af-south-1", name: "AF-Johannesburg" }, { id: "af-north-1", name: "AF-Cairo" }] },
+    { group: "Asia Pacific", options: [{ id: "ap-southeast-1", name: "CN-Hong Kong" }, { id: "ap-southeast-2", name: "AP-Bangkok" }, { id: "ap-southeast-3", name: "AP-Singapore" }, { id: "ap-southeast-4", name: "AP-Jakarta" }, { id: "ap-southeast-5", name: "AP-Manila" }] },
+    { group: "Chinese Mainland", options: [{ id: "cn-north-1", name: "CN North-Beijing1" }, { id: "cn-north-4", name: "CN North-Beijing4" }, { id: "cn-north-9", name: "CN North-Ulanqab1" }, { id: "cn-north-12", name: "CN North3" }, { id: "cn-east-3", name: "CN East-Shanghai1" }, { id: "cn-east-2", name: "CN East-Shanghai2" }, { id: "cn-east-5", name: "CN East-Qingdao" }, { id: "cn-east-4", name: "CN East2" }, { id: "cn-south-1", name: "CN South-Guangzhou" }, { id: "cn-southwest-2", name: "CN Southwest-Guiyang1" }] }
+];
+
+export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const { customers } = useContext(ERPContext); 
 
     const servers = activeProject?.blueprintData?.topology?.compute || [];
@@ -15,7 +22,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
     const [reconcileView, setReconcileView] = useState('table'); 
-    const [showFaq, setShowFaq] = useState(false); // 🚨 NEW FAQ STATE
+    const [showFaq, setShowFaq] = useState(false); 
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
     
@@ -24,17 +31,28 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         alert("Architecture Configuration Saved Successfully.");
     };
 
+    // 🚨 FIX: Strict Fullscreen handling without CSS constraint conflicts
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
         if (!el) return;
         if (!document.fullscreenElement) {
             el.requestFullscreen().catch(err => alert(`Error enabling full-screen: ${err.message}`));
-            el.classList.add('is-fullscreen'); // 🚨 FIX FOR HEIGHT CONSTRAINT
+            el.classList.add('fixed-fullscreen-mode');
         } else {
             document.exitFullscreen();
-            el.classList.remove('is-fullscreen');
         }
     };
+
+    // Listen for Escape key to remove fullscreen classes safely
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                document.querySelectorAll('.fixed-fullscreen-mode').forEach(el => el.classList.remove('fixed-fullscreen-mode'));
+            }
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     const getShortNetType = (type) => {
         const t = String(type || 'VPC');
@@ -129,7 +147,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return 'fa-microchip text-slate-500';
     };
 
-    // 🚨 FIX: PROPER INLINE STATUS DOTS
     const getStatusIcon = (status) => {
         if(status === 'Matched') return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm shrink-0" title="Matched in Quotation and Live"></div>;
         if(status === 'Live Only') return <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm animate-pulse shrink-0" title="Scope Creep"></div>;
@@ -142,84 +159,95 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         ...localNodes.map(n => n.region), ...quotedNodes.map(n => n.region), ...liveNodes.map(n => n.region)
     ].filter(r => r && r !== 'TBD' && r !== 'Global'))];
 
-    const renderCanvasPane = (title, paneNodes, theme, onNodeClick, currentRegionFilter) => {
-        const paneGroups = { EdgeGateways: [], EIPs: [], Subnets: {}, Global: [], Pending: [] };
+    // 🚨 PRO-TIER INNOSTAGE DISTRIBUTION RENDERER
+    const renderCanvasPane = (title, paneNodes, onNodeClick, currentRegionFilter) => {
+        const paneGroups = { Edge: [], Subnets: {}, Regional: [], Global: [], Pending: [] };
+        
         paneNodes.filter(n => currentRegionFilter === 'All' || n.region === currentRegionFilter).forEach(n => {
             const type = String(n.type).toUpperCase();
             const loc = String(n.location || "");
             
             if (loc === 'Pending-Allocation') paneGroups.Pending.push(n);
-            else if (['EIP'].includes(type)) paneGroups.EIPs.push(n);
-            else if (['NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) paneGroups.EdgeGateways.push(n);
-            else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') paneGroups.Global.push(n);
+            else if (['EIP', 'NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB', 'SG'].includes(type)) paneGroups.Edge.push(n);
+            else if (['OBS', 'STORAGE'].includes(type) || loc === 'Global') paneGroups.Global.push(n);
+            else if (['CBR', 'CCE'].includes(type)) paneGroups.Regional.push(n); // 🚨 CBR IS NOW REGIONAL
             else if (type !== 'VPC') {
                 if (!paneGroups.Subnets[loc]) paneGroups.Subnets[loc] = [];
                 paneGroups.Subnets[loc].push(n);
             }
         });
 
-        const themes = {
-            indigo: { border: 'border-indigo-200', bg: 'bg-indigo-50/20', hBg: 'bg-indigo-600', hBorder: 'border-indigo-700', tBg: 'bg-indigo-50', tBorder: 'border-indigo-100', tText: 'text-indigo-900', gBorder: 'border-indigo-300' },
-            slate:  { border: 'border-slate-300', bg: 'bg-slate-50/50', hBg: 'bg-slate-600', hBorder: 'border-slate-700', tBg: 'bg-slate-100', tBorder: 'border-slate-200', tText: 'text-slate-800', gBorder: 'border-slate-400' },
-            blue:   { border: 'border-blue-300', bg: 'bg-blue-50/20', hBg: 'bg-blue-600', hBorder: 'border-blue-700', tBg: 'bg-blue-50', tBorder: 'border-blue-100', tText: 'text-blue-900', gBorder: 'border-blue-400' }
-        };
-        const t = themes[theme] || themes.indigo;
+        const renderNodeCard = (n) => (
+            <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border border-slate-200 p-2 w-48 rounded shadow-sm flex items-center gap-3 relative ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:shadow-md transition-all' : ''}`}>
+                <div className="absolute -top-1.5 -right-1.5 z-10">{getStatusIcon(n.status)}</div>
+                <div className="w-8 h-8 rounded bg-slate-50 flex items-center justify-center border border-slate-100 shrink-0">
+                    <i className={`fas ${getIcon(n.type)} text-slate-600 text-sm`}></i>
+                </div>
+                <div className="overflow-hidden">
+                    <div className="text-[10px] font-bold text-slate-800 truncate" title={n.name}>{n.name}</div>
+                    <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">{n.type} {n.ip !== 'N/A' && n.ip !== 'TBD' ? `| ${n.ip}` : ''}</div>
+                </div>
+            </div>
+        );
 
         return (
-            <div className="flex flex-col gap-10 items-center w-full py-4 min-w-[600px]">
-                <div className={`w-full max-w-5xl border-4 ${t.border} ${t.bg} rounded-3xl p-8 pt-16 relative shadow-sm`}>
-                    <div className={`absolute -top-5 left-8 ${t.hBg} ${t.hBorder} px-6 py-2 rounded-xl text-sm font-black text-white uppercase tracking-widest shadow-md`}>
-                        <i className="fas fa-cloud mr-2"></i> {title} {currentRegionFilter !== 'All' ? `(${currentRegionFilter})` : ''}
-                    </div>
-                    
-                    <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
-                        {paneGroups.EIPs.length > 0 && (
-                            <div className="bg-white border-2 border-sky-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative cursor-help">
-                                <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100"><i className="fas fa-wifi text-sky-600 text-lg"></i></div>
-                                <div className="truncate"><div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">EIP Pool</div><div className="font-bold text-[10px] text-sky-900 truncate">{paneGroups.EIPs.length} Allocated IPs</div></div>
-                            </div>
-                        )}
-
-                        {paneGroups.EdgeGateways.map(n => (
-                            <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border-2 ${t.gBorder} p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-transform' : ''}`}>
-                                <div className="absolute -top-1.5 -right-1.5">{getStatusIcon(n.status)}</div>
-                                <div className={`w-8 h-8 ${t.tBg} rounded-lg flex items-center justify-center border ${t.tBorder}`}><i className={`${getIcon(n.type)} text-lg`}></i></div>
-                                <div className="truncate"><div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div><div className={`font-bold text-[10px] ${t.tText} truncate`} title={n.name}>{n.name}</div></div>
-                            </div>
-                        ))}
+            <div className="flex flex-col items-center w-full min-w-[800px] h-full p-4">
+                {/* HUAWEI CLOUD REGION BOUNDARY */}
+                <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50/50 rounded-lg p-6 relative shadow-sm">
+                    <div className="absolute top-0 left-0 bg-slate-200 px-3 py-1 rounded-br-lg text-[10px] font-bold text-slate-700 uppercase tracking-widest shadow-sm">
+                        <i className="fas fa-map-marker-alt mr-2"></i> {title} - Region: {currentRegionFilter}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
-                        {Object.entries(paneGroups.Subnets).map(([subName, subNodes]) => (
-                            <div key={subName} className="border-2 border-dashed border-slate-400 bg-white/80 p-5 rounded-2xl relative pt-10 shadow-sm">
-                                <span className="absolute top-3 left-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-md border border-slate-300 shadow-sm"><i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}</span>
-                                <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2 mt-2">
-                                    {subNodes.map(n => (
-                                        <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm relative flex flex-col items-center text-center ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-all' : ''}`}>
-                                            <div className="absolute -top-1.5 -right-1.5">{getStatusIcon(n.status)}</div>
-                                            <i className={`fas ${getIcon(n.type)} text-3xl mt-2 mb-2 opacity-80`}></i>
-                                            <div className="font-bold text-[10px] truncate w-full text-slate-800" title={n.name}>{n.name}</div>
-                                            <div className="text-[9px] font-black bg-slate-100 text-slate-500 mt-1.5 px-2 py-0.5 rounded uppercase tracking-wider">{n.type}</div>
-                                        </div>
-                                    ))}
-                                </div>
+                    {/* EDGE / PUBLIC ZONE */}
+                    {paneGroups.Edge.length > 0 && (
+                        <div className="mt-8 mb-6 border border-indigo-200 bg-indigo-50/50 rounded-lg p-4 relative">
+                            <div className="absolute -top-2.5 left-4 bg-indigo-100 px-2 rounded text-[9px] font-black text-indigo-800 uppercase tracking-widest border border-indigo-200">Public Network / Edge Gateway</div>
+                            <div className="flex flex-wrap gap-4 pt-2">
+                                {paneGroups.Edge.map(n => renderNodeCard(n))}
                             </div>
-                        ))}
-                    </div>
-                </div>
-                
-                {paneGroups.Global.length > 0 && (
-                    <div className={`w-full max-w-5xl border-2 ${theme === 'slate' ? 'border-slate-300 bg-slate-100/50' : 'border-emerald-300 bg-emerald-50/50'} rounded-2xl relative pt-10 p-6 shadow-sm mt-4`}>
-                        <span className={`absolute -top-4 left-6 ${theme === 'slate' ? 'bg-slate-200 text-slate-700 border-slate-400' : 'bg-emerald-100 text-emerald-800 border-emerald-400'} px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest border shadow-sm`}><i className="fas fa-globe mr-2"></i> Global / External Services</span>
-                        <div className="flex flex-wrap gap-5">
-                            {paneGroups.Global.map(n => (
-                                <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center relative ${onNodeClick ? 'cursor-pointer hover:border-emerald-500 hover:-translate-y-1 transition-all' : ''}`}>
-                                    <div className="absolute -top-1.5 -right-1.5">{getStatusIcon(n.status)}</div>
-                                    <div className={`w-12 h-12 mx-auto ${theme === 'slate' ? 'bg-slate-100 border-slate-200' : 'bg-emerald-50 border-emerald-100'} rounded-full flex items-center justify-center border mb-2`}><i className={`fas ${getIcon(n.type)} text-2xl`}></i></div>
-                                    <div className="font-black text-[10px] text-slate-800 truncate" title={n.name}>{n.name}</div>
-                                    <div className={`text-[9px] font-black ${theme === 'slate' ? 'text-slate-600 bg-slate-100' : 'text-emerald-600 bg-emerald-50'} mt-1 uppercase tracking-wider rounded px-1 py-0.5`}>{n.type}</div>
+                        </div>
+                    )}
+
+                    {/* VPC BOUNDARY */}
+                    <div className="border border-blue-300 bg-blue-50/30 rounded-lg p-6 relative">
+                        <div className="absolute top-0 left-0 bg-blue-100 px-3 py-1 rounded-br-lg text-[10px] font-bold text-blue-800 uppercase tracking-widest border-b border-r border-blue-200">
+                            <i className="fas fa-cloud mr-2"></i> Virtual Private Cloud (VPC)
+                        </div>
+                        
+                        <div className="mt-8 grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            {Object.entries(paneGroups.Subnets).map(([subName, subNodes]) => (
+                                <div key={subName} className="border border-slate-300 bg-white/80 p-4 rounded-lg relative shadow-sm">
+                                    <span className="absolute -top-2.5 left-4 text-[9px] font-black text-slate-600 uppercase tracking-widest bg-slate-100 px-2 rounded border border-slate-200">
+                                        <i className="fas fa-network-wired mr-1 opacity-50"></i> {subName}
+                                    </span>
+                                    <div className="flex flex-wrap gap-4 pt-3">
+                                        {subNodes.map(n => renderNodeCard(n))}
+                                    </div>
                                 </div>
                             ))}
+                            {Object.keys(paneGroups.Subnets).length === 0 && <div className="text-xs text-slate-400 p-4 italic">No subnet resources mapped.</div>}
+                        </div>
+                    </div>
+
+                    {/* REGIONAL SERVICES ZONE (CBR MOVED HERE) */}
+                    {paneGroups.Regional.length > 0 && (
+                        <div className="mt-6 border border-emerald-200 bg-emerald-50/50 rounded-lg p-4 relative">
+                            <div className="absolute -top-2.5 left-4 bg-emerald-100 px-2 rounded text-[9px] font-black text-emerald-800 uppercase tracking-widest border border-emerald-200">Regional Services (Backup / Container)</div>
+                            <div className="flex flex-wrap gap-4 pt-2">
+                                {paneGroups.Regional.map(n => renderNodeCard(n))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* GLOBAL SERVICES ZONE (OUTSIDE REGION) */}
+                {paneGroups.Global.length > 0 && (
+                    <div className="w-full border-2 border-slate-200 bg-white rounded-lg p-6 relative shadow-sm mt-6">
+                        <div className="absolute top-0 left-0 bg-slate-700 px-3 py-1 rounded-br-lg text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">
+                            <i className="fas fa-globe mr-2"></i> Global & External Services
+                        </div>
+                        <div className="flex flex-wrap gap-4 pt-4">
+                            {paneGroups.Global.map(n => renderNodeCard(n))}
                         </div>
                     </div>
                 )}
@@ -229,6 +257,23 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
+            <style>{`
+                /* Fullscreen override logic */
+                .fixed-fullscreen-mode {
+                    position: fixed !important;
+                    top: 0 !important; left: 0 !important;
+                    width: 100vw !important; height: 100vh !important;
+                    max-height: none !important;
+                    z-index: 9999 !important;
+                    background: white !important;
+                    border-radius: 0 !important;
+                    padding: 1rem !important;
+                    overflow: hidden !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                }
+            `}</style>
+            
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 relative overflow-hidden">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-200 pb-4 gap-4">
@@ -245,11 +290,11 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                 {/* TAB: DUAL-PANE RECONCILIATION */}
                 {activeTab === 'reconcile' && (
-                    <div id="reconcile-container" className="animate-fade-in flex flex-col min-h-[600px] bg-white transition-all duration-300 [&.is-fullscreen]:h-screen [&.is-fullscreen]:p-6">
-                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div id="reconcile-container" className="animate-fade-in flex flex-col min-h-[600px] bg-white resize-y overflow-auto pb-4">
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
                             <div>
                                 <h4 className="font-black text-blue-900"><i className="fas fa-random mr-2"></i> Dual-Pane Reconciliation Mode</h4>
-                                <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery. Click Merge when ready.</p>
+                                <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery.</p>
                             </div>
                             <div className="flex gap-4 items-center w-full md:w-auto">
                                 <button onClick={()=>toggleFullScreen('reconcile-container')} className="px-3 py-1.5 bg-white text-slate-600 border border-slate-300 rounded text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors shadow-sm"><i className="fas fa-expand mr-1"></i> Full Screen</button>
@@ -266,7 +311,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         </div>
 
                         {reconcileView === 'table' && (
-                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in pb-4 overflow-hidden">
+                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in overflow-hidden">
                                 <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
                                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
@@ -294,17 +339,17 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         )}
 
                         {reconcileView === 'canvas' && (
-                            <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-x-auto custom-scrollbar animate-fade-in pb-4">
+                            <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-x-auto custom-scrollbar animate-fade-in">
                                 <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
-                                    <div className="p-4 border-b border-slate-200 bg-white"><h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] text-center">1. Quoted Diagram (SOW)</h4></div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-100/50">
-                                        {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div> : renderCanvasPane('Quoted Infrastructure', quotedNodes, 'slate', null, regionFilter)}
+                                    <div className="p-4 border-b border-slate-200 bg-white shrink-0"><h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] text-center">1. Quoted Diagram (SOW)</h4></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-100/50 relative">
+                                        {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div> : renderCanvasPane('Quoted Infra', quotedNodes, null, regionFilter)}
                                     </div>
                                 </div>
                                 <div className="xl:w-1/2 bg-indigo-50/30 border border-indigo-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
-                                    <div className="p-4 border-b border-indigo-200 bg-white"><h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4></div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-indigo-50/50">
-                                        {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div> : renderCanvasPane('Live Infrastructure', liveNodes, 'blue', null, regionFilter)}
+                                    <div className="p-4 border-b border-indigo-200 bg-white shrink-0"><h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-indigo-50/50 relative">
+                                        {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div> : renderCanvasPane('Live Infra', liveNodes, null, regionFilter)}
                                     </div>
                                 </div>
                             </div>
@@ -314,8 +359,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                 {/* TAB: RESOURCE LIST */}
                 {activeTab === 'table' && (
-                    <div id="table-container" className="flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-fade-in min-h-[600px] bg-white transition-all duration-300 [&.is-fullscreen]:h-screen [&.is-fullscreen]:p-0">
-                        <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white">
+                    <div id="table-container" className="flex flex-col bg-slate-50 rounded-2xl border border-slate-200 shadow-sm animate-fade-in resize-y overflow-auto min-h-[600px] bg-white">
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white shrink-0">
                             <div className="flex gap-2 flex-wrap">
                                 <button onClick={openReconciliationView} className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-emerald-500"><i className="fas fa-random mr-2"></i> Reconcile Quotation vs Live</button>
                                 <button onClick={handleAddNode} className="py-2 px-4 bg-white border border-slate-300 hover:border-indigo-400 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-2"></i> Add Resource</button>
@@ -324,8 +369,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <button onClick={()=>toggleFullScreen('table-container')} className="py-2 px-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-200 transition-colors border border-slate-300"><i className="fas fa-expand mr-2"></i> Full Screen</button>
                         </div>
                         
-                        {/* 🚨 THE NEW CLEAR LEGEND */}
-                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex gap-6 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex gap-6 text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0 flex-wrap">
                             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm"></div> Matched (SOW + Live)</div>
                             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm"></div> Scope Creep (Live Only)</div>
                             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-sm"></div> Missing (SOW Only)</div>
@@ -383,8 +427,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                 {/* TAB: VISUAL CANVAS */}
                 {activeTab === 'canvas' && (
-                    <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in min-h-[700px] overflow-hidden transition-all duration-300 [&.is-fullscreen]:h-screen [&.is-fullscreen]:p-0">
-                        <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20">
+                    <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in resize-y overflow-auto min-h-[700px]">
+                        <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20 shrink-0">
                             <div className="flex items-center gap-3">
                                 <i className="fas fa-filter text-slate-400"></i>
                                 <div className="flex gap-2">
@@ -398,50 +442,41 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <button onClick={()=>toggleFullScreen('canvas-container')} className="py-2 px-4 bg-slate-800 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-700 transition-colors"><i className="fas fa-expand mr-2"></i> Full Screen</button>
                         </div>
 
-                        <div className="p-6 overflow-auto custom-scrollbar flex-1 relative">
+                        <div className="flex-1 overflow-auto custom-scrollbar relative bg-slate-50">
                             {localNodes.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 mt-20">
                                     <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
                                     <p className="font-black text-lg">Awaiting Topology Data</p>
                                 </div>
                             ) : (
-                                renderCanvasPane('Target Infrastructure', localNodes, 'indigo', setSelectedNode, regionFilter)
+                                renderCanvasPane('Target Architecture', localNodes, setSelectedNode, regionFilter)
                             )}
                         </div>
                     </div>
                 )}
                 
-                {/* 🚨 HELP / FAQ DRAWER */}
+                {/* HELP / FAQ DRAWER */}
                 {showFaq && (
-                    <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-left rounded-r-2xl overflow-hidden">
-                        <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center">
+                    <div className="fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
+                        <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Methodology Guide</h3>
                                 <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-1">Architecture & Migration Flow</p>
                             </div>
                             <button onClick={()=>setShowFaq(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed">
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-slate-800 mb-2">What is MgC Discovery?</h4>
-                                <p>This reads the customer's current environment. It is the <strong className="text-blue-600">"As-Is"</strong> technical reality of what is running right now.</p>
+                                <p>This tool connects to the customer's current environment. It fetches the <strong className="text-blue-600">"As-Is"</strong> technical reality of what is running right now in their datacenter or cloud.</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-slate-800 mb-2">What is Reconciliation?</h4>
-                                <p>Sales sells a Quotation (SOW) that rarely matches the technical reality perfectly. Reconciliation forces you to compare the SOW against the MgC Discovery to catch <strong>Scope Creep</strong> before you start building.</p>
+                                <p>Sales sells a Quotation (SOW) that rarely matches reality perfectly. Reconciliation forces you to compare the SOW against the MgC Discovery side-by-side to catch <strong>Scope Creep</strong> before you start building.</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-slate-800 mb-2">Why edit the Target Architecture?</h4>
-                                <p>The Resource List is the <strong className="text-emerald-600">"To-Be"</strong> deployment blueprint. You should rename old server names (e.g., `WIN-2012-OLD`) and remap IPs here to match your strict cloud conventions. What you save here is what gets built via IaC.</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-slate-800 mb-3">Status Legend</h4>
-                                <ul className="space-y-3 text-xs">
-                                    <li className="flex items-center gap-3"><div className="w-3 h-3 bg-emerald-500 rounded-full shrink-0"></div> <span><strong>Matched:</strong> Exists in SOW and Live.</span></li>
-                                    <li className="flex items-center gap-3"><div className="w-3 h-3 bg-amber-500 rounded-full shrink-0"></div> <span><strong>Scope Creep:</strong> Found running live, but wasn't quoted.</span></li>
-                                    <li className="flex items-center gap-3"><div className="w-3 h-3 bg-rose-500 rounded-full shrink-0"></div> <span><strong>Missing:</strong> Quoted, but doesn't exist live.</span></li>
-                                    <li className="flex items-center gap-3"><div className="w-3 h-3 bg-blue-500 rounded-full shrink-0"></div> <span><strong>Manual:</strong> Added by the architect.</span></li>
-                                </ul>
+                                <p>The Resource List is the <strong className="text-emerald-600">"To-Be"</strong> deployment blueprint. You should rename old server names (e.g., `WIN-2012-OLD` ➡️ `prd-latam-ecs-01`) and remap IPs here to match your strict cloud conventions. What you save here is what gets deployed.</p>
                             </div>
                         </div>
                     </div>
@@ -449,8 +484,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                 {/* NODE PROPERTIES DRAWER */}
                 {selectedNode && (
-                    <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-left rounded-r-2xl overflow-hidden">
-                        <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center">
+                    <div className="fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
+                        <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg"><i className="fas fa-sliders-h text-blue-400 mr-2"></i> Node Properties</h3>
                                 <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">{selectedNode.name}</p>
@@ -458,7 +493,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <button onClick={()=>setSelectedNode(null)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
                         </div>
                         
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 custom-scrollbar">
                             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                                 <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Core Identity</h4>
                                 <div className="space-y-3">
@@ -480,7 +515,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 </div>
                             </div>
                         </div>
-                        <div className="p-4 bg-white border-t border-slate-200 flex gap-2">
+                        <div className="p-4 bg-white border-t border-slate-200 flex gap-2 shrink-0">
                             <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
                             <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save</button>
                         </div>
