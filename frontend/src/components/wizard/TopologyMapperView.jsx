@@ -1,21 +1,15 @@
 import React, { useState, useEffect, useMemo, useContext } from 'react';
-import { EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext'; 
 
 export const HUAWEI_REGIONS = [
     { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] },
-    { group: "Europe, Middle East & Africa", options: [{ id: "eu-west-101", name: "EU-Dublin" }, { id: "tr-west-1", name: "TR-Istanbul" }, { id: "me-east-1", name: "ME-Riyadh" }, { id: "af-south-1", name: "AF-Johannesburg" }, { id: "af-north-1", name: "AF-Cairo" }] },
+    { group: "Europe, Middle East & Africa", options: [{ id: "eu-west-101", name: "EU-Dublin" }, { id: "tr-west-1", name: "TR-Istanbul" }, { id: "me-east-1", name: "ME-Riy Riyadh" }, { id: "af-south-1", name: "AF-Johannesburg" }, { id: "af-north-1", name: "AF-Cairo" }] },
     { group: "Asia Pacific", options: [{ id: "ap-southeast-1", name: "CN-Hong Kong" }, { id: "ap-southeast-2", name: "AP-Bangkok" }, { id: "ap-southeast-3", name: "AP-Singapore" }, { id: "ap-southeast-4", name: "AP-Jakarta" }, { id: "ap-southeast-5", name: "AP-Manila" }] },
     { group: "Chinese Mainland", options: [{ id: "cn-north-1", name: "CN North-Beijing1" }, { id: "cn-north-4", name: "CN North-Beijing4" }, { id: "cn-north-9", name: "CN North-Ulanqab1" }, { id: "cn-north-12", name: "CN North3" }, { id: "cn-east-3", name: "CN East-Shanghai1" }, { id: "cn-east-2", name: "CN East-Shanghai2" }, { id: "cn-east-5", name: "CN East-Qingdao" }, { id: "cn-east-4", name: "CN East2" }, { id: "cn-south-1", name: "CN South-Guangzhou" }, { id: "cn-southwest-2", name: "CN Southwest-Guiyang1" }] }
 ];
 
 export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const { customers } = useContext(ERPContext); 
-
-    const servers = activeProject?.blueprintData?.topology?.compute || [];
-    const databases = activeProject?.blueprintData?.topology?.database || [];
-    const networks = activeProject?.blueprintData?.topology?.network || [];
-    const storages = activeProject?.blueprintData?.topology?.storage || [];
 
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
     const [activeTab, setActiveTab] = useState('table'); 
@@ -31,7 +25,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         alert("Architecture Configuration Saved Successfully.");
     };
 
-    // 🚨 FIX: Strict Fullscreen handling without CSS constraint conflicts
+    // 🚨 FIX: Native browser fullscreen with CSS escape helper
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
         if (!el) return;
@@ -43,7 +37,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         }
     };
 
-    // Listen for Escape key to remove fullscreen classes safely
+    // Correcting escape key to clean up classes
     useEffect(() => {
         const handleFullscreenChange = () => {
             if (!document.fullscreenElement) {
@@ -147,6 +141,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return 'fa-microchip text-slate-500';
     };
 
+    // 🚨 FIX: PROPER INLINE STATUS DOTS
     const getStatusIcon = (status) => {
         if(status === 'Matched') return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm shrink-0" title="Matched in Quotation and Live"></div>;
         if(status === 'Live Only') return <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm animate-pulse shrink-0" title="Scope Creep"></div>;
@@ -170,13 +165,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
             if (loc === 'Pending-Allocation') paneGroups.Pending.push(n);
             else if (['EIP', 'NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB', 'SG'].includes(type)) paneGroups.Edge.push(n);
             else if (['OBS', 'STORAGE'].includes(type) || loc === 'Global') paneGroups.Global.push(n);
-            else if (['CBR', 'CCE'].includes(type)) paneGroups.Regional.push(n); // 🚨 CBR IS NOW REGIONAL
+            else if (['CBR', 'CCE'].includes(type)) paneGroups.Regional.push(n); // 🚨 CBR IS REGIONAL
             else if (type !== 'VPC') {
                 if (!paneGroups.Subnets[loc]) paneGroups.Subnets[loc] = [];
                 paneGroups.Subnets[loc].push(n);
             }
         });
 
+        // sleek InnoStage node card
         const renderNodeCard = (n) => (
             <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border border-slate-200 p-2 w-48 rounded shadow-sm flex items-center gap-3 relative ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:shadow-md transition-all' : ''}`}>
                 <div className="absolute -top-1.5 -right-1.5 z-10">{getStatusIcon(n.status)}</div>
@@ -193,7 +189,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return (
             <div className="flex flex-col items-center w-full min-w-[800px] h-full p-4">
                 {/* HUAWEI CLOUD REGION BOUNDARY */}
-                <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50/50 rounded-lg p-6 relative shadow-sm">
+                <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50/50 rounded-lg p-6 relative shadow-sm flex-1 overflow-auto custom-scrollbar">
                     <div className="absolute top-0 left-0 bg-slate-200 px-3 py-1 rounded-br-lg text-[10px] font-bold text-slate-700 uppercase tracking-widest shadow-sm">
                         <i className="fas fa-map-marker-alt mr-2"></i> {title} - Region: {currentRegionFilter}
                     </div>
@@ -229,299 +225,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                         </div>
                     </div>
 
-                    {/* REGIONAL SERVICES ZONE (CBR MOVED HERE) */}
+                    {/* REGIONAL SERVICES ZONE (CBR IS HERE) */}
                     {paneGroups.Regional.length > 0 && (
                         <div className="mt-6 border border-emerald-200 bg-emerald-50/50 rounded-lg p-4 relative">
-                            <div className="absolute -top-2.5 left-4 bg-emerald-100 px-2 rounded text-[9px] font-black text-emerald-800 uppercase tracking-widest border border-emerald-200">Regional Services (Backup / Container)</div>
-                            <div className="flex flex-wrap gap-4 pt-2">
-                                {paneGroups.Regional.map(n => renderNodeCard(n))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* GLOBAL SERVICES ZONE (OUTSIDE REGION) */}
-                {paneGroups.Global.length > 0 && (
-                    <div className="w-full border-2 border-slate-200 bg-white rounded-lg p-6 relative shadow-sm mt-6">
-                        <div className="absolute top-0 left-0 bg-slate-700 px-3 py-1 rounded-br-lg text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">
-                            <i className="fas fa-globe mr-2"></i> Global & External Services
-                        </div>
-                        <div className="flex flex-wrap gap-4 pt-4">
-                            {paneGroups.Global.map(n => renderNodeCard(n))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    return (
-        <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
-            <style>{`
-                /* Fullscreen override logic */
-                .fixed-fullscreen-mode {
-                    position: fixed !important;
-                    top: 0 !important; left: 0 !important;
-                    width: 100vw !important; height: 100vh !important;
-                    max-height: none !important;
-                    z-index: 9999 !important;
-                    background: white !important;
-                    border-radius: 0 !important;
-                    padding: 1rem !important;
-                    overflow: hidden !important;
-                    display: flex !important;
-                    flex-direction: column !important;
-                }
-            `}</style>
-            
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 relative overflow-hidden">
-                
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-200 pb-4 gap-4">
-                    <div>
-                        <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-sitemap text-indigo-500"></i> Target Architecture Mapper</h3>
-                        <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold">Design and configure the final execution scope.</p>
-                    </div>
-                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner w-full md:w-auto">
-                        <button onClick={()=>setShowFaq(true)} className="px-4 py-2 text-indigo-600 font-black text-xs uppercase tracking-widest hover:bg-indigo-50 rounded-lg transition-colors mr-2"><i className="fas fa-question-circle mr-1"></i> Help</button>
-                        <button onClick={()=>setActiveTab('table')} className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'table' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-table mr-2"></i> Resource List</button>
-                        <button onClick={()=>setActiveTab('canvas')} className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'canvas' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-project-diagram mr-2"></i> Diagram</button>
-                    </div>
-                </div>
-
-                {/* TAB: DUAL-PANE RECONCILIATION */}
-                {activeTab === 'reconcile' && (
-                    <div id="reconcile-container" className="animate-fade-in flex flex-col min-h-[600px] bg-white resize-y overflow-auto pb-4">
-                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
-                            <div>
-                                <h4 className="font-black text-blue-900"><i className="fas fa-random mr-2"></i> Dual-Pane Reconciliation Mode</h4>
-                                <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery.</p>
-                            </div>
-                            <div className="flex gap-4 items-center w-full md:w-auto">
-                                <button onClick={()=>toggleFullScreen('reconcile-container')} className="px-3 py-1.5 bg-white text-slate-600 border border-slate-300 rounded text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors shadow-sm"><i className="fas fa-expand mr-1"></i> Full Screen</button>
-                                
-                                <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm">
-                                    <button onClick={()=>setReconcileView('table')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'table' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-list mr-1"></i> List</button>
-                                    <button onClick={()=>setReconcileView('canvas')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'canvas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-1"></i> Diagram</button>
-                                </div>
-                                <div className="flex gap-2 border-l border-blue-200 pl-4">
-                                    <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
-                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {reconcileView === 'table' && (
-                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in overflow-hidden">
-                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
-                                    <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
-                                        {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
-                                        {quotedNodes.map((n, i) => (
-                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type}</div></div></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                
-                                <div className="xl:w-1/2 bg-indigo-50/50 border border-indigo-200 rounded-2xl p-4 flex flex-col shadow-inner">
-                                    <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-indigo-200">2. Discovered Scope (Live)</h4>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
-                                        {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
-                                        {liveNodes.map((n, i) => (
-                                            <div key={i} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm flex items-center justify-between">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-indigo-900">{n.name}</div><div className="text-[10px] text-indigo-500 uppercase">{n.type} | {n.ip}</div></div></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {reconcileView === 'canvas' && (
-                            <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-x-auto custom-scrollbar animate-fade-in">
-                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
-                                    <div className="p-4 border-b border-slate-200 bg-white shrink-0"><h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] text-center">1. Quoted Diagram (SOW)</h4></div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-100/50 relative">
-                                        {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div> : renderCanvasPane('Quoted Infra', quotedNodes, null, regionFilter)}
-                                    </div>
-                                </div>
-                                <div className="xl:w-1/2 bg-indigo-50/30 border border-indigo-200 rounded-2xl shadow-inner overflow-hidden flex flex-col min-w-[600px]">
-                                    <div className="p-4 border-b border-indigo-200 bg-white shrink-0"><h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4></div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-indigo-50/50 relative">
-                                        {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div> : renderCanvasPane('Live Infra', liveNodes, null, regionFilter)}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* TAB: RESOURCE LIST */}
-                {activeTab === 'table' && (
-                    <div id="table-container" className="flex flex-col bg-slate-50 rounded-2xl border border-slate-200 shadow-sm animate-fade-in resize-y overflow-auto min-h-[600px] bg-white">
-                        <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white shrink-0">
-                            <div className="flex gap-2 flex-wrap">
-                                <button onClick={openReconciliationView} className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors border border-emerald-500"><i className="fas fa-random mr-2"></i> Reconcile Quotation vs Live</button>
-                                <button onClick={handleAddNode} className="py-2 px-4 bg-white border border-slate-300 hover:border-indigo-400 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-2"></i> Add Resource</button>
-                                <button onClick={saveArchitecture} className="py-2 px-6 bg-slate-800 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95 ml-4"><i className="fas fa-save mr-2"></i> Save Architecture</button>
-                            </div>
-                            <button onClick={()=>toggleFullScreen('table-container')} className="py-2 px-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-200 transition-colors border border-slate-300"><i className="fas fa-expand mr-2"></i> Full Screen</button>
-                        </div>
-                        
-                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex gap-6 text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0 flex-wrap">
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm"></div> Matched (SOW + Live)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm"></div> Scope Creep (Live Only)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-sm"></div> Missing (SOW Only)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-sm"></div> Manual Addition</div>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar bg-white relative">
-                            <table className="w-full text-left min-w-[1000px]">
-                                <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0 z-10 shadow-sm border-b border-slate-200">
-                                    <tr>
-                                        <th className="p-4 w-64 font-black">Target Resource Name</th>
-                                        <th className="p-4 w-32 font-black">Target Region</th>
-                                        <th className="p-4 w-28 font-black">Resource Type</th>
-                                        <th className="p-4 w-32 font-black">Target IP / CIDR</th>
-                                        <th className="p-4 w-40 font-black">Target Subnet / Zone</th>
-                                        <th className="p-4 w-24 text-center font-black">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 text-xs">
-                                    {localNodes.length === 0 ? (
-                                        <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">Click "Reconcile" above to begin mapping your Target Architecture.</td></tr>
-                                    ) : (
-                                        localNodes.map(n => (
-                                            <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                                <td className="p-4 font-bold text-slate-800">
-                                                    <div className="flex items-center gap-3">
-                                                        {getStatusIcon(n.status)}
-                                                        <div className="flex-1"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
-                                                <td className="p-4 font-bold text-indigo-700">
-                                                    <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
-                                                        <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
-                                                        <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
-                                                        <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
-                                                        <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
-                                                        <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
-                                                    </select>
-                                                </td>
-                                                <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
-                                                <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
-                                                <td className="p-4 text-center space-x-3">
-                                                    <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
-                                                    <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* TAB: VISUAL CANVAS */}
-                {activeTab === 'canvas' && (
-                    <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in resize-y overflow-auto min-h-[700px]">
-                        <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20 shrink-0">
-                            <div className="flex items-center gap-3">
-                                <i className="fas fa-filter text-slate-400"></i>
-                                <div className="flex gap-2">
-                                    {uniqueRegions.map(r => (
-                                        <button key={r} onClick={()=>setRegionFilter(r)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors border ${regionFilter === r ? 'bg-indigo-100 text-indigo-800 border-indigo-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
-                                            {r}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <button onClick={()=>toggleFullScreen('canvas-container')} className="py-2 px-4 bg-slate-800 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-700 transition-colors"><i className="fas fa-expand mr-2"></i> Full Screen</button>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar relative bg-slate-50">
-                            {localNodes.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400 mt-20">
-                                    <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
-                                    <p className="font-black text-lg">Awaiting Topology Data</p>
-                                </div>
-                            ) : (
-                                renderCanvasPane('Target Architecture', localNodes, setSelectedNode, regionFilter)
-                            )}
-                        </div>
-                    </div>
-                )}
-                
-                {/* HELP / FAQ DRAWER */}
-                {showFaq && (
-                    <div className="fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
-                        <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
-                            <div>
-                                <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Methodology Guide</h3>
-                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-1">Architecture & Migration Flow</p>
-                            </div>
-                            <button onClick={()=>setShowFaq(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-slate-800 mb-2">What is MgC Discovery?</h4>
-                                <p>This tool connects to the customer's current environment. It fetches the <strong className="text-blue-600">"As-Is"</strong> technical reality of what is running right now in their datacenter or cloud.</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-slate-800 mb-2">What is Reconciliation?</h4>
-                                <p>Sales sells a Quotation (SOW) that rarely matches reality perfectly. Reconciliation forces you to compare the SOW against the MgC Discovery side-by-side to catch <strong>Scope Creep</strong> before you start building.</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-slate-800 mb-2">Why edit the Target Architecture?</h4>
-                                <p>The Resource List is the <strong className="text-emerald-600">"To-Be"</strong> deployment blueprint. You should rename old server names (e.g., `WIN-2012-OLD` ➡️ `prd-latam-ecs-01`) and remap IPs here to match your strict cloud conventions. What you save here is what gets deployed.</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* NODE PROPERTIES DRAWER */}
-                {selectedNode && (
-                    <div className="fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
-                        <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
-                            <div>
-                                <h3 className="font-black text-lg"><i className="fas fa-sliders-h text-blue-400 mr-2"></i> Node Properties</h3>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">{selectedNode.name}</p>
-                            </div>
-                            <button onClick={()=>setSelectedNode(null)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 custom-scrollbar">
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                                <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Core Identity</h4>
-                                <div className="space-y-3">
-                                    <div><label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Resource Type</label><div className="font-black text-xs text-indigo-700">{selectedNode.type}</div></div>
-                                    <div><label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Location Zone</label><div className="font-bold text-xs text-slate-800">{selectedNode.location}</div></div>
-                                </div>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                                <h4 className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-3 border-b border-slate-100 pb-2">Configuration / Dependencies</h4>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Custom Metadata (JSON)</label>
-                                        <textarea 
-                                            defaultValue={JSON.stringify(selectedNode.config || {}, null, 2)} 
-                                            onChange={e => { try { handleUpdateNode(selectedNode.id, 'config', JSON.parse(e.target.value)); } catch(e){} }}
-                                            className="w-full h-32 p-2 text-[10px] font-mono border border-slate-300 rounded outline-none focus:border-blue-500 custom-scrollbar"
-                                        ></textarea>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="p-4 bg-white border-t border-slate-200 flex gap-2 shrink-0">
-                            <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
-                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save</button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
+                            <div className="absolute -top-2.5 left-4 bg-emerald-100 px-2 rounded text-[9px] font-black text-emerald-800 uppercase tracking-widest border border-emerald-200">Regional Services (Backup / Container)
