@@ -27,6 +27,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const quotedVpn = (top.network || []).filter(n => n.type && n.type.includes('VPN')).length;
 
     const hasScanned = activeProject?.mgcData != null;
+    const diagnostics = rawInv.diagnostics || []; // 🚨 GRAB DIAGNOSTICS ARRAY
 
     const runMgCDiscovery = async () => {
         setIsScanning(true);
@@ -114,7 +115,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                             const type = item.type || item.specs?.type || (category === 'compute' ? 'ECS' : category === 'databases' ? 'RDS' : 'VPC');
                                             const region = item.region || item.specs?.region || item.location || 'Unknown';
                                             
-                                            // 🚨 EXACT IP & SUBNET EXTRACTION FIX
                                             const publicIp = item.public_ip_address || item.specs?.public_ip_address;
                                             const privateIp = item.private_ip_address || item.cidr || item.specs?.private_ip_address || item.specs?.ip || item.specs?.cidr;
                                             const ipDisplay = publicIp ? `${privateIp || ''} (Pub: ${publicIp})` : (privateIp || 'N/A');
@@ -213,6 +213,17 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
 
                 {hasScanned && (
                     <div className="mt-8 pt-8 border-t border-slate-200 animate-fade-in">
+                        
+                        {/* 🚨 THE NEW DIAGNOSTICS WARNING PANEL */}
+                        {diagnostics.length > 0 && (
+                            <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl mb-8 shadow-sm">
+                                <h4 className="font-black text-amber-800 text-sm mb-3 flex items-center gap-2"><i className="fas fa-exclamation-triangle"></i> Discovery Diagnostics Log</h4>
+                                <ul className="list-disc pl-5 text-xs text-amber-700 space-y-1.5 font-mono">
+                                    {diagnostics.map((err, idx) => <li key={idx}>{err}</li>)}
+                                </ul>
+                            </div>
+                        )}
+
                         <div className="flex justify-between items-center mb-6">
                             <h4 className="font-black text-slate-800 text-lg flex items-center gap-2"><i className="fas fa-chart-bar text-emerald-600"></i> Discovery Results</h4>
                             <div className="flex gap-3">
