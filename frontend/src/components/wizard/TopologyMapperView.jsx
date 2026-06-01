@@ -16,9 +16,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const [activeTab, setActiveTab] = useState('table'); 
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
-    
-    // Reconciliation State
-    const [isRefreshing, setIsRefreshing] = useState(false);
     const [reconcileView, setReconcileView] = useState('table'); 
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
@@ -47,7 +44,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return 'VPC';
     };
 
-    // 🚨 FIX: Pure Derived State (useMemo) perfectly forces React to repaint the Dual Pane Diagrams when API returns
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
@@ -68,30 +64,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion, status: 'Live Only' }));
         return mNodes;
     }, [activeProject?.mgcData, activeProject?.region]);
-
-    const refreshLiveDiscovery = async () => {
-        setIsRefreshing(true);
-        const custName = (activeProject?.customerName || activeProject?.name.split('-')[0] || '').trim().toLowerCase();
-        const customer = customers.find(c => c.name.toLowerCase() === custName);
-
-        if (!customer) { alert("No matching Customer Profile found to scan."); setIsRefreshing(false); return; }
-
-        try {
-            const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/cloud/inventory', {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ customer_id: customer.id, region: customer.region || 'la-south-2' })
-            });
-
-            const data = await res.json();
-            if (data.success) { 
-                // Global update inherently triggers the liveNodes useMemo to flawlessly redraw canvases
-                onUpdateProject(activeProject.id, 'mgcData', { source: 'api', raw_inventory: data.inventory }); 
-            } else { 
-                alert(`API Discovery Failed: ${data.error}`); 
-            }
-        } catch (err) { alert(`Error: ${err.message}`); } finally { setIsRefreshing(false); }
-    };
 
     const openReconciliationView = () => {
         if (!activeProject?.mgcData) return alert('Run MgC Discovery first to reconcile against the SOW!');
@@ -161,7 +133,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return null;
     };
 
-    // 🚨 Extended unique region pool ensures dual-pane filters properly
     const uniqueRegions = ['All', ...new Set([
         ...localNodes.map(n => n.region), 
         ...quotedNodes.map(n => n.region), 
@@ -270,26 +241,28 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
                 {/* TAB: DUAL-PANE RECONCILIATION */}
                 {activeTab === 'reconcile' && (
-                    <div className="animate-fade-in flex flex-col min-h-[600px]">
+                    <div id="reconcile-container" className="animate-fade-in flex flex-col min-h-[600px] bg-white">
                         <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h4 className="font-black text-blue-900"><i className="fas fa-random mr-2"></i> Dual-Pane Reconciliation Mode</h4>
                                 <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery. Click Merge when ready.</p>
                             </div>
                             <div className="flex gap-4 items-center w-full md:w-auto">
+                                <button onClick={()=>toggleFullScreen('reconcile-container')} className="px-3 py-1.5 bg-white text-slate-600 border border-slate-300 rounded text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors shadow-sm"><i className="fas fa-expand mr-1"></i> Full Screen</button>
+                                
                                 <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm">
                                     <button onClick={()=>setReconcileView('table')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'table' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-list mr-1"></i> List</button>
                                     <button onClick={()=>setReconcileView('canvas')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'canvas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-1"></i> Diagram</button>
                                 </div>
                                 <div className="flex gap-2 border-l border-blue-200 pl-4">
                                     <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
-                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge & Finalize</button>
+                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge</button>
                                 </div>
                             </div>
                         </div>
 
                         {reconcileView === 'table' && (
-                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in">
+                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in pb-4">
                                 <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
                                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
                                     <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
@@ -306,12 +279,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     <div className="flex justify-between items-center mb-4 pb-2 border-b border-indigo-200">
                                         <div className="w-20"></div>
                                         <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Scope (MgC/Live)</h4>
-                                        <button onClick={refreshLiveDiscovery} disabled={isRefreshing} className="w-20 py-1.5 bg-white text-indigo-700 border border-indigo-300 rounded text-[9px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-sm disabled:opacity-50">
-                                            {isRefreshing ? <><i className="fas fa-spinner fa-spin"></i> Wait</> : <><i className="fas fa-sync-alt mr-1"></i> Scan</>}
-                                        </button>
+                                        <div className="w-20"></div>
                                     </div>
                                     <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
-                                        {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found. Click Scan.</div>}
+                                        {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
                                         {liveNodes.map((n, i) => (
                                             <div key={i} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm flex items-center justify-between">
                                                 <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-indigo-900">{n.name}</div><div className="text-[10px] text-indigo-500 uppercase">{n.type} | {n.ip}</div></div></div>
@@ -334,9 +305,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     <div className="p-4 border-b border-indigo-200 bg-white flex justify-between items-center">
                                         <div className="w-20"></div>
                                         <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4>
-                                        <button onClick={refreshLiveDiscovery} disabled={isRefreshing} className="w-20 py-1.5 bg-white text-indigo-700 border border-indigo-300 rounded text-[9px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-sm disabled:opacity-50">
-                                            {isRefreshing ? <><i className="fas fa-spinner fa-spin"></i> Wait</> : <><i className="fas fa-sync-alt mr-1"></i> Scan</>}
-                                        </button>
+                                        <div className="w-20"></div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-indigo-50/50">
                                         {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div> : renderCanvasPane('Live Infrastructure', liveNodes, 'blue', null, regionFilter)}
