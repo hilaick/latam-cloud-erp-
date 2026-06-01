@@ -82,7 +82,6 @@ class HuaweiDiscovery:
     def discover_all(self) -> Dict[str, Any]:
         inventory = { "compute": [], "network": [], "databases": [], "storage": [], "diagnostics": [] }
 
-        # Log to UI if modules completely fail to import
         if not HAS_CBR: inventory["diagnostics"].append(f"CBR Module Failed: {CBR_ERR}")
         if not HAS_VPN: inventory["diagnostics"].append(f"VPN Module Failed: {VPN_ERR}")
 
@@ -157,7 +156,6 @@ class HuaweiDiscovery:
                         if vpn_client_class:
                             vpn_client = vpn_client_class.new_builder().with_credentials(region_creds).with_region(vpn_region).build()
                             
-                            # Safely extract VGW
                             vgw_class = getattr(vpn_module, 'ListVpnGatewaysRequest', getattr(vpn_module, 'ListVgwsRequest', None))
                             vgw_method = getattr(vpn_client, 'list_vpn_gateways', getattr(vpn_client, 'list_vgws', None))
                             if vgw_class and vgw_method:
@@ -166,10 +164,7 @@ class HuaweiDiscovery:
                                     items = getattr(res, 'vpn_gateways', getattr(res, 'vgws', [])) or []
                                     for v in items: inventory["network"].append({"id": v.id, "name": v.name, "type": "Enterprise VPN Gateway", "cidr": "N/A", "status": v.status, "region": target_region})
                                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Gateway Fetch Error: {str(e)}")
-                            else:
-                                inventory["diagnostics"].append(f"Could not find VPN Gateways class. Available v5 classes: {', '.join([c for c in dir(vpn_module) if 'List' in c and ('Vgw' in c or 'Vpn' in c)])}")
 
-                            # Safely extract CGW
                             cgw_class = getattr(vpn_module, 'ListCustomerGatewaysRequest', getattr(vpn_module, 'ListCgwsRequest', None))
                             cgw_method = getattr(vpn_client, 'list_customer_gateways', getattr(vpn_client, 'list_cgws', None))
                             if cgw_class and cgw_method:
@@ -179,7 +174,6 @@ class HuaweiDiscovery:
                                     for c in items: inventory["network"].append({"id": c.id, "name": c.name, "type": "Customer Gateway", "cidr": getattr(c, 'bgp_asn', 'N/A') or 'N/A', "status": "Active", "region": target_region})
                                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CGW Fetch Error: {str(e)}")
 
-                            # Safely extract Connections
                             conn_class = getattr(vpn_module, 'ListVpnConnectionsRequest', getattr(vpn_module, 'ListIpsecConnectionsRequest', None))
                             conn_method = getattr(vpn_client, 'list_vpn_connections', getattr(vpn_client, 'list_ipsec_connections', None))
                             if conn_class and conn_method:
@@ -188,26 +182,32 @@ class HuaweiDiscovery:
                                     items = getattr(res, 'vpn_connections', getattr(res, 'ipsec_connections', [])) or []
                                     for conn in items: inventory["network"].append({"id": conn.id, "name": conn.name, "type": "VPN Connection", "cidr": "N/A", "status": conn.status, "region": target_region})
                                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Conn Fetch Error: {str(e)}")
-
                     except Exception as e: inventory["diagnostics"].append(f"[{target_region}] VPN Client Build Error: {str(e)}")
 
-                # 🚨 DEEP REFLECTION FOR CBR
+                # 🚨 DEEP REFLECTION FOR CBR (USING THE V1 DIAGNOSTIC CLUE)
                 if HAS_CBR:
                     try:
                         cbr_region = Region(id=target_region, endpoint=f"https://cbr.{target_region}.myhuaweicloud.com")
                         cbr_client_class = getattr(cbr_module, 'CbrClient', None)
                         if cbr_client_class:
                             cbr_client = cbr_client_class.new_builder().with_credentials(region_creds).with_region(cbr_region).build()
-                            vaults_class = getattr(cbr_module, 'ListVaultsRequest', None)
-                            if vaults_class:
+                            
+                            # Specifically hunt for the singular ListVaultRequest as logged by the UI
+                            vaults_class = getattr(cbr_module, 'ListVaultsRequest', getattr(cbr_module, 'ListVaultRequest', None))
+                            vaults_method = getattr(cbr_client, 'list_vaults', getattr(cbr_client, 'list_vault', None))
+                            
+                            if vaults_class and vaults_method:
                                 try:
-                                    for vault in cbr_client.list_vaults(vaults_class()).vaults or []:
+                                    res = vaults_method(vaults_class())
+                                    # Handle both singular and plural response arrays
+                                    items = getattr(res, 'vaults', getattr(res, 'vault', [])) or []
+                                    for vault in items:
                                         allocated = vault.billing.size if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'size', 0)
                                         used = vault.billing.used if hasattr(vault, 'billing') and vault.billing else getattr(vault, 'used', 0)
                                         inventory["storage"].append({"id": vault.id, "name": vault.name, "type": "CBR", "location": target_region, "status": "Active", "size": allocated, "used": used})
                                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CBR Fetch Error: {str(e)}")
                             else:
-                                inventory["diagnostics"].append(f"Could not find ListVaultsRequest. Available in {cbr_version}: {', '.join([c for c in dir(cbr_module) if 'List' in c])}")
+                                inventory["diagnostics"].append(f"Could not find ListVaultsRequest/ListVaultRequest in {cbr_version}")
                     except Exception as e: inventory["diagnostics"].append(f"[{target_region}] CBR Client Build Error: {str(e)}")
 
             if HAS_OBS:
