@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { EditableCell } from '../../utils/helpers';
-import { ERPContext } from '../../context/ERPContext'; // 🚨 NEW CONTEXT IMPORT FOR LIVE API REFRESH
+import { ERPContext } from '../../context/ERPContext'; 
 
 export const HUAWEI_REGIONS = [
     { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] },
@@ -10,7 +10,7 @@ export const HUAWEI_REGIONS = [
 ];
 
 export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
-    const { customers } = useContext(ERPContext); // 🚨 IMPORT CUSTOMERS FOR REAL-TIME FETCH
+    const { customers } = useContext(ERPContext); 
 
     const servers = activeProject?.blueprintData?.topology?.compute || [];
     const databases = activeProject?.blueprintData?.topology?.database || [];
@@ -25,7 +25,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     // Reconciliation State
     const [quotedNodes, setQuotedNodes] = useState([]);
     const [liveNodes, setLiveNodes] = useState([]);
-    const [isRefreshing, setIsRefreshing] = useState(false); // 🚨 SPINNER STATE
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [reconcileView, setReconcileView] = useState('table'); // 🚨 NEW: 'table' or 'canvas' toggle
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
     
@@ -53,17 +54,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         return 'VPC';
     };
 
-    // Helper to extract live nodes from inventory payload
     const extractLiveNodesFromPayload = (raw, fallbackRegion) => {
         let mNodes = [];
-        (raw.network || []).forEach((net, i) => mNodes.push({ name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global' }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion }));
-        (raw.databases || []).forEach((db, i) => mNodes.push({ name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion }));
+        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global' }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion }));
+        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion }));
         return mNodes;
     };
 
-    // 🚨 1. REAL-TIME API REFRESH FUNCTION
     const refreshLiveDiscovery = async () => {
         setIsRefreshing(true);
         const custName = (activeProject?.customerName || activeProject?.name.split('-')[0] || '').trim().toLowerCase();
@@ -80,9 +79,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
             const data = await res.json();
             if (data.success) { 
-                // Save it globally to MgC so it persists
                 onUpdateProject(activeProject.id, 'mgcData', { source: 'api', raw_inventory: data.inventory }); 
-                // Inject instantly into the dual-pane array!
                 const freshLiveNodes = extractLiveNodesFromPayload(data.inventory, activeProject?.region || 'la-south-2');
                 setLiveNodes(freshLiveNodes);
             } 
@@ -94,11 +91,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         if (!activeProject?.mgcData) return alert('Run MgC Discovery first to reconcile against the SOW!');
         const fallbackRegion = activeProject?.region || 'la-south-2';
         
+        // Ensure we explicitly use location and region properties so Canvas works flawlessly
         let qNodes = [];
-        servers.forEach(s => qNodes.push({ name: s.name, type: 'ECS', loc: 'Compute-Subnet', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        databases.forEach(d => qNodes.push({ name: d.name, type: 'RDS', loc: 'Data-Subnet', reg: d.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        networks.forEach(n => qNodes.push({ name: n.name, type: getShortNetType(n.type), loc: 'Cloud-Network', reg: n.metadata?.region || fallbackRegion, ip: 'TBD' }));
-        storages.forEach(s => qNodes.push({ name: s.name, type: s.type || 'OBS', loc: 'Global', reg: s.metadata?.region || fallbackRegion, ip: 'TBD' }));
+        servers.forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        databases.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        networks.forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        storages.forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         setQuotedNodes(qNodes);
 
         const raw = activeProject.mgcData.raw_inventory || {};
@@ -138,7 +136,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
             }
         });
 
-        tempQuoted.forEach((q, i) => merged.push({ id: `quo-${Date.now()}-${i}`, name: q.name, type: q.type, ip: q.ip, location: q.loc, region: q.reg, status: 'Quoted Only', config: {} }));
+        tempQuoted.forEach((q, i) => merged.push({ id: `quo-${Date.now()}-${i}`, ...q, status: 'Quoted Only', config: {} }));
         
         setLocalNodes(merged);
         setActiveTab('table');
@@ -148,45 +146,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const handleUpdateNode = (id, field, value) => setLocalNodes(localNodes.map(n => n.id === id ? { ...n, [field]: value } : n));
     const handleAddNode = () => setLocalNodes([...localNodes, { id: `manual-${Date.now()}`, name: 'New Resource', type: 'ECS', ip: '0.0.0.0/32', location: 'New-Subnet', region: activeProject?.region || 'la-south-2', status: 'Manual', config: {} }]);
     const handleDeleteNode = (id) => setLocalNodes(localNodes.filter(n => n.id !== id));
-
-    const generateFromBlueprint = () => {
-        if (servers.length === 0 && databases.length === 0 && networks.length === 0) return alert('No blueprint data found in this project.');
-        if (localNodes.length > 0 && !window.confirm("Overwrite your current architecture table?")) return;
-        
-        const fallbackRegion = activeProject?.region || 'la-south-2';
-        const newNodes = [];
-        servers.forEach((s, i) => newNodes.push({ id: `srv-${Date.now()}-${i}`, name: s.name, type: 'ECS', ip: `10.0.1.${10+i}`, location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, status: 'Quoted Only', config: { os: s.metadata?.os_type || 'Unknown' } }));
-        databases.forEach((d, i) => newNodes.push({ id: `db-${Date.now()}-${i}`, name: d.name, type: 'RDS', ip: `10.0.2.${10+i}`, location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        networks.forEach((n, i) => newNodes.push({ id: `net-${Date.now()}-${i}`, name: n.name, type: getShortNetType(n.type), ip: 'N/A', location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        storages.forEach((st, i) => newNodes.push({ id: `st-${Date.now()}-${i}`, name: st.name, type: st.type || 'OBS', ip: 'N/A', location: 'Global', region: st.metadata?.region || fallbackRegion, status: 'Quoted Only', config: {} }));
-        setLocalNodes(newNodes);
-    };
-
-    const generateFromMgC = () => {
-        if (!activeProject?.mgcData) return alert('You must run the Live MgC Discovery or import MgC Excel data first!');
-        if (localNodes.length > 0 && !window.confirm("This will overwrite your current architecture table. Proceed?")) return;
-        
-        const raw = activeProject.mgcData.raw_inventory || {};
-        setLocalNodes(extractLiveNodesFromPayload(raw, activeProject?.region || 'la-south-2').map(n => ({...n, status: 'Live Only', config: {}})));
-    };
-
-    const groups = useMemo(() => {
-        const grps = { EdgeGateways: [], EIPs: [], Subnets: {}, Global: [], Pending: [] };
-        localNodes.filter(n => regionFilter === 'All' || n.region === regionFilter).forEach(n => {
-            const type = String(n.type).toUpperCase();
-            const loc = String(n.location || "");
-            
-            if (loc === 'Pending-Allocation') grps.Pending.push(n);
-            else if (['EIP'].includes(type)) grps.EIPs.push(n);
-            else if (['NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) grps.EdgeGateways.push(n);
-            else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') grps.Global.push(n);
-            else if (type !== 'VPC') {
-                if (!grps.Subnets[loc]) grps.Subnets[loc] = [];
-                grps.Subnets[loc].push(n);
-            }
-        });
-        return grps;
-    }, [localNodes, regionFilter]);
 
     const getIcon = (type) => {
         const t = String(type || "").toLowerCase();
@@ -211,6 +170,93 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const uniqueRegions = ['All', ...new Set(localNodes.map(n => n.region).filter(r => r && r !== 'TBD' && r !== 'Global'))];
 
+    // 🚨 REUSABLE CANVAS COMPONENT
+    // This allows us to spawn full Architecture Diagrams dynamically for Quoted, Live, and Merged states!
+    const renderCanvasPane = (title, paneNodes, theme, onNodeClick, currentRegionFilter) => {
+        const paneGroups = { EdgeGateways: [], EIPs: [], Subnets: {}, Global: [], Pending: [] };
+        paneNodes.filter(n => currentRegionFilter === 'All' || n.region === currentRegionFilter).forEach(n => {
+            const type = String(n.type).toUpperCase();
+            const loc = String(n.location || "");
+            
+            if (loc === 'Pending-Allocation') paneGroups.Pending.push(n);
+            else if (['EIP'].includes(type)) paneGroups.EIPs.push(n);
+            else if (['NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB'].includes(type)) paneGroups.EdgeGateways.push(n);
+            else if (['OBS', 'CBR', 'STORAGE'].includes(type) || loc === 'Global') paneGroups.Global.push(n);
+            else if (type !== 'VPC') {
+                if (!paneGroups.Subnets[loc]) paneGroups.Subnets[loc] = [];
+                paneGroups.Subnets[loc].push(n);
+            }
+        });
+
+        const themes = {
+            indigo: { border: 'border-indigo-200', bg: 'bg-indigo-50/20', hBg: 'bg-indigo-600', hBorder: 'border-indigo-700', tBg: 'bg-indigo-50', tBorder: 'border-indigo-100', tText: 'text-indigo-900', gBorder: 'border-indigo-300' },
+            slate:  { border: 'border-slate-300', bg: 'bg-slate-50/50', hBg: 'bg-slate-600', hBorder: 'border-slate-700', tBg: 'bg-slate-100', tBorder: 'border-slate-200', tText: 'text-slate-800', gBorder: 'border-slate-400' },
+            blue:   { border: 'border-blue-300', bg: 'bg-blue-50/20', hBg: 'bg-blue-600', hBorder: 'border-blue-700', tBg: 'bg-blue-50', tBorder: 'border-blue-100', tText: 'text-blue-900', gBorder: 'border-blue-400' }
+        };
+        const t = themes[theme] || themes.indigo;
+
+        return (
+            <div className="flex flex-col gap-10 items-center w-full py-4 min-w-[600px]">
+                <div className={`w-full max-w-5xl border-4 ${t.border} ${t.bg} rounded-3xl p-8 pt-16 relative shadow-sm`}>
+                    <div className={`absolute -top-5 left-8 ${t.hBg} ${t.hBorder} px-6 py-2 rounded-xl text-sm font-black text-white uppercase tracking-widest shadow-md`}>
+                        <i className="fas fa-cloud mr-2"></i> {title} {currentRegionFilter !== 'All' ? `(${currentRegionFilter})` : ''}
+                    </div>
+                    
+                    <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
+                        {paneGroups.EIPs.length > 0 && (
+                            <div className="bg-white border-2 border-sky-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative cursor-help">
+                                <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100"><i className="fas fa-wifi text-sky-600 text-lg"></i></div>
+                                <div className="truncate"><div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">EIP Pool</div><div className="font-bold text-[10px] text-sky-900 truncate">{paneGroups.EIPs.length} Allocated IPs</div></div>
+                            </div>
+                        )}
+
+                        {paneGroups.EdgeGateways.map(n => (
+                            <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border-2 ${t.gBorder} p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-transform' : ''}`}>
+                                {getStatusIcon(n.status)}
+                                <div className={`w-8 h-8 ${t.tBg} rounded-lg flex items-center justify-center border ${t.tBorder}`}><i className={`${getIcon(n.type)} text-lg`}></i></div>
+                                <div className="truncate"><div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div><div className={`font-bold text-[10px] ${t.tText} truncate`} title={n.name}>{n.name}</div></div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+                        {Object.entries(paneGroups.Subnets).map(([subName, subNodes]) => (
+                            <div key={subName} className="border-2 border-dashed border-slate-300 bg-white/80 p-5 rounded-2xl relative pt-10 shadow-sm">
+                                <span className="absolute top-3 left-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-md border border-slate-200 shadow-sm"><i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}</span>
+                                <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2 mt-2">
+                                    {subNodes.map(n => (
+                                        <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm relative flex flex-col items-center text-center ${onNodeClick ? 'cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-all' : ''}`}>
+                                            {getStatusIcon(n.status)}
+                                            <i className={`fas ${getIcon(n.type)} text-3xl mt-2 mb-2 opacity-80`}></i>
+                                            <div className="font-bold text-[10px] truncate w-full text-slate-800" title={n.name}>{n.name}</div>
+                                            <div className="text-[9px] font-black bg-slate-100 text-slate-500 mt-1.5 px-2 py-0.5 rounded uppercase tracking-wider">{n.type}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                {paneGroups.Global.length > 0 && (
+                    <div className="w-full max-w-5xl border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl relative pt-10 p-6 shadow-sm mt-4">
+                        <span className="absolute -top-4 left-6 bg-emerald-100 px-4 py-1.5 rounded-xl text-xs font-black text-emerald-800 uppercase tracking-widest border border-emerald-400 shadow-sm"><i className="fas fa-globe mr-2"></i> Global / External Services</span>
+                        <div className="flex flex-wrap gap-5">
+                            {paneGroups.Global.map(n => (
+                                <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center relative ${onNodeClick ? 'cursor-pointer hover:border-emerald-500 hover:-translate-y-1 transition-all' : ''}`}>
+                                    {getStatusIcon(n.status)}
+                                    <div className="w-12 h-12 mx-auto bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-2"><i className={`fas ${getIcon(n.type)} text-2xl`}></i></div>
+                                    <div className="font-black text-[10px] text-slate-800 truncate" title={n.name}>{n.name}</div>
+                                    <div className="text-[9px] font-black text-emerald-600 mt-1 uppercase tracking-wider bg-emerald-50 rounded px-1 py-0.5">{n.type}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 relative overflow-hidden">
@@ -226,65 +272,85 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                 </div>
 
-                {/* TAB: DUAL-PANE RECONCILIATION */}
+                {/* 🚨 TAB: DUAL-PANE RECONCILIATION */}
                 {activeTab === 'reconcile' && (
                     <div className="animate-fade-in flex flex-col min-h-[600px]">
-                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex justify-between items-center">
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h4 className="font-black text-blue-900"><i className="fas fa-random mr-2"></i> Dual-Pane Reconciliation Mode</h4>
                                 <p className="text-xs text-blue-700 mt-1">Review the SOW Quoted Scope alongside the Live Discovery. Click Merge when ready.</p>
                             </div>
-                            <div className="flex gap-2">
-                                <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
-                                <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge & Finalize</button>
+                            <div className="flex gap-4 items-center w-full md:w-auto">
+                                {/* 🚨 VIEW TOGGLE (LIST VS DIAGRAM) */}
+                                <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm">
+                                    <button onClick={()=>setReconcileView('table')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'table' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-list mr-1"></i> List</button>
+                                    <button onClick={()=>setReconcileView('canvas')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'canvas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-1"></i> Diagram</button>
+                                </div>
+                                <div className="flex gap-2 border-l border-blue-200 pl-4">
+                                    <button onClick={()=>setActiveTab('table')} className="px-4 py-2 bg-white text-slate-600 border border-slate-300 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-colors">Cancel</button>
+                                    <button onClick={finalizeReconciliation} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-md transition-colors">Merge</button>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="flex flex-col xl:flex-row gap-6 flex-1">
-                            {/* LEFT: SOW */}
-                            <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
-                                <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
-                                <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
-                                    {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
-                                    {quotedNodes.map((n, i) => (
-                                        <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i>
-                                                <div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type}</div></div>
+                        {/* LIST VIEW */}
+                        {reconcileView === 'table' && (
+                            <div className="flex flex-col xl:flex-row gap-6 flex-1 animate-fade-in">
+                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col shadow-inner">
+                                    <h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] mb-4 text-center pb-2 border-b border-slate-200">1. Quoted Scope (SOW)</h4>
+                                    <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
+                                        {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
+                                        {quotedNodes.map((n, i) => (
+                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type}</div></div></div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="xl:w-1/2 bg-indigo-50/50 border border-indigo-200 rounded-2xl p-4 flex flex-col shadow-inner relative">
+                                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-indigo-200">
+                                        <div className="w-20"></div>
+                                        <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Scope (MgC/Live)</h4>
+                                        <button onClick={refreshLiveDiscovery} disabled={isRefreshing} className="w-20 py-1.5 bg-white text-indigo-700 border border-indigo-300 rounded text-[9px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-sm disabled:opacity-50">
+                                            {isRefreshing ? <><i className="fas fa-spinner fa-spin"></i> Wait</> : <><i className="fas fa-sync-alt mr-1"></i> Scan</>}
+                                        </button>
+                                    </div>
+                                    <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
+                                        {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found. Click Scan.</div>}
+                                        {liveNodes.map((n, i) => (
+                                            <div key={i} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm flex items-center justify-between">
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-indigo-900">{n.name}</div><div className="text-[10px] text-indigo-500 uppercase">{n.type} | {n.ip}</div></div></div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                            
-                            {/* RIGHT: LIVE DISCOVERY + REFRESH BUTTON */}
-                            <div className="xl:w-1/2 bg-indigo-50/50 border border-indigo-200 rounded-2xl p-4 flex flex-col shadow-inner relative">
-                                <div className="flex justify-between items-center mb-4 pb-2 border-b border-indigo-200">
-                                    <div className="w-20"></div> {/* Spacer for center alignment */}
-                                    <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Scope (MgC/Live)</h4>
-                                    
-                                    {/* 🚨 THE REAL-TIME API REFRESH BUTTON */}
-                                    <button 
-                                        onClick={refreshLiveDiscovery} 
-                                        disabled={isRefreshing}
-                                        className="w-20 py-1.5 bg-white text-indigo-700 border border-indigo-300 rounded text-[9px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-sm disabled:opacity-50"
-                                    >
-                                        {isRefreshing ? <><i className="fas fa-spinner fa-spin"></i> Wait</> : <><i className="fas fa-sync-alt mr-1"></i> Scan</>}
-                                    </button>
+                        )}
+
+                        {/* DIAGRAM VIEW */}
+                        {reconcileView === 'canvas' && (
+                            <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-x-auto custom-scrollbar animate-fade-in pb-4">
+                                <div className="xl:w-1/2 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col">
+                                    <div className="p-4 border-b border-slate-200 bg-white"><h4 className="font-black text-slate-700 uppercase tracking-widest text-[11px] text-center">1. Quoted Diagram (SOW)</h4></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-100/50">
+                                        {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div> : renderCanvasPane('Quoted Infrastructure', quotedNodes, 'slate', null, regionFilter)}
+                                    </div>
                                 </div>
-                                <div className="overflow-y-auto max-h-[500px] custom-scrollbar space-y-2">
-                                    {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found. Click Scan.</div>}
-                                    {liveNodes.map((n, i) => (
-                                        <div key={i} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i>
-                                                <div><div className="font-bold text-xs text-indigo-900">{n.name}</div><div className="text-[10px] text-indigo-500 uppercase">{n.type} | {n.ip}</div></div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                <div className="xl:w-1/2 bg-indigo-50/30 border border-indigo-200 rounded-2xl shadow-inner overflow-hidden flex flex-col">
+                                    <div className="p-4 border-b border-indigo-200 bg-white flex justify-between items-center">
+                                        <div className="w-20"></div>
+                                        <h4 className="font-black text-indigo-800 uppercase tracking-widest text-[11px] text-center">2. Discovered Diagram (Live)</h4>
+                                        <button onClick={refreshLiveDiscovery} disabled={isRefreshing} className="w-20 py-1.5 bg-white text-indigo-700 border border-indigo-300 rounded text-[9px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-sm disabled:opacity-50">
+                                            {isRefreshing ? <><i className="fas fa-spinner fa-spin"></i> Wait</> : <><i className="fas fa-sync-alt mr-1"></i> Scan</>}
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-indigo-50/50">
+                                        {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div> : renderCanvasPane('Live Infrastructure', liveNodes, 'blue', null, regionFilter)}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 )}
 
@@ -322,9 +388,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                     {getStatusIcon(n.status)}
                                                     <div className="ml-4"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest">
-                                                    <EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} />
-                                                </td>
+                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
                                                 <td className="p-4 font-bold text-indigo-700">
                                                     <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 outline-none shadow-sm cursor-pointer">
                                                         <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
@@ -352,7 +416,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                 {/* TAB: VISUAL CANVAS */}
                 {activeTab === 'canvas' && (
                     <div id="canvas-container" className="flex flex-col bg-[#f8fafc] border border-slate-200 rounded-2xl shadow-inner animate-fade-in min-h-[700px] overflow-hidden">
-                        
                         <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20">
                             <div className="flex items-center gap-3">
                                 <i className="fas fa-filter text-slate-400"></i>
@@ -374,78 +437,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                     <p className="font-black text-lg">Awaiting Topology Data</p>
                                 </div>
                             ) : (
-                                <div className="flex flex-col gap-10 items-center min-w-[800px] py-8">
-                                    <div className="w-full max-w-5xl border-4 border-indigo-200 bg-indigo-50/20 rounded-3xl p-8 pt-16 relative shadow-sm">
-                                        <div className="absolute -top-5 left-8 bg-indigo-600 border border-indigo-700 px-6 py-2 rounded-xl text-sm font-black text-white uppercase tracking-widest shadow-md">
-                                            <i className="fas fa-cloud mr-2"></i> {regionFilter === 'All' ? 'Huawei Cloud VPC' : `VPC: ${regionFilter}`}
-                                        </div>
-                                        
-                                        <div className="absolute -top-8 right-8 flex gap-3 flex-wrap max-w-xl justify-end">
-                                            {groups.EIPs.length > 0 && (
-                                                <div className="bg-white border-2 border-sky-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] relative cursor-help">
-                                                    <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100">
-                                                        <i className="fas fa-wifi text-sky-600 text-lg"></i>
-                                                    </div>
-                                                    <div className="truncate">
-                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">EIP Pool</div>
-                                                        <div className="font-bold text-[10px] text-sky-900 truncate">{groups.EIPs.length} Allocated IPs</div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {groups.EdgeGateways.map(n => (
-                                                <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white border-2 border-indigo-300 p-2.5 rounded-xl shadow-lg flex items-center gap-3 min-w-[150px] hover:border-indigo-500 transition-colors relative cursor-pointer hover:-translate-y-1">
-                                                    {getStatusIcon(n.status)}
-                                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
-                                                        <i className={`${getIcon(n.type)} text-lg`}></i>
-                                                    </div>
-                                                    <div className="truncate">
-                                                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{n.type}</div>
-                                                        <div className="font-bold text-[10px] text-indigo-900 truncate" title={n.name}>{n.name}</div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
-                                            {Object.entries(groups.Subnets).map(([subName, subNodes]) => (
-                                                <div key={subName} className="border-2 border-dashed border-blue-400 bg-white/60 p-5 rounded-2xl relative pt-10 shadow-sm">
-                                                    <span className="absolute top-3 left-4 text-[10px] font-black text-blue-800 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-md border border-blue-300 shadow-sm">
-                                                        <i className="fas fa-network-wired mr-2 opacity-50"></i>{subName}
-                                                    </span>
-                                                    <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2 mt-2">
-                                                        {subNodes.map(n => (
-                                                            <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-500 hover:-translate-y-1 transition-all relative flex flex-col items-center text-center cursor-pointer">
-                                                                {getStatusIcon(n.status)}
-                                                                <i className={`fas ${getIcon(n.type)} text-3xl mt-2 mb-2 opacity-80`}></i>
-                                                                <div className="font-bold text-[10px] truncate w-full text-slate-800" title={n.name}>{n.name}</div>
-                                                                <div className="text-[9px] font-black bg-slate-100 text-slate-500 mt-1.5 px-2 py-0.5 rounded uppercase tracking-wider">{n.type}</div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    
-                                    {groups.Global.length > 0 && (
-                                        <div className="w-full max-w-5xl border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl relative pt-10 p-6 shadow-sm">
-                                            <span className="absolute -top-4 left-6 bg-emerald-100 px-4 py-1.5 rounded-xl text-xs font-black text-emerald-800 uppercase tracking-widest border border-emerald-400 shadow-sm"><i className="fas fa-globe mr-2"></i> Global / External Services</span>
-                                            <div className="flex flex-wrap gap-5">
-                                                {groups.Global.map(n => (
-                                                    <div key={n.id} onClick={()=>setSelectedNode(n)} className="bg-white p-4 w-36 rounded-xl border border-slate-200 shadow-sm text-center hover:border-emerald-500 hover:-translate-y-1 transition-all relative cursor-pointer">
-                                                        {getStatusIcon(n.status)}
-                                                        <div className="w-12 h-12 mx-auto bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-2">
-                                                            <i className={`fas ${getIcon(n.type)} text-2xl`}></i>
-                                                        </div>
-                                                        <div className="font-black text-[10px] text-slate-800 truncate" title={n.name}>{n.name}</div>
-                                                        <div className="text-[9px] font-black text-emerald-600 mt-1 uppercase tracking-wider bg-emerald-50 rounded px-1 py-0.5">{n.type}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                renderCanvasPane('Target Infrastructure', localNodes, 'indigo', setSelectedNode, regionFilter)
                             )}
                         </div>
                     </div>
