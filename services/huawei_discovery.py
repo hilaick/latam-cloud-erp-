@@ -86,40 +86,57 @@ class HuaweiDiscovery:
 
                 region_creds = BasicCredentials(self.raw_ak, self.raw_sk, target_project_id)
                 
-                # 1. COMPUTE
+                # 1. BULLETPROOF COMPUTE LOOP
                 try:
+                    from huaweicloudsdkecs.v2.region.ecs_region import EcsRegion
                     ecs_client = EcsClient.new_builder().with_credentials(region_creds).with_region(EcsRegion.value_of(target_region)).build()
                     for s in ecs_client.list_servers_details(ListServersDetailsRequest(limit=100)).servers or []:
-                        # 🚨 FIX: Safe extraction of dict_values in Python 3
-                        private_ip = 'N/A'
-                        if getattr(s, 'addresses', None):
-                            try:
+                        try:
+                            # Safely extract IP
+                            private_ip = 'N/A'
+                            if getattr(s, 'addresses', None):
                                 vals = list(s.addresses.values())
                                 if vals and len(vals) > 0 and len(vals[0]) > 0:
-                                    private_ip = getattr(vals[0][0], 'addr', 'N/A')
-                            except Exception:
-                                pass
-                        
-                        inventory["compute"].append({ "id": s.id, "name": s.name, "type": "ECS", "status": s.status, "flavor": s.flavor.name, "vcpus": int(s.flavor.vcpus), "ram_gb": int(s.flavor.ram)/1024, "os_type": s.metadata.get('os_type', 'Unknown'), "private_ip_address": private_ip, "region": target_region })
-                except Exception as e: logger.error(f"ECS error: {e}")
+                                    addr_item = vals[0][0]
+                                    private_ip = addr_item.get('addr', 'N/A') if isinstance(addr_item, dict) else getattr(addr_item, 'addr', 'N/A')
+                            
+                            # Safely extract attributes
+                            f_name = s.flavor.name if getattr(s, 'flavor', None) else 'Unknown'
+                            f_vcpus = int(s.flavor.vcpus) if getattr(s, 'flavor', None) and getattr(s.flavor, 'vcpus', None) else 0
+                            f_ram = int(s.flavor.ram)/1024 if getattr(s, 'flavor', None) and getattr(s.flavor, 'ram', None) else 0
+                            os_type = s.metadata.get('os_type', 'Unknown') if getattr(s, 'metadata', None) and isinstance(s.metadata, dict) else 'Unknown'
 
-                # 2. DATABASES
+                            inventory["compute"].append({ "id": s.id, "name": s.name, "type": "ECS", "status": s.status, "flavor": f_name, "vcpus": f_vcpus, "ram_gb": f_ram, "os_type": os_type, "private_ip_address": private_ip, "region": target_region })
+                        except Exception as inner_e:
+                            logger.error(f"Skipped faulty ECS node: {inner_e}")
+                except Exception as e: logger.error(f"ECS connection error: {e}")
+
+                # 2. BULLETPROOF DATABASES LOOP
                 try:
+                    from huaweicloudsdkrds.v3.region.rds_region import RdsRegion
                     rds_client = RdsClient.new_builder().with_credentials(region_creds).with_region(RdsRegion.value_of(target_region)).build()
                     for db in rds_client.list_instances(ListInstancesRequest()).instances or []:
-                        private_ip = db.private_ips[0] if getattr(db, 'private_ips', None) else 'N/A'
-                        inventory["databases"].append({ "id": db.id, "name": db.name, "type": "RDS", "engine": db.datastore.type, "version": db.datastore.version, "status": db.status, "private_ip_address": private_ip, "volume_gb": db.volume.size, "region": target_region })
-                except Exception as e: logger.error(f"RDS error: {e}")
+                        try:
+                            private_ip = db.private_ips[0] if getattr(db, 'private_ips', None) and len(db.private_ips) > 0 else 'N/A'
+                            d_type = db.datastore.type if getattr(db, 'datastore', None) else 'Unknown'
+                            d_ver = db.datastore.version if getattr(db, 'datastore', None) else 'Unknown'
+                            v_size = db.volume.size if getattr(db, 'volume', None) else 0
+
+                            inventory["databases"].append({ "id": db.id, "name": db.name, "type": "RDS", "engine": d_type, "version": d_ver, "status": db.status, "private_ip_address": private_ip, "volume_gb": v_size, "region": target_region })
+                        except Exception as inner_e:
+                            logger.error(f"Skipped faulty RDS node: {inner_e}")
+                except Exception as e: logger.error(f"RDS connection error: {e}")
 
                 # 3. NETWORK CORE
                 try:
+                    from huaweicloudsdkvpc.v2.region.vpc_region import VpcRegion
                     vpc_client = VpcClient.new_builder().with_credentials(region_creds).with_region(VpcRegion.value_of(target_region)).build()
                     for vpc in vpc_client.list_vpcs(ListVpcsRequest(limit=100)).vpcs or []: inventory["network"].append({"id": vpc.id, "name": vpc.name, "type": "VPC", "cidr": vpc.cidr, "status": vpc.status, "region": target_region})
                     for sub in vpc_client.list_subnets(ListSubnetsRequest(limit=100)).subnets or []: inventory["network"].append({"id": sub.id, "name": sub.name, "type": "Subnet", "cidr": sub.cidr, "vpc_id": getattr(sub, 'vpc_id', ''), "status": sub.status, "region": target_region})
                     for sg in vpc_client.list_security_groups(ListSecurityGroupsRequest(limit=100)).security_groups or []: inventory["network"].append({"id": sg.id, "name": sg.name, "type": "SG", "cidr": "N/A", "status": "Active", "region": target_region})
                 except Exception as e: logger.error(f"VPC error: {e}")
 
-                # 4. EDGE GATEWAYS (NAT, EIP)
+                # 4. EDGE GATEWAYS (NAT, EIP, VPN)
                 if HAS_NAT:
                     try:
                         nat_client = NatClient.new_builder().with_credentials(region_creds).with_region(NatRegion.value_of(target_region)).build()
@@ -129,20 +146,17 @@ class HuaweiDiscovery:
                 if HAS_EIP:
                     try:
                         eip_client = EipClient.new_builder().with_credentials(region_creds).with_region(EipRegion.value_of(target_region)).build()
-                        for eip in eip_client.list_publicips(ListPublicipsRequest(limit=100)).publicips or []: inventory["network"].append({"id": eip.id, "name": eip.alias or eip.public_ip_address, "type": "EIP", "cidr": eip.public_ip_address, "status": eip.status, "region": target_region})
+                        for eip in eip_client.list_publicips(ListPublicipsRequest(limit=100)).publicips or []: inventory["network"].append({"id": eip.id, "name": eip.alias or eip.public_ip_address, "type": "EIP", "public_ip_address": eip.public_ip_address, "status": eip.status, "region": target_region})
                     except Exception as e: logger.error(f"EIP error: {e}")
 
-                # 🚨 FIX: ISOLATED VPN BLOCKS TO PREVENT SILENT CRASHES
                 if HAS_VPN:
                     vpn_client = VpnClient.new_builder().with_credentials(region_creds).with_region(VpnRegion.value_of(target_region)).build()
                     try:
                         for vpn in vpn_client.list_vpn_gateways(ListVpnGatewaysRequest(limit=100)).vpn_gateways or []: inventory["network"].append({"id": vpn.id, "name": vpn.name, "type": "Enterprise VPN Gateway", "cidr": "N/A", "status": vpn.status, "region": target_region})
                     except Exception as e: logger.error(f"VPN Gateway error: {e}")
-                    
                     try:
                         for cgw in vpn_client.list_customer_gateways(ListCustomerGatewaysRequest(limit=100)).customer_gateways or []: inventory["network"].append({"id": cgw.id, "name": cgw.name, "type": "Customer Gateway", "cidr": getattr(cgw, 'bgp_asn', 'N/A') or 'N/A', "status": "Active", "region": target_region})
                     except Exception as e: logger.error(f"Customer Gateway error: {e}")
-                    
                     try:
                         for conn in vpn_client.list_vpn_connections(ListVpnConnectionsRequest(limit=100)).vpn_connections or []: inventory["network"].append({"id": conn.id, "name": conn.name, "type": "VPN Connection", "cidr": "N/A", "status": conn.status, "region": target_region})
                     except Exception as e: logger.error(f"VPN Connection error: {e}")
