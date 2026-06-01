@@ -6,12 +6,11 @@ import MgCReconciliationView from './MgCReconciliationView';
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
     
-    // Topology Mapper data
     const nodes = project.mapperNodes || [];
-    
-    // MgC Data Calculation
     const rawInv = project.mgcData?.raw_inventory || {};
-    const totalMgcNodes = Object.values(rawInv).reduce((acc, curr) => acc + (Array.isArray(curr) ? curr.length : 0), 0);
+    
+    // Explicitly count ONLY discovered resources
+    const totalMgcNodes = Object.keys(rawInv).filter(k => k !== 'diagnostics' && k !== 'summary').reduce((acc, curr) => acc + (Array.isArray(rawInv[curr]) ? rawInv[curr].length : 0), 0);
     const hasScanned = !!project.mgcData;
 
     let displayRisk = 'Pending';
@@ -37,14 +36,14 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                 <div className="animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm flex flex-col">
-                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Source Resources</h4><i className="fas fa-server text-blue-500"></i></div>
-                            <div className="text-xs text-blue-700 mb-4 flex-1">Automated discovery and resource import.</div>
-                            <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources Discovered` : 'Pending Discovery'}</div>
-                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-left text-[10px] uppercase font-bold text-blue-600 hover:underline">View Resources &gt;</button>
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Source Discovery</h4><i className="fas fa-search text-blue-500"></i></div>
+                            <div className="text-xs text-blue-700 mb-4 flex-1">Raw inventory found in the source environment.</div>
+                            <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources Discovered` : 'Pending Discovery Scan'}</div>
+                            <button onClick={()=>setSubTab('mgc')} className="mt-2 text-left text-[10px] uppercase font-bold text-blue-600 hover:underline">View Live Data &gt;</button>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col">
-                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Topology Mapped</h4><i className="fas fa-sitemap text-slate-500"></i></div>
-                            <div className="text-xs text-slate-500 mb-4 flex-1">Confirmed IaC Target Architecture.</div>
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Target Topology</h4><i className="fas fa-sitemap text-slate-500"></i></div>
+                            <div className="text-xs text-slate-500 mb-4 flex-1">Final reconciled execution architecture.</div>
                             <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? `${nodes.length} Nodes Mapped` : 'Pending Configuration'}</div>
                             <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
