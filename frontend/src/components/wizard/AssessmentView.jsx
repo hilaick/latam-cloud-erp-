@@ -20,7 +20,12 @@ export default function AssessmentView({ activeProject, onUpdateProject }) {
         } 
     }, [activeProject]);
     
-    const handleSave = () => { 
+    // 🚨 FIX: Prevent browser events from aborting the fetch
+    const handleSave = (e) => { 
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         onUpdateProject(activeProject.id, 'ora', { infraControl, itSkills, partnerCapability, downtime, appArch, security }); 
         alert("ORA Profile Saved."); 
     };
@@ -60,17 +65,16 @@ export default function AssessmentView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
                 
-                {/* Save button centered right under the score card! */}
                 <div className={`p-8 rounded-2xl border-4 text-center shadow-inner flex flex-col items-center justify-center ${bgColor}`}>
                     <div className="text-xs font-black uppercase tracking-widest opacity-80 mb-2">Global Friction Score</div>
                     <div className="text-6xl font-black">{score}/100</div>
                     <div className="text-sm font-black mt-4 mb-8 tracking-widest uppercase bg-white/50 inline-block px-4 py-2 rounded-xl shadow-sm">Mandatory Timeline Buffer: {timeBuffer}</div>
                     
-                    <button onClick={handleSave} className="px-10 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-transform active:scale-95">
+                    {/* 🚨 FIX: Explicit type="button" strictly prevents silent HTML form submission aborts */}
+                    <button type="button" onClick={handleSave} className="px-10 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-transform active:scale-95">
                         <i className="fas fa-save mr-2"></i>Save ORA Profile
                     </button>
                 </div>
-
             </div>
         </div>
     )
