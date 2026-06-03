@@ -34,10 +34,10 @@ export default function ProjectWizard() {
         const currentIndex = stages.findIndex(s => s.id === project.lifecycleState);
         if (currentIndex >= 0 && currentIndex < stages.length - 1) {
             const nextState = stages[currentIndex + 1].id;
-            handleUpdateProject(project.id, 'lifecycleState', nextState);
+            handleUpdateProject(project.id, { lifecycleState: nextState });
             window.scrollTo({ top: 0, behavior: 'smooth' }); 
         } else if (currentIndex === stages.length - 1) {
-            handleUpdateProject(project.id, 'lifecycleState', '6_completed');
+            handleUpdateProject(project.id, { lifecycleState: '6_completed' });
             alert("Project Closed Successfully!");
         }
     };
@@ -85,7 +85,7 @@ export default function ProjectWizard() {
 
             <div className="flex gap-2 bg-slate-200 p-1.5 rounded-xl overflow-x-auto shadow-inner">
                 {stages.map(stg => (
-                    <button key={stg.id} onClick={() => handleUpdateProject(project.id, 'lifecycleState', stg.id)} className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === stg.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
+                    <button key={stg.id} onClick={() => handleUpdateProject(project.id, { lifecycleState: stg.id })} className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === stg.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
                         <i className={`fas ${stg.icon} mr-2`}></i> {stg.name}
                     </button>
                 ))}
@@ -104,7 +104,7 @@ export default function ProjectWizard() {
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Project Foundation</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    {/* 🚨 FIX: Replaced open text box with Customer Vault Dropdown binding */}
+                                    {/* 🚨 FIX: Strict Customer Account Dropdown to bind the Vault ID */}
                                     <div className="md:col-span-2">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
                                         <select 
