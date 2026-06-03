@@ -1,24 +1,13 @@
-import React, { useState, useContext } from 'react';
+import React, { useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell, formatShortDate } from '../../utils/helpers';
+import { formatShortDate } from '../../utils/helpers';
 
 export default function FinOpsDashboard() {
-    const { projects, setProjects } = useContext(ERPContext);
+    const { projects, handleUpdateProject } = useContext(ERPContext);
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     const pocProjects = activeProjects.filter(p => p.project_type === 'poc');
     
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num || 0);
-    
-    const handleUpdateProject = (id, field, value) => {
-        setProjects(prev => prev.map(p => {
-            if (String(p.id) === String(id)) {
-                const newProject = { ...p, [field]: value };
-                fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newProject) });
-                return newProject;
-            }
-            return p;
-        }));
-    };
 
     const totalMRR = activeProjects.reduce((sum, p) => sum + (parseFloat(p.mrr) || 0), 0);
     const totalPocBudget = pocProjects.reduce((sum, p) => sum + (parseFloat(p.pocCap) || 0), 0);
