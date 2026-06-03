@@ -26,11 +26,7 @@ class EncryptionManager:
         """
         self.master_password = master_password or os.environ.get('ENCRYPTION_KEY')
         if not self.master_password:
-            # Generate a secure key if none exists
-            self.master_password = base64.urlsafe_b64encode(os.urandom(32)).decode()
-            print(f"⚠️  WARNING: No ENCRYPTION_KEY found in environment.")
-            print(f"⚠️  Generated new key: {self.master_password[:20]}...")
-            print(f"⚠️  Add to .env: ENCRYPTION_KEY={self.master_password}")
+            raise ValueError("ENCRYPTION_KEY environment variable is missing. A persistent key is required to prevent decryption failures on application restart.")
         
         # Derive a Fernet key from the master password
         self.fernet_key = self._derive_key(self.master_password.encode())
@@ -186,7 +182,8 @@ def mask_key(api_key: str, visible_chars: int = 8) -> str:
 
 if __name__ == '__main__':
     # Test the encryption
-    manager = EncryptionManager("test_master_password_123")
+    os.environ['ENCRYPTION_KEY'] = "test_master_password_123"
+    manager = EncryptionManager()
     
     # Test data
     test_keys = [
