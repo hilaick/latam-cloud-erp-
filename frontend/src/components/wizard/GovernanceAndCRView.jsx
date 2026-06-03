@@ -6,6 +6,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
     
     const [isLocked, setIsLocked] = useState(activeProject?.status === 'Approved' || activeProject?.status === 'Locked');
     const [showCRModal, setShowCRModal] = useState(false);
+    const [showGovernanceHelp, setShowGovernanceHelp] = useState(false);
     
     const [crTitle, setCrTitle] = useState('');
     const [crReason, setCrReason] = useState('');
@@ -48,7 +49,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         alert("Blueprint Locked. Ready for Provisioning.");
     };
 
-    // 🚨 ADMIN OVERRIDE BUTTON
     const handleAdminOverride = () => {
         if (!window.confirm("ADMIN OVERRIDE: You are bypassing the DTRB Governance Gate for testing purposes. Force lock the architecture?")) return;
         onUpdateProject(activeProject.id, 'status', 'Approved');
@@ -115,26 +115,33 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                         <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-balance-scale text-indigo-600"></i> DTRB Governance & Change Requests</h3>
                         <p className="text-xs text-slate-500 mt-2 font-medium">Automated Delivery Technical Review Board (DTRB) compliance and Architecture unlocking.</p>
                     </div>
-                    {isLocked ? (
-                        <div className="flex gap-4">
-                            <div className="bg-emerald-50 border border-emerald-200 px-6 py-2.5 rounded-xl flex items-center gap-4 shadow-sm">
-                                <i className="fas fa-lock text-emerald-600 text-xl"></i>
+                    
+                    <div className="flex gap-4">
+                        <button onClick={()=>setShowGovernanceHelp(true)} className="px-4 py-2.5 bg-slate-50 text-slate-600 border border-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-colors shadow-sm">
+                            <i className="fas fa-question-circle mr-2"></i> Help Guide
+                        </button>
+                        
+                        {isLocked ? (
+                            <>
+                                <div className="bg-emerald-50 border border-emerald-200 px-6 py-2.5 rounded-xl flex items-center gap-4 shadow-sm">
+                                    <i className="fas fa-lock text-emerald-600 text-xl"></i>
+                                    <div>
+                                        <div className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">Blueprint Locked</div>
+                                        <div className="text-[9px] text-emerald-600 font-bold">Approved for Provisioning Phase</div>
+                                    </div>
+                                </div>
+                                <button onClick={()=>setShowCRModal(true)} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-edit mr-2"></i> Raise CR</button>
+                            </>
+                        ) : (
+                            <div className="bg-slate-50 border border-slate-200 px-6 py-3 rounded-xl flex items-center gap-4 shadow-sm">
+                                <i className="fas fa-unlock-alt text-slate-400 text-2xl"></i>
                                 <div>
-                                    <div className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">Blueprint Locked</div>
-                                    <div className="text-[9px] text-emerald-600 font-bold">Approved for Provisioning Phase</div>
+                                    <div className="text-xs font-black text-slate-700 uppercase tracking-widest">Draft Mode Active</div>
+                                    <div className="text-[10px] text-slate-500 font-bold">Awaiting DTRB Sign-off</div>
                                 </div>
                             </div>
-                            <button onClick={()=>setShowCRModal(true)} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-edit mr-2"></i> Raise CR</button>
-                        </div>
-                    ) : (
-                        <div className="bg-slate-50 border border-slate-200 px-6 py-3 rounded-xl flex items-center gap-4 shadow-sm">
-                            <i className="fas fa-unlock-alt text-slate-400 text-2xl"></i>
-                            <div>
-                                <div className="text-xs font-black text-slate-700 uppercase tracking-widest">Draft Mode Active</div>
-                                <div className="text-[10px] text-slate-500 font-bold">Awaiting DTRB Sign-off</div>
-                            </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8">
@@ -200,8 +207,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 {!isLocked && (
                     <div className="flex justify-between items-center pt-6 border-t border-slate-200 gap-4">
                         <div className="flex-1">
-                            {/* 🚨 ADMIN OVERRIDE BUTTON */}
-                            <button onClick={handleAdminOverride} className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors border border-rose-200 flex items-center gap-2">
+                            <button onClick={handleAdminOverride} className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors border border-rose-200 flex items-center gap-2 shadow-sm">
                                 <i className="fas fa-shield-alt"></i> [Admin Override] Force Lock
                             </button>
                         </div>
@@ -213,9 +219,53 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 )}
             </div>
 
+            {/* 🚨 DTRB HELP DRAWER */}
+            {showGovernanceHelp && (
+                <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
+                    <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
+                        <div>
+                            <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Methodology Guide</h3>
+                            <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-1">Understanding DTRB & Blueprint Locks</p>
+                        </div>
+                        <button onClick={()=>setShowGovernanceHelp(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
+                        
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">1. What is the DTRB?</h4>
+                            <p className="mb-3">The <strong>Delivery Technical Review Board (DTRB)</strong> is an automated governance engine. It scans the Target Architecture you drew in the canvas and checks it against enterprise best practices.</p>
+                            <p>For example, if you mapped an architecture without CBR Backup Vaults, the DTRB will flag it as a critical failure.</p>
+                        </div>
+
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">2. Why does the Blueprint Lock?</h4>
+                            <p className="mb-3">Once the architecture is approved, the Blueprint is <strong>Locked</strong>. This prevents engineers from secretly adding undocumented servers or modifying disks later in the project.</p>
+                            <p>Locking the blueprint sets the final baseline for the FinOps module to calculate exact delivery margins.</p>
+                        </div>
+
+                        <div className="bg-white p-5 rounded-xl border border-rose-200 bg-rose-50/30 shadow-sm">
+                            <h4 className="font-black text-rose-800 mb-2 border-b border-rose-100 pb-2">3. How do I unlock it? (Change Requests)</h4>
+                            <p className="text-xs text-slate-700 mb-3">If you run MgC Discovery later and find 5 undocumented servers, you must update the architecture. To do this:</p>
+                            <ol className="list-decimal pl-4 space-y-2 text-xs font-medium text-slate-600">
+                                <li>Click <strong>Raise CR</strong>.</li>
+                                <li>Set Severity to <strong>Minor</strong>.</li>
+                                <li>Submit the justification.</li>
+                            </ol>
+                            <p className="text-xs text-slate-700 mt-3">The system will log the change, apply the new costs to the FinOps ledger, and instantly reset the canvas to <strong>Draft Mode</strong> so you can add the missing servers.</p>
+                        </div>
+
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">4. What is Admin Override?</h4>
+                            <p className="text-xs text-slate-700">During rapid prototyping or testing, you can use the <strong>[Admin Override] Force Lock</strong> button to bypass failing DTRB scores and instantly advance the project to Phase 3.</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* CR MODAL */}
             {showCRModal && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center animate-fade-in">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-slide-up">
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center animate-fade-in p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-slide-up my-auto">
                         <div className="bg-rose-600 p-6 flex justify-between items-center text-white">
                             <div>
                                 <h3 className="font-black text-lg"><i className="fas fa-exclamation-triangle mr-2"></i> Raise Change Request</h3>
@@ -224,7 +274,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                             <button onClick={()=>setShowCRModal(false)} className="text-rose-200 hover:text-white"><i className="fas fa-times text-xl"></i></button>
                         </div>
                         <div className="p-6 space-y-5">
-                            
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Impacted Blueprint Resource</label>
@@ -241,7 +290,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                     </select>
                                 </div>
                             </div>
-
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Change Title</label>
                                 <input type="text" value={crTitle} onChange={e=>setCrTitle(e.target.value)} placeholder="e.g., Increase SAP CBR Vault from 14TB to 30TB" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-bold outline-none focus:border-rose-500" />
@@ -250,7 +298,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Root Cause / Technical Justification</label>
                                 <textarea value={crReason} onChange={e=>setCrReason(e.target.value)} placeholder="Explain why this change is necessary..." className="w-full h-20 bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-medium outline-none focus:border-rose-500 custom-scrollbar"></textarea>
                             </div>
-                            
                             <div className="grid grid-cols-2 gap-4 border-b border-slate-200 pb-5">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Approval Authority</label>
@@ -265,7 +312,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                     <input type="number" value={crCost} onChange={e=>setCrCost(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-black text-rose-600 outline-none focus:border-rose-500" />
                                 </div>
                             </div>
-
                             <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 p-4 rounded-xl cursor-pointer hover:bg-indigo-100 transition-colors" onClick={()=>setUpdatePlaybook(!updatePlaybook)}>
                                 <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${updatePlaybook ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-300'}`}>
                                     {updatePlaybook && <i className="fas fa-check text-xs"></i>}
@@ -275,7 +321,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                     <div className="text-[9px] text-indigo-600 font-bold uppercase tracking-widest mt-0.5">Automatically adds a pre-flight check to future projects to prevent this error.</div>
                                 </div>
                             </div>
-
                         </div>
                         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                             <button onClick={()=>setShowCRModal(false)} className="px-6 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-colors">Cancel</button>
