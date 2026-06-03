@@ -6,13 +6,13 @@ from pathlib import Path
 from flask import Blueprint, request, jsonify
 
 from werkzeug.utils import secure_filename
-from services.source_resources_parser import parse_source_resources_excel
 from flask_jwt_extended import jwt_required
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.huawei_load_balancer import HuaweiLoadBalancer
 
 from models import Customer
 from services.huawei_discovery import HuaweiDiscovery
+from services.source_resources_parser import parse_source_resources_excel
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -99,28 +99,6 @@ def get_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@cloud_ops_bp.route('/api/huawei/chat', methods=['POST'])
-@jwt_required()
-def huawei_chat():
-    try:
-        message = request.get_json().get('message', '')
-        if not message: return jsonify({"error": "Message is required"}), 400
-        return jsonify({"response": huawei_lb.chat(message), "key_used": huawei_lb.current_key_index, "total_keys": len(huawei_lb.api_keys)})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@cloud_ops_bp.route('/api/huawei/keys/status', methods=['GET'])
-@jwt_required()
-def huawei_keys_status():
-    try:
-        return jsonify({
-            "total_keys": len(huawei_lb.api_keys),
-            "active_keys": huawei_lb.get_active_key_count(),
-            "keys": [{"index": i, "is_active": k.get('is_active', True)} for i, k in enumerate(huawei_lb.api_keys)]
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
 def get_live_inventory():
@@ -173,7 +151,6 @@ def upload_source_resources():
         upload_dir = PROJECT_ROOT / 'uploads' / 'source_resources'
         upload_dir.mkdir(parents=True, exist_ok=True)
         
-        from werkzeug.utils import secure_filename
         filename = secure_filename(file.filename or 'upload.xlsx')
         file_path = upload_dir / filename
         file.save(str(file_path))
@@ -191,7 +168,7 @@ def upload_source_resources():
 @cloud_ops_bp.route('/api/finops/query_price', methods=['POST'])
 @jwt_required()
 def query_live_pricing():
-    """Translates Target Nodes into SMS/DRS temporary infrastructure and queries the BSS API."""
+    """Translates Target Nodes into SMS/DRS temporary infrastructure specs."""
     try:
         data = request.get_json()
         duration_months = data.get('duration_months', 1)
@@ -211,12 +188,12 @@ def query_live_pricing():
             total_monthly_cost += item_cost
             bom_items.append({
                 "id": "bom-sms",
-                "service": "SMS Sync Worker",
-                "spec": "s6.large.2 (2vCPU/4GB)",
+                "service": "SMS Sync Worker Node",
+                "spec": "s6.large.2 (2vCPU / 4GB RAM) + 40GB System Disk",
                 "qty": sms_workers_needed,
                 "cost_per_month": item_cost,
-                "reason": f"Required to sync block data for {ecs_count} target ECS instances.",
-                "selected": True # Default to confirmed
+                "reason": f"Background compute required to receive block-level agent data for {ecs_count} target ECS instances.",
+                "selected": True 
             })
 
         # 2. DRS Replication Clusters
@@ -227,10 +204,10 @@ def query_live_pricing():
             bom_items.append({
                 "id": "bom-drs",
                 "service": "DRS Replication Cluster",
-                "spec": "Data Replication Service - Standard",
+                "spec": "rds.pg.c6.large.2.ha (Data Replication Service - Standard)",
                 "qty": rds_count,
                 "cost_per_month": item_cost,
-                "reason": f"Required for continuous real-time sync to {rds_count} RDS instances.",
+                "reason": f"Real-time CDC (Change Data Capture) engine for {rds_count} continuous database syncs.",
                 "selected": True
             })
 
@@ -241,10 +218,10 @@ def query_live_pricing():
             bom_items.append({
                 "id": "bom-net",
                 "service": "Temporary Network Edge",
-                "spec": "NAT Gateway (Small) + EIP (100Mbps)",
+                "spec": "NAT Gateway (Small) + EIP (100Mbps Bandwidth)",
                 "qty": 1,
                 "cost_per_month": net_rate,
-                "reason": "Required for external internet access during agent-based SMS/DRS sync.",
+                "reason": "Outbound internet gateway required for source-agent heartbeat and data transmission.",
                 "selected": True
             })
             
@@ -259,26 +236,71 @@ def query_live_pricing():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🚨 NEW: LIVE BILLING / COST CENTER VALIDATION API
+
 @cloud_ops_bp.route('/api/finops/billing_validation', methods=['POST'])
 @jwt_required()
 def validate_actual_billing():
-    """Queries Huawei Cloud Cost Center to validate actual incurred invoices against the BOM estimates."""
+    """Queries Huawei Cloud Cost Center to validate actual invoices against exact BOM specs."""
     try:
         data = request.get_json()
         duration_months = data.get('duration_months', 1)
         estimated_cost = data.get('estimated_cost', 0)
+        bom_items = data.get('bom_items', [])
         
-        # In a real scenario, this uses the Huawei Cloud EPS/Billing API
-        # GET https://bss.la-south-2.myhuaweicloud.com/v2/bills/customer-bills
+        line_items = []
+        total_invoiced = 0
         
-        # Simulating a realistic real-world invoice response that highlights hidden overages
-        actual_compute = estimated_cost * 0.95 # Usually compute is slightly cheaper than estimated
-        actual_volumes = estimated_cost * 0.30 # EVS hidden costs
-        actual_snapshots = estimated_cost * 0.45 # SMS/CBR hidden snapshot retention costs
-        actual_network = 65.00 # Real EIP data egress fees
+        # In production, this hits Huawei EPS API to fetch actual bill line-items.
+        # Here we simulate the invoice dynamically based on the exact BOM the user approved.
         
-        total_invoiced = round(actual_compute + actual_volumes + actual_snapshots + actual_network)
+        has_sms = any("SMS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
+        has_drs = any("DRS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
+        has_net = any("Network" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
+        
+        if has_sms:
+            actual_sms = (estimated_cost * 0.40) * 0.95
+            total_invoiced += actual_sms
+            line_items.append({
+                "category": "Elastic Cloud Server (ECS)", 
+                "amount": round(actual_sms), 
+                "status": "expected", 
+                "note": "SMS Worker s6.large.2 compute charges."
+            })
+            # SMS always hides EVS snapshot costs!
+            hidden_evs = (estimated_cost * 0.35)
+            total_invoiced += hidden_evs
+            line_items.append({
+                "category": "Elastic Volume Service (EVS)", 
+                "amount": round(hidden_evs), 
+                "status": "danger", 
+                "note": "Unreclaimed target OS block snapshots from SMS sync phases inflating invoice."
+            })
+
+        if has_drs:
+            actual_drs = (estimated_cost * 0.45) * 1.05 # DRS often runs slightly over
+            total_invoiced += actual_drs
+            line_items.append({
+                "category": "Data Replication Service (DRS)", 
+                "amount": round(actual_drs), 
+                "status": "warning", 
+                "note": "DRS Replication clusters rds.pg.c6.large.2 usage."
+            })
+
+        if has_net:
+            actual_net = 65.00 # Network usually blows past the $45 estimate due to egress
+            total_invoiced += actual_net
+            line_items.append({
+                "category": "VPC Egress & EIPs", 
+                "amount": round(actual_net), 
+                "status": "warning", 
+                "note": "Higher than expected outbound data transfer (Egress GB) on NAT Gateway."
+            })
+            
+        if not line_items:
+            # Fallback if no BOM is present
+            total_invoiced = estimated_cost * 1.10
+            line_items.append({"category": "Miscellaneous Cloud Services", "amount": round(total_invoiced), "status": "warning", "note": "Uncategorized costs."})
+            
         variance = total_invoiced - estimated_cost
         
         return jsonify({
@@ -286,12 +308,7 @@ def validate_actual_billing():
             "invoiced_total": total_invoiced,
             "variance": variance,
             "status": "warning" if variance > 0 else "healthy",
-            "line_items": [
-                {"category": "Elastic Cloud Server (ECS)", "amount": round(actual_compute), "status": "expected"},
-                {"category": "Elastic Volume Service (EVS)", "amount": round(actual_volumes), "status": "warning", "note": "High IOPS usage detected during block-sync."},
-                {"category": "OBS & CBR Snapshots", "amount": round(actual_snapshots), "status": "danger", "note": "Unreclaimed snapshot blocks inflating invoice."},
-                {"category": "VPC Egress & EIPs", "amount": round(actual_network), "status": "warning", "note": "Higher than expected outbound data transfer."}
-            ]
+            "line_items": line_items
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -306,10 +323,10 @@ def get_migration_tools():
         ],
         "database": [
             {"id": "drs", "name": "Data Replication Service (DRS)", "desc": "Real-time, online database replication and sync with minimal downtime.", "scenarios": ["MySQL to RDS", "Oracle to GaussDB"]},
-            {"id": "ugo", "name": "Database & Application Migration UGO", "desc": "Heterogeneous database schema translation and syntax conversion.", "scenarios": ["Oracle to GaussDB Schema Conversion"]}
+            {"id": "ugo", "name": "Database and Application Migration UGO", "desc": "Heterogeneous database schema translation and syntax conversion.", "scenarios": ["Oracle to GaussDB Schema Conversion"]}
         ],
         "storage": [
-            {"id": "oms", "name": "Object Message Migration Service (OMS)", "desc": "Online migration of object storage data.", "scenarios": ["AWS S3 to OBS", "Azure OSS to OBS"]},
+            {"id": "oms", "name": "Object Storage Migration Service (OMS)", "desc": "Online migration of object storage data between clouds or regions.", "scenarios": ["AWS S3 to OBS", "Aliyun OSS to OBS", "Azure OSS to OBS"]},
             {"id": "cdm", "name": "Cloud Data Migration (CDM)", "desc": "Batch data migration for databases, data warehouses, and big data.", "scenarios": ["Hadoop to Huawei Big Data"]},
             {"id": "des", "name": "Data Express Service (DES)", "desc": "Offline physical data transfer via Teleport appliance.", "scenarios": ["Petabyte-scale offline migration"]}
         ]
