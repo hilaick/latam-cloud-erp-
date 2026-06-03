@@ -18,8 +18,6 @@ cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
 
-# ... [Keep your existing endpoints: /api/audit, /api/deploy, /api/cleanup, /api/status, /api/logs, /api/huawei/chat, /api/huawei/keys/status, /api/cloud/inventory, /api/source-resources/upload] ...
-# (Copy them exactly as they were in the previous iteration)
 @cloud_ops_bp.route('/api/audit', methods=['POST'])
 @jwt_required()
 def run_audit():
@@ -195,7 +193,6 @@ def upload_source_resources():
         return jsonify({"success": False, "error": f"Server error processing file: {str(e)}"}), 500
 
 
-# 🚨 UPDATED: LIVE BSS PRICING ENGINE WITH SMS/DRS BOM TRANSLATION
 @cloud_ops_bp.route('/api/finops/query_price', methods=['POST'])
 @jwt_required()
 def query_live_pricing():
@@ -211,10 +208,10 @@ def query_live_pricing():
         bom_items = []
         total_monthly_cost = 0
         
-        # 1. Calculate SMS Worker Nodes (Rule: 1 worker per 5 Target ECS)
+        # 1. Calculate SMS Worker Nodes
         sms_workers_needed = math.ceil(ecs_count / 5) if ecs_count > 0 else 0
         if sms_workers_needed > 0:
-            sms_rate = 32.85 # Approx monthly post-paid rate for s6.large.2 in LA
+            sms_rate = 32.85 
             item_cost = sms_workers_needed * sms_rate
             total_monthly_cost += item_cost
             bom_items.append({
@@ -225,9 +222,9 @@ def query_live_pricing():
                 "reason": f"Required to sync block data for {ecs_count} target ECS instances."
             })
 
-        # 2. Calculate DRS Replication Clusters (Rule: 1 DRS cluster per Target RDS)
+        # 2. Calculate DRS Replication Clusters
         if rds_count > 0:
-            drs_rate = 145.00 # Approx monthly post-paid rate for DRS replication instance
+            drs_rate = 145.00 
             item_cost = rds_count * drs_rate
             total_monthly_cost += item_cost
             bom_items.append({
@@ -238,9 +235,9 @@ def query_live_pricing():
                 "reason": f"Required for continuous real-time sync to {rds_count} RDS instances."
             })
 
-        # 3. Network Overhead (EIPs / NAT for outbound migration internet access)
+        # 3. Network Overhead
         if ecs_count > 0 or rds_count > 0:
-            net_rate = 45.00 # NAT + EIP
+            net_rate = 45.00 
             total_monthly_cost += net_rate
             bom_items.append({
                 "service": "Temporary Network Edge",
@@ -261,3 +258,53 @@ def query_live_pricing():
         
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+# 🚨 NEW: HUAWEI MIGRATION TOOL CENTER API
+@cloud_ops_bp.route('/api/migration/tools', methods=['GET'])
+@jwt_required()
+def get_migration_tools():
+    """Provides the official Huawei Migration Center (MgC) scenario and tool matrix."""
+    tools = {
+        "compute": [
+            {
+                "id": "sms", "name": "Server Migration Service (SMS)", 
+                "desc": "Block-level and file-level migration for OS, Apps, and Data from On-Prem/Other Clouds to ECS.", 
+                "scenarios": ["VMware to ECS", "AWS EC2 to ECS", "Physical to ECS", "Hyper-V to ECS"]
+            },
+            {
+                "id": "mgc", "name": "Migration Center (MgC)", 
+                "desc": "Centralized migration platform for large-scale Discovery, Assessment, and Server Migration.", 
+                "scenarios": ["Massive VM Migration", "Agentless VMware Sync", "Automated Assessment"]
+            }
+        ],
+        "database": [
+            {
+                "id": "drs", "name": "Data Replication Service (DRS)", 
+                "desc": "Real-time, online database replication and sync with minimal downtime.", 
+                "scenarios": ["MySQL to RDS", "Oracle to GaussDB", "MongoDB to DDS", "PostgreSQL to RDS"]
+            },
+            {
+                "id": "ugo", "name": "Database & Application Migration UGO", 
+                "desc": "Heterogeneous database schema translation and syntax conversion.", 
+                "scenarios": ["Oracle to GaussDB Schema Conversion", "DB2 to GaussDB"]
+            }
+        ],
+        "storage": [
+            {
+                "id": "oms", "name": "Object Message Migration Service (OMS)", 
+                "desc": "Online migration of object storage data.", 
+                "scenarios": ["AWS S3 to OBS", "Aliyun OSS to OBS", "Azure OSS to OBS"]
+            },
+            {
+                "id": "cdm", "name": "Cloud Data Migration (CDM)", 
+                "desc": "Batch data migration for databases, data warehouses, and big data.", 
+                "scenarios": ["Hadoop to Huawei Big Data", "On-Prem DB to OBS Data Lake"]
+            },
+            {
+                "id": "des", "name": "Data Express Service (DES)", 
+                "desc": "Offline physical data transfer via Teleport appliance.", 
+                "scenarios": ["Petabyte-scale offline migration", "Low-bandwidth environments"]
+            }
+        ]
+    }
+    return jsonify({"success": True, "tools": tools})
