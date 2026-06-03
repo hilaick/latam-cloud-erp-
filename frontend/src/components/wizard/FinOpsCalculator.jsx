@@ -124,7 +124,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             const response = await fetch('/api/finops/billing_validation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                // 🚨 Passes the exact selected BOM items to the backend for accurate validation
                 body: JSON.stringify({ duration_months: durationMonths, estimated_cost: migrationOverhead, bom_items: migrationBom || [] })
             });
             const data = await response.json();
@@ -217,7 +216,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <input type="number" value={migrationOverhead} onChange={e=>setMigrationOverhead(e.target.value)} disabled={overheadScenario !== 'manual'} className="w-full p-3 border border-amber-300 rounded-lg text-sm font-black text-amber-800 bg-white outline-none focus:border-amber-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-500" />
                         </div>
 
-                        {/* 🚨 THE VISIBLE BOM AUDIT UI */}
                         {migrationBom && overheadScenario === 'wbs_detailed' && (
                             <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
                                 <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM)</h5>
