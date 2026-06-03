@@ -6,7 +6,13 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
     
-    const hasData = activeProject?.mgcData !== undefined && activeProject?.mgcData !== null;
+    // Check if we have successfully mapped data arrays
+    const hasData = activeProject?.mgcData?.raw_inventory && (
+        (activeProject.mgcData.raw_inventory.compute?.length > 0) ||
+        (activeProject.mgcData.raw_inventory.databases?.length > 0) ||
+        (activeProject.mgcData.raw_inventory.network?.length > 0) ||
+        (activeProject.mgcData.raw_inventory.storage?.length > 0)
+    );
 
     useEffect(() => {
         const fetchTools = async () => {
@@ -20,6 +26,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         fetchTools();
     }, []);
 
+    // 🚨 STRICT LIVE API SCAN (NO MOCKS, VAULT ONLY)
     const handleLiveScan = async () => {
         if (!activeProject.customerId) {
             alert("Discovery Error: No Customer linked to this project.\n\nPlease link this project to a Customer with valid Vault Credentials in the CRM or Edit Context tab to run a secure live scan.");
@@ -41,19 +48,13 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                // Merge with existing data if present
-                const existingCompute = activeProject.mgcData?.raw_inventory?.compute || [];
-                const existingDBs = activeProject.mgcData?.raw_inventory?.databases || [];
-                const existingStorage = activeProject.mgcData?.raw_inventory?.storage || [];
-                const existingNetwork = activeProject.mgcData?.raw_inventory?.network || [];
-
                 const inventory = {
-                    compute: [...existingCompute, ...(data.inventory.compute || [])],
-                    databases: [...existingDBs, ...(data.inventory.databases || data.inventory.database || [])],
-                    storage: [...existingStorage, ...(data.inventory.storage || [])],
-                    network: [...existingNetwork, ...(data.inventory.network || [])]
+                    compute: data.inventory.compute || [],
+                    databases: data.inventory.databases || data.inventory.database || [],
+                    storage: data.inventory.storage || [],
+                    network: data.inventory.network || []
                 };
-                onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
+                onUpdateProject(activeProject.id, { mgcData: { raw_inventory: inventory } });
                 alert("MgC Discovery Scan Complete. Live data fetched successfully.");
             } else { 
                 alert(`Discovery Error: ${data.error}`); 
@@ -65,6 +66,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         }
     };
 
+    // 🚨 PURE OFFLINE EXCEL IMPORT (TRUSTING PYTHON PARSER)
     const handleOfflineUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -82,7 +84,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                // Merge imported data with any existing data (e.g. from a prior live scan)
+                // Trusting Python parser and merging
                 const existingCompute = activeProject.mgcData?.raw_inventory?.compute || [];
                 const existingDBs = activeProject.mgcData?.raw_inventory?.databases || [];
                 const existingStorage = activeProject.mgcData?.raw_inventory?.storage || [];
@@ -100,7 +102,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     network: [...existingNetwork, ...newNetwork]
                 };
 
-                onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
+                onUpdateProject(activeProject.id, { mgcData: { raw_inventory: inventory } });
                 alert(`Offline Discovery Complete. Appended ${newCompute.length} compute nodes to the inventory.`);
             } else { 
                 alert(`Parse Error: ${data.error}`); 
@@ -124,7 +126,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             prog: "0%", resp: "Partner", start: "", end: "", isParent: false,
             notes: `Recommended Scenario: ${tool.scenarios.join(', ')}. Auto-assigned via Source Discovery.`
         };
-        onUpdateProject(activeProject.id, 'migrationPlan', [...currentPlan, newTask]);
+        onUpdateProject(activeProject.id, { migrationPlan: [...currentPlan, newTask] });
         alert(`${tool.name} strategy successfully added to the Phase 3 WBS & RACI Matrix!`);
     };
 
@@ -144,7 +146,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <i className="fas fa-question-circle mr-2"></i> Help Guide
                         </button>
 
-                        {/* 🚨 ALWAYS VISIBLE: API Sync & Offline Import Buttons if data already exists */}
                         {hasData && (
                             <>
                                 <button onClick={handleLiveScan} disabled={isScanning} className="px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-colors shadow-sm disabled:opacity-50">
@@ -194,7 +195,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner md:col-span-2">
                             <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
                                 <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest"><i className="fas fa-server text-blue-500 mr-2"></i> Discovered Compute & Databases</h4>
-                                <button onClick={()=>onUpdateProject(activeProject.id, 'mgcData', null)} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear All Data</button>
+                                <button onClick={()=>onUpdateProject(activeProject.id, { mgcData: null })} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear All Data</button>
                             </div>
                             <div className="space-y-3">
                                 {activeProject.mgcData.raw_inventory?.compute?.map(c => (
@@ -215,9 +216,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                         </div>
                                     </div>
                                 ))}
-                                {(activeProject.mgcData.raw_inventory?.compute?.length === 0 && activeProject.mgcData.raw_inventory?.databases?.length === 0) && (
-                                    <div className="text-xs text-slate-400 italic">No compute or database resources found.</div>
-                                )}
                             </div>
                         </div>
                         
@@ -231,7 +229,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                             <div className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100">{n.cidr || n.id}</div>
                                         </div>
                                     ))}
-                                    {activeProject.mgcData.raw_inventory?.network?.length === 0 && <div className="text-xs text-slate-400 italic">No network resources found.</div>}
                                 </div>
                             </div>
                             <div>
@@ -243,7 +240,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                             <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{s.source || 'Storage Volume'}</div>
                                         </div>
                                     ))}
-                                    {activeProject.mgcData.raw_inventory?.storage?.length === 0 && <div className="text-xs text-slate-400 italic">No storage resources found.</div>}
                                 </div>
                             </div>
                         </div>
@@ -261,7 +257,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <p className="text-xs text-slate-400 mt-1 font-medium">Official execution strategies ready to apply based on discovered inventory.</p>
                         </div>
                         <div className="bg-slate-900 px-4 py-2 rounded-lg border border-slate-700 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                            <i className="fas fa-check-circle mr-2"></i> API Synced
+                            <i className="fas fa-check-circle mr-2"></i> Engine Synced
                         </div>
                     </div>
 
