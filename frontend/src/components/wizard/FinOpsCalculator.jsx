@@ -51,39 +51,49 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
     const totalServers = (activeProject?.mapperNodes || []).filter(n => n.type === 'ECS' || n.type === 'RDS').length;
 
-    // 🚨 UPDATED SCENARIO CALCULATOR (Now includes Historical Averages)
-    const handleScenarioChange = (scenario) => {
+    // 🚨 LIVE API SCENARIO CALCULATOR
+    const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
         
         if (scenario === 'rule_of_thumb') {
-            // Scenario A: 5% of MRR per month of migration
             setMigrationOverhead(Math.round(mrr * 0.05 * durationMonths));
-            
         } else if (scenario === 'historical_avg') {
-            // 🚨 Scenario B: ERP Historical Database Average
             setIsApiSyncing(true);
             setTimeout(() => {
-                // Mocking an ERP Database aggregation scan across past similar projects
                 const historicalCostPerServerPerMonth = 118.50; 
                 setMigrationOverhead(Math.round(totalServers * historicalCostPerServerPerMonth * durationMonths));
                 setIsApiSyncing(false);
-            }, 1000);
-
+            }, 800);
         } else if (scenario === 'wbs_high') {
-            // Scenario C: High-Level WBS (1 worker node per 5 servers @ $150/mo)
             const batches = Math.ceil(totalServers / 5) || 1;
-            const tempStorage = totalServers * 20; // $20 temp storage per server
+            const tempStorage = totalServers * 20; 
             setMigrationOverhead(Math.round((batches * 150 * durationMonths) + tempStorage));
-            
         } else if (scenario === 'wbs_detailed') {
-            // Scenario D: Detailed API Sync
+            // LIVE FETCH TO PYTHON ENDPOINT
             setIsApiSyncing(true);
-            setTimeout(() => {
-                // Mocking Huawei API response
-                const exactPricing = Math.round((totalServers * 32.50 * durationMonths) + 450); 
-                setMigrationOverhead(exactPricing);
+            try {
+                const token = localStorage.getItem('erp_jwt_token');
+                const response = await fetch('/api/finops/query_price', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                        duration_months: durationMonths,
+                        nodes: activeProject?.mapperNodes || []
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    setMigrationOverhead(data.overhead_cost);
+                } else {
+                    console.error("API Error:", data.error);
+                    alert("Failed to fetch live pricing from Huawei Cloud BSS API.");
+                }
+            } catch (err) {
+                console.error("Network Error:", err);
+            } finally {
                 setIsApiSyncing(false);
-            }, 1500);
+            }
         }
     };
 
@@ -162,20 +172,18 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         </div>
                     </div>
 
-                    {/* 🚨 OVERHEAD SCENARIOS & HELP UI */}
                     <div className="p-8 bg-amber-50/30 space-y-6">
                         <div className="flex justify-between items-center border-b border-amber-200 pb-3">
                             <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-weight-hanging text-amber-500 mr-2"></i> Migration Overhead Calculation</h4>
                             <button onClick={()=>setShowOverheadHelp(true)} className="text-amber-600 hover:bg-amber-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-question-circle mr-1"></i> Help Guide</button>
                         </div>
                         
-                        {/* 🚨 ADDED HISTORICAL AVG BUTTON */}
                         <div className="flex bg-white p-1 rounded-xl border border-amber-200 shadow-sm flex-wrap gap-1">
                             <button onClick={()=>handleScenarioChange('manual')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='manual'?'bg-amber-100 text-amber-800 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>Manual</button>
                             <button onClick={()=>handleScenarioChange('rule_of_thumb')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='rule_of_thumb'?'bg-amber-100 text-amber-800 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>5% Rule</button>
                             <button onClick={()=>handleScenarioChange('historical_avg')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='historical_avg'?'bg-amber-500 text-white shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{isApiSyncing && overheadScenario === 'historical_avg' ? <i className="fas fa-circle-notch fa-spin"></i> : 'Historical Avg'}</button>
                             <button onClick={()=>handleScenarioChange('wbs_high')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='wbs_high'?'bg-amber-100 text-amber-800 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>WBS (High)</button>
-                            <button onClick={()=>handleScenarioChange('wbs_detailed')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='wbs_detailed'?'bg-indigo-600 text-white shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{isApiSyncing && overheadScenario === 'wbs_detailed' ? <i className="fas fa-circle-notch fa-spin"></i> : 'Huawei API Sync'}</button>
+                            <button onClick={()=>handleScenarioChange('wbs_detailed')} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${overheadScenario==='wbs_detailed'?'bg-indigo-600 text-white shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{isApiSyncing && overheadScenario === 'wbs_detailed' ? <i className="fas fa-circle-notch fa-spin"></i> : 'API Sync'}</button>
                         </div>
 
                         <div>
@@ -184,7 +192,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             {overheadScenario === 'rule_of_thumb' && <p className="text-[9px] text-amber-600 font-bold mt-2">Calculated as 5% of MRR per month of migration duration.</p>}
                             {overheadScenario === 'historical_avg' && <p className="text-[9px] text-amber-700 font-bold mt-2">Aggregated from ERP database based on similar successful deployments.</p>}
                             {overheadScenario === 'wbs_high' && <p className="text-[9px] text-amber-600 font-bold mt-2">Calculated based on {totalServers} servers batched across {durationMonths} months.</p>}
-                            {overheadScenario === 'wbs_detailed' && <p className="text-[9px] text-indigo-600 font-bold mt-2">Rates fetched natively from Huawei Cloud Pricing API based on mapped WBS tasks.</p>}
+                            {overheadScenario === 'wbs_detailed' && <p className="text-[9px] text-indigo-600 font-bold mt-2">Rates fetched natively from Huawei Cloud Pricing API based on mapped Blueprint tasks.</p>}
                         </div>
 
                         <div className="flex gap-4">
@@ -195,7 +203,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         <div className="bg-white border border-rose-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                             <div>
                                 <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Total Phase 2 CR Impact</div>
-                                <div className="text-[9px] font-bold text-slate-400">Dynamically synced from Governance</div>
+                                <div className="text-[9px] font-bold text-slate-400">Dynamically synced from Blueprint Governance</div>
                             </div>
                             <div className="text-xl font-black text-rose-600">-${crTotalCost.toLocaleString()}</div>
                         </div>
@@ -223,7 +231,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 </div>
             </div>
 
-            {/* 🚨 FINOPS HELP DRAWER (UPDATED WITH HISTORICAL AVG) */}
             {showOverheadHelp && (
                 <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                     <div className="bg-amber-500 text-white p-6 border-b border-amber-600 flex justify-between items-center shrink-0">
