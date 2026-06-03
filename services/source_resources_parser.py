@@ -6,6 +6,7 @@ Intelligently handles Huawei MgC Exports, dynamic header detection, multi-sheet 
 
 import pandas as pd
 import re
+import csv
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -22,10 +23,10 @@ def find_header_row_and_set(df: pd.DataFrame) -> pd.DataFrame:
     # Set the discovered row as the header
     df.columns = df.iloc[header_idx]
     
-    # 🚨 Drops everything above the header, safely bypassing the MgC super-header
+    # Drops everything above the header, safely bypassing the MgC super-header
     df = df.iloc[header_idx+1:].reset_index(drop=True)
     
-    # CRITICAL FIX: Deduplicate column names. 
+    # Deduplicate column names
     cols = []
     counts = {}
     for c in df.columns:
@@ -56,14 +57,23 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
         
         # 1. Detect File Type and Load ALL Sheets
         if file_lower.endswith('.csv'):
-            dfs['Sheet1'] = pd.read_csv(file_path, header=None, dtype=str)
+            try:
+                # 🚨 ROBUST FIX: Skip bad lines to prevent 400 crashes on dirty CSVs
+                dfs['Sheet1'] = pd.read_csv(file_path, header=None, dtype=str, on_bad_lines='skip')
+            except Exception:
+                # 🚨 PURE PYTHON FALLBACK: If pandas completely chokes, read it manually
+                data = []
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    reader = csv.reader(f)
+                    for row in reader: data.append(row)
+                dfs['Sheet1'] = pd.DataFrame(data)
+                
         elif file_lower.endswith('.tsv') or file_lower.endswith('.txt'):
-            dfs['Sheet1'] = pd.read_csv(file_path, sep='\t', header=None, dtype=str)
+            dfs['Sheet1'] = pd.read_csv(file_path, sep='\t', header=None, dtype=str, on_bad_lines='skip')
         else:
             try:
                 xls = pd.ExcelFile(file_path)
                 for sheet in xls.sheet_names:
-                    # 🚨 Load EVERY sheet into the dictionary concurrently
                     dfs[sheet] = pd.read_excel(file_path, sheet_name=sheet, header=None, dtype=str)
             except ImportError:
                 raise Exception("Missing Excel library. Please run in your terminal: pip install openpyxl")
@@ -92,7 +102,6 @@ def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
             
             # 3. Extract Rows
             for _, row in df.iterrows():
-                # Skip entirely empty rows
                 if all(row[c] == '' or pd.isna(row[c]) for c in df.columns):
                     continue
                     
@@ -117,14 +126,12 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
     """Extracts specs dynamically while normalizing Huawei metrics"""
     try:
         name = None
-        # Find primary identifier
         for col in row.index:
             if str(col).lower() in ['name', 'server_name', 'instance_name', 'hostname']:
                 if row[col] != '': 
                     name = str(row[col]).strip()
                     break
         
-        # Fallback to ID if no name exists
         if not name and 'id' in row.index and row['id'] != '':
             name = str(row['id']).strip()
             
@@ -136,7 +143,6 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
         for col in row.index:
             val = row[col]
             if val == '' or str(val).lower() == 'nan' or 'unnamed' in str(col).lower(): continue
-            
             col_name = str(col).strip()
             
             if isinstance(val, (int, float)):
@@ -144,12 +150,10 @@ def extract_huawei_resource(row, category: str) -> Optional[Dict]:
             else:
                 resource["specs"][col_name] = str(val).strip()
                 
-        # Huawei specific normalizations for UI clarity
         if category == 'servers':
             if 'cpu_cores' in resource["specs"]: resource["specs"]["cpu"] = parse_numeric(resource["specs"]["cpu_cores"])
             if 'mem' in resource["specs"]: 
                 mem_val = parse_numeric(resource["specs"]["mem"])
-                # Huawei MgC often exports memory in bytes. Convert to GB if massive.
                 if mem_val > 1000000:
                     resource["specs"]["ram_gb"] = round(mem_val / (1024**3), 2)
                 else:
