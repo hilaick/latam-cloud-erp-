@@ -105,28 +105,23 @@ def get_live_inventory():
     try:
         data = request.get_json()
         customer_id = data.get('customer_id')
-        project_id = data.get('projectId')
         
-        if customer_id:
-            customer = Customer.query.get(customer_id)
-            if not customer or not customer.ak or not customer.sk:
-                return jsonify({"success": False, "error": "Customer missing or Vault keys incomplete."}), 404
-            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-            discovery_engine = HuaweiDiscovery(
-                encrypted_ak_data=customer.ak,
-                encrypted_sk_data=customer.sk,
-                region=customer.region or data.get('region', 'la-south-2'),
-                master_password=master_password
-            )
-        else:
-            raw_ak = data.get('ak')
-            raw_sk = data.get('sk')
-            region = data.get('region', 'la-south-2')
-            if not raw_ak or not raw_sk:
-                return jsonify({"success": False, "error": "Customer ID or AK/SK required."}), 400
-            from huaweicloudsdkcore.auth.credentials import BasicCredentials
-            discovery_engine = HuaweiDiscovery(None, None, region, None)
-            discovery_engine.credentials = BasicCredentials(raw_ak, raw_sk)
+        # 🚨 STRICT VAULT ENFORCEMENT
+        if not customer_id:
+            return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
+            
+        customer = Customer.query.get(customer_id)
+        if not customer or not customer.ak or not customer.sk:
+            return jsonify({"success": False, "error": "Customer missing or Vault keys incomplete."}), 404
+
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+
+        discovery_engine = HuaweiDiscovery(
+            encrypted_ak_data=customer.ak,
+            encrypted_sk_data=customer.sk,
+            region=customer.region or data.get('region', 'la-south-2'),
+            master_password=master_password
+        )
 
         result = discovery_engine.discover_all()
         
@@ -139,6 +134,7 @@ def get_live_inventory():
         return jsonify({"success": False, "error": f"Vault Decryption Failed. Details: {str(ve)}"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
+
 
 @cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
 @jwt_required()
@@ -155,6 +151,7 @@ def upload_source_resources():
         file_path = upload_dir / filename
         file.save(str(file_path))
         
+        # 🚨 TRUSTING THE PYTHON PARSER
         result = parse_source_resources_excel(str(file_path))
         
         if result.get("success"):
