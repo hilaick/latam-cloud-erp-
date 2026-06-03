@@ -1,10 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 
 export default function GovernanceAndCRView({ activeProject, onUpdateProject }) {
+    const { customPlaybooks, setCustomPlaybooks } = useContext(ERPContext);
+    
     const [isLocked, setIsLocked] = useState(activeProject?.status === 'Approved' || activeProject?.status === 'Locked');
     const [showCRModal, setShowCRModal] = useState(false);
     
-    // 🚨 ADVANCED CR FORM STATE
+    // ADVANCED CR FORM STATE
     const [crTitle, setCrTitle] = useState('');
     const [crReason, setCrReason] = useState('');
     const [crApprover, setCrApprover] = useState('Partner');
@@ -46,6 +49,14 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         alert("Blueprint Locked. Ready for Provisioning.");
     };
 
+    // 🚨 NEW: Admin Override to bypass DTRB fails during testing
+    const handleAdminOverride = () => {
+        if (!window.confirm("ADMIN OVERRIDE: You are bypassing the DTRB Governance Gate for testing purposes. Force lock the architecture?")) return;
+        onUpdateProject(activeProject.id, 'status', 'Approved');
+        setIsLocked(true);
+        alert("Blueprint Locked via Admin Override.");
+    };
+
     const handleSubmitCR = () => {
         if (!crTitle || !crReason) return alert("Please fill out the CR Title and Reason.");
         
@@ -61,8 +72,35 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
             status: crType === 'major' ? 'Pending Phase 2 Spinoff' : 'Approved & Unlocked'
         };
 
+        // 🚨 AUTOMATED PLAYBOOK FEEDBACK LOOP (Properly formatted for WBS)
         if (updatePlaybook) {
-            alert(`Automated Feedback Loop Triggered.\n\nAdded to Master Playbook:\n"Verify [${crResource}] configuration to prevent: ${crTitle}"`);
+            const masterPb = customPlaybooks['default_vm'] || { name: 'Standard VM Lift & Shift', tasks: [] };
+            
+            // Format strictly as a Playbook Task Object
+            const newLessonTask = {
+                id: `lesson-${Date.now()}`,
+                name: `[DTRB LESSON] Verify ${crResource} configuration`,
+                prog: "0%",
+                resp: "Lead Architect",
+                start: "",
+                end: "",
+                isParent: false,
+                notes: `Root Cause: ${crReason}. \nPrevention: Ensure ${crTitle} is evaluated before execution phase.`
+            };
+            
+            const updatedMasterPb = { ...masterPb, tasks: [...masterPb.tasks, newLessonTask] };
+            const newPlaybooksState = { ...customPlaybooks, 'default_vm': updatedMasterPb };
+            
+            // Update Context and Backend DB
+            setCustomPlaybooks(newPlaybooksState);
+            const token = localStorage.getItem('erp_jwt_token');
+            fetch('/api/erp/playbooks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(newPlaybooksState)
+            });
+            
+            alert(`Automated Feedback Loop Triggered.\n\nSuccessfully appended to Master Playbook:\nTask: "[DTRB LESSON] Verify ${crResource} configuration"`);
         }
 
         onUpdateProject(activeProject.id, 'changeRequests', [...changeRequests, newCR]);
@@ -171,7 +209,12 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 </div>
 
                 {!isLocked && (
-                    <div className="flex justify-end pt-6 border-t border-slate-200">
+                    <div className="flex justify-end pt-6 border-t border-slate-200 gap-4">
+                        {/* 🚨 ADMIN OVERRIDE BUTTON */}
+                        <button onClick={handleAdminOverride} className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95 border border-slate-700">
+                            <i className="fas fa-shield-alt mr-2"></i> Admin Override
+                        </button>
+                        
                         <button onClick={handleLockArchitecture} className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-widest shadow-md transition-transform active:scale-95 text-white ${score >= 80 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
                             {score >= 80 ? <><i className="fas fa-file-signature mr-2"></i> Lock & Approve Blueprint</> : <><i className="fas fa-exclamation-triangle mr-2"></i> Acknowledge Risks & Lock</>}
                         </button>
