@@ -49,11 +49,19 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         alert("Blueprint Locked. Ready for Provisioning.");
     };
 
-    const handleAdminOverride = () => {
+    // 🚨 ADMIN OVERRIDE BUTTONS
+    const handleAdminOverrideLock = () => {
         if (!window.confirm("ADMIN OVERRIDE: You are bypassing the DTRB Governance Gate for testing purposes. Force lock the architecture?")) return;
         onUpdateProject(activeProject.id, 'status', 'Approved');
         setIsLocked(true);
         alert("Blueprint Locked via Admin Override.");
+    };
+
+    const handleAdminUnlock = () => {
+        if (!window.confirm("ADMIN OVERRIDE: You are bypassing the CR Governance Gate for testing. Force unlock the blueprint?")) return;
+        onUpdateProject(activeProject.id, 'status', 'Draft');
+        setIsLocked(false);
+        alert("Blueprint Unlocked via Admin Override.");
     };
 
     const handleSubmitCR = () => {
@@ -130,6 +138,10 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                         <div className="text-[9px] text-emerald-600 font-bold">Approved for Provisioning Phase</div>
                                     </div>
                                 </div>
+                                {/* 🚨 ADMIN UNLOCK BUTTON */}
+                                <button onClick={handleAdminUnlock} className="px-6 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest border border-rose-200 shadow-sm flex items-center gap-2 transition-colors">
+                                    <i className="fas fa-unlock"></i> [Admin] Force Unlock
+                                </button>
                                 <button onClick={()=>setShowCRModal(true)} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-edit mr-2"></i> Raise CR</button>
                             </>
                         ) : (
@@ -207,7 +219,8 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 {!isLocked && (
                     <div className="flex justify-between items-center pt-6 border-t border-slate-200 gap-4">
                         <div className="flex-1">
-                            <button onClick={handleAdminOverride} className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors border border-rose-200 flex items-center gap-2 shadow-sm">
+                            {/* 🚨 ADMIN OVERRIDE LOCK BUTTON */}
+                            <button onClick={handleAdminOverrideLock} className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors border border-rose-200 flex items-center gap-2 shadow-sm">
                                 <i className="fas fa-shield-alt"></i> [Admin Override] Force Lock
                             </button>
                         </div>
@@ -256,7 +269,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
 
                         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                             <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">4. What is Admin Override?</h4>
-                            <p className="text-xs text-slate-700">During rapid prototyping or testing, you can use the <strong>[Admin Override] Force Lock</strong> button to bypass failing DTRB scores and instantly advance the project to Phase 3.</p>
+                            <p className="text-xs text-slate-700">During rapid prototyping or testing, you can use the <strong>[Admin Override] Force Lock</strong> or <strong>Force Unlock</strong> buttons to instantly bypass failing scores and strict CR governance.</p>
                         </div>
                     </div>
                 </div>
