@@ -13,7 +13,7 @@ export default function FinOpsDashboard() {
         setProjects(prev => prev.map(p => {
             if (String(p.id) === String(id)) {
                 const newProject = { ...p, [field]: value };
-                fetch('/api/erp/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProject) });
+                fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newProject) });
                 return newProject;
             }
             return p;

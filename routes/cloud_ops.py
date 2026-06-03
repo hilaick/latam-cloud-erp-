@@ -1,142 +1,191 @@
-from flask import Blueprint, request, jsonify
-from models import db, ProjectData
+import os
 import json
-import requests
-from huaweicloudsdkcore.signer.signer import Signer
-from huaweicloudsdkcore.sdk_request import SdkRequest
-from huaweicloudsdkcore.auth.credentials import BasicCredentials
-from urllib.parse import urlparse
-import time
+import subprocess
+from pathlib import Path
+from flask import Blueprint, request, jsonify
+
+# 🚨 UPDATED: Using JWT instead of Basic Auth
+from flask_jwt_extended import jwt_required
+from services.resource_parser import parse_resource_log, get_all_deployments
+from services.huawei_load_balancer import HuaweiLoadBalancer
+
+# 🚨 NEW IMPORTS for Safe Read-Only Discovery
+from models import Customer
+from services.huawei_discovery import HuaweiDiscovery
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
+PROJECT_ROOT = Path(__file__).parent.parent
 
-@cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
-def cloud_inventory():
+# Initialize load balancer globally to prevent memory leaks
+huawei_lb = HuaweiLoadBalancer()
+
+@cloud_ops_bp.route('/api/audit', methods=['POST'])
+@jwt_required()
+def run_audit():
     try:
-        req = request.json
-        project_id_db = req.get('projectId')  # This is our internal SQLite Project ID
+        data = request.get_json()
+        ak, sk, region = data.get('ak'), data.get('sk'), data.get('region', 'ap-southeast-3')
+        if not ak or not sk: return jsonify({"error": "AK and SK are required"}), 400
         
-        # PR #25 SECURITY FIX: Backend fetches AK/SK directly from SQLite
-        project_record = ProjectData.query.get(project_id_db)
-        if not project_record:
-            return jsonify({"success": False, "error": "Project not found in database."}), 404
-            
-        project_data = json.loads(project_record.data)
-        profile = project_data.get('customerProfile', {})
-        ak = profile.get('ak')
-        sk = profile.get('sk')
-        region = profile.get('region', 'la-south-2')
-        hw_project_id = profile.get('projectId')  # The actual Huawei Cloud Project ID
+        result = subprocess.run(['bash', 'scripts/audit_quick.sh', ak, sk, region], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0: return jsonify({"error": result.stderr}), 500
         
-        if not all([ak, sk, hw_project_id]):
-            return jsonify({"success": False, "error": "Customer AK/SK or Huawei Project ID missing in CRM profile."}), 400
-        
-        # Huawei Cloud ECS API endpoint
-        endpoint = f"https://ecs.{region}.myhuaweicloud.com"
-        
-        # Create credentials for signing
-        credentials = BasicCredentials(ak, sk, hw_project_id)
-        signer = Signer(credentials)
-        
-        # Get ECS instances
-        parsed_url = urlparse(f"{endpoint}/v1/{hw_project_id}/cloudservers/detail")
-        sdk_request = SdkRequest(
-            method="GET",
-            schema=parsed_url.scheme,
-            host=parsed_url.netloc,
-            resource_path=parsed_url.path,
-            query_params=[("limit", "100"), ("offset", "0")],
-            header_params={
-                "Content-Type": "application/json",
-                "X-Project-Id": hw_project_id
-            }
-        )
-        signed_request = signer.sign(sdk_request)
-        
-        url = f"{endpoint}/v1/{hw_project_id}/cloudservers/detail?limit=100&offset=0"
-        response = requests.get(url, headers=signed_request.header_params, timeout=15)
-        
-        if response.status_code >= 400:
-            return jsonify({
-                "success": False, 
-                "error": f"Huawei Cloud ECS API Error {response.status_code}: {response.text}"
-            }), response.status_code
-        
-        data = response.json()
-        servers = data.get('servers', [])
-        
-        # Format the response
-        inventory = []
-        for server in servers:
-            server_info = {
-                "id": server.get('id', ''),
-                "name": server.get('name', ''),
-                "status": server.get('status', ''),
-                "flavor": server.get('flavor', {}).get('id', ''),
-                "image": server.get('image', {}).get('id', ''),
-                "addresses": server.get('addresses', {}),
-                "created": server.get('created', ''),
-                "availability_zone": server.get('OS-EXT-AZ:availability_zone', ''),
-                "power_state": server.get('OS-EXT-STS:power_state', 0),
-                "vm_state": server.get('OS-EXT-STS:vm_state', ''),
-                "task_state": server.get('OS-EXT-STS:task_state', '')
-            }
-            inventory.append(server_info)
-        
-        return jsonify({
-            "success": True,
-            "inventory": inventory,
-            "count": len(inventory),
-            "region": region
-        })
-        
+        audit_file = PROJECT_ROOT / 'deployments' / 'huawei_resources.log'
+        if audit_file.exists():
+            with open(audit_file, 'r') as f: content = f.read()
+            return jsonify({"message": "Audit completed", "resources": parse_resource_log(content), "raw_output": result.stdout})
+        return jsonify({"message": "Audit completed but no resources file found", "raw_output": result.stdout})
     except Exception as e:
-        db.session.rollback()  # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        return jsonify({"error": str(e)}), 500
 
-@cloud_ops_bp.route('/api/deploy/landing_zone', methods=['POST'])
-def deploy_landing_zone():
+@cloud_ops_bp.route('/api/deploy', methods=['POST'])
+@jwt_required()
+def deploy():
     try:
-        req = request.json
-        project_id = req.get('projectId')
+        data = request.get_json()
+        ak, sk, resources = data.get('ak'), data.get('sk'), data.get('resources', [])
+        if not ak or not sk: return jsonify({"error": "AK and SK are required"}), 400
         
-        if not project_id:
-            return jsonify({"success": False, "error": "projectId required"}), 400
-        
-        # Fetch project data
-        project = ProjectData.query.get(project_id)
-        if not project:
-            return jsonify({"success": False, "error": "Project not found"}), 404
-        
-        project_data = json.loads(project.data)
-        customer_profile = project_data.get('customerProfile', {})
-        
-        # Simulate deployment (in a real implementation, this would call Huawei Cloud APIs)
-        deployment_id = f"lz-{int(time.time())}"
-        
-        # Update project with deployment info
-        project_data['landingZone'] = {
-            "deploymentId": deployment_id,
-            "status": "deployed",
-            "timestamp": time.time(),
-            "vpcId": f"vpc-{deployment_id}",
-            "subnets": ["subnet-a", "subnet-b"],
-            "securityGroups": ["sg-default"],
-            "region": customer_profile.get('region', 'la-south-2')
+        from datetime import datetime
+        deployment_log = {
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "region": data.get('region', 'ap-southeast-3'),
+            "resources": resources,
+            "status": "requested"
         }
         
-        project.data = json.dumps(project_data)
-        db.session.commit()
+        log_file = PROJECT_ROOT / 'deployments' / f"deployment_{int(datetime.now().timestamp())}.json"
+        os.makedirs(PROJECT_ROOT / 'deployments', exist_ok=True)
+        with open(log_file, 'w') as f: json.dump(deployment_log, f, indent=2)
         
-        return jsonify({
-            "success": True,
-            "deploymentId": deployment_id,
-            "message": "Landing zone deployment simulated successfully",
-            "details": project_data['landingZone']
-        })
-        
+        return jsonify({"message": "Deployment request received", "log_file": str(log_file), "deployment": deployment_log})
     except Exception as e:
-        db.session.rollback()  # PR #25 FIX: Prevent SQLite locking
-        import traceback
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        return jsonify({"error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/cleanup', methods=['POST'])
+@jwt_required()
+def cleanup():
+    try:
+        data = request.get_json()
+        from datetime import datetime
+        cleanup_log = {
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "region": data.get('region', 'ap-southeast-3'),
+            "resource_ids": data.get('resource_ids', []),
+            "status": "requested"
+        }
+        log_file = PROJECT_ROOT / 'deployments' / f"cleanup_{int(datetime.now().timestamp())}.json"
+        os.makedirs(PROJECT_ROOT / 'deployments', exist_ok=True)
+        with open(log_file, 'w') as f: json.dump(cleanup_log, f, indent=2)
+        return jsonify({"message": "Cleanup request received", "log_file": str(log_file), "cleanup": cleanup_log})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/status', methods=['GET'])
+def status():
+    try:
+        deployments = get_all_deployments(str(PROJECT_ROOT / 'deployments'))
+        return jsonify({
+            "status": "online",
+            "deployments": deployments,
+            "message": f"Found {len(deployments)} deployments" if deployments else "No deployments found"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/logs', methods=['GET'])
+@jwt_required()
+def get_logs():
+    try:
+        log_file = PROJECT_ROOT / 'deployments' / 'huawei_resources.log'
+        if log_file.exists():
+            with open(log_file, 'r') as f: return jsonify({"logs": f.read()})
+        return jsonify({"message": "No logs found"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/huawei/chat', methods=['POST'])
+@jwt_required()
+def huawei_chat():
+    try:
+        message = request.get_json().get('message', '')
+        if not message: return jsonify({"error": "Message is required"}), 400
+        return jsonify({"response": huawei_lb.chat(message), "key_used": huawei_lb.current_key_index, "total_keys": len(huawei_lb.api_keys)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/huawei/keys/status', methods=['GET'])
+@jwt_required()
+def huawei_keys_status():
+    try:
+        return jsonify({
+            "total_keys": len(huawei_lb.api_keys),
+            "active_keys": huawei_lb.get_active_key_count(),
+            "keys": [{"index": i, "is_active": k.get('is_active', True)} for i, k in enumerate(huawei_lb.api_keys)]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 🚨 NEW: SECURE DISCOVERY ROUTE
+@cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
+@jwt_required()
+def get_live_inventory():
+    """
+    Safely discovers live infrastructure on Huawei Cloud using Read-Only credentials.
+    Triggered by the 'Live Cloud NOC' or 'Pre-Sales Radar' in the frontend.
+    """
+    try:
+        data = request.get_json()
+        customer_id = data.get('customer_id')
+        project_id = data.get('projectId') # Huawei specific project ID
+        
+        # NOTE: Frontend currently sends ak/sk directly in LiveCloudNOC, 
+        # but relying on customer_id + DB lookup is vastly more secure. 
+        # We will attempt DB lookup first, fallback to passed keys for testing.
+        
+        if customer_id:
+            # 1. Fetch the customer's encrypted Vault from Postgres
+            customer = Customer.query.get(customer_id)
+            if not customer or not customer.ak or not customer.sk:
+                return jsonify({"success": False, "error": "Customer missing or Vault keys incomplete."}), 404
+
+            # 2. Get the Master Password (in a real app, this comes from the user's session/JWT)
+            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+
+            # 3. Initialize the Read-Only Discovery Engine
+            discovery_engine = HuaweiDiscovery(
+                encrypted_ak_data=customer.ak,
+                encrypted_sk_data=customer.sk,
+                region=customer.region or data.get('region', 'la-south-2'),
+                master_password=master_password
+            )
+        else:
+            # Fallback for frontend test mode (where raw AK/SK are passed directly)
+            raw_ak = data.get('ak')
+            raw_sk = data.get('sk')
+            region = data.get('region', 'la-south-2')
+            
+            if not raw_ak or not raw_sk:
+                return jsonify({"success": False, "error": "Customer ID or AK/SK required."}), 400
+                
+            from huaweicloudsdkcore.auth.credentials import BasicCredentials
+            discovery_engine = HuaweiDiscovery(None, None, region, None)
+            discovery_engine.credentials = BasicCredentials(raw_ak, raw_sk)
+
+        # 4. Execute the safe scan
+        result = discovery_engine.discover_all()
+        
+        if result.get("success"):
+            return jsonify({
+                "success": True, 
+                "inventory": result.get("inventory"),
+                "message": "Discovery completed safely."
+            })
+        else:
+            return jsonify({"success": False, "error": result.get("error")}), 500
+
+    except ValueError as ve:
+        # Catches decryption errors (e.g., wrong master password or tampered keys)
+        return jsonify({"success": False, "error": str(ve)}), 401
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500

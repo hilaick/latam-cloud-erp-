@@ -30,9 +30,11 @@ if [ ! -f "app.py" ]; then
     exit 1
 fi
 
-if [ ! -f "templates/index.html" ]; then
-    echo "❌ Dashboard HTML not found: templates/index.html"
-    exit 1
+# Check if Vite build exists (new architecture)
+if [ ! -f "frontend/dist/index.html" ]; then
+    echo "⚠️  Vite build not found. Building frontend..."
+    cd frontend && npm run build
+    cd ..
 fi
 
 echo "✅ Starting Flask API on port 9119..."

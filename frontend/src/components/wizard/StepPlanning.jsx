@@ -1,104 +1,30 @@
 import React, { useState } from 'react';
+import FinOpsCalculator from './FinOpsCalculator';
+import DedicatedMigrationPlan from './DedicatedMigrationPlan';
+import CutoverRunbookView from './CutoverRunbookView';
+import PhysicsEngine from './PhysicsEngine';
 
-export default function StepPlanning({ project, onUpdateProject }) {
-    const [subTab, setSubTab] = useState('runbook');
-    const plan = project.migrationPlan || [];
-    const runbook = project.runbook || [];
-    const oraRules = project.physicsData?.frictionProfile?.downtime || "Standard Weekend Outage Only";
-    
-    const [taskId, setTaskId] = useState('');
-    const [windowDate, setWindowDate] = useState('');
-    const [estHours, setEstHours] = useState('');
-
-    const handleAddRunbookEntry = () => {
-        if (!taskId || !windowDate || !estHours) return alert("Task, Date, and Estimated Hours required.");
-        const taskName = plan.find(t => String(t.id) === String(taskId))?.name || 'Unknown Task';
-        const newEntry = { id: 'rb_'+Date.now(), taskId, taskName, windowDate, estHours: parseFloat(estHours), actualHours: 0 };
-        onUpdateProject(project.id, 'runbook', [...runbook, newEntry]);
-        setTaskId(''); setWindowDate(''); setEstHours('');
-    };
-
-    const handleDeleteEntry = (entryId) => {
-        onUpdateProject(project.id, 'runbook', runbook.filter(x => String(x.id) !== String(entryId)));
-    };
+export default function StepPlanning({ project, onUpdateProject, onPromote, isCurrent, customPlaybooks }) {
+    const [subTab, setSubTab] = useState('physics');
+    const isPoC = project?.project_type === 'poc';
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex gap-4 mb-8 border-b border-slate-200 pb-4 overflow-x-auto">
-                <button onClick={()=>setSubTab('wbs')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm whitespace-nowrap ${subTab==='wbs'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-sitemap mr-2"></i> WBS Summary</button>
-                <button onClick={()=>setSubTab('runbook')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm whitespace-nowrap ${subTab==='runbook'?'bg-purple-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-calendar-alt mr-2"></i> Cutover Runbook</button>
+        <div className="animate-fade-in">
+            <div className="px-4 md:px-8 py-5 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center rounded-t-2xl gap-4">
+                <div className="flex flex-wrap gap-2">
+                    <button onClick={()=>setSubTab('physics')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='physics'?'bg-rose-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-water mr-2 hidden sm:inline"></i> 1. Wave Physics SLA</button>
+                    <button onClick={()=>setSubTab('budget')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='budget'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-file-invoice-dollar mr-2 hidden sm:inline"></i> 2. FinOps Budget</button>
+                    <button onClick={()=>setSubTab('plan')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='plan'?'bg-blue-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-tasks mr-2 hidden sm:inline"></i> 3. WBS & RACI Matrix</button>
+                    <button onClick={()=>setSubTab('runbook')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='runbook'?'bg-purple-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-calendar-alt mr-2 hidden sm:inline"></i> 4. Cutover Runbook</button>
+                </div>
+                {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Lock Plan & Execute <i className="fas fa-rocket ml-2"></i></button>}
             </div>
-
-            {subTab === 'runbook' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                        <div>
-                            <h3 className="font-black text-xl text-slate-800"><i className="fas fa-calendar-alt text-purple-500 mr-2"></i> Cutover Runbook</h3>
-                            <p className="text-xs text-slate-500 mt-1">Schedule critical maintenance windows based on ORA friction rules.</p>
-                        </div>
-                        <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-right">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-rose-500">ORA Friction Rule</div>
-                            <div className="text-xs font-bold text-rose-800">{oraRules}</div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex flex-wrap gap-4 items-end">
-                        <div className="flex-1 min-w-[200px]">
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Critical Task</label>
-                            <select value={taskId} onChange={e=>setTaskId(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-purple-500">
-                                <option value="">-- Select WBS Task --</option>
-                                {plan.filter(t => !t.isParent).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Window</label>
-                            <input type="datetime-local" value={windowDate} onChange={e=>setWindowDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-purple-500" />
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Hrs</label>
-                            <input type="number" step="0.5" value={estHours} onChange={e=>setEstHours(e.target.value)} className="w-24 p-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-purple-500" placeholder="0.0" />
-                        </div>
-                        <button onClick={handleAddRunbookEntry} className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black shadow-md transition-colors h-[34px]">Add</button>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 uppercase text-slate-500 text-[10px]">
-                                <tr>
-                                    <th className="p-3 rounded-tl-lg">Task</th>
-                                    <th className="p-3">Maintenance Window</th>
-                                    <th className="p-3">Est. Hours</th>
-                                    <th className="p-3 text-center rounded-tr-lg">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {runbook.length === 0 ? (
-                                    <tr><td colSpan="4" className="p-8 text-center text-slate-400 font-bold border border-t-0 border-slate-100 rounded-b-lg">No cutovers scheduled yet. Select a WBS task to begin.</td></tr>
-                                ) : (
-                                    runbook.map(r => (
-                                        <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50">
-                                            <td className="p-3 font-bold text-slate-700">{r.taskName}</td>
-                                            <td className="p-3 font-mono text-blue-600">{new Date(r.windowDate).toLocaleString()}</td>
-                                            <td className="p-3 font-black text-slate-700">{r.estHours}h</td>
-                                            <td className="p-3 text-center">
-                                                <button onClick={() => handleDeleteEntry(r.id)} className="text-rose-500 hover:text-rose-700 p-1 bg-rose-50 rounded hover:bg-rose-100 transition-colors"><i className="fas fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-            
-            {subTab === 'wbs' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
-                    <i className="fas fa-sitemap text-4xl text-emerald-500 opacity-50 mb-4"></i>
-                    <h3 className="font-black text-xl text-slate-800 mb-2">WBS Plan Lock</h3>
-                    <p className="text-xs text-slate-500">WBS tracking is handled actively in the Execution phase. Use the Cutover Runbook tab to schedule critical maintenance windows.</p>
-                </div>
-            )}
+            <div className="p-4 md:p-8 bg-slate-100/50 rounded-b-2xl border-x border-b border-slate-200">
+                {subTab === 'physics' && <PhysicsEngine project={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'budget' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} isPoC={isPoC} />}
+                {subTab === 'plan' && <DedicatedMigrationPlan project={project} onUpdateProject={onUpdateProject} customPlaybooks={customPlaybooks} />}
+                {subTab === 'runbook' && <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />}
+            </div>
         </div>
     );
 }

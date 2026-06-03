@@ -6,18 +6,25 @@ db = SQLAlchemy()
 
 def setup_db(app):
     database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    else:
-        basedir = os.path.abspath(os.path.dirname(__file__))
-        db_path = os.path.join(basedir, 'instance', 'erp_database.db')
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    
+    # 🚨 STRICT ENFORCEMENT: No more SQLite fallback!
+    if not database_url:
+        raise ValueError("CRITICAL ERROR: DATABASE_URL is missing from .env. PostgreSQL is strictly required.")
+    
+    # Fix for newer SQLAlchemy versions that require 'postgresql://'
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
         
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
     db.init_app(app)
     with app.app_context():
         db.create_all()
+
+# ==========================================
+# ENTERPRISE DATABASE SCHEMA
+# ==========================================
 
 class ProjectData(db.Model):
     __tablename__ = 'projects'
@@ -55,20 +62,19 @@ class Customer(db.Model):
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'
     id = db.Column(db.String(50), primary_key=True)
-    user_id = db.Column(db.String(50), nullable=False)  # Reference to ERP user
+    user_id = db.Column(db.String(50), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     encrypted_ak = db.Column(db.Text, nullable=False)
     encrypted_sk = db.Column(db.Text, nullable=False)
-    iv = db.Column(db.String(32), nullable=False)  # Initialization vector for AES-GCM
-    tag = db.Column(db.String(32), nullable=False)  # Authentication tag for AES-GCM
+    iv = db.Column(db.String(32), nullable=False)
+    tag = db.Column(db.String(32), nullable=False)
     default_region = db.Column(db.String(50), default='ap-southeast-3')
     is_active = db.Column(db.Boolean, default=True)
     last_used = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     migration_tasks = db.relationship('MigrationTask', backref='account', lazy=True)
 
 class MigrationTask(db.Model):
@@ -79,10 +85,10 @@ class MigrationTask(db.Model):
     source_server_id = db.Column(db.String(100))
     source_server_name = db.Column(db.String(200))
     target_region = db.Column(db.String(50))
-    status = db.Column(db.String(50), default='created')  # created, running, completed, failed, cancelled
-    progress = db.Column(db.Integer, default=0)  # 0-100
-    config = db.Column(db.Text)  # JSON string of migration parameters
-    huawei_task_id = db.Column(db.String(100))  # Huawei SMS task ID
+    status = db.Column(db.String(50), default='created')
+    progress = db.Column(db.Integer, default=0)
+    config = db.Column(db.Text)
+    huawei_task_id = db.Column(db.String(100))
     started_at = db.Column(db.DateTime)
     completed_at = db.Column(db.DateTime)
     error_message = db.Column(db.Text)
@@ -100,3 +106,25 @@ class WBSTask(db.Model):
     start_date = db.Column(db.String(50))
     end_date = db.Column(db.String(50))
     is_parent = db.Column(db.Boolean, default=False)
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(50), nullable=False, default="Sales")
+    status = db.Column(db.String(50), nullable=False, default="Pending")
+    is_2fa = db.Column(db.Boolean, default=False)
+    last_login = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'role': self.role,
+            'status': self.status,
+            'is_2fa': self.is_2fa,
+            'last_login': self.last_login.strftime('%Y-%m-%d %H:%M') if self.last_login else "Never"
+        }
