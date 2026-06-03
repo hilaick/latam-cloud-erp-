@@ -6,7 +6,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
     
-    // 🚨 Ensure hasData triggers if we have mgcData set (even if arrays are empty)
     const hasData = activeProject?.mgcData !== undefined && activeProject?.mgcData !== null;
 
     useEffect(() => {
@@ -21,7 +20,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         fetchTools();
     }, []);
 
-    // 🚨 STRICT LIVE API SCAN (NO MOCKS, VAULT ONLY)
     const handleLiveScan = async () => {
         if (!activeProject.customerId) {
             alert("Discovery Error: No Customer linked to this project.\n\nPlease link this project to a Customer with valid Vault Credentials in the CRM or Edit Context tab to run a secure live scan.");
@@ -43,12 +41,17 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                // Align Python keys with React structure
+                // Merge with existing data if present
+                const existingCompute = activeProject.mgcData?.raw_inventory?.compute || [];
+                const existingDBs = activeProject.mgcData?.raw_inventory?.databases || [];
+                const existingStorage = activeProject.mgcData?.raw_inventory?.storage || [];
+                const existingNetwork = activeProject.mgcData?.raw_inventory?.network || [];
+
                 const inventory = {
-                    compute: data.inventory.compute || [],
-                    databases: data.inventory.databases || data.inventory.database || [],
-                    storage: data.inventory.storage || [],
-                    network: data.inventory.network || []
+                    compute: [...existingCompute, ...(data.inventory.compute || [])],
+                    databases: [...existingDBs, ...(data.inventory.databases || data.inventory.database || [])],
+                    storage: [...existingStorage, ...(data.inventory.storage || [])],
+                    network: [...existingNetwork, ...(data.inventory.network || [])]
                 };
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
                 alert("MgC Discovery Scan Complete. Live data fetched successfully.");
@@ -62,7 +65,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         }
     };
 
-    // 🚨 STRICT OFFLINE EXCEL IMPORT (TRUSTING PYTHON PARSER)
     const handleOfflineUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -80,16 +82,26 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                // Trusting the Python dict mapping and standardizing the keys
+                // Merge imported data with any existing data (e.g. from a prior live scan)
+                const existingCompute = activeProject.mgcData?.raw_inventory?.compute || [];
+                const existingDBs = activeProject.mgcData?.raw_inventory?.databases || [];
+                const existingStorage = activeProject.mgcData?.raw_inventory?.storage || [];
+                const existingNetwork = activeProject.mgcData?.raw_inventory?.network || [];
+
+                const newCompute = data.resources.servers || data.resources.compute || [];
+                const newDBs = data.resources.databases || data.resources.database || [];
+                const newStorage = data.resources.storage || [];
+                const newNetwork = data.resources.network || [];
+
                 const inventory = {
-                    compute: data.resources.servers || data.resources.compute || [],
-                    databases: data.resources.databases || data.resources.database || [],
-                    storage: data.resources.storage || [],
-                    network: data.resources.network || []
+                    compute: [...existingCompute, ...newCompute],
+                    databases: [...existingDBs, ...newDBs],
+                    storage: [...existingStorage, ...newStorage],
+                    network: [...existingNetwork, ...newNetwork]
                 };
 
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
-                alert(`Offline Discovery Complete. Parsed ${inventory.compute.length} compute nodes successfully.`);
+                alert(`Offline Discovery Complete. Appended ${newCompute.length} compute nodes to the inventory.`);
             } else { 
                 alert(`Parse Error: ${data.error}`); 
             }
@@ -127,10 +139,26 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <p className="text-xs text-slate-500 mt-2 font-medium">Fetch the "As-Is" technical reality via Live API or Offline Import.</p>
                     </div>
                     
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                         <button onClick={()=>setShowDiscoveryHelp(true)} className="px-4 py-2 bg-slate-50 text-slate-600 border border-slate-300 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-colors shadow-sm">
                             <i className="fas fa-question-circle mr-2"></i> Help Guide
                         </button>
+
+                        {/* 🚨 ALWAYS VISIBLE: API Sync & Offline Import Buttons if data already exists */}
+                        {hasData && (
+                            <>
+                                <button onClick={handleLiveScan} disabled={isScanning} className="px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-colors shadow-sm disabled:opacity-50">
+                                    {isScanning ? <><i className="fas fa-spinner fa-spin mr-2"></i> Syncing...</> : <><i className="fas fa-sync-alt mr-2"></i> Sync API</>}
+                                </button>
+                                
+                                <div className="relative">
+                                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleOfflineUpload} disabled={isScanning} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" />
+                                    <button className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm pointer-events-none disabled:opacity-50">
+                                        {isScanning ? <><i className="fas fa-spinner fa-spin mr-2"></i> Parsing...</> : <><i className="fas fa-file-excel mr-2"></i> Append File</>}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -166,7 +194,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner md:col-span-2">
                             <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
                                 <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest"><i className="fas fa-server text-blue-500 mr-2"></i> Discovered Compute & Databases</h4>
-                                <button onClick={()=>onUpdateProject(activeProject.id, 'mgcData', null)} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear Data</button>
+                                <button onClick={()=>onUpdateProject(activeProject.id, 'mgcData', null)} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear All Data</button>
                             </div>
                             <div className="space-y-3">
                                 {activeProject.mgcData.raw_inventory?.compute?.map(c => (
@@ -187,6 +215,9 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                         </div>
                                     </div>
                                 ))}
+                                {(activeProject.mgcData.raw_inventory?.compute?.length === 0 && activeProject.mgcData.raw_inventory?.databases?.length === 0) && (
+                                    <div className="text-xs text-slate-400 italic">No compute or database resources found.</div>
+                                )}
                             </div>
                         </div>
                         
@@ -200,6 +231,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                             <div className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100">{n.cidr || n.id}</div>
                                         </div>
                                     ))}
+                                    {activeProject.mgcData.raw_inventory?.network?.length === 0 && <div className="text-xs text-slate-400 italic">No network resources found.</div>}
                                 </div>
                             </div>
                             <div>
@@ -211,6 +243,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                             <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{s.source || 'Storage Volume'}</div>
                                         </div>
                                     ))}
+                                    {activeProject.mgcData.raw_inventory?.storage?.length === 0 && <div className="text-xs text-slate-400 italic">No storage resources found.</div>}
                                 </div>
                             </div>
                         </div>
@@ -228,7 +261,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <p className="text-xs text-slate-400 mt-1 font-medium">Official execution strategies ready to apply based on discovered inventory.</p>
                         </div>
                         <div className="bg-slate-900 px-4 py-2 rounded-lg border border-slate-700 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                            <i className="fas fa-check-circle mr-2"></i> Engine Synced
+                            <i className="fas fa-check-circle mr-2"></i> API Synced
                         </div>
                     </div>
 
