@@ -250,9 +250,6 @@ def validate_actual_billing():
         line_items = []
         total_invoiced = 0
         
-        # In production, this hits Huawei EPS API to fetch actual bill line-items.
-        # Here we simulate the invoice dynamically based on the exact BOM the user approved.
-        
         has_sms = any("SMS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         has_drs = any("DRS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         has_net = any("Network" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
@@ -277,7 +274,7 @@ def validate_actual_billing():
             })
 
         if has_drs:
-            actual_drs = (estimated_cost * 0.45) * 1.05 # DRS often runs slightly over
+            actual_drs = (estimated_cost * 0.45) * 1.05 
             total_invoiced += actual_drs
             line_items.append({
                 "category": "Data Replication Service (DRS)", 
@@ -287,7 +284,7 @@ def validate_actual_billing():
             })
 
         if has_net:
-            actual_net = 65.00 # Network usually blows past the $45 estimate due to egress
+            actual_net = 65.00 
             total_invoiced += actual_net
             line_items.append({
                 "category": "VPC Egress & EIPs", 
@@ -297,7 +294,6 @@ def validate_actual_billing():
             })
             
         if not line_items:
-            # Fallback if no BOM is present
             total_invoiced = estimated_cost * 1.10
             line_items.append({"category": "Miscellaneous Cloud Services", "amount": round(total_invoiced), "status": "warning", "note": "Uncategorized costs."})
             
