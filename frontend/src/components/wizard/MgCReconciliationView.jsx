@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
 export default function MgCReconciliationView({ activeProject, onUpdateProject }) {
-    const [scanMode, setScanMode] = useState('live'); // 'live' or 'offline'
+    const [scanMode, setScanMode] = useState('live'); 
     const [isScanning, setIsScanning] = useState(false);
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
     const hasData = !!activeProject?.mgcData;
 
-    // Fetch official Huawei Tool Matrix
     useEffect(() => {
         const fetchTools = async () => {
             try {
@@ -20,51 +19,41 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         fetchTools();
     }, []);
 
-    // 🚨 SMART FALLBACK LOGIC
-    // If the real API fails due to missing AK/SK or parse errors during testing, 
-    // inject the prototype data so the user can continue the workflow.
-    const applyMockData = (successMsg, errorMsg) => {
-        console.warn(`API Error: ${errorMsg}. Injecting mock data for prototype continuity.`);
-        const mockData = {
-            raw_inventory: {
-                compute: [
-                    { id: "ecs-1", name: "PRD-DB-01", type: "ECS", ip: "10.0.1.5", region: "la-south-2", source: "VMware" },
-                    { id: "ecs-2", name: "PRD-APP-01", type: "ECS", ip: "10.0.1.6", region: "la-south-2", source: "AWS EC2" }
-                ],
-                network: [
-                    { id: "vpc-1", name: "VPC-Production", type: "VPC", cidr: "10.0.0.0/16", region: "la-south-2" }
-                ],
-                storage: [
-                    { id: "obs-1", name: "backup-archive-bucket", type: "OBS", source: "AWS S3" }
-                ]
-            },
-            diagnostics: ["Successfully authenticated to la-south-2."]
-        };
-        onUpdateProject(activeProject.id, 'mgcData', mockData);
-        alert(`${successMsg}\n\n(Note: API returned an error, so prototype mock data was injected for testing).`);
-    };
-
+    // 🚨 STRICT LIVE API SCAN (NO MOCKS, VAULT ONLY)
     const handleLiveScan = async () => {
+        if (!activeProject.customerId) {
+            alert("Discovery Error: No Customer linked to this project.\n\nPlease link this project to a Customer with valid Vault Credentials in the CRM to run a secure live scan.");
+            return;
+        }
+
         setIsScanning(true);
         try {
             const token = localStorage.getItem('erp_jwt_token');
             const res = await fetch('/api/cloud/inventory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ customer_id: activeProject.customerId, projectId: activeProject.id, region: activeProject.region || 'la-south-2' })
+                body: JSON.stringify({ 
+                    customer_id: activeProject.customerId, 
+                    projectId: activeProject.id, 
+                    region: activeProject.region || 'la-south-2'
+                })
             });
             const data = await res.json();
+            
             if (data.success) {
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: data.inventory });
                 alert("MgC Discovery Scan Complete. Live data fetched successfully.");
             } else { 
-                applyMockData("MgC Discovery Scan Complete", data.error); 
+                alert(`Discovery Error: ${data.error}`); 
             }
         } catch (err) { 
-            applyMockData("MgC Discovery Scan Complete", err.message); 
-        } finally { setIsScanning(false); }
+            alert(`Network error occurred during API scan: ${err.message}`); 
+        } finally { 
+            setIsScanning(false); 
+        }
     };
 
+    // 🚨 STRICT OFFLINE EXCEL IMPORT (TRUSTING PYTHON PARSER)
     const handleOfflineUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -80,20 +69,26 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 body: formData
             });
             const data = await res.json();
+            
             if (data.success) {
+                // Trusting the Python dict mapping entirely
                 const inventory = {
                     compute: data.resources.compute || [],
                     storage: data.resources.storage || [],
                     network: data.resources.network || []
                 };
+
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
-                alert(`Offline Discovery Complete. Parsed ${data.counts?.compute || 0} servers.`);
+                alert(`Offline Discovery Complete. Parsed ${inventory.compute.length} compute nodes successfully.`);
             } else { 
-                applyMockData("Offline Discovery Complete", data.error); 
+                alert(`Parse Error: ${data.error}`); 
             }
         } catch (err) { 
-            applyMockData("Offline Discovery Complete", err.message); 
-        } finally { setIsScanning(false); e.target.value = null; }
+            alert(`Network error occurred during file upload: ${err.message}`); 
+        } finally { 
+            setIsScanning(false); 
+            e.target.value = null; 
+        }
     };
 
     const handleAddToWBS = (tool) => {
@@ -131,14 +126,13 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
 
                 {!hasData ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* 🚨 THE RESTORED DUAL-MODE UI */}
                         <div className={`p-8 rounded-2xl border-2 transition-all ${scanMode === 'live' ? 'border-blue-500 bg-blue-50/50 shadow-md' : 'border-slate-200 bg-slate-50 hover:border-blue-300 cursor-pointer'}`} onClick={() => setScanMode('live')}>
                             <i className="fas fa-cloud text-4xl text-blue-500 mb-4 block"></i>
                             <h4 className="font-black text-slate-800 text-lg mb-2">Live Vault Sync</h4>
                             <p className="text-xs text-slate-600 mb-6">Uses Customer Vault AK/SK credentials to safely query live infrastructure over secure APIs.</p>
                             {scanMode === 'live' && (
-                                <button onClick={handleLiveScan} disabled={isScanning} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all">
-                                    {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Syncing...</> : <><i className="fas fa-bolt mr-2"></i> Run Live Sync</>}
+                                <button onClick={handleLiveScan} disabled={isScanning} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Syncing via API...</> : <><i className="fas fa-bolt mr-2"></i> Run Live Sync</>}
                                 </button>
                             )}
                         </div>
@@ -149,7 +143,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <p className="text-xs text-slate-600 mb-6">If API access is blocked, upload the customer's vCenter, Hyper-V, or manual Excel export.</p>
                             {scanMode === 'offline' && (
                                 <div className="relative">
-                                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleOfflineUpload} disabled={isScanning} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleOfflineUpload} disabled={isScanning} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" />
                                     <button className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all pointer-events-none">
                                         {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Parsing File...</> : <><i className="fas fa-upload mr-2"></i> Select Excel / CSV</>}
                                     </button>
@@ -209,7 +203,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <p className="text-xs text-slate-400 mt-1 font-medium">Official execution strategies ready to apply based on discovered inventory.</p>
                         </div>
                         <div className="bg-slate-900 px-4 py-2 rounded-lg border border-slate-700 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                            <i className="fas fa-check-circle mr-2"></i> Engine Synced
+                            <i className="fas fa-check-circle mr-2"></i> API Synced
                         </div>
                     </div>
 
@@ -271,6 +265,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 </div>
             )}
 
+            {/* Discovery Help Drawer */}
             {showDiscoveryHelp && (
                 <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                     <div className="bg-blue-600 text-white p-6 border-b border-blue-700 flex justify-between items-center shrink-0">
