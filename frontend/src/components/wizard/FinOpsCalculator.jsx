@@ -8,7 +8,6 @@ export default function FinOpsCalculator({ project, onUpdateProject, isPoC }) {
 }
 
 function BudgetEstimatorView({ activeProject, onUpdateProject }) {
-    // 1. Execution & Labor Variables
     const [mrr, setMrr] = useState(5000); 
     const [durationMonths, setDurationMonths] = useState(3); 
     const [infraComplexity, setInfraComplexity] = useState('Medium'); 
@@ -19,22 +18,18 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const [internalHours, setInternalHours] = useState(160); 
     const [internalRate, setInternalRate] = useState(150);
 
-    // 2. High-Level Financials
     const [sowBudget, setSowBudget] = useState(0);
     const [huaweiCoupon, setHuaweiCoupon] = useState(0);
     const [migrationOverhead, setMigrationOverhead] = useState(0);
 
-    // 3. Overhead Scenarios & Live API States
     const [overheadScenario, setOverheadScenario] = useState('manual');
     const [showOverheadHelp, setShowOverheadHelp] = useState(false);
     const [isApiSyncing, setIsApiSyncing] = useState(false);
     const [migrationBom, setMigrationBom] = useState(null);
 
-    // 4. Live Billing Validation States
     const [isValidating, setIsValidating] = useState(false);
     const [actualBilling, setActualBilling] = useState(null);
 
-    // 🚨 FIX: Strict React Syncing
     useEffect(() => { 
         if (activeProject?.budget) { 
             const b = activeProject.budget; 
@@ -51,17 +46,15 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             setMigrationOverhead(f.migrationOverhead || 0);
             setOverheadScenario(f.overheadScenario || 'manual');
             
-            // Only set local BOM state if we haven't already interacted with it
             if (f.migrationBom && !migrationBom) setMigrationBom(f.migrationBom);
             if (f.actualBilling) setActualBilling(f.actualBilling);
         }
-    }, [activeProject?.id]); // Only re-run when switching projects, not on every deep state mutation
+    }, [activeProject?.id]); 
 
     const changeRequests = activeProject?.changeRequests || [];
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
     const totalServers = (activeProject?.mapperNodes || []).filter(n => n.type === 'ECS' || n.type === 'RDS').length;
 
-    // 🚨 BSS API SYNC
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
         let newOverhead = 0;
@@ -100,7 +93,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             }
         }
 
-        // Instantly update local state AND explicitly push to context so it survives tab switching
         setMigrationOverhead(newOverhead);
         setMigrationBom(newBom);
         onUpdateProject(activeProject.id, 'financials', { 
@@ -111,16 +103,13 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         });
     };
 
-    // 🚨 TOGGLE BOM CONFIRMATION
     const toggleBomItem = (id) => {
         const updatedBom = migrationBom.map(item => item.id === id ? { ...item, selected: !item.selected } : item);
         setMigrationBom(updatedBom);
         
-        // Recalculate dynamic overhead based ONLY on selected/confirmed items
         const dynamicOverhead = updatedBom.filter(i => i.selected).reduce((acc, curr) => acc + curr.cost_per_month, 0) * durationMonths;
         setMigrationOverhead(dynamicOverhead);
         
-        // Auto-save to context
         onUpdateProject(activeProject.id, 'financials', { 
             ...(activeProject.financials || {}), 
             migrationOverhead: dynamicOverhead, 
@@ -128,7 +117,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         });
     };
 
-    // 🚨 LIVE BILLING VALIDATION
     const validateBilling = async () => {
         setIsValidating(true);
         try {
@@ -136,7 +124,8 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             const response = await fetch('/api/finops/billing_validation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ duration_months: durationMonths, estimated_cost: migrationOverhead })
+                // 🚨 Passes the exact selected BOM items to the backend for accurate validation
+                body: JSON.stringify({ duration_months: durationMonths, estimated_cost: migrationOverhead, bom_items: migrationBom || [] })
             });
             const data = await response.json();
             if (data.success) {
@@ -228,7 +217,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <input type="number" value={migrationOverhead} onChange={e=>setMigrationOverhead(e.target.value)} disabled={overheadScenario !== 'manual'} className="w-full p-3 border border-amber-300 rounded-lg text-sm font-black text-amber-800 bg-white outline-none focus:border-amber-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-500" />
                         </div>
 
-                        {/* 🚨 THE VISIBLE BOM AUDIT UI WITH CONFIRMATION CHECKBOXES */}
+                        {/* 🚨 THE VISIBLE BOM AUDIT UI */}
                         {migrationBom && overheadScenario === 'wbs_detailed' && (
                             <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
                                 <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM)</h5>
@@ -260,7 +249,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
 
-                {/* 🚨 NEW: LIVE BILLING VALIDATION PANEL */}
+                {/* 🚨 LIVE BILLING VALIDATION PANEL */}
                 <div className="bg-slate-100 p-8 border-y border-slate-200">
                     <div className="flex justify-between items-center mb-6 border-b border-slate-300 pb-4">
                         <div>
@@ -268,12 +257,12 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <p className="text-[10px] text-slate-500 font-bold mt-1">Compare actual Huawei Cost Center bills against your expected BOM estimates.</p>
                         </div>
                         <button onClick={validateBilling} disabled={isValidating} className="px-5 py-2 bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors">
-                            {isValidating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS...</> : <><i className="fas fa-sync-alt mr-2"></i> Fetch Live Invoice</>}
+                            {isValidating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying EPS...</> : <><i className="fas fa-sync-alt mr-2"></i> Fetch Live Invoice</>}
                         </button>
                     </div>
 
                     {actualBilling ? (
-                        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm animate-slide-up">
                             <div className="flex justify-between items-center mb-6">
                                 <div className="text-2xl font-black text-slate-800">Total Invoiced: {fm(actualBilling.invoiced_total)}</div>
                                 <div className={`text-sm font-black px-4 py-1.5 rounded-lg border ${actualBilling.status === 'warning' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
@@ -335,9 +324,9 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">1. What are "Invisible" Migration Costs?</h4>
                             <p className="mb-3">When you migrate a workload, you don't just pay for the final Target Architecture. The migration tools consume billable resources 24/7 during the sync:</p>
                             <ul className="list-disc pl-5 space-y-2 text-xs">
-                                <li><strong>Worker Nodes (Compute):</strong> Tools like SMS or MgC spin up temporary ECS instances in the target VPC to receive block-level replication.</li>
-                                <li><strong>Temporary Storage:</strong> Uploading massive `.vmdk` files to OBS before converting them to private images costs money.</li>
-                                <li><strong>Data Transfer & Networking:</strong> Provisioning temporary EIPs or NAT Gateways, plus inter-region outbound bandwidth.</li>
+                                <li><strong>Worker Nodes (Compute):</strong> Tools like SMS spin up temporary ECS instances (e.g. s6.large.2) to receive block replication.</li>
+                                <li><strong>Snapshots (EVS):</strong> SMS sync creates hidden snapshots that often aren't reclaimed immediately.</li>
+                                <li><strong>Networking:</strong> Temporary NAT Gateways and EIP egress bandwidth.</li>
                             </ul>
                         </div>
                     </div>
