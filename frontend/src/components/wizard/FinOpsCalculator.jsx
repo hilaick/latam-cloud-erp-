@@ -24,14 +24,17 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const [huaweiCoupon, setHuaweiCoupon] = useState(0);
     const [migrationOverhead, setMigrationOverhead] = useState(0);
 
-    // 3. Overhead Scenarios & Help UI
+    // 3. Overhead Scenarios & Live API States
     const [overheadScenario, setOverheadScenario] = useState('manual');
     const [showOverheadHelp, setShowOverheadHelp] = useState(false);
     const [isApiSyncing, setIsApiSyncing] = useState(false);
-    
-    // 🚨 NEW: The Bill of Materials state for the auditable second pass
     const [migrationBom, setMigrationBom] = useState(null);
 
+    // 4. Live Billing Validation States
+    const [isValidating, setIsValidating] = useState(false);
+    const [actualBilling, setActualBilling] = useState(null);
+
+    // 🚨 FIX: Strict React Syncing
     useEffect(() => { 
         if (activeProject?.budget) { 
             const b = activeProject.budget; 
@@ -47,61 +50,103 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             setSowBudget(f.sowBudget || 0); setHuaweiCoupon(f.huaweiCoupon || 0);
             setMigrationOverhead(f.migrationOverhead || 0);
             setOverheadScenario(f.overheadScenario || 'manual');
-            setMigrationBom(f.migrationBom || null);
+            
+            // Only set local BOM state if we haven't already interacted with it
+            if (f.migrationBom && !migrationBom) setMigrationBom(f.migrationBom);
+            if (f.actualBilling) setActualBilling(f.actualBilling);
         }
-    }, [activeProject]);
+    }, [activeProject?.id]); // Only re-run when switching projects, not on every deep state mutation
 
     const changeRequests = activeProject?.changeRequests || [];
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
     const totalServers = (activeProject?.mapperNodes || []).filter(n => n.type === 'ECS' || n.type === 'RDS').length;
 
-    // SCENARIO CALCULATOR
+    // 🚨 BSS API SYNC
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
+        let newOverhead = 0;
+        let newBom = null;
         
         if (scenario === 'rule_of_thumb') {
-            setMigrationOverhead(Math.round(mrr * 0.05 * durationMonths));
-            setMigrationBom(null);
+            newOverhead = Math.round(mrr * 0.05 * durationMonths);
         } else if (scenario === 'historical_avg') {
             setIsApiSyncing(true);
-            setTimeout(() => {
-                const historicalCostPerServerPerMonth = 118.50; 
-                setMigrationOverhead(Math.round(totalServers * historicalCostPerServerPerMonth * durationMonths));
-                setMigrationBom(null);
-                setIsApiSyncing(false);
-            }, 800);
+            await new Promise(r => setTimeout(r, 800));
+            newOverhead = Math.round(totalServers * 118.50 * durationMonths);
+            setIsApiSyncing(false);
         } else if (scenario === 'wbs_high') {
             const batches = Math.ceil(totalServers / 5) || 1;
-            const tempStorage = totalServers * 20; 
-            setMigrationOverhead(Math.round((batches * 150 * durationMonths) + tempStorage));
-            setMigrationBom(null);
+            newOverhead = Math.round((batches * 150 * durationMonths) + (totalServers * 20));
         } else if (scenario === 'wbs_detailed') {
-            // 🚨 FETCH LIVE API BOM
             setIsApiSyncing(true);
             try {
                 const token = localStorage.getItem('erp_jwt_token');
                 const response = await fetch('/api/finops/query_price', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({
-                        duration_months: durationMonths,
-                        nodes: activeProject?.mapperNodes || []
-                    })
+                    body: JSON.stringify({ duration_months: durationMonths, nodes: activeProject?.mapperNodes || [] })
                 });
-                
                 const data = await response.json();
                 if (data.success) {
-                    setMigrationOverhead(data.overhead_cost);
-                    setMigrationBom(data.bom_items); // Inject the itemized receipt
+                    newOverhead = data.overhead_cost;
+                    newBom = data.bom_items;
                 } else {
-                    console.error("API Error:", data.error);
-                    alert("Failed to fetch live pricing from Huawei Cloud BSS API.");
+                    alert("Failed to fetch live pricing.");
                 }
             } catch (err) {
-                console.error("Network Error:", err);
+                console.error(err);
             } finally {
                 setIsApiSyncing(false);
             }
+        }
+
+        // Instantly update local state AND explicitly push to context so it survives tab switching
+        setMigrationOverhead(newOverhead);
+        setMigrationBom(newBom);
+        onUpdateProject(activeProject.id, 'financials', { 
+            ...(activeProject.financials || {}), 
+            overheadScenario: scenario, 
+            migrationOverhead: newOverhead, 
+            migrationBom: newBom 
+        });
+    };
+
+    // 🚨 TOGGLE BOM CONFIRMATION
+    const toggleBomItem = (id) => {
+        const updatedBom = migrationBom.map(item => item.id === id ? { ...item, selected: !item.selected } : item);
+        setMigrationBom(updatedBom);
+        
+        // Recalculate dynamic overhead based ONLY on selected/confirmed items
+        const dynamicOverhead = updatedBom.filter(i => i.selected).reduce((acc, curr) => acc + curr.cost_per_month, 0) * durationMonths;
+        setMigrationOverhead(dynamicOverhead);
+        
+        // Auto-save to context
+        onUpdateProject(activeProject.id, 'financials', { 
+            ...(activeProject.financials || {}), 
+            migrationOverhead: dynamicOverhead, 
+            migrationBom: updatedBom 
+        });
+    };
+
+    // 🚨 LIVE BILLING VALIDATION
+    const validateBilling = async () => {
+        setIsValidating(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const response = await fetch('/api/finops/billing_validation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ duration_months: durationMonths, estimated_cost: migrationOverhead })
+            });
+            const data = await response.json();
+            if (data.success) {
+                setActualBilling(data);
+                onUpdateProject(activeProject.id, 'financials', { ...(activeProject.financials || {}), actualBilling: data });
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsValidating(false);
         }
     };
 
@@ -127,7 +172,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
 
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); 
-        onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom });
+        onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling });
         alert("FinOps & Commercial Model Saved."); 
     };
 
@@ -146,20 +191,8 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 <div className="p-8 border-b border-slate-200 bg-slate-50">
                     <h4 className="font-black text-slate-700 text-sm mb-4 uppercase tracking-widest"><i className="fas fa-wallet text-indigo-500 mr-2"></i> Baseline Funding</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="text-xs font-black text-slate-600 uppercase tracking-widest block mb-2">Baseline SOW Budget ($)</label>
-                            <div className="relative">
-                                <i className="fas fa-dollar-sign absolute left-4 top-3.5 text-slate-400"></i>
-                                <input type="number" value={sowBudget} onChange={e=>setSowBudget(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl py-3 pl-8 pr-4 text-sm font-black outline-none focus:border-indigo-500 shadow-sm" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs font-black text-emerald-700 uppercase tracking-widest block mb-2">Huawei Migration Coupon ($)</label>
-                            <div className="relative">
-                                <i className="fas fa-ticket-alt absolute left-4 top-3.5 text-emerald-500"></i>
-                                <input type="number" value={huaweiCoupon} onChange={e=>setHuaweiCoupon(e.target.value)} className="w-full bg-emerald-50 border border-emerald-300 rounded-xl py-3 pl-10 pr-4 text-sm font-black text-emerald-800 outline-none focus:border-emerald-500 shadow-sm" />
-                            </div>
-                        </div>
+                        <div><label className="text-xs font-black text-slate-600 uppercase tracking-widest block mb-2">Baseline SOW Budget ($)</label><div className="relative"><i className="fas fa-dollar-sign absolute left-4 top-3.5 text-slate-400"></i><input type="number" value={sowBudget} onChange={e=>setSowBudget(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl py-3 pl-8 pr-4 text-sm font-black outline-none focus:border-indigo-500 shadow-sm" /></div></div>
+                        <div><label className="text-xs font-black text-emerald-700 uppercase tracking-widest block mb-2">Huawei Migration Coupon ($)</label><div className="relative"><i className="fas fa-ticket-alt absolute left-4 top-3.5 text-emerald-500"></i><input type="number" value={huaweiCoupon} onChange={e=>setHuaweiCoupon(e.target.value)} className="w-full bg-emerald-50 border border-emerald-300 rounded-xl py-3 pl-10 pr-4 text-sm font-black text-emerald-800 outline-none focus:border-emerald-500 shadow-sm" /></div></div>
                     </div>
                 </div>
 
@@ -167,12 +200,8 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     <div className="p-8 border-r border-slate-200 bg-white space-y-6">
                         <h4 className="font-black text-slate-700 text-sm uppercase tracking-widest border-b border-slate-100 pb-3"><i className="fas fa-users-cog text-blue-500 mr-2"></i> Execution Labor Model</h4>
                         <div className="flex gap-4">
-                            <button onClick={()=>setCommModel('Partner')} className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${commModel==='Partner' ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                                <div className="font-black text-slate-800 text-sm"><i className="fas fa-users text-blue-500 mr-2"></i> Partner-Led</div>
-                            </button>
-                            <button onClick={()=>setCommModel('Internal')} className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${commModel==='Internal' ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
-                                <div className="font-black text-purple-900 text-sm"><i className="fas fa-user-astronaut text-purple-600 mr-2"></i> Rescue Mode</div>
-                            </button>
+                            <button onClick={()=>setCommModel('Partner')} className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${commModel==='Partner' ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300'}`}><div className="font-black text-slate-800 text-sm"><i className="fas fa-users text-blue-500 mr-2"></i> Partner-Led</div></button>
+                            <button onClick={()=>setCommModel('Internal')} className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${commModel==='Internal' ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-slate-200 bg-white hover:border-purple-300'}`}><div className="font-black text-purple-900 text-sm"><i className="fas fa-user-astronaut text-purple-600 mr-2"></i> Rescue Mode</div></button>
                         </div>
                         <div className="flex gap-6">
                             <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Target MRR ($)</label><input type="number" value={mrr} onChange={e=>setMrr(Number(e.target.value))} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-slate-50" /></div>
@@ -199,23 +228,28 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <input type="number" value={migrationOverhead} onChange={e=>setMigrationOverhead(e.target.value)} disabled={overheadScenario !== 'manual'} className="w-full p-3 border border-amber-300 rounded-lg text-sm font-black text-amber-800 bg-white outline-none focus:border-amber-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-500" />
                         </div>
 
-                        {/* 🚨 THE VISIBLE BOM AUDIT UI */}
+                        {/* 🚨 THE VISIBLE BOM AUDIT UI WITH CONFIRMATION CHECKBOXES */}
                         {migrationBom && overheadScenario === 'wbs_detailed' && (
                             <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
-                                <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-list mr-2"></i> Migration Infra Bill of Materials (BOM)</h5>
+                                <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM)</h5>
                                 <div className="space-y-3">
-                                    {migrationBom.map((item, i) => (
-                                        <div key={i} className="flex justify-between items-start bg-white p-3 rounded-lg border border-indigo-100 shadow-sm">
-                                            <div>
-                                                <div className="text-xs font-black text-slate-800">{item.service} <span className="text-indigo-600 mx-1">x{item.qty}</span></div>
+                                    {migrationBom.map((item) => (
+                                        <div key={item.id} className={`flex gap-3 items-start bg-white p-3 rounded-lg border shadow-sm transition-colors ${item.selected ? 'border-indigo-300' : 'border-slate-200 opacity-60'}`}>
+                                            <div className="mt-1 shrink-0">
+                                                <input type="checkbox" checked={item.selected} onChange={() => toggleBomItem(item.id)} className="w-4 h-4 text-indigo-600 rounded cursor-pointer" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-center">
+                                                    <div className={`text-xs font-black ${item.selected ? 'text-slate-800' : 'text-slate-500 line-through'}`}>{item.service} <span className="text-indigo-600 mx-1">x{item.qty}</span></div>
+                                                    <div className="text-xs font-black text-rose-600">{fm(item.cost_per_month)}/mo</div>
+                                                </div>
                                                 <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{item.spec}</div>
                                                 <div className="text-[10px] text-slate-500 mt-1.5 leading-tight">{item.reason}</div>
                                             </div>
-                                            <div className="text-xs font-black text-rose-600 mt-0.5">{fm(item.cost_per_month)}/mo</div>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="text-[9px] text-indigo-500 font-bold mt-3 text-right">Rates pulled via Huawei Cloud BSS API (PostPaid)</div>
+                                <div className="text-[9px] text-indigo-500 font-bold mt-3 text-right">Costs dynamically recalculate based on confirmed selections.</div>
                             </div>
                         )}
 
@@ -223,15 +257,47 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Transfer Infra Tax</label><select value={infraComplexity} onChange={e=>setInfraComplexity(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg text-xs font-bold outline-none bg-white"><option value="Low">Low (Internet)</option><option value="Medium">Medium (VPN)</option><option value="High">High (DirectConnect)</option></select></div>
                             <div className="flex-1"><label className="block text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">SLA Penalty Risk ($)</label><input type="number" value={penaltyRisk} onChange={e=>setPenaltyRisk(Number(e.target.value))} className="w-full p-3 border border-rose-300 rounded-lg bg-rose-50 text-rose-900 text-sm font-black outline-none" /></div>
                         </div>
-
-                        <div className="bg-white border border-rose-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                            <div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Total Phase 2 CR Impact</div>
-                                <div className="text-[9px] font-bold text-slate-400">Dynamically synced from Blueprint Governance</div>
-                            </div>
-                            <div className="text-xl font-black text-rose-600">-${crTotalCost.toLocaleString()}</div>
-                        </div>
                     </div>
+                </div>
+
+                {/* 🚨 NEW: LIVE BILLING VALIDATION PANEL */}
+                <div className="bg-slate-100 p-8 border-y border-slate-200">
+                    <div className="flex justify-between items-center mb-6 border-b border-slate-300 pb-4">
+                        <div>
+                            <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest"><i className="fas fa-file-invoice text-blue-600 mr-2"></i> Actual Invoice Validation</h4>
+                            <p className="text-[10px] text-slate-500 font-bold mt-1">Compare actual Huawei Cost Center bills against your expected BOM estimates.</p>
+                        </div>
+                        <button onClick={validateBilling} disabled={isValidating} className="px-5 py-2 bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors">
+                            {isValidating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS...</> : <><i className="fas fa-sync-alt mr-2"></i> Fetch Live Invoice</>}
+                        </button>
+                    </div>
+
+                    {actualBilling ? (
+                        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="text-2xl font-black text-slate-800">Total Invoiced: {fm(actualBilling.invoiced_total)}</div>
+                                <div className={`text-sm font-black px-4 py-1.5 rounded-lg border ${actualBilling.status === 'warning' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                                    Variance: {actualBilling.variance > 0 ? '+' : ''}{fm(actualBilling.variance)}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {actualBilling.line_items.map((line, idx) => (
+                                    <div key={idx} className={`p-4 rounded-lg border ${line.status === 'danger' ? 'bg-rose-50/50 border-rose-200' : line.status === 'warning' ? 'bg-amber-50/50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{line.category}</span>
+                                            <span className={`text-sm font-black ${line.status === 'danger' ? 'text-rose-600' : 'text-slate-800'}`}>{fm(line.amount)}</span>
+                                        </div>
+                                        {line.note && <div className="text-[10px] text-slate-500 font-medium leading-tight mt-2"><i className="fas fa-info-circle mr-1"></i>{line.note}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50/50">
+                            <i className="fas fa-receipt text-3xl mb-2 opacity-50"></i>
+                            <div className="text-xs font-bold uppercase tracking-widest">No Invoice Data Fetched</div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-slate-800 p-8 flex flex-col justify-center border-t border-slate-700 relative overflow-hidden">
@@ -265,7 +331,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         <button onClick={()=>setShowOverheadHelp(false)} className="text-amber-100 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
-                        
                         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                             <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">1. What are "Invisible" Migration Costs?</h4>
                             <p className="mb-3">When you migrate a workload, you don't just pay for the final Target Architecture. The migration tools consume billable resources 24/7 during the sync:</p>
@@ -275,23 +340,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                                 <li><strong>Data Transfer & Networking:</strong> Provisioning temporary EIPs or NAT Gateways, plus inter-region outbound bandwidth.</li>
                             </ul>
                         </div>
-
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">2. How are these calculated?</h4>
-                            <ul className="space-y-4 text-xs">
-                                <li><strong className="text-indigo-600 block mb-1">5% Rule of Thumb:</strong><span className="text-slate-600">Standard for rapid pre-sales. Assumes temporary infra costs ~5% of Target MRR per month of migration.</span></li>
-                                <li><strong className="text-indigo-600 block mb-1">Historical Averages:</strong><span className="text-slate-600">Queries the ERP database to find past projects of similar complexity and pulls their verified actual run-rates.</span></li>
-                                <li><strong className="text-indigo-600 block mb-1">WBS High-Level:</strong><span className="text-slate-600">Counts the total servers mapped in the architecture, assumes standard batching (e.g. 5 servers per worker), and applies a baseline hourly rate.</span></li>
-                                <li><strong className="text-indigo-600 block mb-1">Huawei API Sync:</strong><span className="text-slate-600">Pulls live pricing from the Huawei Cloud BSS API based on exact temporary EIPs, NATs, and specific VM flavors defined in the WBS Blueprint mapping.</span></li>
-                            </ul>
-                        </div>
-
-                        <div className="bg-white p-5 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
-                            <h4 className="font-black text-emerald-800 mb-2 border-b border-emerald-100 pb-2">3. Who Pays For It?</h4>
-                            <p className="text-xs text-slate-700">These resources are transient and deleted after Go-Live, meaning they are <strong>never in the Sales Quotation.</strong></p>
-                            <p className="text-xs text-slate-700 mt-2">This is why the <strong>Huawei Migration Coupon</strong> exists. Huawei issues these coupons to absorb the overhead. If you don't secure a coupon, this overhead directly subtracts from your Partner/Delivery Margin.</p>
-                        </div>
-
                     </div>
                 </div>
             )}
