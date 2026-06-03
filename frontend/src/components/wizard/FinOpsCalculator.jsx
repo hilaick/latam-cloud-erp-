@@ -28,6 +28,9 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const [overheadScenario, setOverheadScenario] = useState('manual');
     const [showOverheadHelp, setShowOverheadHelp] = useState(false);
     const [isApiSyncing, setIsApiSyncing] = useState(false);
+    
+    // 🚨 NEW: The Bill of Materials state for the auditable second pass
+    const [migrationBom, setMigrationBom] = useState(null);
 
     useEffect(() => { 
         if (activeProject?.budget) { 
@@ -44,6 +47,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             setSowBudget(f.sowBudget || 0); setHuaweiCoupon(f.huaweiCoupon || 0);
             setMigrationOverhead(f.migrationOverhead || 0);
             setOverheadScenario(f.overheadScenario || 'manual');
+            setMigrationBom(f.migrationBom || null);
         }
     }, [activeProject]);
 
@@ -51,25 +55,28 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
     const totalServers = (activeProject?.mapperNodes || []).filter(n => n.type === 'ECS' || n.type === 'RDS').length;
 
-    // 🚨 LIVE API SCENARIO CALCULATOR
+    // SCENARIO CALCULATOR
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
         
         if (scenario === 'rule_of_thumb') {
             setMigrationOverhead(Math.round(mrr * 0.05 * durationMonths));
+            setMigrationBom(null);
         } else if (scenario === 'historical_avg') {
             setIsApiSyncing(true);
             setTimeout(() => {
                 const historicalCostPerServerPerMonth = 118.50; 
                 setMigrationOverhead(Math.round(totalServers * historicalCostPerServerPerMonth * durationMonths));
+                setMigrationBom(null);
                 setIsApiSyncing(false);
             }, 800);
         } else if (scenario === 'wbs_high') {
             const batches = Math.ceil(totalServers / 5) || 1;
             const tempStorage = totalServers * 20; 
             setMigrationOverhead(Math.round((batches * 150 * durationMonths) + tempStorage));
+            setMigrationBom(null);
         } else if (scenario === 'wbs_detailed') {
-            // LIVE FETCH TO PYTHON ENDPOINT
+            // 🚨 FETCH LIVE API BOM
             setIsApiSyncing(true);
             try {
                 const token = localStorage.getItem('erp_jwt_token');
@@ -85,6 +92,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 const data = await response.json();
                 if (data.success) {
                     setMigrationOverhead(data.overhead_cost);
+                    setMigrationBom(data.bom_items); // Inject the itemized receipt
                 } else {
                     console.error("API Error:", data.error);
                     alert("Failed to fetch live pricing from Huawei Cloud BSS API.");
@@ -119,7 +127,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
 
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); 
-        onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario });
+        onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom });
         alert("FinOps & Commercial Model Saved."); 
     };
 
@@ -189,11 +197,27 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         <div>
                             <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">Est. Invisible Overhead ($)</label>
                             <input type="number" value={migrationOverhead} onChange={e=>setMigrationOverhead(e.target.value)} disabled={overheadScenario !== 'manual'} className="w-full p-3 border border-amber-300 rounded-lg text-sm font-black text-amber-800 bg-white outline-none focus:border-amber-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-500" />
-                            {overheadScenario === 'rule_of_thumb' && <p className="text-[9px] text-amber-600 font-bold mt-2">Calculated as 5% of MRR per month of migration duration.</p>}
-                            {overheadScenario === 'historical_avg' && <p className="text-[9px] text-amber-700 font-bold mt-2">Aggregated from ERP database based on similar successful deployments.</p>}
-                            {overheadScenario === 'wbs_high' && <p className="text-[9px] text-amber-600 font-bold mt-2">Calculated based on {totalServers} servers batched across {durationMonths} months.</p>}
-                            {overheadScenario === 'wbs_detailed' && <p className="text-[9px] text-indigo-600 font-bold mt-2">Rates fetched natively from Huawei Cloud Pricing API based on mapped Blueprint tasks.</p>}
                         </div>
+
+                        {/* 🚨 THE VISIBLE BOM AUDIT UI */}
+                        {migrationBom && overheadScenario === 'wbs_detailed' && (
+                            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
+                                <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-list mr-2"></i> Migration Infra Bill of Materials (BOM)</h5>
+                                <div className="space-y-3">
+                                    {migrationBom.map((item, i) => (
+                                        <div key={i} className="flex justify-between items-start bg-white p-3 rounded-lg border border-indigo-100 shadow-sm">
+                                            <div>
+                                                <div className="text-xs font-black text-slate-800">{item.service} <span className="text-indigo-600 mx-1">x{item.qty}</span></div>
+                                                <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{item.spec}</div>
+                                                <div className="text-[10px] text-slate-500 mt-1.5 leading-tight">{item.reason}</div>
+                                            </div>
+                                            <div className="text-xs font-black text-rose-600 mt-0.5">{fm(item.cost_per_month)}/mo</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="text-[9px] text-indigo-500 font-bold mt-3 text-right">Rates pulled via Huawei Cloud BSS API (PostPaid)</div>
+                            </div>
+                        )}
 
                         <div className="flex gap-4">
                             <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Transfer Infra Tax</label><select value={infraComplexity} onChange={e=>setInfraComplexity(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg text-xs font-bold outline-none bg-white"><option value="Low">Low (Internet)</option><option value="Medium">Medium (VPN)</option><option value="High">High (DirectConnect)</option></select></div>
@@ -258,7 +282,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                                 <li><strong className="text-indigo-600 block mb-1">5% Rule of Thumb:</strong><span className="text-slate-600">Standard for rapid pre-sales. Assumes temporary infra costs ~5% of Target MRR per month of migration.</span></li>
                                 <li><strong className="text-indigo-600 block mb-1">Historical Averages:</strong><span className="text-slate-600">Queries the ERP database to find past projects of similar complexity and pulls their verified actual run-rates.</span></li>
                                 <li><strong className="text-indigo-600 block mb-1">WBS High-Level:</strong><span className="text-slate-600">Counts the total servers mapped in the architecture, assumes standard batching (e.g. 5 servers per worker), and applies a baseline hourly rate.</span></li>
-                                <li><strong className="text-indigo-600 block mb-1">Huawei API Sync:</strong><span className="text-slate-600">Pulls live pricing from the Huawei Cloud API based on exact temporary EIPs, NATs, and specific VM flavors defined in the WBS.</span></li>
+                                <li><strong className="text-indigo-600 block mb-1">Huawei API Sync:</strong><span className="text-slate-600">Pulls live pricing from the Huawei Cloud BSS API based on exact temporary EIPs, NATs, and specific VM flavors defined in the WBS Blueprint mapping.</span></li>
                             </ul>
                         </div>
 
