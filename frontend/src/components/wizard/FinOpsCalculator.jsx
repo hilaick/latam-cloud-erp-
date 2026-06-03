@@ -159,8 +159,11 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
 
     const saveContext = () => { 
-        onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); 
-        onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling });
+        // 🚨 FIX: Pass a single compound payload object to prevent React 18 race conditions
+        onUpdateProject(activeProject.id, {
+            budget: { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate },
+            financials: { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling }
+        }); 
         alert("FinOps & Commercial Model Saved."); 
     };
 
@@ -173,7 +176,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         <h3 className="font-black text-lg tracking-wide"><i className="fas fa-file-invoice-dollar text-emerald-400 mr-3"></i> FinOps Ledger & Commercial Modeler</h3>
                         <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Single Source of Financial Truth</p>
                     </div>
-                    <button onClick={saveContext} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i> Save FinOps</button>
+                    <button type="button" onClick={saveContext} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i> Save FinOps</button>
                 </div>
 
                 <div className="p-8 border-b border-slate-200 bg-slate-50">
@@ -247,7 +250,6 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
 
-                {/* 🚨 LIVE BILLING VALIDATION PANEL */}
                 <div className="bg-slate-100 p-8 border-y border-slate-200">
                     <div className="flex justify-between items-center mb-6 border-b border-slate-300 pb-4">
                         <div>
