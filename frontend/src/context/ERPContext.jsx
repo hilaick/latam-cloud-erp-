@@ -56,11 +56,10 @@ export const ERPProvider = ({ children }) => {
     const handleAuthError = () => {
         localStorage.removeItem('erp_jwt_token');
         localStorage.removeItem('erp_user');
-        // Prevent rapid reload loops by checking if we just reloaded
         const lastReload = localStorage.getItem('erp_last_reload');
         const now = Date.now();
         
-        if (!lastReload || (now - parseInt(lastReload)) > 5000) { // 5 second cooldown
+        if (!lastReload || (now - parseInt(lastReload)) > 5000) { 
             localStorage.setItem('erp_last_reload', now.toString());
             window.location.reload();
         } else {
@@ -68,14 +67,12 @@ export const ERPProvider = ({ children }) => {
         }
     };
 
-    // 🚨 FIX: Indestructible Fetch Logic with rate limiting
     const [lastFetchTime, setLastFetchTime] = useState(0);
-    const FETCH_COOLDOWN_MS = 5000; // 5 seconds between fetches
+    const FETCH_COOLDOWN_MS = 5000; 
     
     const fetchState = async () => {
         const now = Date.now();
         if (now - lastFetchTime < FETCH_COOLDOWN_MS) {
-            console.warn('Fetch throttled - too soon since last fetch');
             return;
         }
         
@@ -83,7 +80,6 @@ export const ERPProvider = ({ children }) => {
         const token = localStorage.getItem('erp_jwt_token');
         if (!token) return;
 
-        // 1. Fetch Projects (Isolated)
         try {
             const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
             if (res.status === 401) return handleAuthError();
@@ -93,11 +89,9 @@ export const ERPProvider = ({ children }) => {
             }
         } catch (err) { 
             console.error("Projects Fetch Error:", err); 
-            // Don't retry immediately on network error
-            setLastFetchTime(now + 30000); // Add 30s penalty for network errors
+            setLastFetchTime(now + 30000); 
         }
 
-        // 2. Fetch Playbooks (Isolated & Guaranteed to Fallback)
         try {
             const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
             if (pbRes.status === 401) return handleAuthError();
@@ -117,10 +111,9 @@ export const ERPProvider = ({ children }) => {
         } catch (err) {
             console.error("Playbooks Fetch Error:", err);
             setCustomPlaybooks(DEFAULT_PLAYBOOKS);
-            setLastFetchTime(now + 30000); // Add 30s penalty for network errors
+            setLastFetchTime(now + 30000); 
         }
 
-        // 3. Fetch Customers (Isolated)
         try {
             const custRes = await fetch('/api/erp/customers', { headers: getAuthHeaders() });
             if (custRes.status === 401) return handleAuthError();
@@ -130,7 +123,7 @@ export const ERPProvider = ({ children }) => {
             }
         } catch (err) { 
             console.error("Customers Fetch Error:", err); 
-            setLastFetchTime(now + 30000); // Add 30s penalty for network errors
+            setLastFetchTime(now + 30000); 
         }
     };
 
@@ -141,93 +134,64 @@ export const ERPProvider = ({ children }) => {
         }
     }, []);
 
+    // 🚨 FIX: Extract fetch logic outside of setProjects to prevent dual-firing and dropped connections
     const handleUpdateProject = (id, fieldOrObj, value) => {
-        setProjects(prev => {
-            const isObj = typeof fieldOrObj === 'object';
-            const updated = prev.map(p => String(p.id) === String(id) ? (isObj ? { ...p, ...fieldOrObj } : { ...p, [fieldOrObj]: value }) : p);
-            const modified = updated.find(p => String(p.id) === String(id));
+        // 1. Get the current target project state
+        const targetProject = projects.find(p => String(p.id) === String(id));
+        if (!targetProject) return;
 
-            fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modified) })
-                .then(r => { 
-                    if(r.status === 401) handleAuthError();
-                    else if(!r.ok) throw new Error(`Failed to save project: ${r.status} ${r.statusText}`);
-                })
-                .catch(err => {
-                    console.error('Error saving project:', err);
-                    alert(`Failed to save project: ${err.message}`);
-                });
+        // 2. Build the modified project explicitly
+        const isObj = typeof fieldOrObj === 'object';
+        let modifiedProject = isObj 
+            ? { ...targetProject, ...fieldOrObj } 
+            : { ...targetProject, [fieldOrObj]: value };
 
-            // 🚨 CREATE CUSTOMER WHEN PROJECT MOVES FROM PRE-SALES TO ARB/PIPELINE
-            // Only create customer when project transitions from isWaiting:true to isWaiting:false
-            const originalProject = prev.find(p => String(p.id) === String(id));
-            const isMovingToPipeline = originalProject?.isWaiting === true && 
-                                     (isObj ? fieldOrObj.isWaiting === false : (fieldOrObj === 'isWaiting' && value === false));
-            
-            if (isMovingToPipeline) {
-                const custName = (modified.customerName || modified.name.split('-')[0]).trim();
-                if (custName) {
-                    setCustomers(prevCusts => {
-                        // Check if customer already exists
-                        let existingCustomer = prevCusts.find(c => c.name.toLowerCase() === custName.toLowerCase());
-                        
-                        if (!existingCustomer) {
-                            // Create new customer
-                            const newCust = { 
-                                id: `CUST-${Date.now()}`, 
-                                name: custName, 
-                                ak: '', 
-                                sk: '', 
-                                region: 'la-south-2', 
-                                country: modified.country || 'TBD', 
-                                sa: modified.sa || 'TBD', 
-                                partner: modified.partner || 'TBD', 
-                                techContact: modified.techContact || 'TBD' 
-                            };
-                            fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCust) })
-                                .then(r => { 
-                                    if(r.status === 401) handleAuthError();
-                                    else if(!r.ok) console.error('Failed to create customer:', r.status, r.statusText);
-                                })
-                                .catch(err => console.error('Error creating customer:', err));
-                            
-                            // Update project with customerId
-                            const updatedProjectWithCustomerId = { ...modified, customerId: newCust.id };
-                            fetch('/api/erp/projects', { 
-                                method: 'POST', 
-                                headers: getAuthHeaders(), 
-                                body: JSON.stringify(updatedProjectWithCustomerId) 
-                            })
-                                .then(r => { 
-                                    if(r.status === 401) handleAuthError();
-                                    else if(!r.ok) console.error('Failed to update project with customerId:', r.status, r.statusText);
-                                })
-                                .catch(err => console.error('Error updating project:', err));
-                            
-                            return [...prevCusts, newCust];
-                        } else {
-                            // Customer exists, link project to existing customer
-                            const updatedProjectWithCustomerId = { ...modified, customerId: existingCustomer.id };
-                            fetch('/api/erp/projects', { 
-                                method: 'POST', 
-                                headers: getAuthHeaders(), 
-                                body: JSON.stringify(updatedProjectWithCustomerId) 
-                            })
-                                .then(r => { 
-                                    if(r.status === 401) handleAuthError();
-                                    else if(!r.ok) console.error('Failed to link project to customer:', r.status, r.statusText);
-                                })
-                                .catch(err => console.error('Error linking project:', err));
-                            return prevCusts;
-                        }
-                    });
+        // 3. Immediately fire the network request exactly ONCE
+        fetch('/api/erp/projects', { 
+            method: 'POST', 
+            headers: getAuthHeaders(), 
+            body: JSON.stringify(modifiedProject) 
+        })
+        .then(r => { 
+            if(r.status === 401) handleAuthError();
+            else if(!r.ok) throw new Error(`Failed to save project: ${r.status} ${r.statusText}`);
+        })
+        .catch(err => {
+            console.error('Error saving project to DB:', err);
+        });
+
+        // 4. Handle Customer logic purely and emit safe nested fetches
+        const isMovingToPipeline = targetProject.isWaiting === true && modifiedProject.isWaiting === false;
+        
+        if (isMovingToPipeline) {
+            const custName = (modifiedProject.customerName || modifiedProject.name.split('-')[0]).trim();
+            if (custName) {
+                const existingCustomer = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
+                
+                if (!existingCustomer) {
+                    const newCust = { 
+                        id: `CUST-${Date.now()}`, name: custName, ak: '', sk: '', region: 'la-south-2', 
+                        country: modifiedProject.country || 'TBD', sa: modifiedProject.sa || 'TBD', 
+                        partner: modifiedProject.partner || 'TBD', techContact: modifiedProject.techContact || 'TBD' 
+                    };
+                    
+                    setCustomers(prev => [...prev, newCust]);
+                    fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCust) });
+                    
+                    modifiedProject.customerId = newCust.id;
+                    fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
+                } else {
+                    modifiedProject.customerId = existingCustomer.id;
+                    fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
                 }
             }
-            return updated;
-        });
+        }
+
+        // 5. Update React state securely
+        setProjects(prev => prev.map(p => String(p.id) === String(id) ? modifiedProject : p));
     };
 
     const handleAddProject = (newProject) => {
-        // If project has customerName, check if customer exists and add customerId
         const custName = newProject.customerName?.trim();
         if (custName) {
             const existingCustomer = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
@@ -262,7 +226,6 @@ export const ERPProvider = ({ children }) => {
     };
 
     const handleDeleteCustomer = (id) => {
-        // Check if customer has any active projects
         const customerToDelete = customers.find(c => c.id === id);
         const customerName = customerToDelete?.name;
         
@@ -310,7 +273,7 @@ export const ERPProvider = ({ children }) => {
             handleUpdateCustomer, 
             handleDeleteCustomer, 
             handleDeleteProject,
-            refreshData: fetchState  // Add this line
+            refreshData: fetchState
         }}>
             {children}
         </ERPContext.Provider>
