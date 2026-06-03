@@ -4,7 +4,8 @@ import { EditableCell } from '../../utils/helpers';
 import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function PreSalesRadar() {
-    const { projects, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
+    // 🚨 UPDATED: Extracted 'customers' directly from the central state context
+    const { projects, customers, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
     const [newLeadCustomer, setNewLeadCustomer] = useState("");
@@ -30,8 +31,32 @@ export default function PreSalesRadar() {
 
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Project Name, Target Country, and SA are required."); 
+        
+        // Find the matched customer record from the CRM list to extract its persistent unique ID
+        const matchedCustomer = (customers || []).find(c => c.name === newLeadCustomer);
+
         handleAddProject({
-            id: String(Date.now()), name: newLeadName, customerName: newLeadCustomer.trim(), isWaiting: true, waitingStage: "prospect", health: "Yellow", mrr: 0, sa: newLeadSA, country: newLeadCountry, partner: "TBD", techContact: "TBD", blocker: "", lifecycleState: '1_arb', progress: '0%', project_type: isPoC ? 'poc' : 'standard', pocCap: isPoC ? 1000 : null, pocTtl: isPoC ? '' : null, discoveryStatus: "Not Started", sizingStatus: "Not Started", complexityLevel: "Medium"
+            id: String(Date.now()), 
+            name: newLeadName, 
+            customerName: newLeadCustomer.trim(), 
+            customerId: matchedCustomer ? matchedCustomer.id : null, // 🚨 Direct binding at creation phase
+            isWaiting: true, 
+            waitingStage: "prospect", 
+            health: "Yellow", 
+            mrr: 0, 
+            sa: newLeadSA, 
+            country: newLeadCountry, 
+            partner: "TBD", 
+            techContact: "TBD", 
+            blocker: "", 
+            lifecycleState: '1_arb', 
+            progress: '0%', 
+            project_type: isPoC ? 'poc' : 'standard', 
+            pocCap: isPoC ? 1000 : null, 
+            pocTtl: isPoC ? '' : null, 
+            discoveryStatus: "Not Started", 
+            sizingStatus: "Not Started", 
+            complexityLevel: "Medium"
         }); 
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
     };
@@ -51,7 +76,20 @@ export default function PreSalesRadar() {
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account</label><input type="text" value={newLeadCustomer} onChange={e=>setNewLeadCustomer(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" placeholder="Optional" /></div>
+                    {/* 🚨 UPDATED: Turned Customer Account from an input text box into a strict dropdown menu selector */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account</label>
+                        <select 
+                            value={newLeadCustomer} 
+                            onChange={e=>setNewLeadCustomer(e.target.value)} 
+                            className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold cursor-pointer"
+                        >
+                            <option value="">-- Select Customer Profile --</option>
+                            {(customers || []).map(c => (
+                                <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                        </select>
+                    </div>
                     <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Name *</label><input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
                     <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Target Country *</label><select value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white"><option value="" disabled>-- Select --</option>{targetCountries.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Sales Architect *</label><input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
@@ -75,10 +113,11 @@ export default function PreSalesRadar() {
                                     <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
                                         <div className="flex flex-col mb-4 border-b border-slate-100 pb-3 mt-2 gap-3">
                                             <div className="font-black text-base text-slate-800 leading-tight">
-                                                <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerName ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>{p.customerName || <><i className="fas fa-exclamation-triangle"></i> Account TBD</>}</div>
+                                                <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerId ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
+                                                    {p.customerId ? <><i className="fas fa-shield text-[9px] mr-1"></i> {p.customerName}</> : <><i className="fas fa-exclamation-triangle"></i> Account Unlinked</>}
+                                                </div>
                                                 {p.name} {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm"><i className="fas fa-bolt mr-1"></i> PoC</span>}
                                             </div>
-                                            {/* 🚨 ACTION BUTTONS ARE NOW PERMANENTLY VISIBLE */}
                                             <div className="flex gap-2">
                                                 <button onClick={() => setEditingProject({...p})} className="flex-1 text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200"><i className="fas fa-expand-arrows-alt mr-1"></i> Assess</button>
                                                 <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-lg border border-rose-200"><i className="fas fa-trash-alt"></i></button>
@@ -106,7 +145,7 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
-            {/* DEEP EDIT MODAL */}
+            {/* DEEP EDIT ASSESSMENT MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -115,7 +154,28 @@ export default function PreSalesRadar() {
                             <div className="bg-white p-6 rounded-xl border border-slate-200">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Basic Information</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label><input type="text" value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    {/* 🚨 UPDATED: Turned ongoing Customer Account field in deep edit into a matching dropdown to link existing profiles instantly */}
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
+                                        <select 
+                                            value={editingProject.customerName || ''} 
+                                            onChange={e => {
+                                                const selectedName = e.target.value;
+                                                const matched = (customers || []).find(c => c.name === selectedName);
+                                                setEditingProject({
+                                                    ...editingProject,
+                                                    customerName: selectedName,
+                                                    customerId: matched ? matched.id : null // Instantly binds the dynamic account configuration
+                                                });
+                                            }} 
+                                            className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer"
+                                        >
+                                            <option value="">-- Select Customer Profile --</option>
+                                            {(customers || []).map(c => (
+                                                <option key={c.id} value={c.name}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
