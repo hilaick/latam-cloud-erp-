@@ -16,7 +16,7 @@ def get_state():
         # 🚨 SAFE PARSER: Bypasses corrupted SQLite data
         for p in projects:
             try:
-                valid_projects.append(json.loads(p.data))
+                valid_projects.append(json.loads(p.data) if isinstance(p.data, str) else p.data)
             except json.JSONDecodeError:
                 print(f"Warning: Ignored corrupted JSON in ProjectData {p.id}")
                 continue
@@ -33,9 +33,9 @@ def update_project():
         project_id = str(data.get('id'))
         project = ProjectData.query.get(project_id)
         if project:
-            project.data = json.dumps(data)
+            project.data = json.dumps(data, ensure_ascii=False)
         else:
-            project = ProjectData(id=project_id, data=json.dumps(data))
+            project = ProjectData(id=project_id, data=json.dumps(data, ensure_ascii=False))
             db.session.add(project)
         db.session.commit()
         return jsonify({"success": True})
@@ -61,14 +61,12 @@ def manage_customers():
             data = request.json
             new_name = data.get('name', 'Unknown').strip()
             
-            # 🚨 THE FIX: Check if a customer with this exact name already exists (Case-Insensitive)
+            # Check if a customer with this exact name already exists (Case-Insensitive)
             existing_customer = Customer.query.filter(Customer.name.ilike(new_name)).first()
             
             if existing_customer:
-                # Silently intercept and ignore the duplicate request
                 return jsonify({"success": True, "message": "Customer already exists, skipping duplicate creation."})
 
-            # If it's a truly new customer, proceed with creation
             customer = Customer(
                 id=str(data.get('id')), 
                 name=new_name, 
@@ -125,7 +123,7 @@ def get_global_wbs():
         
         for p in projects:
             try:
-                project_data = json.loads(p.data)
+                project_data = json.loads(p.data) if isinstance(p.data, str) else p.data
                 # Extract WBS tasks from project data
                 if 'migrationPlan' in project_data:
                     for task in project_data['migrationPlan']:
@@ -140,7 +138,7 @@ def get_global_wbs():
                             'end_date': task.get('end', ''),
                             'is_parent': task.get('isParent', False)
                         })
-            except json.JSONDecodeError:
+            except Exception:
                 continue
                 
         return jsonify({"success": True, "tasks": global_tasks})
@@ -156,9 +154,27 @@ def update_task_progress():
         task_id = data.get('id')
         new_progress = data.get('progress', '0%')
         
-        # In a real implementation, you would update the task in the database
-        # For now, we'll just return success
-        return jsonify({"success": True, "message": f"Task {task_id} updated to {new_progress}"})
+        projects = ProjectData.query.all()
+        updated = False
+        for p in projects:
+            try:
+                project_data = json.loads(p.data) if isinstance(p.data, str) else p.data
+                if 'migrationPlan' in project_data:
+                    for task in project_data['migrationPlan']:
+                        if task.get('id') == task_id:
+                            task['prog'] = new_progress
+                            p.data = json.dumps(project_data, ensure_ascii=False)
+                            db.session.commit()
+                            updated = True
+                            break
+                if updated:
+                    break
+            except Exception:
+                continue
+                
+        if updated:
+            return jsonify({"success": True, "message": f"Task {task_id} updated to {new_progress}"})
+        return jsonify({"success": False, "error": "Task not found"}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -170,9 +186,8 @@ def manage_playbooks():
             pb = GlobalPlaybooks.query.get("master")
             if pb:
                 try:
-                    # 🚨 SAFE PARSER: Bypasses corrupted SQLite playbook data
-                    return jsonify({"success": True, "playbooks": json.loads(pb.data)})
-                except json.JSONDecodeError:
+                    return jsonify({"success": True, "playbooks": json.loads(pb.data) if isinstance(pb.data, str) else pb.data})
+                except Exception:
                     return jsonify({"success": True, "playbooks": None})
             return jsonify({"success": True, "playbooks": None})
         except Exception as e:
