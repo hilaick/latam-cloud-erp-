@@ -5,7 +5,9 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [isScanning, setIsScanning] = useState(false);
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
-    const hasData = !!activeProject?.mgcData;
+    
+    // 🚨 Ensure hasData triggers if we have mgcData set (even if arrays are empty)
+    const hasData = activeProject?.mgcData !== undefined && activeProject?.mgcData !== null;
 
     useEffect(() => {
         const fetchTools = async () => {
@@ -22,7 +24,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     // 🚨 STRICT LIVE API SCAN (NO MOCKS, VAULT ONLY)
     const handleLiveScan = async () => {
         if (!activeProject.customerId) {
-            alert("Discovery Error: No Customer linked to this project.\n\nPlease link this project to a Customer with valid Vault Credentials in the CRM to run a secure live scan.");
+            alert("Discovery Error: No Customer linked to this project.\n\nPlease link this project to a Customer with valid Vault Credentials in the CRM or Edit Context tab to run a secure live scan.");
             return;
         }
 
@@ -41,7 +43,14 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: data.inventory });
+                // Align Python keys with React structure
+                const inventory = {
+                    compute: data.inventory.compute || [],
+                    databases: data.inventory.databases || data.inventory.database || [],
+                    storage: data.inventory.storage || [],
+                    network: data.inventory.network || []
+                };
+                onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
                 alert("MgC Discovery Scan Complete. Live data fetched successfully.");
             } else { 
                 alert(`Discovery Error: ${data.error}`); 
@@ -71,9 +80,10 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             const data = await res.json();
             
             if (data.success) {
-                // Trusting the Python dict mapping entirely
+                // Trusting the Python dict mapping and standardizing the keys
                 const inventory = {
-                    compute: data.resources.compute || [],
+                    compute: data.resources.servers || data.resources.compute || [],
+                    databases: data.resources.databases || data.resources.database || [],
                     storage: data.resources.storage || [],
                     network: data.resources.network || []
                 };
@@ -155,7 +165,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner md:col-span-2">
                             <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
-                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest"><i className="fas fa-server text-blue-500 mr-2"></i> Discovered Compute & Storage</h4>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest"><i className="fas fa-server text-blue-500 mr-2"></i> Discovered Compute & Databases</h4>
                                 <button onClick={()=>onUpdateProject(activeProject.id, 'mgcData', null)} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear Data</button>
                             </div>
                             <div className="space-y-3">
@@ -168,31 +178,46 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                         </div>
                                     </div>
                                 ))}
-                                {activeProject.mgcData.raw_inventory?.storage?.map(s => (
-                                    <div key={s.id || Math.random()} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                                        <div className="flex items-center gap-3"><i className="fas fa-database text-slate-400"></i><span className="text-xs font-bold text-slate-800">{s.name}</span></div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{s.source || 'Storage Volume'}</div>
+                                {activeProject.mgcData.raw_inventory?.databases?.map(d => (
+                                    <div key={d.id || Math.random()} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                        <div className="flex items-center gap-3"><i className="fas fa-database text-rose-400"></i><span className="text-xs font-bold text-slate-800">{d.name}</span></div>
+                                        <div className="flex gap-2">
+                                            {d.engine && <div className="text-[9px] font-black uppercase tracking-widest text-rose-600 bg-rose-50 px-2 py-1 rounded border border-rose-100">{d.engine}</div>}
+                                            {d.ip && <div className="text-[10px] font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">{d.ip}</div>}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                         
-                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner">
-                            <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-4 border-b border-slate-200 pb-2"><i className="fas fa-network-wired text-indigo-500 mr-2"></i> Discovered Network</h4>
-                            <div className="space-y-3">
-                                {activeProject.mgcData.raw_inventory?.network?.map(n => (
-                                    <div key={n.id || Math.random()} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                                        <div className="flex items-center gap-3"><i className="fas fa-cloud text-slate-400"></i><span className="text-xs font-bold text-slate-800">{n.name}</span></div>
-                                        <div className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100">{n.cidr || n.id}</div>
-                                    </div>
-                                ))}
+                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner flex flex-col gap-6">
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-4 border-b border-slate-200 pb-2"><i className="fas fa-network-wired text-indigo-500 mr-2"></i> Network</h4>
+                                <div className="space-y-3">
+                                    {activeProject.mgcData.raw_inventory?.network?.map(n => (
+                                        <div key={n.id || Math.random()} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                            <div className="flex items-center gap-3"><i className="fas fa-cloud text-slate-400"></i><span className="text-xs font-bold text-slate-800">{n.name}</span></div>
+                                            <div className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100">{n.cidr || n.id}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-4 border-b border-slate-200 pb-2"><i className="fas fa-hdd text-emerald-500 mr-2"></i> Storage</h4>
+                                <div className="space-y-3">
+                                    {activeProject.mgcData.raw_inventory?.storage?.map(s => (
+                                        <div key={s.id || Math.random()} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                            <div className="flex items-center gap-3"><i className="fas fa-hdd text-slate-400"></i><span className="text-xs font-bold text-slate-800">{s.name}</span></div>
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{s.source || 'Storage Volume'}</div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* 🚨 HUAWEI MIGRATION TOOL CENTER */}
             {hasData && migrationTools && (
                 <div className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 p-8 relative overflow-hidden animate-slide-up">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full blur-3xl opacity-10 -mr-20 -mt-20"></div>
@@ -203,7 +228,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                             <p className="text-xs text-slate-400 mt-1 font-medium">Official execution strategies ready to apply based on discovered inventory.</p>
                         </div>
                         <div className="bg-slate-900 px-4 py-2 rounded-lg border border-slate-700 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                            <i className="fas fa-check-circle mr-2"></i> API Synced
+                            <i className="fas fa-check-circle mr-2"></i> Engine Synced
                         </div>
                     </div>
 
@@ -265,7 +290,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 </div>
             )}
 
-            {/* Discovery Help Drawer */}
             {showDiscoveryHelp && (
                 <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                     <div className="bg-blue-600 text-white p-6 border-b border-blue-700 flex justify-between items-center shrink-0">
