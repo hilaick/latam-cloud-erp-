@@ -6,7 +6,7 @@ export default function Sidebar() {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [desktopMenuOpen, setDesktopMenuOpen] = useState(false); // Starts closed for toggling
     const [isScrolling, setIsScrolling] = useState(false);
-    const [scrollTimeout, setScrollTimeout] = useState(null);
+    const scrollTimeoutRef = useRef(null);
     
     const desktopSidebarRef = useRef(null);
     
@@ -50,28 +50,46 @@ export default function Sidebar() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [mobileMenuOpen, desktopMenuOpen]);
 
-    // Handle scroll to hide FAB on mobile
+    // Handle scroll to hide FAB on mobile (Optimized with useRef)
     useEffect(() => {
-        const isMobile = window.innerWidth < 1024;
-        if (!isMobile) return;
+        // Only run on mobile
+        const isMobile = window.innerWidth < 1024; // lg breakpoint
+        
+        if (!isMobile) return; // Skip on desktop
         
         const handleScroll = () => {
             setIsScrolling(true);
-            if (scrollTimeout) clearTimeout(scrollTimeout);
-            const timeout = setTimeout(() => setIsScrolling(false), 500);
-            setScrollTimeout(timeout);
+            
+            // Clear any existing timeout
+            if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current);
+            }
+            
+            // Set timeout to show FAB again after scrolling stops
+            scrollTimeoutRef.current = setTimeout(() => {
+                setIsScrolling(false);
+            }, 500); // 500ms delay after scrolling stops
         };
         
+        // Add scroll listener to main content area
         const mainContent = document.querySelector('main');
-        if (mainContent) mainContent.addEventListener('scroll', handleScroll);
+        if (mainContent) {
+            mainContent.addEventListener('scroll', handleScroll);
+        }
+        
+        // Also listen to window scroll for safety
         window.addEventListener('scroll', handleScroll);
         
         return () => {
-            if (mainContent) mainContent.removeEventListener('scroll', handleScroll);
+            if (mainContent) {
+                mainContent.removeEventListener('scroll', handleScroll);
+            }
             window.removeEventListener('scroll', handleScroll);
-            if (scrollTimeout) clearTimeout(scrollTimeout);
+            if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current);
+            }
         };
-    }, [scrollTimeout]);
+    }, []);
 
     return (
         <>
