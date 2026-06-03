@@ -34,11 +34,9 @@ export default function ProjectWizard() {
         const currentIndex = stages.findIndex(s => s.id === project.lifecycleState);
         if (currentIndex >= 0 && currentIndex < stages.length - 1) {
             const nextState = stages[currentIndex + 1].id;
-            // 🚨 FIX: Strict Field/Value parameter format
             handleUpdateProject(project.id, 'lifecycleState', nextState);
             window.scrollTo({ top: 0, behavior: 'smooth' }); 
         } else if (currentIndex === stages.length - 1) {
-            // 🚨 FIX: Strict Field/Value parameter format
             handleUpdateProject(project.id, 'lifecycleState', '6_completed');
             alert("Project Closed Successfully!");
         }
@@ -87,7 +85,6 @@ export default function ProjectWizard() {
 
             <div className="flex gap-2 bg-slate-200 p-1.5 rounded-xl overflow-x-auto shadow-inner">
                 {stages.map(stg => (
-                    // 🚨 FIX: Strict Field/Value parameter format
                     <button key={stg.id} onClick={() => handleUpdateProject(project.id, 'lifecycleState', stg.id)} className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === stg.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
                         <i className={`fas ${stg.icon} mr-2`}></i> {stg.name}
                     </button>
@@ -99,44 +96,58 @@ export default function ProjectWizard() {
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
-                        <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white">
+                        <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white shrink-0">
                             <h3 className="font-black text-xl text-blue-400"><i className="fas fa-clipboard-list mr-3"></i> Pre-Sales Context / Core Settings</h3>
                             <button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times"></i></button>
                         </div>
-                        <div className="p-8 overflow-y-auto bg-slate-50 space-y-8">
+                        <div className="p-8 overflow-y-auto bg-slate-50 space-y-8 flex-1">
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Project Foundation</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                                     <div className="md:col-span-2">
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account / Vault Link</label>
                                         <select 
                                             value={editingProject.customerName || ''} 
                                             onChange={e => {
                                                 const selectedName = e.target.value;
                                                 const matched = (customers || []).find(c => c.name === selectedName);
-                                                setEditingProject({
-                                                    ...editingProject,
-                                                    customerName: selectedName,
-                                                    customerId: matched ? matched.id : null
-                                                });
+                                                setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null });
                                             }} 
                                             className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer"
                                         >
                                             <option value="">-- Select Customer Profile --</option>
-                                            {(customers || []).map(c => (
-                                                <option key={c.id} value={c.name}>{c.name}</option>
-                                            ))}
+                                            {(customers || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="md:col-span-2"><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Country</label><input type="text" value={editingProject.country || ''} onChange={e=>setEditingProject({...editingProject, country: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Health</label>
-                                        <select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white">
-                                            <option>Green</option><option>Yellow</option><option>Red</option>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Health</label><select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white"><option>Green</option><option>Yellow</option><option>Red</option></select></div>
+                                </div>
+                            </div>
+
+                            {/* 🚨 NEW: Execution & Governance Boundaries */}
+                            <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600 rounded-bl-full opacity-5 -mr-10 -mt-10"></div>
+                                <h4 className="font-black text-sm text-indigo-900 uppercase mb-4 border-b border-indigo-200 pb-2 relative z-10"><i className="fas fa-shield-alt text-indigo-500 mr-2"></i> Execution & Governance Boundaries</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 relative z-10">
+                                    <div className="md:col-span-3">
+                                        <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-1">Source Authentication Level (Agent Strategy)</label>
+                                        <select value={editingProject.authLevel || 'Read-Only (Customer Managed)'} onChange={e=>setEditingProject({...editingProject, authLevel: e.target.value})} className="w-full p-3 border border-indigo-300 rounded-lg text-sm font-bold outline-none focus:border-indigo-600 bg-white cursor-pointer shadow-sm">
+                                            <option value="Cloud Admin API">Cloud Admin API (Automated Agentless Push)</option>
+                                            <option value="Active Directory Domain Admin">Active Directory Domain Admin (Automated GPO/WinRM Push)</option>
+                                            <option value="Local OS Admin">Local OS Admin / Root (Automated SSH Injection)</option>
+                                            <option value="Read-Only (Customer Managed)">Read-Only / No OS Access (Customer Managed Runbooks)</option>
                                         </select>
+                                    </div>
+                                    <div className="md:col-span-1.5">
+                                        <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1"><i className="fas fa-box text-amber-500 mr-1"></i> Sandbox EPS (Day-1 Validation)</label>
+                                        <input type="text" value={editingProject.sandboxEps || ''} onChange={e=>setEditingProject({...editingProject, sandboxEps: e.target.value})} placeholder="EPS-Staging-ID" className="w-full p-3 border border-amber-300 rounded-lg text-sm font-mono outline-none focus:border-amber-600 bg-amber-50" />
+                                    </div>
+                                    <div className="md:col-span-1.5">
+                                        <label className="block text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1"><i className="fas fa-rocket text-emerald-500 mr-1"></i> Production EPS (Day-2 Cutover)</label>
+                                        <input type="text" value={editingProject.prodEps || ''} onChange={e=>setEditingProject({...editingProject, prodEps: e.target.value})} placeholder="EPS-Production-ID" className="w-full p-3 border border-emerald-300 rounded-lg text-sm font-mono outline-none focus:border-emerald-600 bg-emerald-50" />
                                     </div>
                                 </div>
                             </div>
