@@ -1,160 +1,229 @@
 import React, { useState } from 'react';
 
-export default function StepExecution({ project, onUpdateProject }) {
-    const [subTab, setSubTab] = useState('tasks');
-    const [apiState, setApiState] = useState({ loading: false, logs: project.lastDeploymentLogs || null, error: false });
+export default function StepExecution({ project, onUpdateProject, onPromote }) {
+    const [showMasterGuide, setShowMasterGuide] = useState(false);
     
-    const plan = project.migrationPlan || [];
-    const runbook = project.runbook || [];
+    const execStatus = project.execStatus || 'pending'; // pending -> sandbox_built -> agent_push -> syncing -> cutover
+    const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
+    const sandboxEps = project.sandboxEps || 'Not Configured';
+    const prodEps = project.prodEps || 'Not Configured';
 
-    const handlePlanUpdate = (taskId, val) => {
-        const newPlan = plan.map(t => String(t.id) === String(taskId) ? {...t, prog: val} : t);
-        
-        let updatePayload = { migrationPlan: newPlan };
-        
-        // 🚨 AUTO-CALCULATE OVERALL PROGRESS
-        const childTasks = newPlan.filter(t => !t.isParent);
-        if (childTasks.length > 0) {
-            let totalPercent = 0;
-            childTasks.forEach(t => totalPercent += parseInt(t.prog || '0'));
-            updatePayload.progress = Math.round(totalPercent / childTasks.length) + '%';
-        }
-        
-        onUpdateProject(project.id, updatePayload);
+    const getStrategyDetails = () => {
+        if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via SSM/Run-Command. Control Plane active.' };
+        if (authLevel.includes('Active Directory')) return { icon: 'fa-windows', color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-200', text: 'Automated GPO/WinRM batch push. Centralized Data Plane active.' };
+        if (authLevel.includes('Local OS Admin')) return { icon: 'fa-terminal', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200', text: 'Automated SSH/WinRM Injection loop. Sequential Data Plane active.' };
+        return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust. Generating custom Runbooks for customer manual execution.' };
     };
+    
+    const strategy = getStrategyDetails();
 
-    const handleRunbookUpdate = (id, val) => {
-        onUpdateProject(project.id, 'runbook', runbook.map(r => String(r.id) === String(id) ? {...r, actualHours: parseFloat(val)||0} : r));
-    };
-
-    const totalEst = runbook.reduce((sum, r) => sum + r.estHours, 0);
-    const totalActual = runbook.reduce((sum, r) => sum + r.actualHours, 0);
-    const shadowDelta = totalActual - totalEst;
-
-    const triggerLandingZone = async () => {
-        if(!confirm(`Deploy Landing Zone to Huawei Cloud for ${project.name}?`)) return;
-        setApiState({ loading: true, logs: "Parsing Blueprint...\\nAuthenticating with Huawei Cloud API...\\nPreparing Terraform state...", error: false });
-        
-        try {
-            const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/deploy/landing_zone', { 
-                method: 'POST', 
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                }, 
-                body: JSON.stringify({ id: project.id }) 
-            });
-            
-            const data = await res.json();
-            
-            if (data.success) {
-                const logText = data.logs.join('\n');
-                setApiState({ loading: false, logs: logText, error: false });
-                onUpdateProject(project.id, 'lastDeploymentLogs', logText);
-            } else {
-                setApiState({ loading: false, logs: `API Error: ${data.error}`, error: true });
-            }
-        } catch(e) { 
-            setApiState({ loading: false, logs: `Network Error: ${e.message}`, error: true }); 
-        }
+    const advanceStatus = (newStatus) => {
+        onUpdateProject(project.id, 'execStatus', newStatus);
     };
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex gap-4 mb-8 border-b border-slate-200 pb-4 overflow-x-auto">
-                <button onClick={()=>setSubTab('tasks')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm whitespace-nowrap ${subTab==='tasks'?'bg-emerald-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-check-square mr-2"></i> Task Execution Board</button>
-                <button onClick={()=>setSubTab('deploy')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm whitespace-nowrap ${subTab==='deploy'?'bg-indigo-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-cloud-upload-alt mr-2"></i> Native Orchestration</button>
-            </div>
+        <div className="max-w-[1400px] mx-auto pb-12 animate-fade-in relative space-y-6">
+            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden relative">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500 rounded-full blur-[100px] opacity-20 -mr-20 -mt-20 pointer-events-none"></div>
+                
+                <div className="px-8 py-6 border-b border-slate-700 flex justify-between items-center relative z-10">
+                    <div>
+                        <h3 className="font-black text-2xl text-white flex items-center gap-3"><i className="fas fa-rocket text-indigo-400"></i> Execution Orchestrator</h3>
+                        <p className="text-[11px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Day-1 Landing Zone Provisioning & MgC Automation</p>
+                    </div>
+                    <button onClick={() => setShowMasterGuide(true)} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors border border-indigo-500">
+                        <i className="fas fa-book-open mr-2"></i> Master Execution Guide
+                    </button>
+                </div>
 
-            {subTab === 'tasks' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 border-b border-slate-100 pb-6 gap-6">
-                        <div>
-                            <h3 className="font-black text-xl text-slate-800"><i className="fas fa-check-square text-emerald-500 mr-2"></i> Active Task Execution</h3>
-                            <p className="text-xs text-slate-500 mt-1">Track WBS progress and log actual hours against the Runbook estimates.</p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 relative z-10">
+                    {/* LEFT COLUMN: STRATEGY MATRIX */}
+                    <div className="p-8 border-r border-slate-700 bg-slate-800/50">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2">Credential Decision Matrix</h4>
+                        <div className={`p-5 rounded-xl border ${strategy.border} ${strategy.bg} mb-6`}>
+                            <div className="flex items-center gap-3 mb-3">
+                                <i className={`fas ${strategy.icon} ${strategy.color} text-2xl`}></i>
+                                <div className={`text-sm font-black ${strategy.color}`}>{authLevel}</div>
+                            </div>
+                            <div className="text-xs text-slate-600 font-medium leading-relaxed">{strategy.text}</div>
                         </div>
-                        <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap gap-6 items-center shadow-lg w-full xl:w-auto">
-                            <div><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Shadow Mode</div><div className="text-xs font-bold text-emerald-400 flex items-center"><span className="animate-pulse w-2 h-2 bg-emerald-500 rounded-full mr-2"></span> Active Tracking</div></div>
-                            <div className="border-l border-slate-700 pl-6"><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Est. Baseline</div><div className="text-lg font-black">{totalEst}h</div></div>
-                            <div className="border-l border-slate-700 pl-6"><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Actual Billed</div><div className={`text-lg font-black ${shadowDelta > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{totalActual}h</div></div>
-                            <div className="border-l border-slate-700 pl-6"><div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Commercial Variance</div><div className={`text-xs font-black px-2 py-1 rounded ${shadowDelta > 0 ? 'bg-rose-500/20 text-rose-400' : shadowDelta < 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'}`}>{shadowDelta > 0 ? '+' : ''}{shadowDelta}h</div></div>
+
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2 mt-8">Active Directory Variables</h4>
+                        <div className="space-y-4">
+                            <div><label className="block text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Target Sandbox EPS</label><div className="text-xs font-mono text-amber-400 bg-slate-900 px-3 py-2 rounded border border-slate-700">{sandboxEps}</div></div>
+                            <div><label className="block text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Target Production EPS</label><div className="text-xs font-mono text-emerald-400 bg-slate-900 px-3 py-2 rounded border border-slate-700">{prodEps}</div></div>
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs min-w-[800px]">
-                            <thead className="bg-slate-100 uppercase text-slate-500 text-[10px]">
-                                <tr>
-                                    <th className="p-3 w-24">WBS ID</th>
-                                    <th className="p-3">Task Name</th>
-                                    <th className="p-3 w-32">Progress</th>
-                                    <th className="p-3 w-64">Timesheet (Shadow Mode)</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {plan.length === 0 ? (
-                                    <tr><td colSpan="4" className="p-8 text-center text-slate-400 font-bold">No tasks generated in planning phase.</td></tr>
+                    {/* RIGHT COLUMN: PIPELINE EXECUTION */}
+                    <div className="p-8 lg:col-span-2 space-y-6">
+                        {/* Phase 1: Landing Zone */}
+                        <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'pending' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Phase 1</div>
+                                    <h4 className="text-lg font-black text-white mb-2">Build RFS Landing Zone</h4>
+                                    <p className="text-xs text-slate-400">Compiles the JSON blueprint into Terraform and pushes VPCs, Subnets, and temp nodes to the Sandbox EPS.</p>
+                                </div>
+                                {execStatus === 'pending' ? (
+                                    <button onClick={() => advanceStatus('sandbox_built')} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-play mr-2"></i> Execute RFS</button>
                                 ) : (
-                                    plan.map(t => {
-                                        const rb = runbook.find(r => String(r.taskId) === String(t.id));
-                                        return (
-                                            <tr key={t.id} className={`hover:bg-slate-50 transition-colors ${t.isParent ? 'bg-slate-50' : ''}`}>
-                                                <td className="p-3 font-mono text-slate-500 font-bold">{t.id}</td>
-                                                <td className={`p-3 ${t.isParent ? 'text-slate-800 text-sm font-black' : 'text-slate-600 font-bold pl-8'}`}>{t.name}</td>
-                                                <td className="p-3">
-                                                    {!t.isParent ? (
-                                                        <select value={t.prog||'0%'} onChange={e=>handlePlanUpdate(t.id, e.target.value)} className={`border p-1.5 rounded font-black outline-none focus:border-emerald-500 w-full ${t.prog==='100%'?'bg-emerald-100 text-emerald-800 border-emerald-300':'bg-white text-slate-700 border-slate-300'}`}>
-                                                            <option>0%</option><option>25%</option><option>50%</option><option>75%</option><option>100%</option>
-                                                        </select>
-                                                    ) : (
-                                                        <div className="bg-slate-200 h-2 w-full rounded-full overflow-hidden"><div className="bg-slate-400 h-full w-full"></div></div>
-                                                    )}
-                                                </td>
-                                                <td className="p-3">
-                                                    {rb ? (
-                                                        <div className="flex gap-2 items-center bg-slate-50 p-1.5 rounded border border-slate-200">
-                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Est: {rb.estHours}h | Act:</span>
-                                                            <input type="number" step="0.5" disabled={t.prog!=='100%'} value={rb.actualHours||''} onChange={e=>handleRunbookUpdate(rb.id, e.target.value)} className="w-16 border border-slate-300 p-1 rounded text-xs font-black disabled:bg-slate-200 outline-none focus:border-emerald-500" placeholder="0.0"/>
-                                                        </div>
-                                                    ) : (
-                                                        !t.isParent ? <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest bg-slate-50 px-2 py-1 rounded">Not in Runbook</span> : null
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        )
-                                    })
+                                    <div className="text-amber-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                 )}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+
+                        {/* Phase 2: Agent Push */}
+                        <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Phase 2</div>
+                                    <h4 className="text-lg font-black text-white mb-2">Deploy SMS / MgC Agents</h4>
+                                    <p className="text-xs text-slate-400">Executes the `{authLevel}` deployment strategy across source servers.</p>
+                                </div>
+                                {execStatus === 'sandbox_built' && authLevel.includes('Read-Only') ? (
+                                    <button onClick={() => { alert("Generating Custom Copy-Paste Runbooks for Customer IT Team..."); advanceStatus('syncing'); }} className="px-6 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors border border-slate-500"><i className="fas fa-file-code mr-2"></i> Generate Scripts</button>
+                                ) : execStatus === 'sandbox_built' ? (
+                                    <button onClick={() => advanceStatus('syncing')} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-project-diagram mr-2"></i> Push Agents</button>
+                                ) : execStatus !== 'pending' ? (
+                                    <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {/* Phase 3: Drift & Sync */}
+                        <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 3</div>
+                                    <h4 className="text-lg font-black text-white mb-2">Continuous Sync & Drift Monitor</h4>
+                                    <p className="text-xs text-slate-400">Polling `task_poll_latest.json`. Continuous checks running to detect source environment drift before cutover.</p>
+                                </div>
+                                {execStatus === 'syncing' ? (
+                                    <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-forward mr-2"></i> Simulate Sync Complete</button>
+                                ) : ['cutover_ready', 'completed'].includes(execStatus) ? (
+                                    <div className="text-purple-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {/* Phase 4: Production Cutover */}
+                        <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'cutover_ready' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Phase 4</div>
+                                    <h4 className="text-lg font-black text-white mb-2">Production Cutover & Optimization</h4>
+                                    <p className="text-xs text-slate-400">Promotes resources from Sandbox to Production EPS. Rebinds EIPs, validates Security Groups, and destroys Sandbox.</p>
+                                </div>
+                                {execStatus === 'cutover_ready' ? (
+                                    <button onClick={() => advanceStatus('completed')} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-power-off mr-2"></i> Execute Cutover</button>
+                                ) : execStatus === 'completed' ? (
+                                    <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                ) : null}
+                            </div>
+                        </div>
+                        
+                        {execStatus === 'completed' && (
+                            <div className="pt-4 flex justify-end">
+                                <button onClick={onPromote} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded-xl text-sm font-black uppercase tracking-widest shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all animate-bounce"><i className="fas fa-flag-checkered mr-2"></i> Handover Complete</button>
+                            </div>
+                        )}
                     </div>
                 </div>
-            )}
+            </div>
 
-            {subTab === 'deploy' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row min-h-[500px]">
-                    <div className="p-8 md:w-1/3 bg-slate-50 border-r border-slate-200 flex flex-col">
-                        <h3 className="font-black text-lg tracking-wide text-slate-800 mb-4"><i className="fas fa-server text-blue-500 mr-2"></i> Native Orchestration</h3>
-                        <p className="text-sm text-slate-600 mb-8 leading-relaxed font-medium">Deploy the baseline infrastructure identified by the AI Analysis directly from the Blueprint into the Huawei Cloud Destination Region.</p>
-                        
-                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-8">
-                            <div className="text-[10px] uppercase font-black text-indigo-500 tracking-widest mb-2">Target Configuration</div>
-                            <div className="text-xs font-bold text-slate-700 flex justify-between mb-1"><span>Region:</span> <span className="text-indigo-700">{project.customerProfile?.region || 'la-south-2'}</span></div>
-                            <div className="text-xs font-bold text-slate-700 flex justify-between"><span>Auth Type:</span> <span className="text-indigo-700">AK/SK IAM Proxy</span></div>
+            {/* 🚨 MASTER EXECUTION GUIDE DRAWER */}
+            {showMasterGuide && (
+                <div className="fixed inset-y-0 right-0 w-[800px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
+                    <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
+                        <div>
+                            <h3 className="font-black text-xl"><i className="fas fa-book-open mr-2"></i> Phase 3 Execution & Provisioning Master Guide</h3>
+                            <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-1">Bridging the Cloud API Plane with the OS-level Data Plane</p>
                         </div>
-
-                        <button onClick={triggerLandingZone} disabled={apiState.loading} className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 transition-all shadow-md active:scale-95">
-                            {apiState.loading ? (<span><i className="fas fa-spinner fa-spin mr-2"></i> Orchestrating...</span>) : (<span><i className="fas fa-rocket mr-2"></i> Deploy Landing Zone</span>)}
-                        </button>
+                        <button onClick={()=>setShowMasterGuide(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-2xl"></i></button>
                     </div>
-                    <div className="p-6 md:w-2/3 bg-slate-900 font-mono text-xs leading-relaxed relative overflow-y-auto">
-                        <div className="absolute top-0 left-0 w-full p-2 bg-slate-800 border-b border-slate-700 text-slate-400 text-[10px] uppercase tracking-widest flex items-center justify-between">
-                            <span><i className="fas fa-terminal mr-2"></i> Huawei Cloud CLI Output</span>
-                            {apiState.loading && <span className="text-emerald-400 animate-pulse">Connection Active...</span>}
+                    <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
+                        
+                        {/* Section 1 */}
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">1. The Operational Control vs. Data Plane Framework</h4>
+                            <p>When the ERP orchestrates a migration, it operates across two entirely isolated execution vectors depending on the credential tiers provided by the customer profile.</p>
+                            <div className="bg-slate-900 text-emerald-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
+<pre>{`       ┌────────────────────────────────────────────────────────┐
+       │             LATAM CLOUD ERP CORE ENGINE                │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+ ┌───────────────┐                                   ┌───────────────┐
+ │ CONTROL PLANE │ [Cloud Management API]            │  DATA PLANE   │ [OS-Level Tunneling]
+ └───────┬───────┘                                   └───────┬───────┘
+         │ (AWS AK/SK, Azure SP, vCenter)                    │ (SSH Key, local Admin)
+         ▼                                                   ▼
+┌─────────────────┐                                 ┌─────────────────┐
+│ Cloud Providers │ (AWS, Azure, vCenter API)       │ Target Guest OS │ (Direct VM Access)
+└────────┬────────┘                                 └────────┬────────┘
+         │                                                   │
+         └─────────────► [ AUTOMATED AGENT DEPLOYMENT ] ◄────┘`}</pre>
+                            </div>
+                            <ul className="list-disc pl-5 space-y-2 text-xs">
+                                <li><strong>The Control Plane Vector:</strong> Utilizing Cloud Native remote management (e.g., AWS Systems Manager). If Cloud Administrator permissions are granted, the ERP speaks natively to the hyperscaler backend. Zero OS passwords or SSH keys are handled by our platform.</li>
+                                <li><strong>The Data Plane Vector:</strong> Operating over the traditional network layer. If the customer whitelists our platform IP, the ERP opens an encrypted socket (Port 22/SSH or Port 5985/WinRM). The pipeline drops the signed binary into a temporary storage sector and executes.</li>
+                            </ul>
                         </div>
-                        <div className={`mt-8 whitespace-pre-wrap ${apiState.error ? 'text-rose-400' : 'text-emerald-400'}`}>
-                            {apiState.logs || "// Terminal Output\n// Awaiting Execution Commands..."}
+
+                        {/* Section 2 */}
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">2. The Credential Decision Matrix</h4>
+                            <p>The orchestration engine dynamically shifts its deployment runbook strategy based on the depth of validation keys recorded in the Customer Profile Vault.</p>
+                            <div className="bg-slate-900 text-amber-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
+<pre>{`                  ┌──────────────────────────────┐
+                  │ Assess Customer Credentials  │
+                  └──────────────┬───────────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+ ┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+ │  Cloud Admin  │       │ Domain Admin  │       │  Local Admin  │
+ └───────┬───────┘       └───────┬───────┘       └───────┬───────┘
+         ▼                       ▼                       ▼
+ ┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+ │ Control Plane │       │ PowerShell/GPO│       │ Loop SSH/WinRM│
+ │ Native Push   │       │ Batch Push    │       │ Per Node      │
+ └───────────────┘       └───────────────┘       └───────────────┘`}</pre>
+                            </div>
+                            <ul className="list-disc pl-5 space-y-2 text-xs">
+                                <li><strong>Hyperscaler Admin:</strong> Fully automated cloud native orchestration. Pushed automatically across massive batches via SSM/Run-Command blocks.</li>
+                                <li><strong>Active Directory Domain Admin:</strong> Centralized environment control. The ERP logs into a single internal jump-box and distributes MSI packages across the fleet utilizing batch PowerShell remote loops.</li>
+                                <li><strong>Local System Admin:</strong> The engine steps down to sequential host-by-host execution, parsing individual whitelisted node coordinates to apply safe, silent background agent installations.</li>
+                                <li><strong>Read-Only / Closed Posture:</strong> Zero automation access. The engine compiles a fully customized script package. The delivery engineer presents this directly to the customer IT team for manual deployment.</li>
+                            </ul>
                         </div>
+
+                        {/* Section 3 */}
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">3. The Multi-Tiered Vault & Sandbox (EPS) Isolation</h4>
+                            <p>To minimize risk and guarantee zero blast-radius to production environments, the ERP enforces a strict Least Privilege Key Tiering system tied directly to Huawei Cloud Enterprise Projects (EPS).</p>
+                            <div className="bg-slate-900 text-rose-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
+<pre>{`        DAY 0: ASSESSMENT     │      DAY 1: EXECUTION      │   DAY 2: HANDOVER
+                              │                            │
+      [ 🔑 TIER 1 KEY ]       │      [ 🔑 TIER 2 KEY ]     │  [ 🔑 TIER 3 KEY ]
+      Global Read-Only        │     Sandbox EPS Admin      │   Prod EPS Admin
+                              │                            │
+ ┌─────────────────────────┐  │  ┌──────────────────────┐  │ ┌────────────────┐
+ │ MgC Discovery Engine    │  │  │ SMS Sync Workers     │  │ │ Cutover Binding│
+ │ Source Network Mapping  │──┼─►│ RFS Landing Zone     │──┼►│ Prod SGs / EIP │
+ │ Target Sizing Scans     │  │  │ Temp VPNs / NATs     │  │ │ Teardown Temp  │
+ └─────────────────────────┘  │  └──────────────────────┘  │ └────────────────┘
+        BLAST RADIUS:         │        BLAST RADIUS:       │   BLAST RADIUS:
+           ZERO               │      SANDBOX EPS ONLY      │   PROD APPROVED`}</pre>
+                            </div>
+                            <ul className="list-disc pl-5 space-y-2 text-xs">
+                                <li><strong>The Sandbox Phase (Tier 2):</strong> The RFS/Terraform generator dynamically reads the visual topology blueprint and injects the staging <code>enterprise_project_id</code> across every VPC, subnet, security group, and storage container. All replication stress tests live here safely.</li>
+                                <li><strong>The Promotion Cutover Phase (Tier 3):</strong> Following customer sign-off, staging environments undergo seamless billing and policy promotion directly into the Production EPS boundary, followed by an automated deep teardown optimization cycle of the entire sandbox resource graph to maintain a zero-waste finops posture.</li>
+                            </ul>
+                        </div>
+
                     </div>
                 </div>
             )}
