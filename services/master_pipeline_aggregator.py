@@ -56,8 +56,9 @@ class MasterPipelineAggregator:
         
         return enriched_projects
     
-    def _enrich_project_data(self, project_id: str, base_data: Dict) -> Dict:
+    def _enrich_project_data(self, project_id: str, base_data: Optional[Dict] = None) -> Dict:
         """Enrich project data with information from all sources"""
+        base_data = base_data or {}
         # Start with base project data
         enriched = {
             'id': project_id,
@@ -143,6 +144,14 @@ class MasterPipelineAggregator:
         Returns:
             Success status
         """
+        allowed_fields = {
+            'name', 'customerName', 'startDate', 'liveDate', 'progress', 
+            'currentPhase', 'budget', 'spend', 'forecast', 'region', 
+            'partner', 'sa', 'techContact', 'blockers', 'timelineNotes'
+        }
+        if field not in allowed_fields:
+            return False
+
         try:
             project = ProjectData.query.get(project_id)
             if not project:
