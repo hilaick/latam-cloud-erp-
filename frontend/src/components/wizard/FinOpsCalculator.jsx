@@ -95,12 +95,18 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
 
         setMigrationOverhead(newOverhead);
         setMigrationBom(newBom);
-        onUpdateProject(activeProject.id, 'financials', { 
-            ...(activeProject.financials || {}), 
-            overheadScenario: scenario, 
-            migrationOverhead: newOverhead, 
-            migrationBom: newBom 
-        });
+        
+        // 🚨 FIX: Pass entire project state to guarantee sync
+        const updatedProject = {
+            ...activeProject,
+            financials: {
+                ...(activeProject.financials || {}),
+                overheadScenario: scenario,
+                migrationOverhead: newOverhead,
+                migrationBom: newBom
+            }
+        };
+        onUpdateProject(activeProject.id, updatedProject);
     };
 
     const toggleBomItem = (id) => {
@@ -110,11 +116,15 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         const dynamicOverhead = updatedBom.filter(i => i.selected).reduce((acc, curr) => acc + curr.cost_per_month, 0) * durationMonths;
         setMigrationOverhead(dynamicOverhead);
         
-        onUpdateProject(activeProject.id, 'financials', { 
-            ...(activeProject.financials || {}), 
-            migrationOverhead: dynamicOverhead, 
-            migrationBom: updatedBom 
-        });
+        const updatedProject = {
+            ...activeProject,
+            financials: {
+                ...(activeProject.financials || {}),
+                migrationOverhead: dynamicOverhead,
+                migrationBom: updatedBom
+            }
+        };
+        onUpdateProject(activeProject.id, updatedProject);
     };
 
     const validateBilling = async () => {
@@ -129,7 +139,11 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
             const data = await response.json();
             if (data.success) {
                 setActualBilling(data);
-                onUpdateProject(activeProject.id, 'financials', { ...(activeProject.financials || {}), actualBilling: data });
+                const updatedProject = {
+                    ...activeProject,
+                    financials: { ...(activeProject.financials || {}), actualBilling: data }
+                };
+                onUpdateProject(activeProject.id, updatedProject);
             }
         } catch (err) {
             console.error(err);
@@ -159,11 +173,13 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
 
     const saveContext = () => { 
-        // 🚨 FIX: Pass a single compound payload object to prevent React 18 race conditions
-        onUpdateProject(activeProject.id, {
+        // 🚨 FIX: Combine into a single, cohesive update to prevent ERR_EMPTY_RESPONSE
+        const updatedProject = {
+            ...activeProject,
             budget: { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate },
             financials: { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling }
-        }); 
+        };
+        onUpdateProject(activeProject.id, updatedProject); 
         alert("FinOps & Commercial Model Saved."); 
     };
 
