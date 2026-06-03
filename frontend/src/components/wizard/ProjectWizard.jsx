@@ -7,7 +7,7 @@ import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
 
 export default function ProjectWizard() {
-    const { projects, activeProjectId, handleUpdateProject } = useContext(ERPContext);
+    const { projects, activeProjectId, handleUpdateProject, customers } = useContext(ERPContext);
     const [editingProject, setEditingProject] = useState(null);
     
     const project = projects.find(p => String(p.id) === String(activeProjectId));
@@ -93,7 +93,6 @@ export default function ProjectWizard() {
 
             {renderStage()}
 
-            {/* 🚨 THE DEEP EDIT MODAL (Single Source of Truth) */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -105,7 +104,28 @@ export default function ProjectWizard() {
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Project Foundation</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    <div className="md:col-span-2"><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label><input type="text" value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    {/* 🚨 FIX: Replaced open text box with Customer Vault Dropdown binding */}
+                                    <div className="md:col-span-2">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
+                                        <select 
+                                            value={editingProject.customerName || ''} 
+                                            onChange={e => {
+                                                const selectedName = e.target.value;
+                                                const matched = (customers || []).find(c => c.name === selectedName);
+                                                setEditingProject({
+                                                    ...editingProject,
+                                                    customerName: selectedName,
+                                                    customerId: matched ? matched.id : null
+                                                });
+                                            }} 
+                                            className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer"
+                                        >
+                                            <option value="">-- Select Customer Profile --</option>
+                                            {(customers || []).map(c => (
+                                                <option key={c.id} value={c.name}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <div className="md:col-span-2"><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
