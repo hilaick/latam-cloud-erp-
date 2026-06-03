@@ -1,210 +1,178 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import TwoFactorModal from '../utils/TwoFactorModal'; 
-
-// 🚨 COMPREHENSIVE HUAWEI CLOUD REGION DICTIONARY
-export const HUAWEI_REGIONS = [
-    { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] },
-    { group: "Europe, Middle East & Africa", options: [{ id: "eu-west-101", name: "EU-Dublin" }, { id: "tr-west-1", name: "TR-Istanbul" }, { id: "me-east-1", name: "ME-Riyadh" }, { id: "af-south-1", name: "AF-Johannesburg" }, { id: "af-north-1", name: "AF-Cairo" }] },
-    { group: "Asia Pacific", options: [{ id: "ap-southeast-1", name: "CN-Hong Kong" }, { id: "ap-southeast-2", name: "AP-Bangkok" }, { id: "ap-southeast-3", name: "AP-Singapore" }, { id: "ap-southeast-4", name: "AP-Jakarta" }, { id: "ap-southeast-5", name: "AP-Manila" }] },
-    { group: "Chinese Mainland", options: [{ id: "cn-north-1", name: "CN North-Beijing1" }, { id: "cn-north-4", name: "CN North-Beijing4" }, { id: "cn-north-9", name: "CN North-Ulanqab1" }, { id: "cn-north-12", name: "CN North3" }, { id: "cn-east-3", name: "CN East-Shanghai1" }, { id: "cn-east-2", name: "CN East-Shanghai2" }, { id: "cn-east-5", name: "CN East-Qingdao" }, { id: "cn-east-4", name: "CN East2" }, { id: "cn-south-1", name: "CN South-Guangzhou" }, { id: "cn-southwest-2", name: "CN Southwest-Guiyang1" }] }
-];
+import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function CustomerDirectory() {
-    const context = useContext(ERPContext);
+    const { customers, handleAddCustomer, handleUpdateCustomer, handleDeleteCustomer } = useContext(ERPContext);
     
-    const customers = context.customers || [];
-    const projects = context.projects || [];
-    const handleUpdateCustomer = context.handleUpdateCustomer || function(){};
-    const handleDeleteCustomer = context.handleDeleteCustomer || function(){};
+    const [searchTerm, setSearchTerm] = useState('');
+    const [editingCustomer, setEditingCustomer] = useState(null);
+    const [isCreating, setIsCreating] = useState(false);
+    const [customerToDelete, setCustomerToDelete] = useState(null);
+    const [activeTab, setActiveTab] = useState('general');
 
-    const [selectedId, setSelectedId] = useState(customers.length > 0 ? customers[0].id : null);
-    const [show2FA, setShow2FA] = useState(false); 
-    
-    useEffect(() => {
-        if (customers.length > 0 && !selectedId) {
-            setSelectedId(customers[0].id);
-        }
-    }, [customers, selectedId]);
+    const filteredCustomers = (customers || []).filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const activeCustomer = customers.find(c => c.id === selectedId);
-    
-    const linkedProjects = projects.filter(p => {
-        if (p.isWaiting || p.isDeleted || !activeCustomer || !p.name) return false;
-        return p.name.toLowerCase().includes((activeCustomer.name || '').toLowerCase().split(' ')[0]);
-    });
+    const openCreateModal = () => {
+        setEditingCustomer({
+            id: String(Date.now()), name: '', contact: '', email: '',
+            tier1AK: '', tier1SK: '', // Read-Only
+            tier2AK: '', tier2SK: '', // Sandbox Admin
+            tier3AK: '', tier3SK: '', // Prod Admin
+            osDomain: '', osUser: '', osPassword: '', vCenterHost: ''
+        });
+        setIsCreating(true);
+        setActiveTab('general');
+    };
 
-    const [ak, setAk] = useState('');
-    const [sk, setSk] = useState('');
-    const [region, setRegion] = useState('la-south-2'); // Stores as comma-separated string
-    
-    useEffect(() => {
-        if (activeCustomer) { 
-            setAk(activeCustomer.ak || ''); 
-            setSk(activeCustomer.sk || ''); 
-            setRegion(activeCustomer.region || 'la-south-2'); 
+    const handleSave = () => {
+        if (!editingCustomer.name) return alert("Customer Name is required.");
+        if (isCreating) {
+            handleAddCustomer(editingCustomer);
         } else {
-            setAk(''); setSk(''); setRegion('la-south-2');
+            handleUpdateCustomer(editingCustomer.id, editingCustomer);
         }
-    }, [activeCustomer]);
-
-    const handleSaveVault = () => {
-        if (!activeCustomer) return;
-        handleUpdateCustomer({ ...activeCustomer, ak, sk, region });
-        alert("Secure Customer Vault Updated.");
-    };
-
-    const executeDelete = () => {
-        handleDeleteCustomer(activeCustomer.id);
-        setShow2FA(false);
-        alert("Customer and associated projects permanently deleted.");
-    };
-
-    // 🚨 MULTI-REGION TAG LOGIC
-    const selectedRegions = region ? region.split(',').map(r => r.trim()).filter(Boolean) : [];
-
-    const handleAddRegion = (e) => {
-        const val = e.target.value;
-        if (!val) return;
-        if (!selectedRegions.includes(val)) {
-            setRegion(selectedRegions.length > 0 ? `${region}, ${val}` : val);
-        }
-        e.target.value = ''; // Reset select back to placeholder
-    };
-
-    const handleRemoveRegion = (regToRemove) => {
-        setRegion(selectedRegions.filter(r => r !== regToRemove).join(', '));
+        setEditingCustomer(null);
+        setIsCreating(false);
     };
 
     return (
-        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
-            <div className="bg-slate-900 rounded-2xl shadow-xl p-6 md:p-8 flex flex-col md:flex-row justify-between items-center text-white border border-slate-700 gap-4 text-center md:text-left">
+        <div className="animate-fade-in max-w-[1600px] mx-auto pb-12">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 flex justify-between items-center">
                 <div>
-                    <h2 className="text-2xl md:text-3xl font-black mb-2">
-                        <i className="fas fa-building text-blue-400 mr-3"></i> Customer Directory
-                    </h2>
-                    <p className="text-sm text-slate-400">Master Accounts, Security Vaults, and Associated Portfolios.</p>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><i className="fas fa-building text-blue-600"></i> Customer Directory & Secure Vault</h2>
+                    <p className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-widest">Multi-Tiered Least Privilege Credential Management</p>
                 </div>
-                <div className="md:text-right">
-                    <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Total Managed Accounts</div>
-                    <div className="text-3xl font-black text-blue-400">{customers.length}</div>
+                <div className="flex gap-4">
+                    <div className="relative">
+                        <i className="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
+                        <input type="text" placeholder="Search accounts..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 w-64" />
+                    </div>
+                    <button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors"><i className="fas fa-plus mr-2"></i> Register Customer</button>
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-6">
-                {/* Left Sidebar: Customer List */}
-                <div className="w-full lg:w-80 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[400px] lg:h-[650px] flex flex-col">
-                    <div className="p-4 bg-slate-50 border-b border-slate-200">
-                        <input type="text" placeholder="Search accounts..." className="w-full p-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500" />
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                        {customers.length === 0 && (
-                            <div className="p-8 text-center text-xs font-bold text-slate-400 border-2 border-dashed border-slate-200 rounded-xl m-2">
-                                No customers generated yet. Move a lead to the pipeline to auto-generate an account.
-                            </div>
-                        )}
-                        {customers.map(c => (
-                            <div key={c.id} onClick={() => setSelectedId(c.id)} className={`p-4 rounded-xl cursor-pointer transition-colors border-2 ${selectedId === c.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent hover:bg-slate-50'}`}>
-                                <div className="font-black text-sm text-slate-800 truncate">{c.name}</div>
-                                <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-bold">
-                                    <i className={`fas fa-key mr-1 ${c.ak ? 'text-emerald-500' : 'text-slate-300'}`}></i> 
-                                    {c.ak ? 'Vault Active' : 'Keys Missing'}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredCustomers.map(c => (
+                    <div key={c.id} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-4 -mt-4 z-0 transition-transform group-hover:scale-110"></div>
+                        <div className="relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="font-black text-lg text-slate-800 truncate pr-4">{c.name}</h3>
+                                <div className="flex gap-2">
+                                    <button onClick={() => { setEditingCustomer({...c}); setIsCreating(false); setActiveTab('vault'); }} className="text-slate-400 hover:text-blue-600 transition-colors"><i className="fas fa-shield-alt"></i></button>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Right Panel: Vault & Projects */}
-                {activeCustomer ? (
-                    <div className="flex-1 space-y-6">
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-4 gap-4">
-                                <h3 className="font-black text-2xl text-slate-800">{activeCustomer.name}</h3>
-                                <button onClick={() => setShow2FA(true)} className="w-full sm:w-auto px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">
-                                    <i className="fas fa-trash-alt mr-2"></i> Delete Account
-                                </button>
+                            <div className="space-y-2 mb-6">
+                                <div className="text-xs text-slate-600 font-medium"><i className="fas fa-user text-slate-400 w-4"></i> {c.contact || 'No Primary Contact'}</div>
+                                <div className="text-xs text-slate-600 font-medium"><i className="fas fa-envelope text-slate-400 w-4"></i> {c.email || 'No Email'}</div>
                             </div>
-                            
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                                {/* The Vault Form */}
-                                <div className="space-y-5">
-                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4"><i className="fas fa-lock text-emerald-500 mr-2"></i> Security Vault</h4>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Access Key (AK)</label>
-                                        <input type="password" value={ak} onChange={e => setAk(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" placeholder="HW_XXXXXXXXXXXXXXXX" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Secret Key (SK)</label>
-                                        <input type="password" value={sk} onChange={e => setSk(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-mono bg-slate-50 focus:border-blue-500 outline-none" placeholder="••••••••••••••••••••••••••••••••" />
-                                    </div>
-                                    
-                                    {/* 🚨 THE NEW MULTI-REGION SELECTOR */}
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Authorized Regions</label>
-                                        <div className="flex flex-wrap gap-2 mb-3">
-                                            {selectedRegions.length === 0 && <span className="text-[10px] text-slate-400 italic">No regions assigned. Select below.</span>}
-                                            {selectedRegions.map(r => (
-                                                <span key={r} className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border border-indigo-200 flex items-center gap-2 shadow-sm">
-                                                    <i className="fas fa-map-marker-alt opacity-50"></i> {r} 
-                                                    <i className="fas fa-times-circle cursor-pointer hover:text-rose-500 transition-colors ml-1 text-sm" onClick={() => handleRemoveRegion(r)}></i>
-                                                </span>
-                                            ))}
-                                        </div>
-                                        <select onChange={handleAddRegion} defaultValue="" className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 outline-none cursor-pointer">
-                                            <option value="" disabled>+ Add Region to Vault...</option>
-                                            {HUAWEI_REGIONS.map(group => (
-                                                <optgroup key={group.group} label={`-- ${group.group} --`}>
-                                                    {group.options.map(o => (
-                                                        <option key={o.id} value={o.id}>{o.name} ({o.id})</option>
-                                                    ))}
-                                                </optgroup>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <button onClick={handleSaveVault} className="w-full py-3 mt-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md transition-colors uppercase tracking-widest">Update Security Vault</button>
-                                </div>
-
-                                {/* Active Portfolio */}
-                                <div>
-                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4"><i className="fas fa-folder-open text-blue-500 mr-2"></i> Active Portfolio</h4>
-                                    <div className="space-y-3 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">
-                                        {linkedProjects.length === 0 && (
-                                            <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl text-center text-xs font-bold text-slate-400">No active projects found.</div>
-                                        )}
-                                        {linkedProjects.map(p => (
-                                            <div 
-                                                key={p.id} 
-                                                onClick={() => { context.setActiveProjectId(p.id); context.setActivePhase('wizard'); }} 
-                                                className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                                                title="Open Project Workspace"
-                                            >
-                                                <div className="truncate pr-2">
-                                                    <div className="font-bold text-sm text-slate-800 truncate">{p.name}</div>
-                                                    <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold truncate"><i className="fas fa-globe-americas mr-1"></i> {p.country || 'Global'} | SA: {p.sa}</div>
-                                                </div>
-                                                <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 shrink-0">${p.mrr}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                            <div className="flex gap-2 border-t border-slate-100 pt-4">
+                                <div className={`flex-1 text-center text-[9px] font-black uppercase tracking-widest py-1.5 rounded ${c.tier1AK ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>Tier 1</div>
+                                <div className={`flex-1 text-center text-[9px] font-black uppercase tracking-widest py-1.5 rounded ${c.tier2AK ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>Tier 2</div>
+                                <div className={`flex-1 text-center text-[9px] font-black uppercase tracking-widest py-1.5 rounded ${c.tier3AK ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>Tier 3</div>
                             </div>
                         </div>
                     </div>
-                ) : (
-                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-400 min-h-[400px]">
-                        <div className="text-center p-6"><i className="fas fa-id-card text-6xl mb-4 opacity-30"></i><h3 className="font-black text-xl text-slate-500">Select a Customer Profile</h3><p className="text-sm mt-2 font-medium">Choose a customer from the left to manage keys.</p></div>
-                    </div>
-                )}
+                ))}
             </div>
-            
-            {show2FA && (
-                <TwoFactorModal 
-                    actionName={`Delete Customer Profile: ${activeCustomer?.name}`} 
-                    onConfirm={executeDelete} 
-                    onCancel={() => setShow2FA(false)} 
-                />
+
+            {editingCustomer && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col border border-slate-700 animate-slide-up max-h-[90vh]">
+                        <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white shrink-0">
+                            <div>
+                                <h3 className="font-black text-xl text-blue-400"><i className="fas fa-user-shield mr-3"></i> {isCreating ? 'Register Customer' : 'Customer Profile & Vault'}</h3>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">Enterprise Credential Matrix</p>
+                            </div>
+                            <div className="flex gap-4">
+                                {!isCreating && <button onClick={()=>setCustomerToDelete(editingCustomer.id)} className="text-rose-400 hover:text-rose-300 text-xs font-black uppercase tracking-widest"><i className="fas fa-trash mr-1"></i> Delete</button>}
+                                <button onClick={()=>setEditingCustomer(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+                            </div>
+                        </div>
+
+                        <div className="flex border-b border-slate-200 bg-slate-50 shrink-0">
+                            <button onClick={()=>setActiveTab('general')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab==='general' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}>General Info</button>
+                            <button onClick={()=>setActiveTab('vault')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab==='vault' ? 'border-emerald-600 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-key mr-2"></i> Cloud API Keys</button>
+                            <button onClick={()=>setActiveTab('os')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab==='os' ? 'border-purple-600 text-purple-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-terminal mr-2"></i> OS & Data Plane</button>
+                        </div>
+
+                        <div className="p-8 overflow-y-auto bg-slate-50 space-y-6 flex-1 custom-scrollbar">
+                            {activeTab === 'general' && (
+                                <div className="space-y-5 animate-fade-in">
+                                    <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Company Name *</label><input type="text" value={editingCustomer.name} onChange={e=>setEditingCustomer({...editingCustomer, name: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500" /></div>
+                                    <div className="grid grid-cols-2 gap-5">
+                                        <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Primary Contact</label><input type="text" value={editingCustomer.contact} onChange={e=>setEditingCustomer({...editingCustomer, contact: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-medium outline-none focus:border-blue-500" /></div>
+                                        <div><label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Contact Email</label><input type="email" value={editingCustomer.email} onChange={e=>setEditingCustomer({...editingCustomer, email: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-medium outline-none focus:border-blue-500" /></div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'vault' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 relative">
+                                        <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-lg rounded-tr-xl">Day 0: Discovery</div>
+                                        <h4 className="font-black text-emerald-800 text-sm mb-1">Tier 1: Global Read-Only Key</h4>
+                                        <p className="text-[10px] text-emerald-600 font-bold mb-4">Required for MgC Source Discovery. Cannot modify production.</p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier1AK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier1AK: e.target.value})} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                            <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier1SK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier1SK: e.target.value})} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 relative">
+                                        <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-lg rounded-tr-xl">Day 1: Execution</div>
+                                        <h4 className="font-black text-amber-800 text-sm mb-1">Tier 2: Sandbox EPS Admin Key</h4>
+                                        <p className="text-[10px] text-amber-700 font-bold mb-4">Used by RFS to provision landing zones. Scoped strictly to the Sandbox Project ID.</p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="block text-[9px] font-black text-amber-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier2AK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier2AK: e.target.value})} className="w-full p-2.5 border border-amber-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                            <div><label className="block text-[9px] font-black text-amber-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier2SK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier2SK: e.target.value})} className="w-full p-2.5 border border-amber-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 relative">
+                                        <div className="absolute top-0 right-0 bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-lg rounded-tr-xl">Day 2: Handover</div>
+                                        <h4 className="font-black text-rose-800 text-sm mb-1">Tier 3: Production EPS Admin Key</h4>
+                                        <p className="text-[10px] text-rose-700 font-bold mb-4">Used exclusively during DTRB-approved cutovers to bind prod EIPs and SGs.</p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier3AK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier3AK: e.target.value})} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                            <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier3SK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier3SK: e.target.value})} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none" /></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'os' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                        <h4 className="font-black text-slate-800 text-sm mb-1"><i className="fab fa-windows text-blue-500 mr-2"></i> Active Directory / OS Admin</h4>
+                                        <p className="text-[10px] text-slate-500 font-bold mb-4 leading-relaxed">If provided, the ERP bypasses the Cloud Control plane and pushes MgC Agents directly to the Data Plane via SSH or WinRM loops.</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Domain (e.g. CORP)</label><input type="text" value={editingCustomer.osDomain || ''} onChange={e=>setEditingCustomer({...editingCustomer, osDomain: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-bold outline-none focus:border-purple-500" /></div>
+                                            <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Admin Username</label><input type="text" value={editingCustomer.osUser || ''} onChange={e=>setEditingCustomer({...editingCustomer, osUser: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-bold outline-none focus:border-purple-500" /></div>
+                                            <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Admin Password</label><input type="password" value={editingCustomer.osPassword || ''} onChange={e=>setEditingCustomer({...editingCustomer, osPassword: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono outline-none focus:border-purple-500" /></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                        <h4 className="font-black text-slate-800 text-sm mb-1"><i className="fas fa-server text-emerald-500 mr-2"></i> VMware vCenter Access</h4>
+                                        <p className="text-[10px] text-slate-500 font-bold mb-4 leading-relaxed">For agentless snapshot migrations. Requires network line-of-sight to the vCenter API.</p>
+                                        <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">vCenter Host / IP</label><input type="text" value={editingCustomer.vCenterHost || ''} onChange={e=>setEditingCustomer({...editingCustomer, vCenterHost: e.target.value})} placeholder="https://vcenter.local" className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500" /></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
+                            <button onClick={()=>setEditingCustomer(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                            <button onClick={handleSave} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Profile</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {customerToDelete && (
+                <TwoFactorModal actionName="Delete Customer & Purge Keys" onConfirm={() => { handleDeleteCustomer(customerToDelete); setCustomerToDelete(null); setEditingCustomer(null); }} onCancel={() => setCustomerToDelete(null)} />
             )}
         </div>
     );
