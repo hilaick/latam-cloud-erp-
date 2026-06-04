@@ -1,226 +1,186 @@
 import React, { useState, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell } from '../../utils/helpers'; 
-import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function PreSalesRadar() {
-    // 🚨 UPDATED: Extracted 'customers' directly from the central state context
     const { projects, customers, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
-    const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
-    
-    const [newLeadCustomer, setNewLeadCustomer] = useState("");
-    const [newLeadName, setNewLeadName] = useState(""); 
-    const [newLeadCountry, setNewLeadCountry] = useState("");
-    const [newLeadSA, setNewLeadSA] = useState(""); 
-    const [isPoC, setIsPoC] = useState(false);
 
-    const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
-    
+    const [searchTerm, setSearchTerm] = useState('');
     const [editingProject, setEditingProject] = useState(null);
-    const [projectToDelete, setProjectToDelete] = useState(null);
+    const [isCreating, setIsCreating] = useState(false);
 
-    const targetCountries = [
-        "Mexico", "Guatemala", "Belize", "El Salvador", "Honduras", "Nicaragua", "Costa Rica", "Panama",
-        "Colombia", "Venezuela", "Ecuador", "Peru", "Bolivia", "Chile", "Argentina", "Uruguay", "Paraguay", "Brazil",
-        "Dominican Republic", "Haiti", "Cuba", "Jamaica", "Puerto Rico", "Trinidad and Tobago", "Bahamas", "Barbados", 
-        "Dominica", "Grenada", "Saint Lucia", "Saint Vincent and the Grenadines", "Antigua and Barbuda", "Saint Kitts and Nevis",
-        "Guyana", "Suriname", "French Guiana", "Guadeloupe", "Martinique", "Curaçao", "Aruba", "Bonaire", "Sint Maarten",
-        "Saba", "Sint Eustatius", "Cayman Islands", "Turks and Caicos Islands", "British Virgin Islands", "US Virgin Islands",
-        "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
-    ];
+    const radarProjects = (projects || []).filter(p => !p.execStatus || p.execStatus === 'radar' || p.execStatus === 'pending');
+    const filteredProjects = radarProjects.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const handleAddNewLead = () => { 
-        if(!newLeadName || !newLeadSA || !newLeadCountry) return alert("Project Name, Target Country, and SA are required."); 
+    const openCreateModal = () => {
+        setEditingProject({
+            id: String(Date.now()), name: '', customerName: '', customerId: '', type: 'Migration',
+            status: 'Prospect', mrr: 0, otc: 0, probability: 50, execStatus: 'radar'
+        });
+        setIsCreating(true);
+    };
+
+    const handleSave = () => {
+        if (!editingProject.name || !editingProject.customerName) {
+            return alert("Project Name and Customer Vault Link are required.");
+        }
         
-        // Find the matched customer record from the CRM list to extract its persistent unique ID
-        const matchedCustomer = (customers || []).find(c => c.name === newLeadCustomer);
+        // Link the customer ID based on the selected name
+        const linkedCustomer = customers.find(c => c.name === editingProject.customerName);
+        if (linkedCustomer) {
+            editingProject.customerId = linkedCustomer.id;
+            editingProject.region = linkedCustomer.region; // Inherit region from vault
+        }
 
-        handleAddProject({
-            id: String(Date.now()), 
-            name: newLeadName, 
-            customerName: newLeadCustomer.trim(), 
-            customerId: matchedCustomer ? matchedCustomer.id : null, // 🚨 Direct binding at creation phase
-            isWaiting: true, 
-            waitingStage: "prospect", 
-            health: "Yellow", 
-            mrr: 0, 
-            sa: newLeadSA, 
-            country: newLeadCountry, 
-            partner: "TBD", 
-            techContact: "TBD", 
-            blocker: "", 
-            lifecycleState: '1_arb', 
-            progress: '0%', 
-            project_type: isPoC ? 'poc' : 'standard', 
-            pocCap: isPoC ? 1000 : null, 
-            pocTtl: isPoC ? '' : null, 
-            discoveryStatus: "Not Started", 
-            sizingStatus: "Not Started", 
-            complexityLevel: "Medium"
-        }); 
-        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
+        if (isCreating) {
+            handleAddProject(editingProject);
+        } else {
+            handleUpdateProject(editingProject.id, editingProject);
+        }
+        setEditingProject(null);
+        setIsCreating(false);
     };
 
-    const executeDelete = () => {
-        if (projectToDelete) { handleDeleteProject(projectToDelete); setProjectToDelete(null); setEditingProject(null); }
+    const promoteToPipeline = (project) => {
+        if (!project.customerId) {
+            return alert("Cannot promote: Project is not linked to a Secure Vault.");
+        }
+        handleUpdateProject(project.id, { ...project, status: 'Closed Won', execStatus: 'pending' });
     };
-    
-    const cols = [
-        { id: 'prospect', title: 'Early Prospect', color: 'border-slate-300 bg-slate-50' }, 
-        { id: 'sizing', title: 'Discovery & Sizing', color: 'border-blue-300 bg-blue-50/50' }, 
-        { id: 'ready', title: 'Ready for ARB Intake', color: 'border-purple-300 bg-purple-50/50' }
-    ];
 
     return (
-        <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12 relative">
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    {/* 🚨 UPDATED: Turned Customer Account from an input text box into a strict dropdown menu selector */}
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account</label>
-                        <select 
-                            value={newLeadCustomer} 
-                            onChange={e=>setNewLeadCustomer(e.target.value)} 
-                            className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold cursor-pointer"
-                        >
-                            <option value="">-- Select Customer Profile --</option>
-                            {(customers || []).map(c => (
-                                <option key={c.id} value={c.name}>{c.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Name *</label><input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Target Country *</label><select value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white"><option value="" disabled>-- Select --</option>{targetCountries.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Sales Architect *</label><input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
+        <div className="max-w-[1600px] mx-auto pb-12 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 flex justify-between items-center">
+                <div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                        <i className="fas fa-radar text-blue-600"></i> Pre-Sales Radar
+                    </h2>
+                    <p className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-widest">Opportunity Tracking & Quotation</p>
                 </div>
-                <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                    <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={isPoC} onChange={e => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" /><span className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</span></label>
-                    <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors"><i className="fas fa-plus mr-2"></i> Add Lead</button>
+                <div className="flex gap-4">
+                    <input type="text" placeholder="Search opportunities..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 w-64 transition-colors" />
+                    <button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors"><i className="fas fa-plus mr-2"></i> New Opportunity</button>
                 </div>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {cols.map(col => {
-                    const colProjects = waitingProjects.filter(p => p.waitingStage === col.id || (col.id==='prospect' && !p.waitingStage));
-                    return (
-                        <div key={col.id} className={`rounded-2xl border-2 flex flex-col transition-all duration-300 overflow-hidden ${col.color} ${expanded[col.id] ? 'h-auto lg:h-[750px]' : 'h-16'}`}>
-                            <div className="p-5 border-b-2 border-inherit font-black text-sm text-slate-800 uppercase tracking-widest bg-white/60 backdrop-blur-sm flex justify-between items-center cursor-pointer" onClick={() => setExpanded(prev => ({...prev, [col.id]: !prev[col.id]}))}>
-                                <div>{col.title} <span className="ml-3 bg-slate-800 text-white px-3 py-1 rounded-full text-[10px] shadow-sm">{colProjects.length}</span></div><i className={`fas fa-chevron-${expanded[col.id] ? 'up' : 'down'} text-slate-400`}></i>
-                            </div>
-                            <div className={`p-5 space-y-5 overflow-y-auto flex-1 custom-scrollbar ${!expanded[col.id] ? 'hidden' : 'block'}`}>
-                                {colProjects.map(p => (
-                                    <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                                        <div className="flex flex-col mb-4 border-b border-slate-100 pb-3 mt-2 gap-3">
-                                            <div className="font-black text-base text-slate-800 leading-tight">
-                                                <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerId ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
-                                                    {p.customerId ? <><i className="fas fa-shield text-[9px] mr-1"></i> {p.customerName}</> : <><i className="fas fa-exclamation-triangle"></i> Account Unlinked</>}
-                                                </div>
-                                                {p.name} {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm"><i className="fas fa-bolt mr-1"></i> PoC</span>}
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setEditingProject({...p})} className="flex-1 text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200"><i className="fas fa-expand-arrows-alt mr-1"></i> Assess</button>
-                                                <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-lg border border-rose-200"><i className="fas fa-trash-alt"></i></button>
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3 mb-4">
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate"><i className="fas fa-user-tie mr-2"></i> {p.sa}</div>
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate"><i className="fas fa-globe-americas mr-2"></i> {p.country}</div>
-                                        </div>
-                                        {(col.id === 'sizing' || col.id === 'ready') && (
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-center"><div className="text-sm font-black bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg border border-emerald-200">${p.mrr || 0} /mo</div><div className="text-[10px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-1 rounded">Disc: {p.discoveryStatus || 'Pending'}</div></div>
-                                            </div>
-                                        )}
-                                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                                            {col.id === 'prospect' && <div className="w-full flex justify-end"><button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-800 px-4 py-2 rounded-lg">Move <i className="fas fa-arrow-right ml-1"></i></button></div>}
-                                            {col.id === 'sizing' && <><button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'prospect')} className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600"><i className="fas fa-arrow-left mr-1"></i> Back</button><button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'ready')} className="text-[10px] font-black uppercase bg-purple-100 text-purple-800 px-4 py-2 rounded-lg">Ready <i className="fas fa-arrow-right ml-1"></i></button></>}
-                                            {col.id === 'ready' && <><button onClick={()=>handleUpdateProject(p.id, 'waitingStage', 'sizing')} className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600"><i className="fas fa-arrow-left mr-1"></i> Back</button><button onClick={()=>{handleUpdateProject(p.id, 'isWaiting', false); alert("Moved to Delivery Pipeline!");}} className="text-[10px] font-black uppercase bg-emerald-600 text-white px-4 py-2 rounded-lg">Start ARB <i className="fas fa-door-open ml-1"></i></button></>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )
-                })}
             </div>
 
-            {/* DEEP EDIT ASSESSMENT MODAL */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-widest text-slate-500 font-black">
+                            <th className="p-4 pl-6">Project Name</th>
+                            <th className="p-4">Customer Vault</th>
+                            <th className="p-4">Type</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4">MRR / OTC</th>
+                            <th className="p-4 text-center">Probability</th>
+                            <th className="p-4 text-right pr-6">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredProjects.map(p => (
+                            <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+                                <td className="p-4 pl-6 font-bold text-slate-800">{p.name}</td>
+                                <td className="p-4 text-xs font-bold text-slate-600"><i className="fas fa-shield-alt text-slate-400 mr-2"></i>{p.customerName}</td>
+                                <td className="p-4 text-xs text-slate-600">{p.type}</td>
+                                <td className="p-4">
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                        p.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
+                                        p.status === 'Negotiation' ? 'bg-amber-100 text-amber-700' :
+                                        p.status === 'Proposal' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-slate-100 text-slate-600'
+                                    }`}>{p.status}</span>
+                                </td>
+                                <td className="p-4 font-mono text-xs text-slate-700">${Number(p.mrr).toLocaleString()} / ${Number(p.otc).toLocaleString()}</td>
+                                <td className="p-4 text-center">
+                                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-full border-2 border-slate-200 text-xs font-black text-slate-700 bg-white shadow-sm">{p.probability}%</div>
+                                </td>
+                                <td className="p-4 pr-6 text-right space-x-3">
+                                    <button onClick={() => { setEditingProject({...p}); setIsCreating(false); }} className="text-slate-400 hover:text-blue-600 transition-colors"><i className="fas fa-edit"></i></button>
+                                    <button onClick={() => { if(window.confirm('Delete opportunity?')) handleDeleteProject(p.id); }} className="text-slate-400 hover:text-rose-600 transition-colors"><i className="fas fa-trash"></i></button>
+                                    <button onClick={() => promoteToPipeline(p)} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md transition-all ml-2 opacity-0 group-hover:opacity-100">Send to Delivery</button>
+                                </td>
+                            </tr>
+                        ))}
+                        {filteredProjects.length === 0 && (
+                            <tr><td colSpan="7" className="p-8 text-center text-slate-500 text-sm font-bold">No opportunities in the radar.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
             {editingProject && (
-                <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
-                        <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white"><h3 className="font-black text-xl text-blue-400"><i className="fas fa-clipboard-list mr-3"></i> Pre-Sales Assessment</h3><button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times"></i></button></div>
-                        <div className="p-8 overflow-y-auto bg-slate-50 space-y-8">
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Basic Information</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    {/* 🚨 UPDATED: Turned ongoing Customer Account field in deep edit into a matching dropdown to link existing profiles instantly */}
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
-                                        <select 
-                                            value={editingProject.customerName || ''} 
-                                            onChange={e => {
-                                                const selectedName = e.target.value;
-                                                const matched = (customers || []).find(c => c.name === selectedName);
-                                                setEditingProject({
-                                                    ...editingProject,
-                                                    customerName: selectedName,
-                                                    customerId: matched ? matched.id : null // Instantly binds the dynamic account configuration
-                                                });
-                                            }} 
-                                            className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer"
-                                        >
-                                            <option value="">-- Select Customer Profile --</option>
-                                            {(customers || []).map(c => (
-                                                <option key={c.id} value={c.name}>{c.name}</option>
-                                            ))}
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden animate-slide-up">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                            <h3 className="font-black text-slate-800">{isCreating ? 'New Opportunity' : 'Edit Opportunity'}</h3>
+                            <button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Project Name *</label>
+                                    <input type="text" value={editingProject.name} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 transition-all" />
+                                </div>
+                                
+                                {/* 🚨 THE FIX FOR EMPTY VAULTS */}
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Customer Account / Vault Link *</label>
+                                    {(!customers || customers.length === 0) ? (
+                                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 flex items-center">
+                                            <i className="fas fa-exclamation-triangle mr-2"></i>
+                                            No Vaults found. Register a customer first.
+                                        </div>
+                                    ) : (
+                                        <select value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all">
+                                            <option value="">-- Select or Link Vault --</option>
+                                            {customers.map(c => <option key={c.id} value={c.name}>{c.name} ({c.region})</option>)}
                                         </select>
-                                    </div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Probability (%)</label><input type="number" min="0" max="100" value={editingProject.probability === undefined || editingProject.probability === null ? '' : editingProject.probability} onChange={e=>setEditingProject({...editingProject, probability: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    )}
                                 </div>
                             </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> Discovery & Financials</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Status</label><select value={editingProject.discoveryStatus || 'Not Started'} onChange={e=>setEditingProject({...editingProject, discoveryStatus: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Expected Close Date</label><input type="date" value={editingProject.expectedCloseDate || ''} onChange={e=>setEditingProject({...editingProject, expectedCloseDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold font-mono" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Target MRR (USD)</label><input type="number" value={editingProject.mrr === undefined || editingProject.mrr === null ? '' : editingProject.mrr} onChange={e=>setEditingProject({...editingProject, mrr: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-slate-300 rounded bg-emerald-50 text-emerald-900 focus:border-blue-500 outline-none text-sm font-black" /></div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Deal Type</label>
+                                    <select value={editingProject.type} onChange={e=>setEditingProject({...editingProject, type: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 transition-all">
+                                        <option value="Migration">Cloud Migration</option>
+                                        <option value="Modernization">App Modernization</option>
+                                        <option value="Greenfield">Greenfield Deploy</option>
+                                    </select>
                                 </div>
-                                <div className="space-y-4">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Notes / Scope</label><textarea rows="2" value={editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, discoveryNotes: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-medium"></textarea></div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Sales Stage</label>
+                                    <select value={editingProject.status} onChange={e=>setEditingProject({...editingProject, status: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 transition-all">
+                                        <option value="Prospect">Prospect</option>
+                                        <option value="Qualification">Qualification</option>
+                                        <option value="Proposal">Proposal / Quote</option>
+                                        <option value="Negotiation">Negotiation</option>
+                                        <option value="Closed Won">Closed Won</option>
+                                    </select>
                                 </div>
                             </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-server text-purple-500 mr-2"></i> Technical Sizing</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Source Environment</label><select value={editingProject.sourceEnvironment || ''} onChange={e=>setEditingProject({...editingProject, sourceEnvironment: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option value="">-- Select --</option><option>On-Premises Physical Servers</option><option>On-Premises VMware, Hyper-V, KVM, AHV (Nutanix)</option><option>Public Cloud AWS, Azure, Alibaba, Google Cloud</option><option>Huawei Cloud (Cross Region/Cross-Account)</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Migration Type</label><select value={editingProject.migrationType || 'Lift & Shift'} onChange={e=>setEditingProject({...editingProject, migrationType: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option>Lift & Shift</option><option>Replatform</option><option>Refactor</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Workloads</label><input type="number" value={editingProject.estimatedWorkloads === undefined || editingProject.estimatedWorkloads === null ? '' : editingProject.estimatedWorkloads} onChange={e=>setEditingProject({...editingProject, estimatedWorkloads: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">MRR ($)</label>
+                                    <input type="number" value={editingProject.mrr} onChange={e=>setEditingProject({...editingProject, mrr: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono outline-none focus:border-blue-500 transition-all" />
                                 </div>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-exclamation-triangle text-amber-500 mr-2"></i> Risks & Timelines</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Proposed Start Date</label><input type="date" value={editingProject.proposedStartDate || ''} onChange={e=>setEditingProject({...editingProject, proposedStartDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Proposed End Date</label><input type="date" value={editingProject.proposedEndDate || ''} onChange={e=>setEditingProject({...editingProject, proposedEndDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">OTC ($)</label>
+                                    <input type="number" value={editingProject.otc} onChange={e=>setEditingProject({...editingProject, otc: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono outline-none focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-4">
-                                    <div><label className="block text-[10px] font-bold text-rose-500 uppercase mb-1">Technical & Business Blockers</label><textarea rows="2" value={editingProject.blocker || ''} onChange={e=>setEditingProject({...editingProject, blocker: e.target.value})} className="w-full p-2 border border-rose-300 bg-rose-50 rounded outline-none text-sm font-medium"></textarea></div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Probability (%)</label>
+                                    <input type="number" max="100" min="0" value={editingProject.probability} onChange={e=>setEditingProject({...editingProject, probability: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono outline-none focus:border-blue-500 transition-all" />
                                 </div>
                             </div>
                         </div>
-                        <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
-                            <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-                            <button onClick={()=>{ handleUpdateProject(editingProject.id, editingProject); setEditingProject(null); }} className="px-8 py-2.5 text-xs font-black text-white uppercase bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Assessment</button>
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
+                            <button onClick={handleSave} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Opportunity</button>
                         </div>
                     </div>
                 </div>
             )}
-
-            {projectToDelete && <TwoFactorModal actionName={`Delete Lead`} onConfirm={executeDelete} onCancel={() => setProjectToDelete(null)} />}
         </div>
-    )
+    );
 }
