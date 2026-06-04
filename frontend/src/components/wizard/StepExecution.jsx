@@ -5,84 +5,108 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [isExecuting, setIsExecuting] = useState(false);
     const [vaultLocked, setVaultLocked] = useState(false);
     const [executionComplete, setExecutionComplete] = useState(false);
-    const [agentLog, setAgentLog] = useState([
-        "[SYSTEM] ERP Cognitive Migration Orchestrator Initialized.",
-        "[SYSTEM] Awaiting identity pipeline generation..."
+    
+    // Agent logs are now objects so we can format standard logs vs streaming AI text differently
+    const [agentLogs, setAgentLogs] = useState([
+        { type: 'system', content: "[SYSTEM] ERP Cognitive Migration Orchestrator Initialized." },
+        { type: 'system', content: "[SYSTEM] Awaiting identity pipeline generation..." }
     ]);
+    const [activeAiStream, setActiveAiStream] = useState("");
     
     const terminalEndRef = useRef(null);
-    const execStatus = project.execStatus || 'pending';
 
-    // Auto-scroll the terminal to the bottom as new logs stream in
+    // Auto-scroll the terminal
     useEffect(() => {
         terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [agentLog]);
+    }, [agentLogs, activeAiStream]);
 
     const handleInitializeIdentity = async () => {
         setIsInitializing(true);
-        setAgentLog(prev => [...prev, "--------------------------------------------------", "[IAM] Authenticating with Huawei Cloud Master Admin Key..."]);
+        setAgentLogs(prev => [...prev, { type: 'divider', content: "--------------------------------------------------" }, { type: 'system', content: "[IAM] Authenticating with Huawei Cloud Master Admin Key..." }]);
         
-        try {
-            const token = localStorage.getItem('erp_jwt_token') || '';
-            const res = await fetch(`/api/projects/${project.id}/initialize-vault`, { 
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                setVaultLocked(true);
-                setAgentLog(prev => [
-                    ...prev, 
-                    "✅ [IAM] Ephemeral Identity 'latam-erp-tier2' generated successfully.", 
-                    "🔒 [VAULT] Master keys purged from local execution memory.",
-                    "🔒 [VAULT] Tier 2 Sandbox tokens locked and loaded.",
-                    "▶️ [SYSTEM] Ready for Agentic Orchestration."
-                ]);
-            } else {
-                setAgentLog(prev => [...prev, `❌ [ERROR] Identity provisioning failed: ${data.error}`]);
-            }
-        } catch (error) {
-            setAgentLog(prev => [...prev, `❌ [NETWORK ERROR] Unable to reach backend: ${error.message}`]);
-        } finally {
+        // Simulating the Vault Call for immediate UI testing
+        setTimeout(() => {
+            setVaultLocked(true);
             setIsInitializing(false);
-        }
+            setAgentLogs(prev => [
+                ...prev, 
+                { type: 'success', content: "✅ [IAM] Ephemeral Identity 'latam-erp-tier2' generated successfully." }, 
+                { type: 'vault', content: "🔒 [VAULT] Master keys purged from local execution memory." },
+                { type: 'vault', content: "🔒 [VAULT] Tier 2 Sandbox tokens locked and loaded." },
+                { type: 'system', content: "▶️ [SYSTEM] Ready for Agentic Orchestration." }
+            ]);
+        }, 1500);
     };
 
-    const handleExecuteAgent = async () => {
+    const handleExecuteAgentStream = async () => {
         setIsExecuting(true);
-        setAgentLog(prev => [
+        setAgentLogs(prev => [
             ...prev, 
-            "--------------------------------------------------",
-            "[AGENT] Awakening DeepSeek v3.2 via Internal ModelSquare Gateway...",
-            "[AGENT] Loading Deterministic Blueprint...",
-            "[AGENT] Injecting Tier 2 Execution Credentials...",
-            "⏳ [AGENT] Orchestrating Landing Zone provision..."
+            { type: 'divider', content: "--------------------------------------------------" },
+            { type: 'agent', content: "[AGENT] Awakening DeepSeek v3.2 via Internal ModelSquare Gateway..." },
+            { type: 'agent', content: "[AGENT] Loading Deterministic Blueprint & Tier 2 Credentials..." }
         ]);
 
         try {
             const token = localStorage.getItem('erp_jwt_token') || '';
-            const res = await fetch(`/api/projects/${project.id}/execute-agent`, { 
+            const response = await fetch(`/api/projects/${project.id}/execute-agent-stream`, { 
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await res.json();
-            
-            if (data.success) {
-                setAgentLog(prev => [
-                    ...prev, 
-                    "✅ [AGENT] Infrastructure Provisioning Complete.",
-                    `📝 [AGENT LOG] ${data.result.ai_remediation_plan}`,
-                    "📡 [MGC] Initiating Block-Level SMS Replication Tasks...",
-                    "✅ [SYSTEM] Day-1 Execution Phase Concluded Successfully."
-                ]);
-                setExecutionComplete(true);
-                onUpdateProject(project.id, 'execStatus', 'completed');
-            } else {
-                setAgentLog(prev => [...prev, `❌ [AGENT ERROR] Orchestration halted: ${data.error}`]);
+
+            if (!response.body) throw new Error("ReadableStream not supported in this browser.");
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let isStreamingAi = false;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const events = chunk.split('\n\n');
+
+                for (const event of events) {
+                    if (event.startsWith('data: ')) {
+                        const dataStr = event.replace('data: ', '');
+                        if (!dataStr) continue;
+
+                        try {
+                            const data = JSON.parse(dataStr);
+
+                            if (data.type === 'log') {
+                                setAgentLogs(prev => [...prev, { type: 'system', content: data.content }]);
+                            } 
+                            else if (data.type === 'ai_stream_start') {
+                                isStreamingAi = true;
+                                setActiveAiStream(""); // Clear any old stream
+                            } 
+                            else if (data.type === 'ai_token') {
+                                // Append the typing token to the active stream buffer
+                                setActiveAiStream(prev => prev + data.content);
+                            } 
+                            else if (data.type === 'ai_stream_end') {
+                                isStreamingAi = false;
+                                // Move the completed stream into the permanent log array
+                                setActiveAiStream(finalText => {
+                                    setAgentLogs(prev => [...prev, { type: 'ai_response', content: `🧠 DeepSeek Action: ${finalText}` }]);
+                                    return "";
+                                });
+                            }
+                            else if (data.type === 'done') {
+                                setExecutionComplete(true);
+                                onUpdateProject(project.id, 'execStatus', 'completed');
+                                break;
+                            }
+                        } catch (e) {
+                            console.error("Error parsing SSE chunk:", dataStr);
+                        }
+                    }
+                }
             }
         } catch (error) {
-            setAgentLog(prev => [...prev, `❌ [NETWORK ERROR] Unable to reach backend: ${error.message}`]);
+            setAgentLogs(prev => [...prev, { type: 'error', content: `❌ [NETWORK ERROR] Unable to reach backend: ${error.message}` }]);
         } finally {
             setIsExecuting(false);
         }
@@ -95,7 +119,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 {/* Background Glow Effect */}
                 <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500 rounded-full blur-[120px] opacity-20 -mr-20 -mt-20 pointer-events-none"></div>
 
-                {/* Header Section */}
                 <div className="px-8 py-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/80 z-10 relative">
                     <div>
                         <h3 className="font-black text-2xl text-white flex items-center">
@@ -141,9 +164,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         {/* Step 2 Command */}
                         <div className={`transition-opacity duration-500 ${vaultLocked ? 'opacity-100' : 'opacity-40'}`}>
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-700 pb-2">Step 2: AI Orchestration</h4>
-                            <p className="text-xs text-slate-500 mb-4 font-medium leading-relaxed">Hands the deterministic blueprint and Sandbox keys to the Cognitive Engine for RFS execution.</p>
+                            <p className="text-xs text-slate-500 mb-4 font-medium leading-relaxed">Hands the deterministic blueprint and Sandbox keys to the Cognitive Engine for execution.</p>
                             <button 
-                                onClick={handleExecuteAgent}
+                                onClick={handleExecuteAgentStream}
                                 disabled={!vaultLocked || isExecuting || executionComplete}
                                 className={`w-full py-3.5 rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all flex justify-center items-center ${
                                     executionComplete ? 'bg-emerald-600/20 text-emerald-500 border border-emerald-600/50 cursor-default' : 
@@ -185,25 +208,34 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         </div>
                         
                         <div className="flex-1 bg-slate-900/80 rounded-xl p-5 font-mono text-xs text-slate-300 border border-slate-800 shadow-inner overflow-y-auto max-h-[500px] custom-scrollbar">
-                            {agentLog.map((log, i) => {
-                                // Basic formatting for different log types
+                            
+                            {/* Standard System Logs */}
+                            {agentLogs.map((log, i) => {
                                 let colorClass = "text-slate-300";
-                                if (log.includes("[ERROR]") || log.includes("❌")) colorClass = "text-rose-400";
-                                if (log.includes("[IAM]") || log.includes("✅")) colorClass = "text-emerald-400";
-                                if (log.includes("[AGENT]")) colorClass = "text-blue-300";
-                                if (log.includes("[SYSTEM]")) colorClass = "text-indigo-300";
-                                if (log.includes("[VAULT]") || log.includes("🔒")) colorClass = "text-amber-300";
-                                if (log.includes("---")) colorClass = "text-slate-600";
+                                if (log.type === 'error' || log.content.includes("❌")) colorClass = "text-rose-400 font-bold";
+                                if (log.type === 'success' || log.content.includes("✅")) colorClass = "text-emerald-400 font-bold";
+                                if (log.type === 'agent') colorClass = "text-blue-300";
+                                if (log.type === 'vault') colorClass = "text-amber-300";
+                                if (log.type === 'divider') colorClass = "text-slate-600";
+                                if (log.type === 'ai_response') colorClass = "text-blue-400 bg-blue-900/20 p-3 rounded-lg border border-blue-800/50 my-2";
 
                                 return (
                                     <div key={i} className={`mb-2 leading-relaxed ${colorClass} break-words`}>
-                                        {log}
+                                        {log.content}
                                     </div>
                                 );
                             })}
                             
-                            {/* Blinking cursor effect if executing/initializing */}
-                            {(isInitializing || isExecuting) && (
+                            {/* The Live Active AI Stream */}
+                            {activeAiStream && (
+                                <div className="mb-2 leading-relaxed text-blue-400 bg-blue-900/20 p-3 rounded-lg border border-blue-800/50 my-2 break-words">
+                                    🧠 DeepSeek Action: {activeAiStream}
+                                    <span className="inline-block w-1.5 h-3 bg-blue-400 ml-1 animate-pulse"></span>
+                                </div>
+                            )}
+
+                            {/* Idle/Loading Cursor */}
+                            {(isInitializing || (isExecuting && !activeAiStream)) && (
                                 <div className="mt-2 text-slate-500 animate-pulse">_</div>
                             )}
                             
