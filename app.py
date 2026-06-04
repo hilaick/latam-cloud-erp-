@@ -42,20 +42,27 @@ app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-la
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
 jwt = JWTManager(app)
 
+# This will enforce the PostgreSQL connection string from your .env
 setup_db(app)
 PROJECT_ROOT = Path(__file__).parent
 
+# ==========================================
+# 🚨 BLUEPRINT REGISTRATIONS
+# ==========================================
 from routes.crm import crm_bp
 from routes.cloud_ops import cloud_ops_bp
 from routes.sms_migrations import sms_bp
 from routes.auth import auth_bp
 from routes.master_pipeline import master_pipeline_bp
+from routes.execution import execution_bp # <--- NEWLY ADDED
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
 app.register_blueprint(auth_bp)
-app.register_blueprint(master_pipeline_bp) 
+app.register_blueprint(master_pipeline_bp)
+app.register_blueprint(execution_bp) # <--- NEWLY ADDED
+# ==========================================
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
