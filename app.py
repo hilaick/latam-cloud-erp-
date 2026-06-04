@@ -45,17 +45,20 @@ jwt = JWTManager(app)
 setup_db(app)
 PROJECT_ROOT = Path(__file__).parent
 
+# ... (rest of your app.py above)
 from routes.crm import crm_bp
 from routes.cloud_ops import cloud_ops_bp
 from routes.sms_migrations import sms_bp
 from routes.auth import auth_bp
 from routes.master_pipeline import master_pipeline_bp
+from routes.execution import execution_bp # 🚨 NEWLY ADDED
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(master_pipeline_bp) 
+app.register_blueprint(execution_bp) # 🚨 NEWLY ADDED
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
