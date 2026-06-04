@@ -7,11 +7,9 @@ db = SQLAlchemy()
 def setup_db(app):
     database_url = os.environ.get('DATABASE_URL')
     
-    # 🚨 STRICT ENFORCEMENT: No more SQLite fallback!
     if not database_url:
         raise ValueError("CRITICAL ERROR: DATABASE_URL is missing from .env. PostgreSQL is strictly required.")
     
-    # Fix for newer SQLAlchemy versions that require 'postgresql://'
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
         
@@ -48,16 +46,40 @@ class AdHocMigrationLog(db.Model):
     status = db.Column(db.String(50), default="Initiated")
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+# 🚨 UPDATED: Full Multi-Cloud Matrix
 class Customer(db.Model):
     __tablename__ = 'customers'
     id = db.Column(db.String(50), primary_key=True)
     name = db.Column(db.String(100))
-    ak = db.Column(db.String(100))
-    sk = db.Column(db.String(100))
     region = db.Column(db.String(50))
+    
+    # Legacy / General Contacts
     cio = db.Column(db.String(100))
     it_lead = db.Column(db.String(100))
     architect = db.Column(db.String(100))
+
+    # 1. HUAWEI MASTER & LEAST PRIVILEGE TIERS
+    ak = db.Column(db.String(120))
+    sk = db.Column(db.String(120))
+    tier1_ak = db.Column(db.String(120))
+    tier1_sk = db.Column(db.String(120))
+    tier2_ak = db.Column(db.String(120))
+    tier2_sk = db.Column(db.String(120))
+    tier3_ak = db.Column(db.String(120))
+    tier3_sk = db.Column(db.String(120))
+
+    # 2. MULTI-CLOUD CONTROL PLANE (Hyperscaler APIs)
+    aws_ak = db.Column(db.String(120))
+    aws_sk = db.Column(db.String(120))
+    azure_tenant_id = db.Column(db.String(120))
+    azure_client_id = db.Column(db.String(120))
+    azure_client_secret = db.Column(db.String(120))
+    vcenter_host = db.Column(db.String(120))
+
+    # 3. OS DATA PLANE (Local/Domain Admin for Rsync/WinRM)
+    os_domain = db.Column(db.String(120))
+    os_user = db.Column(db.String(120))
+    os_password = db.Column(db.String(120))
 
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'
@@ -128,3 +150,14 @@ class User(db.Model):
             'is_2fa': self.is_2fa,
             'last_login': self.last_login.strftime('%Y-%m-%d %H:%M') if self.last_login else "Never"
         }
+
+# 🚨 UPDATED: AI Evolutionary Memory Table
+class CognitiveLearningLog(db.Model):
+    __tablename__ = 'cognitive_learning_logs'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'))
+    error_signature = db.Column(db.Text, nullable=False)
+    context_snapshot = db.Column(db.Text)
+    ai_remediation_applied = db.Column(db.Text)
+    success = db.Column(db.Boolean, default=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
