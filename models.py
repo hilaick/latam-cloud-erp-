@@ -128,3 +128,14 @@ class User(db.Model):
             'is_2fa': self.is_2fa,
             'last_login': self.last_login.strftime('%Y-%m-%d %H:%M') if self.last_login else "Never"
         }
+# Add to backend/models.py
+
+class CognitiveLearningLog(db.Model):
+    __tablename__ = 'cognitive_learning_logs'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'))
+    error_signature = db.Column(db.Text, nullable=False) # e.g., "VPC.0114 Quota Exceeded"
+    context_snapshot = db.Column(db.Text) # The blueprint state when it failed
+    ai_remediation_applied = db.Column(db.Text) # What the AI did to fix it
+    success = db.Column(db.Boolean, default=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
