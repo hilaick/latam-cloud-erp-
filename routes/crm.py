@@ -51,7 +51,23 @@ def manage_customers():
             customers = Customer.query.all()
             return jsonify({
                 "success": True,
-                "customers": [{"id": c.id, "name": c.name, "ak": c.ak, "sk": c.sk, "region": c.region} for c in customers]
+                "customers": [{
+                    "id": c.id, 
+                    "name": c.name, 
+                    "region": c.region,
+                    "cio": c.cio, 
+                    "itLead": c.it_lead, 
+                    "architect": c.architect,
+                    "ak": c.ak, 
+                    "sk": c.sk,
+                    "tier1AK": c.tier1_ak, "tier1SK": c.tier1_sk,
+                    "tier2AK": c.tier2_ak, "tier2SK": c.tier2_sk,
+                    "tier3AK": c.tier3_ak, "tier3SK": c.tier3_sk,
+                    "awsAK": c.aws_ak, "awsSK": c.aws_sk,
+                    "azureTenant": c.azure_tenant_id, "azureClient": c.azure_client_id, "azureSecret": c.azure_client_secret,
+                    "vCenterHost": c.vcenter_host,
+                    "osDomain": c.os_domain, "osUser": c.os_user, "osPassword": c.os_password
+                } for c in customers]
             })
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
@@ -70,9 +86,18 @@ def manage_customers():
             customer = Customer(
                 id=str(data.get('id')), 
                 name=new_name, 
-                ak=data.get('ak', ''), 
-                sk=data.get('sk', ''), 
-                region=data.get('region', 'la-south-2')
+                region=data.get('region', 'la-south-2'),
+                cio=data.get('cio'), 
+                it_lead=data.get('itLead'), 
+                architect=data.get('architect'),
+                ak=data.get('ak', ''), sk=data.get('sk', ''),
+                tier1_ak=data.get('tier1AK'), tier1_sk=data.get('tier1SK'),
+                tier2_ak=data.get('tier2AK'), tier2_sk=data.get('tier2SK'),
+                tier3_ak=data.get('tier3AK'), tier3_sk=data.get('tier3SK'),
+                aws_ak=data.get('awsAK'), aws_sk=data.get('awsSK'),
+                azure_tenant_id=data.get('azureTenant'), azure_client_id=data.get('azureClient'), azure_client_secret=data.get('azureSecret'),
+                vcenter_host=data.get('vCenterHost'),
+                os_domain=data.get('osDomain'), os_user=data.get('osUser'), os_password=data.get('osPassword')
             )
             db.session.add(customer)
             db.session.commit()
@@ -92,9 +117,28 @@ def update_delete_customer(c_id):
             db.session.delete(customer)
         elif request.method == 'PUT':
             data = request.json
+            customer.name = data.get('name', customer.name)
+            customer.region = data.get('region', customer.region)
+            customer.cio = data.get('cio', customer.cio)
+            customer.it_lead = data.get('itLead', customer.it_lead)
+            customer.architect = data.get('architect', customer.architect)
             customer.ak = data.get('ak', customer.ak)
             customer.sk = data.get('sk', customer.sk)
-            customer.region = data.get('region', customer.region)
+            customer.tier1_ak = data.get('tier1AK', customer.tier1_ak)
+            customer.tier1_sk = data.get('tier1SK', customer.tier1_sk)
+            customer.tier2_ak = data.get('tier2AK', customer.tier2_ak)
+            customer.tier2_sk = data.get('tier2SK', customer.tier2_sk)
+            customer.tier3_ak = data.get('tier3AK', customer.tier3_ak)
+            customer.tier3_sk = data.get('tier3SK', customer.tier3_sk)
+            customer.aws_ak = data.get('awsAK', customer.aws_ak)
+            customer.aws_sk = data.get('awsSK', customer.aws_sk)
+            customer.azure_tenant_id = data.get('azureTenant', customer.azure_tenant_id)
+            customer.azure_client_id = data.get('azureClient', customer.azure_client_id)
+            customer.azure_client_secret = data.get('azureSecret', customer.azure_client_secret)
+            customer.vcenter_host = data.get('vCenterHost', customer.vcenter_host)
+            customer.os_domain = data.get('osDomain', customer.os_domain)
+            customer.os_user = data.get('osUser', customer.os_user)
+            customer.os_password = data.get('osPassword', customer.os_password)
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
