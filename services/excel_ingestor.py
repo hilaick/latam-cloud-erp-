@@ -2,7 +2,7 @@
 """
 Excel/CSV Quotation Normalization Engine
 Transforms messy Sales Architect spreadsheets into strict blueprint.json schema.
-Now dynamically captures Compute, Databases, Networking, and Storage arrays.
+Now dynamically captures Compute, Databases, Networking, and Storage arrays from BOTH Legacy and Modern Nested Huawei Formats.
 """
 
 import pandas as pd
@@ -10,7 +10,7 @@ import re
 from typing import Optional, Dict, Any
 
 # ============================================================================
-# FUZZY MATCHING DICTIONARY
+# FUZZY MATCHING DICTIONARY (For Generic Parser)
 # ============================================================================
 
 COLUMN_MAP = {
@@ -58,13 +58,228 @@ def parse_integer(val: Any) -> int:
     except (ValueError, TypeError): return 0
 
 # ============================================================================
-# MAIN PROCESSING FUNCTION
+# SHARED HUAWEI PARSING LOGIC
+# ============================================================================
+
+def parse_huawei_specifications(spec_string):
+    if pd.isna(spec_string): return {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
+    spec = str(spec_string)
+    result = {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
+    
+    for p in [r'(\d+)\s*vCPU', r'x(\d+)\.\d+u', r'(\d+)\s*cores?']:
+        match = re.search(p, spec, re.IGNORECASE)
+        if match: 
+            result['vcpus'] = int(match.group(1))
+            break
+            
+    for p in [r'(\d+)\s*GiB', r'(\d+)\s*GB', r'x\d+\.\d+u\.(\d+)g']:
+        match = re.search(p, spec, re.IGNORECASE)
+        if match: 
+            result['ram_gb'] = int(match.group(1))
+            break
+            
+    for p in [r'(Huawei Cloud EulerOS[^;|]*)', r'(CentOS[^;|]*)', r'(Windows[^;|]*)', r'(Ubuntu[^;|]*)', r'(Red Hat[^;|]*)', r'(Debian[^;|]*)', r'(AlmaLinux[^;|]*)', r'(Oracle[^;|]*)']:
+        match = re.search(p, spec, re.IGNORECASE)
+        if match: 
+            result['os'] = match.group(1).strip()
+            break
+            
+    # Handle storage logic sum across multiple disks
+    storage_sum = 0
+    for match in re.finditer(r'(?:SSD|SAS|SATA|Disk)[^|]*\|\s*(\d+)\s*GB', spec, re.IGNORECASE):
+        storage_sum += int(match.group(1))
+    if storage_sum > 0:
+        result['storage_gb'] = storage_sum
+    else:
+        # Fallback if specific disk format isn't caught
+        fallback = re.search(r'(\d+)\s*GB', spec, re.IGNORECASE)
+        if fallback and fallback.group(1) != str(result['ram_gb']):
+            result['storage_gb'] = int(fallback.group(1))
+    
+    # Flavor mapping
+    type_match = re.search(r'\|\s*([a-zA-Z0-9\.\-]+)\s*\|', spec)
+    if type_match:
+        result['instance_type'] = type_match.group(1).strip()
+    else:
+        for p in [r'General computing-plus', r'General computing']:
+            match = re.search(p, spec)
+            if match: 
+                result['instance_type'] = match.group(0).strip()
+                break
+                
+    return result
+
+def _finalize_resource(res, blueprint):
+    cat = res['category']
+    if cat == 'compute':
+        parsed = parse_huawei_specifications(res['specs'])
+        blueprint["topology"]["compute"].append({
+            "name": clean_server_name(res['name']),
+            "flavor": parsed['instance_type'] if parsed['instance_type'] != 'Unknown' else res['type'],
+            "is_public": False,
+            "status": "OK" if parsed['vcpus'] > 0 else "WARNING",
+            "metadata": { 
+                "tier": res['type'], 
+                "os_type": parsed['os'], 
+                "cpu_cores": parsed['vcpus'], 
+                "ram_gb": parsed['ram_gb'],
+                "storage_gb": parsed['storage_gb']
+            }
+        })
+    elif cat == 'database':
+        blueprint["topology"]["databases"].append({
+            "name": clean_server_name(res['name']), "engine": res['type'], "version": "Unknown", "status": "OK"
+        })
+    elif cat == 'network':
+        net_type = 'NAT' if 'NAT' in res['type'] else 'VPN' if 'Virtual Private' in res['type'] else 'EIP' if 'Elastic IP' in res['type'] else 'VPC'
+        blueprint["topology"]["network"].append({
+            "name": clean_server_name(res['name']), "type": net_type, "cidr": "N/A", "status": "OK"
+        })
+    elif cat == 'storage':
+        st_type = 'CBR' if 'Backup' in res['type'] else 'OBS'
+        blueprint["topology"]["storage"].append({
+            "name": clean_server_name(res['name']), "type": st_type, "location": "Global", "status": "OK"
+        })
+
+# ============================================================================
+# 🚨 MODERN HUAWEI NESTED PARSER (Handles Your New CSV Format)
+# ============================================================================
+
+def process_huawei_nested_quotation(file_path: str, customer_name: str) -> Dict[str, Any]:
+    print(f"🔄 Processing Modern Nested Huawei Quotation: {file_path}")
+    try:
+        header_idx = 0
+        if file_path.lower().endswith('.csv'):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for i, line in enumerate(f):
+                    if 'Service' in line and 'Description' in line and 'Billing Mode' in line:
+                        header_idx = i
+                        break
+            df = pd.read_csv(file_path, header=header_idx)
+        else:
+            df_temp = pd.read_excel(file_path, nrows=20, header=None)
+            for i in range(len(df_temp)):
+                row_str = ' '.join(str(x) for x in df_temp.iloc[i].values)
+                if 'Service' in row_str and 'Description' in row_str and 'Billing Mode' in row_str:
+                    header_idx = i
+                    break
+            df = pd.read_excel(file_path, header=header_idx)
+            
+    except Exception as e:
+        raise ValueError(f"Failed to isolate Huawei header row: {str(e)}")
+        
+    blueprint = {
+        "customer": customer_name,
+        "delivery_scope": "landing_zone_only",
+        "governance": { "requires_hypercare": False, "maintenance_windows": [] },
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
+    }
+
+    current_resource = None
+
+    for index, row in df.iterrows():
+        svc_val = str(row.get('Service', ''))
+        if pd.isna(row.get('Service')) or svc_val == 'nan' or not svc_val.strip():
+            continue
+        
+        desc_val = str(row.get('Description', '')).strip()
+
+        # If it's a sub-attribute (starts with spaces e.g. "  Type", "  System Disk")
+        if svc_val.startswith(' ') or svc_val.startswith('\t'):
+            attr_name = svc_val.strip()
+            if current_resource and current_resource['category'] == 'compute':
+                current_resource['specs'] += f" | {attr_name}: {desc_val}"
+            continue
+
+        # If it's a main resource row, finalize the previous one
+        if current_resource:
+            _finalize_resource(current_resource, blueprint)
+        
+        # Start new resource
+        svc_name = svc_val.strip()
+        svc_type = desc_val
+
+        cat = 'unknown'
+        if any(x in svc_type for x in ['Elastic Cloud Server', 'Bare Metal', 'Flexus X Instance', 'ECS']):
+            cat = 'compute'
+        elif any(x in svc_type for x in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']):
+            cat = 'database'
+        elif any(x in svc_type for x in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect']):
+            cat = 'network'
+        elif any(x in svc_type for x in ['Cloud Backup and Recovery', 'Object Storage', 'SFS', 'Content Delivery Network', 'Whole Site Acceleration']):
+            cat = 'storage'
+
+        current_resource = {
+            'name': svc_name,
+            'type': svc_type,
+            'category': cat,
+            'specs': svc_type 
+        }
+
+    # Finalize the last resource in the loop
+    if current_resource:
+        _finalize_resource(current_resource, blueprint)
+
+    return blueprint
+
+# ============================================================================
+# LEGACY HUAWEI FLAT PARSER
+# ============================================================================
+
+def process_huawei_legacy_quotation(file_path: str, customer_name: str) -> Dict[str, Any]:
+    print(f"🔄 Processing Legacy Flat Huawei Quotation: {file_path}")
+    try:
+        header_idx = 0
+        if file_path.lower().endswith('.csv'):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for i, line in enumerate(f):
+                    if 'Service' in line and 'Description' in line and 'Specifications' in line:
+                        header_idx = i
+                        break
+            df = pd.read_csv(file_path, header=header_idx)
+        else:
+            df_temp = pd.read_excel(file_path, nrows=20, header=None)
+            for i in range(len(df_temp)):
+                row_str = ' '.join(str(x) for x in df_temp.iloc[i].values)
+                if 'Service' in row_str and 'Description' in row_str and 'Specifications' in row_str:
+                    header_idx = i
+                    break
+            df = pd.read_excel(file_path, header=header_idx)
+            
+    except Exception as e:
+        raise ValueError(f"Failed to isolate Huawei header row: {str(e)}")
+        
+    blueprint = {
+        "customer": customer_name,
+        "delivery_scope": "landing_zone_only",
+        "governance": { "requires_hypercare": False, "maintenance_windows": [] },
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
+    }
+    
+    for index, row in df.iterrows():
+        if pd.isna(row.get('Description')): continue
+        service_type = str(row.get('Service', '')).strip()
+        description = str(row.get('Description', '')).strip()
+        specs = str(row.get('Specifications', ''))
+        
+        cat = 'unknown'
+        if any(x in service_type for x in ['Elastic Cloud Server', 'Bare Metal', 'Flexus X Instance', 'ECS']): cat = 'compute'
+        elif any(x in service_type for x in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']): cat = 'database'
+        elif any(x in service_type for x in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect']): cat = 'network'
+        elif any(x in service_type for x in ['Cloud Backup and Recovery', 'Object Storage', 'SFS']): cat = 'storage'
+
+        res = { 'name': description, 'type': service_type, 'category': cat, 'specs': specs }
+        _finalize_resource(res, blueprint)
+        
+    return blueprint
+
+# ============================================================================
+# MASTER ENTRY POINT
 # ============================================================================
 
 def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
-    # 🚨 BULLETPROOF HUAWEI DETECTION: Scan deep into the file to bypass title rows
     try:
         if file_path.lower().endswith('.csv'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -74,15 +289,22 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
             lines = [' '.join(str(x).lower() for x in row) for row in df_check.values]
         
         text_chunk = ''.join(lines).lower()
-        if 'elastic cloud server' in text_chunk and 'specifications' in text_chunk:
-            print("🔍 Detected Huawei Cloud Price Calculator format")
-            return process_huawei_quotation(file_path, customer_name)
+        
+        # Format 1: Has "Specifications" column
+        if 'service' in text_chunk and 'description' in text_chunk and 'specifications' in text_chunk:
+            return process_huawei_legacy_quotation(file_path, customer_name)
+            
+        # Format 2: Has "Billing Mode" column (New Huawei Export)
+        if 'service' in text_chunk and 'description' in text_chunk and 'billing mode' in text_chunk:
+            return process_huawei_nested_quotation(file_path, customer_name)
+            
     except StopIteration:
         pass
     except Exception as e:
-        print(f"⚠️  Detection warning: {str(e)}")
+        print(f"⚠️ Detection warning: {str(e)}")
     
     # --- FALLBACK GENERIC PARSER ---
+    print("🔍 Format unknown. Attempting generic mapping...")
     try:
         df = pd.read_csv(file_path) if file_path.lower().endswith('.csv') else pd.read_excel(file_path)
     except Exception as e:
@@ -125,106 +347,4 @@ def process_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Di
                 "original_row": index + 1
             }
         })
-    return blueprint
-
-# ============================================================================
-# HUAWEI CLOUD QUOTATION PROCESSING
-# ============================================================================
-
-def parse_huawei_specifications(spec_string):
-    if pd.isna(spec_string): return {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
-    spec = str(spec_string)
-    result = {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
-    
-    for p in [r'(\d+)\s*vCPU', r'x(\d+)\.\d+u', r'(\d+)\s*cores?']:
-        match = re.search(p, spec, re.IGNORECASE)
-        if match: result['vcpus'] = int(match.group(1)); break
-            
-    for p in [r'(\d+)\s*GiB', r'(\d+)\s*GB', r'x\d+\.\d+u\.(\d+)g']:
-        match = re.search(p, spec, re.IGNORECASE)
-        if match: result['ram_gb'] = int(match.group(1)); break
-            
-    for p in [r'(Huawei Cloud EulerOS[^;]*)', r'(CentOS[^;]*)', r'(Windows[^;]*)', r'(Ubuntu[^;]*)', r'(Red Hat[^;]*)', r'(Debian[^;]*)']:
-        match = re.search(p, spec, re.IGNORECASE)
-        if match: result['os'] = match.group(1).strip(); break
-            
-    storage_match = re.search(r'General Purpose SSD\s*\|\s*(\d+)GB', spec, re.IGNORECASE)
-    if storage_match: result['storage_gb'] = int(storage_match.group(1))
-    
-    for p in [r'General computing-plus', r'General computing', r'x86\s*\|\s*([^|]+)']:
-        match = re.search(p, spec)
-        if match: 
-            result['instance_type'] = match.group(1).strip() if match.groups() else match.group(0).strip()
-            break
-            
-    return result
-
-def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"):
-    print(f"🔄 Processing Huawei Quotation: {file_path}")
-    
-    try:
-        header_idx = 0
-        if file_path.lower().endswith('.csv'):
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    if 'Service' in line and 'Description' in line and 'Specifications' in line:
-                        header_idx = i
-                        break
-            df = pd.read_csv(file_path, header=header_idx)
-        else:
-            df_temp = pd.read_excel(file_path, nrows=20, header=None)
-            for i in range(len(df_temp)):
-                row_str = ' '.join(str(x) for x in df_temp.iloc[i].values)
-                if 'Service' in row_str and 'Description' in row_str and 'Specifications' in row_str:
-                    header_idx = i
-                    break
-            df = pd.read_excel(file_path, header=header_idx)
-            
-    except Exception as e:
-        raise ValueError(f"Failed to isolate Huawei header row: {str(e)}")
-        
-    blueprint = {
-        "customer": customer_name,
-        "delivery_scope": "landing_zone_only",
-        "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
-    }
-    
-    for index, row in df.iterrows():
-        if pd.isna(row.get('Description')): continue
-        service_type = str(row.get('Service', '')).strip()
-        description = clean_server_name(str(row.get('Description', '')).strip())
-        specs = str(row.get('Specifications', ''))
-        
-        # 1. COMPUTE 
-        if 'Elastic Cloud Server' in service_type or 'Bare Metal' in service_type:
-            parsed_specs = parse_huawei_specifications(specs)
-            blueprint["topology"]["compute"].append({
-                "name": description,
-                "flavor": parsed_specs['instance_type'] or service_type,
-                "is_public": False,
-                "status": "OK" if parsed_specs['vcpus'] > 0 else "WARNING",
-                "metadata": { "tier": service_type, "os_type": parsed_specs['os'], "cpu_cores": parsed_specs['vcpus'], "ram_gb": parsed_specs['ram_gb'] }
-            })
-            
-        # 2. DATABASES
-        elif any(db in service_type for db in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']):
-            blueprint["topology"]["databases"].append({
-                "name": description, "engine": service_type, "version": "Unknown", "status": "OK"
-            })
-            
-        # 3. DEEP NETWORKING
-        elif any(net in service_type for net in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect']):
-            net_type = 'NAT' if 'NAT' in service_type else 'VPN' if 'Virtual Private' in service_type else 'EIP' if 'Elastic IP' in service_type else 'VPC'
-            blueprint["topology"]["network"].append({
-                "name": description, "type": net_type, "cidr": "N/A", "status": "OK"
-            })
-            
-        # 4. STORAGE & BACKUP
-        elif any(st in service_type for st in ['Cloud Backup and Recovery', 'Object Storage', 'SFS']):
-            st_type = 'CBR' if 'Backup' in service_type else 'OBS'
-            blueprint["topology"]["storage"].append({
-                "name": description, "type": st_type, "location": "Global", "status": "OK"
-            })
-        
     return blueprint
