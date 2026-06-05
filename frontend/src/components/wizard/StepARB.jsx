@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ExcelUploader from '../views/ExcelUploader';
+import QuotationHistory from '../views/QuotationHistory';
 import WBSImportView from './WBSImportView';
 
 export default function StepARB({ project, onUpdateProject, onPromote, isCurrent }) {
@@ -110,11 +111,35 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                                 </div>
                             )}
                         </div>
+
+                        {/* Quotation Version History */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                            <h4 className="font-black text-lg text-slate-800 mb-6 border-b pb-4 flex items-center gap-2">
+                                <i className="fas fa-history text-blue-500"></i>
+                                Quotation Version History
+                            </h4>
+                            <QuotationHistory 
+                                projectId={project.id}
+                                onRevert={(blueprint) => {
+                                    onUpdateProject(project.id, 'blueprintData', blueprint);
+                                    alert('Blueprint reverted to selected quotation version!');
+                                }}
+                            />
+                        </div>
                     </div>
                 )}
                 {subTab === 'wbs' && <WBSImportView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
-            {showUploader && <ExcelUploader defaultCustomer={project.customerName || project.name.split('-')[0].trim()} onUpdateData={(data) => { onUpdateProject(project.id, 'blueprintData', data); setShowUploader(false); toggleArtefact('sow'); }} onClose={() => setShowUploader(false)} />}
+            {showUploader && <ExcelUploader 
+                defaultCustomer={project.customerName || project.name.split('-')[0].trim()} 
+                projectId={project.id}
+                onUpdateData={(data) => { 
+                    onUpdateProject(project.id, 'blueprintData', data); 
+                    setShowUploader(false); 
+                    toggleArtefact('sow'); 
+                }} 
+                onClose={() => setShowUploader(false)} 
+            />}
         </div>
     );
 }

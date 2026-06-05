@@ -149,3 +149,24 @@ class CognitiveLearningLog(db.Model):
     ai_remediation_applied = db.Column(db.Text)
     success = db.Column(db.Boolean, default=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class QuotationVersion(db.Model):
+    __tablename__ = 'quotation_versions'
+    id = db.Column(db.String(50), primary_key=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), nullable=False, index=True)
+    version_number = db.Column(db.Integer, nullable=False)
+    quotation_filename = db.Column(db.String(255), nullable=False)
+    quotation_path = db.Column(db.String(500), nullable=False)
+    uploaded_by = db.Column(db.String(120), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    blueprint_snapshot = db.Column(db.Text, nullable=False)  # JSON string of blueprint
+    change_summary = db.Column(db.Text)
+    cr_id = db.Column(db.String(50))  # Linked Change Request ID
+    previous_version_id = db.Column(db.String(50), db.ForeignKey('quotation_versions.id'))
+    
+    # Relationships
+    previous_version = db.relationship('QuotationVersion', remote_side=[id], backref='next_versions')
+    
+    __table_args__ = (
+        db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),
+    )
