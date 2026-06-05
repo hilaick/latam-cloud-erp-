@@ -21,14 +21,14 @@ export default function PreSalesRadar() {
 
     const handleSave = () => {
         if (!editingProject.name || !editingProject.customerName) {
-            return alert("Project Name and Customer Vault Link are required.");
+            return alert("Project Name and Customer Name are required.");
         }
         
-        // Link the customer ID based on the selected name
-        const linkedCustomer = customers.find(c => c.name === editingProject.customerName);
+        // Link the customer ID based on the selected/typed name seamlessly
+        const linkedCustomer = (customers || []).find(c => c.name.toLowerCase() === editingProject.customerName.toLowerCase());
         if (linkedCustomer) {
             editingProject.customerId = linkedCustomer.id;
-            editingProject.region = linkedCustomer.region; // Inherit region from vault
+            editingProject.region = linkedCustomer.region; 
         }
 
         if (isCreating) {
@@ -41,9 +41,7 @@ export default function PreSalesRadar() {
     };
 
     const promoteToPipeline = (project) => {
-        if (!project.customerId) {
-            return alert("Cannot promote: Project is not linked to a Secure Vault.");
-        }
+        // Removed the strict customerId block so you can promote freely
         handleUpdateProject(project.id, { ...project, status: 'Closed Won', execStatus: 'pending' });
     };
 
@@ -67,7 +65,7 @@ export default function PreSalesRadar() {
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-widest text-slate-500 font-black">
                             <th className="p-4 pl-6">Project Name</th>
-                            <th className="p-4">Customer Vault</th>
+                            <th className="p-4">Customer Name</th>
                             <th className="p-4">Type</th>
                             <th className="p-4">Status</th>
                             <th className="p-4">MRR / OTC</th>
@@ -79,7 +77,7 @@ export default function PreSalesRadar() {
                         {filteredProjects.map(p => (
                             <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
                                 <td className="p-4 pl-6 font-bold text-slate-800">{p.name}</td>
-                                <td className="p-4 text-xs font-bold text-slate-600"><i className="fas fa-shield-alt text-slate-400 mr-2"></i>{p.customerName}</td>
+                                <td className="p-4 text-xs font-bold text-slate-600"><i className="fas fa-shield-alt text-slate-400 mr-2"></i>{p.customerName || p.name.split('-')[0]}</td>
                                 <td className="p-4 text-xs text-slate-600">{p.type}</td>
                                 <td className="p-4">
                                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
@@ -121,19 +119,24 @@ export default function PreSalesRadar() {
                                     <input type="text" value={editingProject.name} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 transition-all" />
                                 </div>
                                 
-                                {/* 🚨 THE FIX FOR EMPTY VAULTS */}
+                                {/* 🚨 RESTORED & INTEGRATED CUSTOMER FIELD */}
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Customer Account / Vault Link *</label>
-                                    {(!customers || customers.length === 0) ? (
-                                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 flex items-center">
-                                            <i className="fas fa-exclamation-triangle mr-2"></i>
-                                            No Vaults found. Register a customer first.
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Customer Account *</label>
+                                    <input 
+                                        type="text" 
+                                        list="vault-customers"
+                                        value={editingProject.customerName || ''} 
+                                        onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} 
+                                        placeholder="Type or select existing..."
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 transition-all" 
+                                    />
+                                    <datalist id="vault-customers">
+                                        {(customers || []).map(c => <option key={c.id} value={c.name} />)}
+                                    </datalist>
+                                    {(!customers || customers.length === 0 || !customers.find(c => c.name.toLowerCase() === (editingProject.customerName||'').toLowerCase())) && (
+                                        <div className="mt-1 text-[9px] font-bold text-amber-600 uppercase tracking-widest flex items-center">
+                                            <i className="fas fa-info-circle mr-1"></i> New entry will be auto-registered to Vault.
                                         </div>
-                                    ) : (
-                                        <select value={editingProject.customerName || ''} onChange={e=>setEditingProject({...editingProject, customerName: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all">
-                                            <option value="">-- Select or Link Vault --</option>
-                                            {customers.map(c => <option key={c.id} value={c.name}>{c.name} ({c.region})</option>)}
-                                        </select>
                                     )}
                                 </div>
                             </div>
