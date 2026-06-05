@@ -134,19 +134,15 @@ export const ERPProvider = ({ children }) => {
         }
     }, []);
 
-    // 🚨 FIX: Extract fetch logic outside of setProjects to prevent dual-firing and dropped connections
     const handleUpdateProject = (id, fieldOrObj, value) => {
-        // 1. Get the current target project state
         const targetProject = projects.find(p => String(p.id) === String(id));
         if (!targetProject) return;
 
-        // 2. Build the modified project explicitly
         const isObj = typeof fieldOrObj === 'object';
         let modifiedProject = isObj 
             ? { ...targetProject, ...fieldOrObj } 
             : { ...targetProject, [fieldOrObj]: value };
 
-        // 3. Immediately fire the network request exactly ONCE
         fetch('/api/erp/projects', { 
             method: 'POST', 
             headers: getAuthHeaders(), 
@@ -160,7 +156,6 @@ export const ERPProvider = ({ children }) => {
             console.error('Error saving project to DB:', err);
         });
 
-        // 4. Handle Customer logic purely and emit safe nested fetches
         const isMovingToPipeline = targetProject.isWaiting === true && modifiedProject.isWaiting === false;
         
         if (isMovingToPipeline) {
@@ -187,7 +182,6 @@ export const ERPProvider = ({ children }) => {
             }
         }
 
-        // 5. Update React state securely
         setProjects(prev => prev.map(p => String(p.id) === String(id) ? modifiedProject : p));
     };
 
@@ -209,6 +203,20 @@ export const ERPProvider = ({ children }) => {
             .catch(err => {
                 console.error('Error adding project:', err);
                 alert(`Failed to add project: ${err.message}`);
+            });
+    };
+
+    // 🚨 FIX: Restored the missing handleAddCustomer function
+    const handleAddCustomer = (newCustomer) => {
+        setCustomers(prev => [...prev, newCustomer]);
+        fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCustomer) })
+            .then(r => { 
+                if(r.status === 401) handleAuthError();
+                else if(!r.ok) throw new Error(`Failed to add customer: ${r.status} ${r.statusText}`);
+            })
+            .catch(err => {
+                console.error('Error adding customer:', err);
+                alert(`Failed to add customer: ${err.message}`);
             });
     };
 
@@ -270,6 +278,7 @@ export const ERPProvider = ({ children }) => {
             setCustomPlaybooks, 
             handleUpdateProject, 
             handleAddProject, 
+            handleAddCustomer, // 🚨 Added to Context Provider
             handleUpdateCustomer, 
             handleDeleteCustomer, 
             handleDeleteProject,
