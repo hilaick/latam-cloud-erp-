@@ -34,7 +34,7 @@ export default function CustomerDirectory() {
         if (isCreating) {
             handleAddCustomer(editingCustomer);
         } else {
-            handleUpdateCustomer(editingCustomer.id, editingCustomer);
+            handleUpdateCustomer(editingCustomer); // ✅ FIXED
         }
         setEditingCustomer(null);
         setIsCreating(false);
