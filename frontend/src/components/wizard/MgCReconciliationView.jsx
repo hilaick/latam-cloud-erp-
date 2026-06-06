@@ -5,6 +5,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [isScanning, setIsScanning] = useState(false);
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
+    const [provider, setProvider] = useState('Huawei'); // AWS, Azure, Huawei
     
     const hasData = activeProject?.mgcData?.raw_inventory && (
         (activeProject.mgcData.raw_inventory.compute?.length > 0) ||
@@ -40,7 +41,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 body: JSON.stringify({ 
                     customer_id: activeProject.customerId, 
                     projectId: activeProject.id, 
-                    region: activeProject.region || 'la-south-2'
+                    region: activeProject.region || 'la-south-2',
+                    provider: provider 
                 })
             });
             const data = await res.json();
@@ -52,9 +54,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     storage: data.inventory.storage || [],
                     network: data.inventory.network || []
                 };
-                // 🚨 FIX: Strict Field/Value parameter format to prevent SQLite NOT NULL crash
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
-                alert("MgC Discovery Scan Complete. Live data fetched successfully.");
+                alert(`${provider} Discovery Scan Complete. Live data fetched successfully.`);
             } else { 
                 alert(`Discovery Error: ${data.error}`); 
             }
@@ -99,7 +100,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     network: [...existingNetwork, ...newNetwork]
                 };
 
-                // 🚨 FIX: Strict Field/Value parameter format to prevent SQLite NOT NULL crash
                 onUpdateProject(activeProject.id, 'mgcData', { raw_inventory: inventory });
                 alert(`Offline Discovery Complete. Appended ${newCompute.length} compute nodes to the inventory.`);
             } else { 
@@ -124,7 +124,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
             prog: "0%", resp: "Partner", start: "", end: "", isParent: false,
             notes: `Recommended Scenario: ${tool.scenarios.join(', ')}. Auto-assigned via Source Discovery.`
         };
-        // 🚨 FIX: Strict Field/Value parameter format
         onUpdateProject(activeProject.id, 'migrationPlan', [...currentPlan, newTask]);
         alert(`${tool.name} strategy successfully added to the Phase 3 WBS & RACI Matrix!`);
     };
@@ -135,7 +134,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 <div className="flex justify-between items-center border-b border-slate-200 pb-6 mb-8">
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-xl text-slate-800">
-                            <i className="fas fa-satellite-dish text-blue-500"></i> MgC Source Discovery
+                            <i className="fas fa-satellite-dish text-blue-500"></i> Source Infrastructure Discovery
                         </h3>
                         <p className="text-xs text-slate-500 mt-2 font-medium">Fetch the "As-Is" technical reality via Live API or Offline Import.</p>
                     </div>
@@ -167,11 +166,19 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div className={`p-8 rounded-2xl border-2 transition-all ${scanMode === 'live' ? 'border-blue-500 bg-blue-50/50 shadow-md' : 'border-slate-200 bg-slate-50 hover:border-blue-300 cursor-pointer'}`} onClick={() => setScanMode('live')}>
                             <i className="fas fa-cloud text-4xl text-blue-500 mb-4 block"></i>
                             <h4 className="font-black text-slate-800 text-lg mb-2">Live Vault Sync</h4>
-                            <p className="text-xs text-slate-600 mb-6">Uses Customer Vault AK/SK credentials to safely query live infrastructure over secure APIs.</p>
+                            <p className="text-xs text-slate-600 mb-4">Uses Customer Vault AK/SK credentials to safely query live infrastructure over secure APIs.</p>
+                            
                             {scanMode === 'live' && (
-                                <button onClick={handleLiveScan} disabled={isScanning} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Syncing via API...</> : <><i className="fas fa-bolt mr-2"></i> Run Live Sync</>}
-                                </button>
+                                <div className="space-y-3">
+                                    <select value={provider} onChange={(e) => setProvider(e.target.value)} className="w-full p-2.5 text-xs font-bold text-slate-700 border border-blue-300 rounded-lg outline-none focus:border-blue-600 bg-white">
+                                        <option value="Huawei">Huawei Cloud (Native)</option>
+                                        <option value="AWS">Amazon Web Services (AWS)</option>
+                                        <option value="Azure">Microsoft Azure</option>
+                                    </select>
+                                    <button onClick={handleLiveScan} disabled={isScanning} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Syncing {provider}...</> : <><i className="fas fa-bolt mr-2"></i> Run {provider} Sync</>}
+                                    </button>
+                                </div>
                             )}
                         </div>
 
@@ -194,7 +201,6 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner md:col-span-2">
                             <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
                                 <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest"><i className="fas fa-server text-blue-500 mr-2"></i> Discovered Compute & Databases</h4>
-                                {/* 🚨 FIX: Strict Field/Value parameter format */}
                                 <button onClick={()=>onUpdateProject(activeProject.id, 'mgcData', null)} className="text-[9px] font-black text-rose-500 uppercase hover:underline">Clear All Data</button>
                             </div>
                             <div className="space-y-3">
