@@ -13,6 +13,7 @@ from services.huawei_load_balancer import HuaweiLoadBalancer
 from models import Customer
 from services.huawei_discovery import HuaweiDiscovery
 from services.source_resources_parser import parse_source_resources_excel
+from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -105,28 +106,41 @@ def get_live_inventory():
     try:
         data = request.get_json()
         customer_id = data.get('customer_id')
+        provider = data.get('provider', 'Huawei') # Default to Huawei if not specified
         
         # 🚨 STRICT VAULT ENFORCEMENT
         if not customer_id:
             return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
             
         customer = Customer.query.get(customer_id)
-        if not customer or not customer.ak or not customer.sk:
-            return jsonify({"success": False, "error": "Customer missing or Vault keys incomplete."}), 404
+        if not customer:
+            return jsonify({"success": False, "error": "Customer missing from Vault."}), 404
 
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
-        discovery_engine = HuaweiDiscovery(
-            encrypted_ak_data=customer.ak,
-            encrypted_sk_data=customer.sk,
-            region=customer.region or data.get('region', 'la-south-2'),
-            master_password=master_password
-        )
+        if provider == 'Huawei':
+            if not customer.ak or not customer.sk:
+                return jsonify({"success": False, "error": "Huawei Vault keys incomplete."}), 404
+            discovery_engine = HuaweiDiscovery(
+                encrypted_ak_data=customer.ak,
+                encrypted_sk_data=customer.sk,
+                region=customer.region or data.get('region', 'la-south-2'),
+                master_password=master_password
+            )
+            result = discovery_engine.discover_all()
 
-        result = discovery_engine.discover_all()
+        elif provider == 'AWS':
+            engine = HyperscalerDiscoveryEngine(customer_id)
+            result = engine.run_aws_agentless_discovery(region=data.get('region', 'us-east-1'))
+
+        elif provider == 'Azure':
+            return jsonify({"success": False, "error": "Azure discovery SDK pending implementation."}), 400
+
+        else:
+            return jsonify({"success": False, "error": f"Unknown provider: {provider}"}), 400
         
         if result.get("success"):
-            return jsonify({"success": True, "inventory": result.get("inventory"), "message": "Discovery completed safely."})
+            return jsonify({"success": True, "inventory": result.get("inventory"), "message": f"{provider} Discovery completed safely."})
         else:
             return jsonify({"success": False, "error": result.get("error")}), 500
 
@@ -135,6 +149,26 @@ def get_live_inventory():
     except Exception as e:
         return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
+@cloud_ops_bp.route('/api/erp/discovery/agentless', methods=['POST'])
+@jwt_required()
+def trigger_agentless_discovery():
+    # Helper route specifically for standalone agentless requests if needed elsewhere
+    try:
+        data = request.json
+        customer_id = data.get('customerId')
+        provider = data.get('provider', 'AWS')
+        
+        engine = HyperscalerDiscoveryEngine(customer_id)
+        
+        if provider == 'AWS':
+            result = engine.run_aws_agentless_discovery()
+        else:
+            return jsonify({"success": False, "error": "Provider SDK not yet initialized"}), 400
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
 @jwt_required()
@@ -151,7 +185,6 @@ def upload_source_resources():
         file_path = upload_dir / filename
         file.save(str(file_path))
         
-        # 🚨 TRUSTING THE PYTHON PARSER
         result = parse_source_resources_excel(str(file_path))
         
         if result.get("success"):
@@ -165,7 +198,6 @@ def upload_source_resources():
 @cloud_ops_bp.route('/api/finops/query_price', methods=['POST'])
 @jwt_required()
 def query_live_pricing():
-    """Translates Target Nodes into SMS/DRS temporary infrastructure specs."""
     try:
         data = request.get_json()
         duration_months = data.get('duration_months', 1)
@@ -177,7 +209,6 @@ def query_live_pricing():
         bom_items = []
         total_monthly_cost = 0
         
-        # 1. SMS Worker Nodes
         sms_workers_needed = math.ceil(ecs_count / 5) if ecs_count > 0 else 0
         if sms_workers_needed > 0:
             sms_rate = 32.85 
@@ -193,7 +224,6 @@ def query_live_pricing():
                 "selected": True 
             })
 
-        # 2. DRS Replication Clusters
         if rds_count > 0:
             drs_rate = 145.00 
             item_cost = rds_count * drs_rate
@@ -208,7 +238,6 @@ def query_live_pricing():
                 "selected": True
             })
 
-        # 3. Network Overhead
         if ecs_count > 0 or rds_count > 0:
             net_rate = 45.00 
             total_monthly_cost += net_rate
@@ -233,14 +262,11 @@ def query_live_pricing():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-
 @cloud_ops_bp.route('/api/finops/billing_validation', methods=['POST'])
 @jwt_required()
 def validate_actual_billing():
-    """Queries Huawei Cloud Cost Center to validate actual invoices against exact BOM specs."""
     try:
         data = request.get_json()
-        duration_months = data.get('duration_months', 1)
         estimated_cost = data.get('estimated_cost', 0)
         bom_items = data.get('bom_items', [])
         
@@ -260,7 +286,6 @@ def validate_actual_billing():
                 "status": "expected", 
                 "note": "SMS Worker s6.large.2 compute charges."
             })
-            # SMS always hides EVS snapshot costs!
             hidden_evs = (estimated_cost * 0.35)
             total_invoiced += hidden_evs
             line_items.append({
