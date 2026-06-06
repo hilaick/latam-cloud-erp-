@@ -102,6 +102,11 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
 
         onUpdateProject(activeProject.id, 'changeRequests', [...changeRequests, newCR]);
         
+        // If this is a quotation update CR, try to link to latest quotation version
+        if (crTitle.toLowerCase().includes('quotation') || crReason.toLowerCase().includes('quotation')) {
+            linkCRToLatestQuotationVersion(newCR.id);
+        }
+        
         if (crType === 'minor') {
             onUpdateProject(activeProject.id, 'status', 'Draft');
             setIsLocked(false);
@@ -112,6 +117,41 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         
         setShowCRModal(false);
         setCrTitle(''); setCrReason(''); setCrCost(0); setCrApprover('Partner'); setUpdatePlaybook(false);
+    };
+
+    const linkCRToLatestQuotationVersion = async (crId) => {
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const response = await fetch(`/api/quotation/versions/${activeProject.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.versions && data.versions.length > 0) {
+                    const latestVersion = data.versions[0]; // Newest first
+                    
+                    // Link CR to latest quotation version
+                    const linkResponse = await fetch('/api/quotation/link-cr', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            version_id: latestVersion.id,
+                            cr_id: crId
+                        })
+                    });
+                    
+                    if (linkResponse.ok) {
+                        console.log(`Linked CR ${crId} to quotation version ${latestVersion.id}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to link CR to quotation version:', error);
+        }
     };
 
     return (

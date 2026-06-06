@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer = "" }) {
+export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer = "", projectId = "" }) {
     const [customerName, setCustomerName] = useState(defaultCustomer);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -39,9 +39,12 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
         setUploadMessage("Uploading and processing...");
 
         try {
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-            formData.append('customer_name', customerName);
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('customer_name', customerName);
+        if (projectId) {
+            formData.append('project_id', projectId);
+        }
 
             // Get JWT token from localStorage
             const token = localStorage.getItem('erp_jwt_token');
@@ -49,6 +52,9 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                 throw new Error("Authentication required. Please log in again.");
             }
 
+            console.log('ExcelUploader: Uploading to /api/upload_quotation');
+            console.log('File:', selectedFile.name, 'Size:', selectedFile.size);
+            
             const response = await fetch('/api/upload_quotation', { 
                 method: 'POST', 
                 body: formData,
