@@ -8,6 +8,7 @@ Features Bulletproof Parent/Child detection for the new Huawei Cloud CSV Exports
 import pandas as pd
 import re
 from typing import Optional, Dict, Any
+from services.semantic_classifier import classify_unknown_service_with_ai
 
 # ============================================================================
 # GENERIC FALLBACK MATCHING DICTIONARY
@@ -142,6 +143,10 @@ def _finalize_resource(res, blueprint):
         blueprint["topology"]["storage"].append({
             "name": clean_server_name(res['name']), "type": st_type, "location": "Global", "status": "OK"
         })
+    elif cat == 'security':
+        blueprint["topology"]["security"].append({
+            "name": clean_server_name(res['name']), "type": res['type'], "status": "OK"
+        })
 
 # ============================================================================
 # MODERN HUAWEI NESTED PARSER (Bulletproof Region Dependency)
@@ -186,7 +191,7 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] }
     }
 
     current_resource = None
@@ -221,10 +226,18 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
             cat = 'compute'
         elif any(x in svc_type for x in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']):
             cat = 'database'
-        elif any(x in svc_type for x in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect', 'Bandwidth']):
+        elif any(x in svc_type for x in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect', 'Bandwidth', 'Content Delivery Network', 'Whole Site Acceleration', 'CDN', 'Edge']):
             cat = 'network'
-        elif any(x in svc_type for x in ['Cloud Backup and Recovery', 'Object Storage', 'SFS', 'Content Delivery Network', 'Whole Site Acceleration', 'Host Security']):
+        elif any(x in svc_type for x in ['Cloud Backup and Recovery', 'Object Storage', 'SFS']):
             cat = 'storage'
+        elif any(x in svc_type for x in ['Host Security', 'Web Application Firewall', 'WAF', 'Anti-DDoS', 'Cloud Bastion Host']):
+            cat = 'security'
+
+        # 🧠 AI SEMANTIC FALLBACK
+        # If the hardcoded dictionary fails, ask the LLM to figure it out
+        if cat == 'unknown':
+            print(f"⚠️ Unrecognized service '{svc_name}'. Triggering AI Semantic Fallback...")
+            cat = classify_unknown_service_with_ai(svc_name, svc_type)
 
         # Initialize new resource tracking block
         current_resource = {
@@ -266,7 +279,7 @@ def process_generic_quotation(file_path: str, customer_name: str) -> Dict[str, A
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [], "storage": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] }
     }
     
     for index, row in df.iterrows():
