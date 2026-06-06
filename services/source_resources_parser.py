@@ -1,193 +1,92 @@
-#!/usr/bin/env python3
-"""
-Source Resources Excel & CSV Parser
-Intelligently handles Huawei MgC Exports, dynamic header detection, multi-sheet reading, and duplicated columns.
-"""
-
 import pandas as pd
 import re
-import csv
-from typing import Dict, Any, Optional
-from pathlib import Path
+import math
 
-def find_header_row_and_set(df: pd.DataFrame) -> pd.DataFrame:
-    """Finds the true row containing common headers and sets it, bypassing MgC super-headers."""
-    header_idx = 0
-    for idx, row in df.iterrows():
-        # Check if this row looks like the real header (contains name + id/status/platform)
-        row_str = ' '.join([str(x).lower() for x in row.values])
-        if 'name' in row_str and ('id' in row_str or 'platform' in row_str or 'status' in row_str):
-            header_idx = idx
-            break
-            
-    # Set the discovered row as the header
-    df.columns = df.iloc[header_idx]
-    
-    # Drops everything above the header, safely bypassing the MgC super-header
-    df = df.iloc[header_idx+1:].reset_index(drop=True)
-    
-    # Deduplicate column names
-    cols = []
-    counts = {}
-    for c in df.columns:
-        c_clean = str(c).strip().lower()
-        if c_clean in counts:
-            counts[c_clean] += 1
-            cols.append(f"{c_clean}_{counts[c_clean]}")
-        else:
-            counts[c_clean] = 0
-            cols.append(c_clean)
-            
-    df.columns = cols
-    return df
-
-def parse_source_resources_excel(file_path: str) -> Dict[str, Any]:
-    print(f"🔄 Parsing source resources from: {file_path}")
-    
-    result = {
-        "success": True,
-        "filename": Path(file_path).name,
-        "resources": {"servers": [], "containers": [], "middleware": [], "databases": [], "big_data": [], "network": [], "storage": []},
-        "counts": {"servers": 0, "containers": 0, "middleware": 0, "databases": 0, "big_data": 0, "network": 0, "storage": 0}
-    }
-    
+def load_dataframe_safely(file_path: str):
+    """Fallback handler for disguised MgC exports"""
+    if str(file_path).lower().endswith('.csv'):
+        return pd.read_csv(file_path)
     try:
-        file_lower = str(file_path).lower()
-        dfs = {}
-        
-        # 1. Detect File Type and Load ALL Sheets
-        if file_lower.endswith('.csv'):
-            try:
-                # 🚨 ROBUST FIX: Skip bad lines to prevent 400 crashes on dirty CSVs
-                dfs['Sheet1'] = pd.read_csv(file_path, header=None, dtype=str, on_bad_lines='skip')
-            except Exception:
-                # 🚨 PURE PYTHON FALLBACK: If pandas completely chokes, read it manually
-                data = []
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    reader = csv.reader(f)
-                    for row in reader: data.append(row)
-                dfs['Sheet1'] = pd.DataFrame(data)
-                
-        elif file_lower.endswith('.tsv') or file_lower.endswith('.txt'):
-            dfs['Sheet1'] = pd.read_csv(file_path, sep='\t', header=None, dtype=str, on_bad_lines='skip')
-        else:
-            try:
-                xls = pd.ExcelFile(file_path)
-                for sheet in xls.sheet_names:
-                    dfs[sheet] = pd.read_excel(file_path, sheet_name=sheet, header=None, dtype=str)
-            except ImportError:
-                raise Exception("Missing Excel library. Please run in your terminal: pip install openpyxl")
-        
-        # 2. Process Every Sheet Found
-        for sheet_name, df in dfs.items():
-            if df.empty:
-                continue
-                
-            df = df.fillna('')
-            df = find_header_row_and_set(df)
-            
-            # Determine category primarily by sheet name
-            sheet_lower = sheet_name.lower()
-            default_category = "servers"
-            if 'database' in sheet_lower: default_category = "databases"
-            elif 'network' in sheet_lower: default_category = "network"
-            elif 'storage' in sheet_lower: default_category = "storage"
-            elif 'container' in sheet_lower: default_category = "containers"
-            
-            # Fallback column checking
-            if default_category == "servers" and 'engine' in df.columns and 'version' in df.columns:
-                default_category = "databases"
-            
-            resource_type_col = next((col for col in df.columns if any(k in col for k in ['type', 'resource_type', 'category', 'resource'])), None)
-            
-            # 3. Extract Rows
-            for _, row in df.iterrows():
-                if all(row[c] == '' or pd.isna(row[c]) for c in df.columns):
-                    continue
-                    
-                category = default_category
-                if resource_type_col and row[resource_type_col] != '':
-                    category = map_resource_type_to_category(str(row[resource_type_col]).strip())
-                    
-                res_data = extract_huawei_resource(row, category)
-                if res_data:
-                    result["resources"][category].append(res_data)
-                    result["counts"][category] += 1
-        
-        return result
-        
+        return pd.read_excel(file_path)
     except Exception as e:
-        print(f"❌ Error parsing file: {str(e)}")
-        result["success"] = False
-        result["error"] = str(e)
-        return result
+        print(f"⚠️ Native Excel parse failed in Discovery parser. Attempting fallback... {e}")
+        try:
+            return pd.read_csv(file_path, sep=None, engine='python')
+        except:
+            raise ValueError("Could not read MgC export. Please resave as a standard CSV or XLSX.")
 
-def extract_huawei_resource(row, category: str) -> Optional[Dict]:
-    """Extracts specs dynamically while normalizing Huawei metrics"""
+def parse_source_resources_excel(file_path: str) -> dict:
     try:
-        name = None
-        for col in row.index:
-            if str(col).lower() in ['name', 'server_name', 'instance_name', 'hostname']:
-                if row[col] != '': 
-                    name = str(row[col]).strip()
-                    break
+        df = load_dataframe_safely(file_path)
         
-        if not name and 'id' in row.index and row['id'] != '':
-            name = str(row['id']).strip()
-            
-        if not name or str(name) == 'nan': 
+        # Clean column names to make matching easier
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        resources = {
+            "servers": [],
+            "databases": [],
+            "storage": [],
+            "network": []
+        }
+        
+        def find_col(aliases):
+            for col in df.columns:
+                if col in aliases or any(a in col for a in aliases):
+                    return col
             return None
             
-        resource = {"name": name, "type": category, "specs": {}}
+        name_col = find_col(['name', 'resource', 'host', 'server', 'instance'])
+        type_col = find_col(['type', 'flavor', 'instance type', 'engine', 'os', 'system'])
+        ip_col = find_col(['ip', 'address', 'private ip', 'endpoint', 'cidr'])
         
-        for col in row.index:
-            val = row[col]
-            if val == '' or str(val).lower() == 'nan' or 'unnamed' in str(col).lower(): continue
-            col_name = str(col).strip()
+        if not name_col:
+            return {"success": False, "error": "Could not identify a 'Name' column in the uploaded file."}
             
-            if isinstance(val, (int, float)):
-                resource["specs"][col_name] = float(val) if isinstance(val, float) else int(val)
-            else:
-                resource["specs"][col_name] = str(val).strip()
+        for _, row in df.iterrows():
+            name = str(row.get(name_col, '')).strip()
+            if not name or name == 'nan':
+                continue
                 
-        if category == 'servers':
-            if 'cpu_cores' in resource["specs"]: resource["specs"]["cpu"] = parse_numeric(resource["specs"]["cpu_cores"])
-            if 'mem' in resource["specs"]: 
-                mem_val = parse_numeric(resource["specs"]["mem"])
-                if mem_val > 1000000:
-                    resource["specs"]["ram_gb"] = round(mem_val / (1024**3), 2)
-                else:
-                    resource["specs"]["ram_gb"] = mem_val
-            if 'system_type' in resource["specs"]: resource["specs"]["os"] = resource["specs"]["system_type"]
-            if 'private_ip_address' in resource["specs"]: resource["specs"]["ip"] = resource["specs"]["private_ip_address"]
-            if 'server_status' in resource["specs"]: resource["specs"]["status"] = resource["specs"]["server_status"]
-
-        elif category == 'databases':
-            if 'engine' in resource["specs"]: resource["specs"]["engine"] = resource["specs"]["engine"]
-            if 'version' in resource["specs"]: resource["specs"]["version"] = resource["specs"]["version"]
-            if 'instance_type' in resource["specs"]: resource["specs"]["flavor"] = resource["specs"]["instance_type"]
+            type_val = str(row.get(type_col, 'Unknown')).strip() if type_col else 'Unknown'
+            ip_val = str(row.get(ip_col, 'N/A')).strip() if ip_col else 'N/A'
             
-        return resource
-    except Exception:
-        return None
+            type_lower = type_val.lower()
+            if any(k in type_lower for k in ['sql', 'db', 'oracle', 'postgres', 'mongo', 'redis', 'rds']):
+                resources["databases"].append({"name": name, "engine": type_val, "ip": ip_val, "source": "Offline Import"})
+            elif any(k in type_lower for k in ['vpc', 'subnet', 'nat', 'gateway', 'vpn', 'firewall', 'sg']):
+                resources["network"].append({"name": name, "type": type_val, "cidr": ip_val, "source": "Offline Import"})
+            elif any(k in type_lower for k in ['storage', 'disk', 'volume', 's3', 'obs', 'backup', 'nfs']):
+                resources["storage"].append({"name": name, "type": type_val, "location": ip_val, "source": "Offline Import"})
+            else:
+                resources["servers"].append({
+                    "name": name,
+                    "os": type_val,
+                    "ip": ip_val,
+                    "vcpus": parse_numeric(row, ['cpu', 'vcpus', 'core']),
+                    "ram_gb": parse_numeric(row, ['ram', 'memory', 'mem']),
+                    "storage_gb": parse_numeric(row, ['storage', 'disk', 'size']),
+                    "source": "Offline Import"
+                })
+                
+        return {
+            "success": True,
+            "resources": resources,
+            "counts": {
+                "compute": len(resources["servers"]),
+                "database": len(resources["databases"]),
+                "network": len(resources["network"]),
+                "storage": len(resources["storage"])
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
-def map_resource_type_to_category(resource_type: str) -> str:
-    t = resource_type.lower()
-    if any(k in t for k in ['server', 'vm', 'instance', 'compute', 'ecs', 'host']): return "servers"
-    elif any(k in t for k in ['container', 'docker', 'kubernetes', 'k8s', 'pod', 'aks', 'eks']): return "containers"
-    elif any(k in t for k in ['middleware', 'app server', 'tomcat', 'jboss', 'weblogic', 'websphere', 'iis', 'nginx']): return "middleware"
-    elif any(k in t for k in ['database', 'db', 'sql', 'oracle', 'mysql', 'postgres', 'mongodb', 'redis']): return "databases"
-    elif any(k in t for k in ['big data', 'hadoop', 'spark', 'kafka', 'data lake', 'data warehouse', 'hive']): return "big_data"
-    elif any(k in t for k in ['network', 'vpc', 'subnet', 'router', 'firewall', 'load balancer', 'lb', 'gateway']): return "network"
-    elif any(k in t for k in ['storage', 'disk', 'volume', 'nas', 'san', 'object', 's3', 'obs', 'backup']): return "storage"
-    return "servers"
-
-def parse_numeric(value) -> float:
-    try:
-        if value == '' or str(value).lower() == 'nan': return 0.0
-        if isinstance(value, (int, float)): return float(value)
-        str_val = str(value).replace(',', '')
-        match = re.search(r'(\d+(?:\.\d+)?)', str_val)
-        if match: return float(match.group(1))
-        return 0.0
-    except: return 0.0
+def parse_numeric(row, aliases):
+    for col in row.index:
+        col_str = str(col).lower()
+        if any(a in col_str for a in aliases):
+            val = str(row[col])
+            nums = re.findall(r'\d+', val)
+            if nums:
+                return int(nums[0])
+    return 0
