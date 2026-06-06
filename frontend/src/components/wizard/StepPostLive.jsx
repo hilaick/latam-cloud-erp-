@@ -145,30 +145,41 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
                                                 <th className="p-3 text-center border-l border-slate-200 font-black text-slate-800">Delta</th>
                                             </tr>
                                         </thead>
+                                        
                                         <tbody className="divide-y divide-slate-100 bg-white">
-                                            <tr>
-                                                <td className="p-3 font-bold text-slate-700"><i className="fas fa-server text-slate-400 w-5"></i> Compute</td>
-                                                <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIsCompute}</td>
-                                                <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quotedCompute}</td>
-                                                <td className="p-3 text-center font-mono font-black text-emerald-700 border-l border-slate-100 bg-emerald-50/30">{actualCompute}</td>
-                                                <td className="p-3 text-center border-l border-slate-100">
-                                                    <span className={`px-2 py-1 rounded text-xs font-black ${computeCreep > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                        {computeCreep > 0 ? `+${computeCreep}` : computeCreep}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-3 font-bold text-slate-700"><i className="fas fa-database text-slate-400 w-5"></i> Databases</td>
-                                                <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIsDb}</td>
-                                                <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quotedDb}</td>
-                                                <td className="p-3 text-center font-mono font-black text-emerald-700 border-l border-slate-100 bg-emerald-50/30">{actualDb}</td>
-                                                <td className="p-3 text-center border-l border-slate-100">
-                                                    <span className={`px-2 py-1 rounded text-xs font-black ${dbCreep > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                        {dbCreep > 0 ? `+${dbCreep}` : dbCreep}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
+    {[
+        { id: 'compute', icon: 'fa-server', label: 'Compute (ECS/VMs)' },
+        { id: 'database', icon: 'fa-database', label: 'Databases (RDS)' }, // Note: matches your parser output
+        { id: 'network', icon: 'fa-network-wired', label: 'Networking (VPC/EIP/NAT/CDN)' },
+        { id: 'storage', icon: 'fa-hdd', label: 'Storage & Backup (OBS/CBR)' },
+        { id: 'security', icon: 'fa-shield-alt', label: 'Security (WAF/Host Security)' }
+    ].map(cat => {
+        // Extract counts dynamically based on the category ID
+        const asIs = project?.mgcData?.[cat.id] || 0;
+        // Handle pluralization difference between your mgcData and blueprintData schema
+        const blueprintCat = cat.id === 'database' ? 'databases' : cat.id;
+        const quoted = project?.blueprintData?.topology?.[blueprintCat]?.length || 0; 
+        const actual = nocData?.[cat.id] || 0;
+        const creep = hasNocScanned ? (actual - quoted) : 0;
+        
+        // If there are zero resources for this category across all 3 phases, hide the row
+        if (asIs === 0 && quoted === 0 && actual === 0) return null;
+
+        return (
+            <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
+                <td className="p-3 font-bold text-slate-700"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
+                <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIs}</td>
+                <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
+                <td className="p-3 text-center font-mono font-black text-emerald-700 border-l border-slate-100 bg-emerald-50/30">{actual}</td>
+                <td className="p-3 text-center border-l border-slate-100">
+                    <span className={`px-2 py-1 rounded text-xs font-black ${creep > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {creep > 0 ? `+${creep} (CR)` : creep === 0 && hasNocScanned ? 'Verified' : creep}
+                    </span>
+                </td>
+            </tr>
+        );
+    })}
+</tbody>
                                     </table>
                                 </div>
 
