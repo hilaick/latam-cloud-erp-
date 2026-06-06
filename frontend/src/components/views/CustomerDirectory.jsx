@@ -8,6 +8,10 @@ export default function CustomerDirectory() {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [isCreating, setIsCreating] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
+    
+    // NEW: Validation State
+    const [validationStatus, setValidationStatus] = useState({});
+    const [isValidating, setIsValidating] = useState(false);
 
     const filteredCustomers = (customers || []).filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -20,13 +24,15 @@ export default function CustomerDirectory() {
             osDomain: '', osUser: '', osPassword: ''
         });
         setIsCreating(true);
+        setValidationStatus({});
         setActiveTab('general');
     };
 
     const handleEditCustomer = (customer) => {
         setEditingCustomer({ ...customer });
         setIsCreating(false);
-        setActiveTab('vault'); // Default to vault view when opening existing
+        setValidationStatus({});
+        setActiveTab('vault');
     };
 
     const handleSave = () => {
@@ -34,10 +40,40 @@ export default function CustomerDirectory() {
         if (isCreating) {
             handleAddCustomer(editingCustomer);
         } else {
-            handleUpdateCustomer(editingCustomer); // ✅ FIXED
+            handleUpdateCustomer(editingCustomer);
         }
         setEditingCustomer(null);
         setIsCreating(false);
+    };
+
+    const validateKeys = async (provider) => {
+        setIsValidating(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const bodyData = provider === 'AWS' 
+                ? { provider: 'AWS', ak: editingCustomer.awsAK, sk: editingCustomer.awsSK }
+                : { provider: 'Azure' }; // Azure placeholder
+
+            const res = await fetch('/api/vault/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(bodyData)
+            });
+            const data = await res.json();
+            
+            setValidationStatus(prev => ({
+                ...prev,
+                [provider]: data
+            }));
+            
+        } catch (err) {
+            setValidationStatus(prev => ({
+                ...prev,
+                [provider]: { valid: false, error: err.message }
+            }));
+        } finally {
+            setIsValidating(false);
+        }
     };
 
     return (
@@ -124,13 +160,6 @@ export default function CustomerDirectory() {
                                                     <option value="la-south-2">Santiago, Chile (la-south-2)</option>
                                                     <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
                                                     <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
-                                                    <option value="la-south-1">Buenos Aires, Argentina (la-south-1)</option>
-                                                    <option value="la-north-3">Lima, Peru (la-north-3)</option>
-                                                </optgroup>
-                                                <optgroup label="North America & Global">
-                                                    <option value="na-mexico-1">Mexico City 1 (na-mexico-1)</option>
-                                                    <option value="af-south-1">Johannesburg, SA (af-south-1)</option>
-                                                    <option value="ap-southeast-3">Singapore (ap-southeast-3)</option>
                                                 </optgroup>
                                             </select>
                                         </div>
@@ -160,24 +189,42 @@ export default function CustomerDirectory() {
                             {activeTab === 'multicloud' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                                        <h4 className="font-black text-slate-800 text-sm mb-1"><i className="fab fa-aws text-orange-500 mr-2"></i>AWS Control Plane</h4>
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="font-black text-slate-800 text-sm"><i className="fab fa-aws text-orange-500 mr-2"></i>AWS Control Plane</h4>
+                                            
+                                            {/* AWS VALIDATION STATUS BADGE */}
+                                            {validationStatus['AWS'] && (
+                                                <div className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${validationStatus['AWS'].valid ? (validationStatus['AWS'].level === 'Admin' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200') : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                                                    {validationStatus['AWS'].valid 
+                                                        ? <><i className="fas fa-check-circle mr-1"></i> Verified: {validationStatus['AWS'].level}</> 
+                                                        : <><i className="fas fa-times-circle mr-1"></i> Invalid Keys</>}
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Access Key ID</label><input type="password" value={editingCustomer.awsAK || ''} onChange={e=>setEditingCustomer({...editingCustomer, awsAK: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-orange-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Secret Access Key</label><input type="password" value={editingCustomer.awsSK || ''} onChange={e=>setEditingCustomer({...editingCustomer, awsSK: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-orange-500" /></div>
                                         </div>
+                                        {/* AWS VALIDATE BUTTON */}
+                                        <div className="mt-4 flex justify-end">
+                                            <button onClick={() => validateKeys('AWS')} disabled={isValidating || !editingCustomer.awsAK || !editingCustomer.awsSK} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                                                {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Checking...</> : <><i className="fas fa-shield-alt mr-1"></i> Assess Permissions</>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                                        <h4 className="font-black text-slate-800 text-sm mb-1"><i className="fab fa-windows text-blue-500 mr-2"></i>Azure Control Plane</h4>
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="font-black text-slate-800 text-sm"><i className="fab fa-windows text-blue-500 mr-2"></i>Azure Control Plane</h4>
+                                        </div>
                                         <div className="grid grid-cols-3 gap-4">
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tenant ID</label><input type="password" value={editingCustomer.azureTenant || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureTenant: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client ID</label><input type="password" value={editingCustomer.azureClient || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureClient: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client Secret</label><input type="password" value={editingCustomer.azureSecret || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureSecret: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                         </div>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                                        <h4 className="font-black text-slate-800 text-sm mb-1"><i className="fas fa-server text-indigo-500 mr-2"></i>VMware vCenter</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                            <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">vCenter Host / IP</label><input type="text" placeholder="vcenter.corp.local" value={editingCustomer.vCenterHost || ''} onChange={e=>setEditingCustomer({...editingCustomer, vCenterHost: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
+                                        <div className="mt-4 flex justify-end">
+                                            <button onClick={() => validateKeys('Azure')} disabled className="px-4 py-2 bg-slate-200 text-slate-400 rounded text-[10px] font-black uppercase tracking-widest cursor-not-allowed">
+                                                <i className="fas fa-lock mr-1"></i> Assess Permissions (Soon)
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
