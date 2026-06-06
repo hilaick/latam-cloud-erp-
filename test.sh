@@ -9,18 +9,16 @@ echo "📁 Checking file structure..."
 required_files=(
     "app.py"
     "requirements.txt"
-    "templates/index.html"
-    "static/js/01_data.js"
-    "static/js/02_utils.js"
-    "static/js/03_map.js"
-    "static/js/04_views.js"
-    "static/js/05_wizard.js"
-    "static/js/06_app.js"
+    "frontend/dist/index.html"
+    "frontend/package.json"
+    "frontend/vite.config.js"
     "scripts/audit_quick.sh"
     "scripts/deploy_real_tagged.sh"
     "scripts/cleanup_resources.sh"
     "services/huawei_load_balancer.py"
     "services/resource_parser.py"
+    "services/excel_ingestor.py"
+    "services/quotation_versioning.py"
 )
 
 missing_files=0
@@ -32,6 +30,15 @@ for file in "${required_files[@]}"; do
         missing_files=$((missing_files + 1))
     fi
 done
+
+# Check if frontend is built
+echo ""
+echo "🔧 Checking frontend build..."
+if [ -f "frontend/dist/index.html" ] && [ -d "frontend/dist/assets" ]; then
+    echo "✅ Frontend is built (Vite + React)"
+else
+    echo "⚠️  Frontend not built. Run: cd frontend && npm run build"
+fi
 
 # Check Python dependencies
 echo ""
@@ -75,6 +82,8 @@ sys.path.append('.')
 try:
     from services.huawei_load_balancer import HuaweiLoadBalancer
     from services.resource_parser import parse_resource_log
+    from services.excel_ingestor import process_huawei_quotation
+    from services.quotation_versioning import generate_quotation_version_id
     print('✅ Services import successfully')
 except Exception as e:
     print(f'❌ Services import failed: {e}')
@@ -84,25 +93,6 @@ except Exception as e:
 else
     echo "❌ Services import failed"
 fi
-
-# Check JS files for global window bindings
-echo ""
-echo "🔧 Checking JS global bindings..."
-js_files=(
-    "static/js/01_data.js"
-    "static/js/02_utils.js"
-    "static/js/03_map.js"
-    "static/js/04_views.js"
-    "static/js/05_wizard.js"
-)
-
-for js_file in "${js_files[@]}"; do
-    if grep -q "window\." "$js_file"; then
-        echo "✅ $js_file has global window bindings"
-    else
-        echo "❌ $js_file missing global window bindings"
-    fi
-done
 
 echo ""
 echo "📊 Summary:"
