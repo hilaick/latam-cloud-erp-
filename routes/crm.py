@@ -3,24 +3,71 @@ from models import db, ProjectData, Customer, GlobalPlaybooks
 import json
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
+# Import for validation
+import boto3
+from botocore.exceptions import ClientError
+
 crm_bp = Blueprint('crm', __name__)
+
+@crm_bp.route('/api/vault/validate', methods=['POST'])
+@jwt_required()
+def validate_vault_keys():
+    """
+    Actively tests Multi-Cloud keys to determine validity and Read-Only vs Admin status.
+    """
+    data = request.json
+    provider = data.get('provider')
+    ak = data.get('ak')
+    sk = data.get('sk')
+
+    if not ak or not sk:
+        return jsonify({"valid": False, "error": "Keys cannot be empty."})
+
+    if provider == 'AWS':
+        try:
+            # 1. Initialize session and verify identity
+            session = boto3.Session(aws_access_key_id=ak, aws_secret_access_key=sk, region_name='us-east-1')
+            sts = session.client('sts')
+            identity = sts.get_caller_identity()
+            
+            # 2. Check Permissions Level using a Dry-Run for an Admin action
+            ec2 = session.client('ec2')
+            try:
+                ec2.run_instances(ImageId='ami-00000000', MinCount=1, MaxCount=1, DryRun=True)
+            except ClientError as e:
+                error_msg = str(e)
+                if 'DryRunOperation' in error_msg:
+                    # DryRun successful = They have Write/Admin Access!
+                    return jsonify({"valid": True, "level": "Admin", "account": identity['Account']})
+                elif 'UnauthorizedOperation' in error_msg:
+                    # Unauthorized = They only have Read Access
+                    return jsonify({"valid": True, "level": "Read-Only", "account": identity['Account']})
+                    
+        except ClientError as e:
+            error_msg = str(e)
+            if 'InvalidClientTokenId' in error_msg or 'SignatureDoesNotMatch' in error_msg:
+                return jsonify({"valid": False, "error": "Invalid API Keys or Signature."})
+            return jsonify({"valid": False, "error": f"API Error: {error_msg}"})
+        except Exception as e:
+            return jsonify({"valid": False, "error": str(e)})
+
+    elif provider == 'Azure':
+        return jsonify({"valid": False, "error": "Azure validation requires Graph API integration (Pending)."})
+
+    return jsonify({"valid": False, "error": "Unknown provider."})
+
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
 @jwt_required()
 def get_state():
-    """Returns the full master state of the ERP (All Projects)"""
     try:
         projects = ProjectData.query.all()
         valid_projects = []
-        
-        # 🚨 SAFE PARSER: Bypasses corrupted SQLite data
         for p in projects:
             try:
                 valid_projects.append(json.loads(p.data) if isinstance(p.data, str) else p.data)
             except json.JSONDecodeError:
-                print(f"Warning: Ignored corrupted JSON in ProjectData {p.id}")
                 continue
-                
         return jsonify({"success": True, "projects": valid_projects})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -52,14 +99,9 @@ def manage_customers():
             return jsonify({
                 "success": True,
                 "customers": [{
-                    "id": c.id, 
-                    "name": c.name, 
-                    "region": c.region,
-                    "cio": c.cio, 
-                    "itLead": c.it_lead, 
-                    "architect": c.architect,
-                    "ak": c.ak, 
-                    "sk": c.sk,
+                    "id": c.id, "name": c.name, "region": c.region,
+                    "cio": c.cio, "itLead": c.it_lead, "architect": c.architect,
+                    "ak": c.ak, "sk": c.sk,
                     "tier1AK": c.tier1_ak, "tier1SK": c.tier1_sk,
                     "tier2AK": c.tier2_ak, "tier2SK": c.tier2_sk,
                     "tier3AK": c.tier3_ak, "tier3SK": c.tier3_sk,
@@ -76,20 +118,13 @@ def manage_customers():
         try:
             data = request.json
             new_name = data.get('name', 'Unknown').strip()
-            
-            # Check if a customer with this exact name already exists (Case-Insensitive)
             existing_customer = Customer.query.filter(Customer.name.ilike(new_name)).first()
-            
             if existing_customer:
-                return jsonify({"success": True, "message": "Customer already exists, skipping duplicate creation."})
+                return jsonify({"success": True, "message": "Customer already exists."})
 
             customer = Customer(
-                id=str(data.get('id')), 
-                name=new_name, 
-                region=data.get('region', 'la-south-2'),
-                cio=data.get('cio'), 
-                it_lead=data.get('itLead'), 
-                architect=data.get('architect'),
+                id=str(data.get('id')), name=new_name, region=data.get('region', 'la-south-2'),
+                cio=data.get('cio'), it_lead=data.get('itLead'), architect=data.get('architect'),
                 ak=data.get('ak', ''), sk=data.get('sk', ''),
                 tier1_ak=data.get('tier1AK'), tier1_sk=data.get('tier1SK'),
                 tier2_ak=data.get('tier2AK'), tier2_sk=data.get('tier2SK'),
@@ -160,15 +195,12 @@ def hard_reset():
 @crm_bp.route('/api/wbs/global', methods=['GET'])
 @jwt_required()
 def get_global_wbs():
-    """Returns global WBS tasks across all projects"""
     try:
         projects = ProjectData.query.all()
         global_tasks = []
-        
         for p in projects:
             try:
                 project_data = json.loads(p.data) if isinstance(p.data, str) else p.data
-                # Extract WBS tasks from project data
                 if 'migrationPlan' in project_data:
                     for task in project_data['migrationPlan']:
                         global_tasks.append({
@@ -184,7 +216,6 @@ def get_global_wbs():
                         })
             except Exception:
                 continue
-                
         return jsonify({"success": True, "tasks": global_tasks})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -192,12 +223,10 @@ def get_global_wbs():
 @crm_bp.route('/api/wbs/task', methods=['POST'])
 @jwt_required()
 def update_task_progress():
-    """Update a specific task's progress"""
     try:
         data = request.json
         task_id = data.get('id')
         new_progress = data.get('progress', '0%')
-        
         projects = ProjectData.query.all()
         updated = False
         for p in projects:
@@ -211,13 +240,10 @@ def update_task_progress():
                             db.session.commit()
                             updated = True
                             break
-                if updated:
-                    break
+                if updated: break
             except Exception:
                 continue
-                
-        if updated:
-            return jsonify({"success": True, "message": f"Task {task_id} updated to {new_progress}"})
+        if updated: return jsonify({"success": True})
         return jsonify({"success": False, "error": "Task not found"}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -228,24 +254,14 @@ def manage_playbooks():
     if request.method == 'GET':
         try:
             pb = GlobalPlaybooks.query.get("master")
-            if pb:
-                try:
-                    return jsonify({"success": True, "playbooks": json.loads(pb.data) if isinstance(pb.data, str) else pb.data})
-                except Exception:
-                    return jsonify({"success": True, "playbooks": None})
-            return jsonify({"success": True, "playbooks": None})
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 500
-    
+            return jsonify({"success": True, "playbooks": json.loads(pb.data) if pb else None})
+        except: return jsonify({"success": True, "playbooks": None})
     elif request.method == 'POST':
         try:
             data = request.json
             pb = GlobalPlaybooks.query.get("master")
-            if pb:
-                pb.data = json.dumps(data)
-            else:
-                pb = GlobalPlaybooks(id="master", data=json.dumps(data))
-                db.session.add(pb)
+            if pb: pb.data = json.dumps(data)
+            else: db.session.add(GlobalPlaybooks(id="master", data=json.dumps(data)))
             db.session.commit()
             return jsonify({"success": True})
         except Exception as e:
