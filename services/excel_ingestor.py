@@ -11,6 +11,35 @@ from typing import Optional, Dict, Any
 from services.semantic_classifier import classify_unknown_service_with_ai
 
 # ============================================================================
+# ROBUST FILE LOADER (MASQUERADE FALLBACK)
+# ============================================================================
+def load_dataframe_safely(file_path: str, header=0, nrows=None):
+    """
+    Cloud providers frequently export CSV or HTML tables but save them with an 
+    '.xlsx' extension. This robust loader attempts native Excel parsing first, 
+    and gracefully falls back to CSV/HTML parsing to prevent engine crashes.
+    """
+    if str(file_path).lower().endswith('.csv'):
+        return pd.read_csv(file_path, header=header, nrows=nrows)
+    
+    try:
+        # 1. Try parsing as a native Excel file
+        return pd.read_excel(file_path, header=header, nrows=nrows)
+    except Exception as e:
+        print(f"⚠️ Native Excel parse failed. Attempting masquerade fallback. Error: {e}")
+        try:
+            # 2. Fallback: It's actually a CSV disguised as .xlsx
+            return pd.read_csv(file_path, header=header, nrows=nrows, sep=None, engine='python')
+        except Exception as e2:
+            try:
+                # 3. Fallback: It's actually an HTML table disguised as .xlsx
+                dfs = pd.read_html(file_path, header=header)
+                if dfs: return dfs[0]
+            except Exception as e3:
+                pass
+            raise ValueError("Format cannot be determined. Please open the file in Excel and 'Save As' a true .xlsx or .csv")
+
+# ============================================================================
 # GENERIC FALLBACK MATCHING DICTIONARY
 # ============================================================================
 
@@ -58,37 +87,29 @@ def parse_integer(val: Any) -> int:
         return int(float(val))
     except (ValueError, TypeError): return 0
 
-# ============================================================================
-# SHARED HUAWEI PARSING LOGIC
-# ============================================================================
-
 def parse_huawei_specifications(spec_string):
     if pd.isna(spec_string): return {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
     spec = str(spec_string)
     result = {'vcpus': 0, 'ram_gb': 0, 'os': 'Unknown', 'storage_gb': 0, 'instance_type': 'Unknown'}
     
-    # Extract vCPUs
     for p in [r'(\d+)\s*vCPU', r'x(\d+)\.\d+u', r'(\d+)\s*cores?']:
         match = re.search(p, spec, re.IGNORECASE)
         if match: 
             result['vcpus'] = int(match.group(1))
             break
             
-    # Extract RAM
     for p in [r'(\d+)\s*GiB', r'(\d+)\s*GB', r'x\d+\.\d+u\.(\d+)g']:
         match = re.search(p, spec, re.IGNORECASE)
         if match: 
             result['ram_gb'] = int(match.group(1))
             break
             
-    # Extract OS
     for p in [r'(Huawei Cloud EulerOS[^;|]*)', r'(CentOS[^;|]*)', r'(Windows[^;|]*)', r'(Ubuntu[^;|]*)', r'(Red Hat[^;|]*)', r'(Debian[^;|]*)', r'(AlmaLinux[^;|]*)', r'(Oracle[^;|]*)']:
         match = re.search(p, spec, re.IGNORECASE)
         if match: 
             result['os'] = match.group(1).strip()
             break
             
-    # Extract Storage (Summing all disks in the spec string)
     storage_sum = 0
     for match in re.finditer(r'(?:SSD|SAS|SATA|Disk)[^|]*\|\s*(\d+)\s*GB', spec, re.IGNORECASE):
         storage_sum += int(match.group(1))
@@ -99,7 +120,6 @@ def parse_huawei_specifications(spec_string):
         if fallback and fallback.group(1) != str(result['ram_gb']):
             result['storage_gb'] = int(fallback.group(1))
     
-    # Extract Instance Flavor
     type_match = re.search(r'\|\s*([a-zA-Z0-9\.\-]+)\s*\|', spec)
     if type_match:
         result['instance_type'] = type_match.group(1).strip()
@@ -149,7 +169,7 @@ def _finalize_resource(res, blueprint):
         })
 
 # ============================================================================
-# MODERN HUAWEI NESTED PARSER (Bulletproof Region Dependency)
+# MODERN HUAWEI NESTED PARSER 
 # ============================================================================
 
 def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
@@ -158,33 +178,24 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
     header_idx = 0
     is_huawei = False
     
-    # 1. Locate the dynamic header row (case insensitive)
+    # 1. Locate the dynamic header row securely using the new robust loader
     try:
-        if file_path.lower().endswith('.csv'):
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    if 'service' in line.lower() and 'description' in line.lower():
-                        header_idx = i
-                        is_huawei = True
-                        break
-        else:
-            df_check = pd.read_excel(file_path, nrows=20, header=None)
-            for i in range(len(df_check)):
-                row_str = ' '.join(str(x).lower() for x in df_check.iloc[i].values)
-                if 'service' in row_str and 'description' in row_str:
-                    header_idx = i
-                    is_huawei = True
-                    break
+        df_check = load_dataframe_safely(file_path, header=None, nrows=30)
+        for i in range(len(df_check)):
+            row_str = ' '.join(str(x).lower() for x in df_check.iloc[i].values)
+            if 'service' in row_str and 'description' in row_str:
+                header_idx = i
+                is_huawei = True
+                break
     except Exception as e:
         print(f"⚠️ Header scanning issue: {str(e)}")
 
     if not is_huawei:
         return process_generic_quotation(file_path, customer_name)
 
-    # 2. Parse Dataframe
-    df = pd.read_csv(file_path, header=header_idx) if file_path.lower().endswith('.csv') else pd.read_excel(file_path, header=header_idx)
+    # 2. Parse Dataframe securely
+    df = load_dataframe_safely(file_path, header=header_idx)
     
-    # Normalize column names for safe extraction
     df.columns = [str(c).strip().lower() for c in df.columns]
     
     blueprint = {
@@ -196,7 +207,6 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
 
     current_resource = None
 
-    # 3. Iterate through rows
     for index, row in df.iterrows():
         svc_val = str(row.get('service', ''))
         desc_val = str(row.get('description', ''))
@@ -205,7 +215,6 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         if not svc_val.strip() or svc_val == 'nan':
             continue
         
-        # 🚨 THE BULLETPROOF FIX: If region is empty, it's a child attribute of the current resource
         is_main_resource = bool(region_val.strip() and region_val != 'nan')
         
         if not is_main_resource:
@@ -213,14 +222,12 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
                 current_resource['specs'] += f" | {svc_val.strip()}: {desc_val.strip()}"
             continue
 
-        # Finalize the previous block when we hit a new Main Resource
         if current_resource:
             _finalize_resource(current_resource, blueprint)
         
         svc_name = svc_val.strip()
         svc_type = desc_val.strip()
 
-        # Categorize
         cat = 'unknown'
         if any(x in svc_type for x in ['Elastic Cloud Server', 'Bare Metal', 'Flexus X Instance', 'ECS']):
             cat = 'compute'
@@ -233,13 +240,10 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         elif any(x in svc_type for x in ['Host Security', 'Web Application Firewall', 'WAF', 'Anti-DDoS', 'Cloud Bastion Host']):
             cat = 'security'
 
-        # 🧠 AI SEMANTIC FALLBACK
-        # If the hardcoded dictionary fails, ask the LLM to figure it out
         if cat == 'unknown':
             print(f"⚠️ Unrecognized service '{svc_name}'. Triggering AI Semantic Fallback...")
             cat = classify_unknown_service_with_ai(svc_name, svc_type)
 
-        # Initialize new resource tracking block
         current_resource = {
             'name': svc_name,
             'type': svc_type,
@@ -247,20 +251,15 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
             'specs': svc_type 
         }
 
-    # Finalize the very last resource block in the file
     if current_resource:
         _finalize_resource(current_resource, blueprint)
 
     return blueprint
 
-# ============================================================================
-# GENERIC QUOTATION PARSER (FALLBACK)
-# ============================================================================
-
 def process_generic_quotation(file_path: str, customer_name: str) -> Dict[str, Any]:
     print("🔍 Format unknown. Attempting generic column mapping...")
     try:
-        df = pd.read_csv(file_path) if file_path.lower().endswith('.csv') else pd.read_excel(file_path)
+        df = load_dataframe_safely(file_path)
     except Exception as e:
         raise ValueError(f"Failed to read file {file_path}: {str(e)}")
     
