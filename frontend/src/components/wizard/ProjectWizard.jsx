@@ -10,6 +10,7 @@ export default function ProjectWizard() {
     const { projects, activeProjectId, handleUpdateProject, customers } = useContext(ERPContext);
     const [editingProject, setEditingProject] = useState(null);
     const [showMatrixHelp, setShowMatrixHelp] = useState(false);
+    const [showTheoryModal, setShowTheoryModal] = useState(false); // 🚨 NEW: Theory Modal State
     
     const project = projects.find(p => String(p.id) === String(activeProjectId));
 
@@ -164,9 +165,17 @@ export default function ProjectWizard() {
                                     <div className="md:col-span-3">
                                         <div className="flex justify-between items-center mb-1">
                                             <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest">Source Authentication Level (Agent Strategy)</label>
-                                            <button onClick={() => setShowMatrixHelp(!showMatrixHelp)} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-100 px-3 py-1 rounded transition-colors flex items-center gap-2">
-                                                <i className="fas fa-question-circle"></i> Guide
-                                            </button>
+                                            
+                                            {/* 🚨 NEW: Theory Buttons */}
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setShowMatrixHelp(!showMatrixHelp)} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-100 px-3 py-1 rounded transition-colors flex items-center gap-2">
+                                                    <i className="fas fa-bolt"></i> Quick Overview
+                                                </button>
+                                                <button onClick={() => setShowTheoryModal(true)} className="text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded transition-colors flex items-center gap-2 shadow-sm">
+                                                    <i className="fas fa-graduation-cap"></i> Deep Dive Theory
+                                                </button>
+                                            </div>
+
                                         </div>
                                         <select value={editingProject.authLevel || 'Read-Only (Customer Managed)'} onChange={e=>setEditingProject({...editingProject, authLevel: e.target.value})} className="w-full p-3 border border-indigo-300 rounded-lg text-sm font-bold outline-none focus:border-indigo-600 bg-white cursor-pointer shadow-sm">
                                             <option value="Cloud Admin API">Cloud Admin API (Automated Agentless Push)</option>
@@ -175,12 +184,11 @@ export default function ProjectWizard() {
                                             <option value="Read-Only (Customer Managed)">Read-Only / No OS Access (Customer Managed Runbooks)</option>
                                         </select>
                                         
-                                        {/* 🚨 CREDENTIAL MATRIX HELP SECTION */}
                                         {showMatrixHelp ? (
                                             <div className="mt-3 p-4 bg-white border border-indigo-200 rounded-xl text-xs text-slate-700 space-y-3 shadow-inner animate-fade-in">
-                                                <p className="font-bold text-indigo-800 border-b border-indigo-100 pb-2">The Credential Decision Matrix determines how Step 4 (Execution) will behave:</p>
+                                                <p className="font-bold text-indigo-800 border-b border-indigo-100 pb-2">Quick Overview: How Step 4 (Execution) will behave:</p>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-cloud text-blue-500 w-4"></i> Cloud Admin API:</span> Fast & automated. Connects natively to AWS/Azure APIs to inject agents silently.</div>
+                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-cloud text-blue-500 w-4"></i> Cloud Admin API:</span> Fast & automated. Connects natively to hyperscaler APIs to inject agents silently.</div>
                                                     <div><span className="font-black text-slate-800 block"><i className="fas fa-network-wired text-indigo-500 w-4"></i> Domain Admin:</span> Centralized deployment. Drops MSI payloads via internal jump-box and Active Directory.</div>
                                                     <div><span className="font-black text-slate-800 block"><i className="fas fa-terminal text-rose-500 w-4"></i> Local OS Admin:</span> Sequential deployment. Connects via SSH/WinRM host-by-host to install agents.</div>
                                                     <div><span className="font-black text-slate-800 block"><i className="fas fa-user-shield text-slate-500 w-4"></i> Read-Only:</span> Zero Trust. ERP disables automated pushes and generates copy-paste runbooks for the customer instead.</div>
@@ -240,6 +248,72 @@ export default function ProjectWizard() {
                         <div className="px-6 py-4 sm:px-8 sm:py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
                             <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
                             <button onClick={()=>{ handleUpdateProject(editingProject.id, editingProject); setEditingProject(null); }} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Context</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🚨 NEW: DETAILED THEORY MODAL */}
+            {showTheoryModal && (
+                <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center text-white shrink-0">
+                            <h3 className="font-black text-lg"><i className="fas fa-graduation-cap mr-2"></i> The Credential Decision Matrix</h3>
+                            <button onClick={()=>setShowTheoryModal(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+                        <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar text-sm text-slate-700 space-y-6">
+                            
+                            <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl text-base font-medium leading-relaxed shadow-sm text-slate-800">
+                                The Credential Decision Matrix is essentially the "rules of engagement" engine for the execution phase of the migration. Its primary purpose is to dynamically determine how the ERP will deploy migration agents and orchestrate the actual data movement, based entirely on the depth of permissions (credentials) the customer is willing to provide.
+                            </div>
+                            
+                            <p className="leading-relaxed text-slate-600">
+                                Because customers have varying strictness regarding security and compliance, the ERP cannot use a "one-size-fits-all" approach to push migration agents to their servers. The matrix solves this by shifting the deployment runbook strategy across two vectors: the <strong className="text-indigo-600">Control Plane</strong> and the <strong className="text-indigo-600">Data Plane</strong>.
+                            </p>
+                            
+                            <h4 className="font-black text-slate-800 text-lg border-b border-slate-200 pb-2 mt-8">Execution Strategies based on provided credentials:</h4>
+                            
+                            <div className="space-y-5">
+                                <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl shadow-sm">
+                                    <h5 className="font-black text-blue-800 text-base mb-3"><i className="fas fa-cloud mr-2"></i>1. Cloud Admin API (The Control Plane)</h5>
+                                    <ul className="space-y-3 pl-2">
+                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer provides full API Administrative access to their source cloud (e.g., AWS Access Keys or Azure Service Principals).</li>
+                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP operates natively on the hyperscaler's Control Plane. It uses tools like AWS Systems Manager (SSM) Run-Command to push the agents to massive batches of servers simultaneously.</li>
+                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">Why it matters</strong> Zero OS-level passwords or SSH keys are ever handled by the ERP platform. It is the fastest, most scalable, and highly automated approach.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl shadow-sm">
+                                    <h5 className="font-black text-purple-800 text-base mb-3"><i className="fas fa-network-wired mr-2"></i>2. Active Directory Domain Admin (Centralized Data Plane)</h5>
+                                    <ul className="space-y-3 pl-2">
+                                        <li><strong className="text-slate-900 bg-purple-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer won't provide Cloud API access, but they will provide network-level Domain Admin credentials.</li>
+                                        <li><strong className="text-slate-900 bg-purple-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP logs into a single internal jump-box within the customer's network and uses PowerShell/GPO batch pushes to distribute the agent MSI packages across the entire fleet centrally.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="bg-rose-50 border border-rose-200 p-5 rounded-xl shadow-sm">
+                                    <h5 className="font-black text-rose-800 text-base mb-3"><i className="fas fa-terminal mr-2"></i>3. Local OS Admin (Sequential Data Plane)</h5>
+                                    <ul className="space-y-3 pl-2">
+                                        <li><strong className="text-slate-900 bg-rose-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer only provides local root/admin access on a per-machine basis.</li>
+                                        <li><strong className="text-slate-900 bg-rose-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP steps down to a host-by-host execution loop. It opens an encrypted socket (SSH on Port 22 or WinRM on Port 5985) to each whitelisted IP, drops the binary, installs the agent silently, and moves to the next node.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="bg-slate-100 border border-slate-300 p-5 rounded-xl shadow-sm">
+                                    <h5 className="font-black text-slate-800 text-base mb-3"><i className="fas fa-user-shield mr-2"></i>4. Read-Only / Customer Managed (Zero Trust)</h5>
+                                    <ul className="space-y-3 pl-2">
+                                        <li><strong className="text-slate-900 bg-slate-200 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The strictest security posture. The customer refuses to provide any write-access credentials to the ERP.</li>
+                                        <li><strong className="text-slate-900 bg-slate-200 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> Zero automation access. The ERP recognizes this block and shifts to generating customized copy-paste runbook scripts. The delivery engineer hands these scripts to the customer's internal IT team, who manually deploys the agents themselves.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className="bg-emerald-50 border-l-4 border-emerald-500 p-6 rounded-r-xl mt-8 shadow-sm">
+                                <h4 className="font-black text-emerald-900 text-lg mb-2"><i className="fas fa-lightbulb mr-2 text-emerald-500"></i>The Business Value of the Matrix</h4>
+                                <p className="leading-relaxed text-emerald-800">
+                                    By having this matrix, the platform ensures it never hits a "dead end" during delivery. If a financial institution says, <em>"You cannot have API access,"</em> the project doesn't fail; the delivery manager simply toggles the matrix down to "Read-Only," and the pipeline seamlessly pivots from an automated push to generating manual compliance runbooks. It accommodates every possible enterprise security posture.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
