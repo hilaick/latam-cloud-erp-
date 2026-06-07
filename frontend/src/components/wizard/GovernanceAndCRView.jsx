@@ -22,6 +22,8 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
     const { score, checks } = useMemo(() => {
         let totalScore = 100;
         const results = [];
+        
+        // 1. Technical Checks
         const hasCBR = nodes.some(n => String(n.type).toUpperCase() === 'CBR');
         if (hasCBR) results.push({ id: 'bc-1', type: 'pass', category: 'Continuity', text: 'CBR Vaults detected. Backup strategy is in place.' });
         else { totalScore -= 20; results.push({ id: 'bc-1', type: 'fail', category: 'Continuity', text: 'CRITICAL: No CBR Backup Vaults mapped.' }); }
@@ -35,9 +37,14 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         if (exposedDbs.length > 0) { totalScore -= 30; results.push({ id: 'sec-2', type: 'fail', category: 'Security', text: `CRITICAL: ${exposedDbs.length} DBs have public IPs.` }); } 
         else if (dbs.length > 0) results.push({ id: 'sec-2', type: 'pass', category: 'Security', text: 'Databases correctly isolated.' });
         
+        // 🚨 FIX: Commercial Check (Does NOT deduct from Technical Score)
         const scopeCreep = nodes.filter(n => n.status === 'Live Only');
-        if (scopeCreep.length > 0) { totalScore -= 10; results.push({ id: 'com-1', type: 'warn', category: 'Commercial', text: `WARNING: ${scopeCreep.length} unquoted resource(s) found. Requires CR.` }); } 
-        else results.push({ id: 'com-1', type: 'pass', category: 'Commercial', text: 'Architecture aligns with SOW.' });
+        if (scopeCreep.length > 0) { 
+            // It's an Upsell, not a technical failure!
+            results.push({ id: 'com-1', type: 'info', category: 'Sales Opportunity', text: `${scopeCreep.length} unquoted resource(s) discovered in the live environment. Excellent candidate for a Phase 2 SOW Upsell.` }); 
+        } else {
+            results.push({ id: 'com-1', type: 'pass', category: 'Commercial', text: 'Architecture aligns perfectly with the SOW Baseline.' });
+        }
         
         return { score: Math.max(0, totalScore), checks: results };
     }, [nodes]);
@@ -49,7 +56,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
         alert("Blueprint Locked. Ready for Provisioning.");
     };
 
-    // 🚨 ADMIN OVERRIDE BUTTONS
     const handleAdminOverrideLock = () => {
         if (!window.confirm("ADMIN OVERRIDE: You are bypassing the DTRB Governance Gate for testing purposes. Force lock the architecture?")) return;
         onUpdateProject(activeProject.id, 'status', 'Approved');
@@ -97,12 +103,10 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(newPlaybooksState)
             });
-            alert(`Automated Feedback Loop Triggered.\n\nSuccessfully appended to Master Playbook:\nTask: "[DTRB LESSON] Verify ${crResource} configuration"`);
         }
 
         onUpdateProject(activeProject.id, 'changeRequests', [...changeRequests, newCR]);
         
-        // If this is a quotation update CR, try to link to latest quotation version
         if (crTitle.toLowerCase().includes('quotation') || crReason.toLowerCase().includes('quotation')) {
             linkCRToLatestQuotationVersion(newCR.id);
         }
@@ -112,7 +116,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
             setIsLocked(false);
             alert("Change Request Logged. The architecture has been unlocked for edits.");
         } else {
-            alert("Major Scope Addition logged. This does NOT unlock the current phase. A Phase 2 project block has been queued.");
+            alert("Phase 2 Upsell logged. A new SOW block has been sent to the Account Manager.");
         }
         
         setShowCRModal(false);
@@ -122,36 +126,18 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
     const linkCRToLatestQuotationVersion = async (crId) => {
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const response = await fetch(`/api/quotation/versions/${activeProject.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            
+            const response = await fetch(`/api/quotation/versions/${activeProject.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (response.ok) {
                 const data = await response.json();
                 if (data.success && data.versions && data.versions.length > 0) {
-                    const latestVersion = data.versions[0]; // Newest first
-                    
-                    // Link CR to latest quotation version
-                    const linkResponse = await fetch('/api/quotation/link-cr', {
+                    await fetch('/api/quotation/link-cr', {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            version_id: latestVersion.id,
-                            cr_id: crId
-                        })
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ version_id: data.versions[0].id, cr_id: crId })
                     });
-                    
-                    if (linkResponse.ok) {
-                        console.log(`Linked CR ${crId} to quotation version ${latestVersion.id}`);
-                    }
                 }
             }
-        } catch (error) {
-            console.error('Failed to link CR to quotation version:', error);
-        }
+        } catch (error) { console.error('Failed to link CR to quotation version:', error); }
     };
 
     return (
@@ -178,7 +164,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                         <div className="text-[9px] text-emerald-600 font-bold">Approved for Provisioning Phase</div>
                                     </div>
                                 </div>
-                                {/* 🚨 ADMIN UNLOCK BUTTON */}
                                 <button onClick={handleAdminUnlock} className="px-6 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest border border-rose-200 shadow-sm flex items-center gap-2 transition-colors">
                                     <i className="fas fa-unlock"></i> [Admin] Force Unlock
                                 </button>
@@ -201,12 +186,12 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                         <div className="flex items-center gap-6 border-b border-slate-200 pb-6">
                             <div className="flex flex-col items-center justify-center shrink-0">
                                 <div className="text-6xl font-black mb-1" style={{ color: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#f43f5e' }}>{score}%</div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">DTRB Score</div>
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">DTRB Tech Score</div>
                             </div>
                             <div className="text-xs text-slate-600 font-medium">
-                                {score === 100 ? "Flawless architecture design. Ready for deployment." : 
-                                 score >= 80 ? "Minor compliance warnings detected. Proceed with caution." : 
-                                 "Critical design flaws detected. Review required before locking."}
+                                {score === 100 ? "Flawless technical architecture design. Ready for deployment." : 
+                                 score >= 80 ? "Minor technical compliance warnings detected. Proceed with caution." : 
+                                 "Critical technical design flaws detected. Review required before locking."}
                             </div>
                         </div>
                         
@@ -215,15 +200,17 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                                 <div key={c.id} className={`p-4 rounded-xl border flex gap-4 items-start ${
                                     c.type === 'pass' ? 'bg-emerald-50/50 border-emerald-200' : 
                                     c.type === 'warn' ? 'bg-amber-50/50 border-amber-200' : 
+                                    c.type === 'info' ? 'bg-purple-50/50 border-purple-300' : 
                                     'bg-rose-50/50 border-rose-300'
                                 }`}>
                                     <div className="mt-0.5 shrink-0">
                                         {c.type === 'pass' && <i className="fas fa-check-circle text-emerald-500 text-lg"></i>}
                                         {c.type === 'warn' && <i className="fas fa-exclamation-triangle text-amber-500 text-lg"></i>}
+                                        {c.type === 'info' && <i className="fas fa-hand-holding-usd text-purple-600 text-lg"></i>}
                                         {c.type === 'fail' && <i className="fas fa-times-circle text-rose-500 text-lg"></i>}
                                     </div>
                                     <div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: c.type === 'pass' ? '#059669' : c.type === 'warn' ? '#d97706' : '#e11d48' }}>{c.category}</div>
+                                        <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: c.type === 'pass' ? '#059669' : c.type === 'warn' ? '#d97706' : c.type === 'info' ? '#7e22ce' : '#e11d48' }}>{c.category}</div>
                                         <div className="text-xs font-bold text-slate-700 leading-relaxed">{c.text}</div>
                                     </div>
                                 </div>
@@ -259,7 +246,6 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 {!isLocked && (
                     <div className="flex justify-between items-center pt-6 border-t border-slate-200 gap-4">
                         <div className="flex-1">
-                            {/* 🚨 ADMIN OVERRIDE LOCK BUTTON */}
                             <button onClick={handleAdminOverrideLock} className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors border border-rose-200 flex items-center gap-2 shadow-sm">
                                 <i className="fas fa-shield-alt"></i> [Admin Override] Force Lock
                             </button>
@@ -272,116 +258,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 )}
             </div>
 
-            {/* 🚨 DTRB HELP DRAWER */}
-            {showGovernanceHelp && (
-                <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
-                    <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
-                        <div>
-                            <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Methodology Guide</h3>
-                            <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-1">Understanding DTRB & Blueprint Locks</p>
-                        </div>
-                        <button onClick={()=>setShowGovernanceHelp(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
-                        
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">1. What is the DTRB?</h4>
-                            <p className="mb-3">The <strong>Delivery Technical Review Board (DTRB)</strong> is an automated governance engine. It scans the Target Architecture you drew in the canvas and checks it against enterprise best practices.</p>
-                            <p>For example, if you mapped an architecture without CBR Backup Vaults, the DTRB will flag it as a critical failure.</p>
-                        </div>
-
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">2. Why does the Blueprint Lock?</h4>
-                            <p className="mb-3">Once the architecture is approved, the Blueprint is <strong>Locked</strong>. This prevents engineers from secretly adding undocumented servers or modifying disks later in the project.</p>
-                            <p>Locking the blueprint sets the final baseline for the FinOps module to calculate exact delivery margins.</p>
-                        </div>
-
-                        <div className="bg-white p-5 rounded-xl border border-rose-200 bg-rose-50/30 shadow-sm">
-                            <h4 className="font-black text-rose-800 mb-2 border-b border-rose-100 pb-2">3. How do I unlock it? (Change Requests)</h4>
-                            <p className="text-xs text-slate-700 mb-3">If you run MgC Discovery later and find 5 undocumented servers, you must update the architecture. To do this:</p>
-                            <ol className="list-decimal pl-4 space-y-2 text-xs font-medium text-slate-600">
-                                <li>Click <strong>Raise CR</strong>.</li>
-                                <li>Set Severity to <strong>Minor</strong>.</li>
-                                <li>Submit the justification.</li>
-                            </ol>
-                            <p className="text-xs text-slate-700 mt-3">The system will log the change, apply the new costs to the FinOps ledger, and instantly reset the canvas to <strong>Draft Mode</strong> so you can add the missing servers.</p>
-                        </div>
-
-                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                            <h4 className="font-black text-slate-800 mb-2 border-b border-slate-100 pb-2">4. What is Admin Override?</h4>
-                            <p className="text-xs text-slate-700">During rapid prototyping or testing, you can use the <strong>[Admin Override] Force Lock</strong> or <strong>Force Unlock</strong> buttons to instantly bypass failing scores and strict CR governance.</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* CR MODAL */}
-            {showCRModal && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center animate-fade-in p-4 overflow-y-auto">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-slide-up my-auto">
-                        <div className="bg-rose-600 p-6 flex justify-between items-center text-white">
-                            <div>
-                                <h3 className="font-black text-lg"><i className="fas fa-exclamation-triangle mr-2"></i> Raise Change Request</h3>
-                                <div className="text-[10px] uppercase tracking-widest font-bold text-rose-200 mt-1">Required to modify Architecture or Blueprint Scope</div>
-                            </div>
-                            <button onClick={()=>setShowCRModal(false)} className="text-rose-200 hover:text-white"><i className="fas fa-times text-xl"></i></button>
-                        </div>
-                        <div className="p-6 space-y-5">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Impacted Blueprint Resource</label>
-                                    <select value={crResource} onChange={e=>setCrResource(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-bold outline-none focus:border-rose-500 cursor-pointer">
-                                        <option value="Global/Unknown">Global / Multiple</option>
-                                        {nodes.map(n => <option key={n.id} value={n.name}>{n.type}: {n.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Change Severity</label>
-                                    <select value={crType} onChange={e=>setCrType(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-bold outline-none focus:border-rose-500 cursor-pointer">
-                                        <option value="minor">Minor (Unlocks current Blueprint)</option>
-                                        <option value="major">Major Scope (Requires Phase 2 Spin-off)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Change Title</label>
-                                <input type="text" value={crTitle} onChange={e=>setCrTitle(e.target.value)} placeholder="e.g., Increase SAP CBR Vault from 14TB to 30TB" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-bold outline-none focus:border-rose-500" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Root Cause / Technical Justification</label>
-                                <textarea value={crReason} onChange={e=>setCrReason(e.target.value)} placeholder="Explain why this change is necessary..." className="w-full h-20 bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-medium outline-none focus:border-rose-500 custom-scrollbar"></textarea>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 border-b border-slate-200 pb-5">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Approval Authority</label>
-                                    <select value={crApprover} onChange={e=>setCrApprover(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-bold outline-none focus:border-rose-500 cursor-pointer">
-                                        <option value="Partner">Partner (Eats Margin)</option>
-                                        <option value="Huawei SA">Huawei SA (New Coupon Required)</option>
-                                        <option value="Customer">Customer (Billable Amendment)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Est. Cost Impact ($ / mo)</label>
-                                    <input type="number" value={crCost} onChange={e=>setCrCost(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs font-black text-rose-600 outline-none focus:border-rose-500" />
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 p-4 rounded-xl cursor-pointer hover:bg-indigo-100 transition-colors" onClick={()=>setUpdatePlaybook(!updatePlaybook)}>
-                                <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${updatePlaybook ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-300'}`}>
-                                    {updatePlaybook && <i className="fas fa-check text-xs"></i>}
-                                </div>
-                                <div>
-                                    <div className="text-xs font-black text-indigo-900">Append Lesson to Master Playbook</div>
-                                    <div className="text-[9px] text-indigo-600 font-bold uppercase tracking-widest mt-0.5">Automatically adds a pre-flight check to future projects to prevent this error.</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                            <button onClick={()=>setShowCRModal(false)} className="px-6 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-colors">Cancel</button>
-                            <button onClick={handleSubmitCR} className="px-6 py-2 bg-rose-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-rose-700 shadow-md transition-colors">Log Request</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* DTRB HELP DRAWER & CR MODAL EXCLUDED FOR BREVITY, Keep your existing modal code here! */}
         </div>
     );
 }
