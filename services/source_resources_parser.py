@@ -1,48 +1,93 @@
 import pandas as pd
 import re
 import math
+import csv
+from io import StringIO
 
-def load_dataframe_safely(file_path: str):
+def load_dataframe_smart(file_path: str) -> pd.DataFrame:
     """
     Robust fallback handler for disguised MgC exports.
-    Scans through multiple encodings and delimiters to ensure parsing success.
+    Scans through multiple encodings and delimiters to strip out junk headers.
     """
-    if str(file_path).lower().endswith('.xlsx') or str(file_path).lower().endswith('.xls'):
+    if str(file_path).lower().endswith(('.xlsx', '.xls')):
         try:
-            return pd.read_excel(file_path)
+            df = pd.read_excel(file_path, header=None)
+            if not df.empty:
+                header_idx = 0
+                for i in range(min(30, len(df))):
+                    row_str = ' '.join(str(x).lower() for x in df.iloc[i].values)
+                    if 'name' in row_str and ('type' in row_str or 'ip' in row_str):
+                        header_idx = i
+                        break
+                return pd.read_excel(file_path, header=header_idx)
         except Exception as e:
-            print(f"⚠️ Native Excel parse failed in Discovery parser. Attempting brute-force fallback. Error: {e}")
+            print(f"⚠️ Native Excel parse failed. Attempting brute-force fallback. Error: {e}")
             
-    encodings_to_try = ['utf-8-sig', 'utf-8', 'utf-16', 'utf-16le', 'latin1']
-    delimiters_to_try = [',', ';', '\t']
-    
-    last_error = None
-    for enc in encodings_to_try:
-        for delim in delimiters_to_try:
-            try:
-                df = pd.read_csv(file_path, encoding=enc, sep=delim, on_bad_lines='skip')
-                if len(df.columns) > 1:
-                    return df
-            except Exception as e:
-                last_error = str(e)
-                continue
+    encodings = ['utf-8-sig', 'utf-8', 'latin1', 'utf-16le', 'cp1252']
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc, errors='replace') as f:
+                content = f.read()
+            
+            if not content.strip(): continue
+
+            delim = ','
+            if content.count(';') > content.count(','): delim = ';'
+            if content.count('\t') > content.count(','): delim = '\t'
+
+            reader = csv.reader(StringIO(content), delimiter=delim)
+            data = list(reader)
+            if not data: continue
                 
-    try:
-        return pd.read_csv(file_path, sep=None, engine='python', on_bad_lines='skip')
-    except Exception as e:
-        last_error = str(e)
-        
+            header_idx = 0
+            for i, row in enumerate(data[:30]):
+                row_str = ' '.join(str(x).lower() for x in row)
+                if 'name' in row_str and ('type' in row_str or 'ip' in row_str):
+                    header_idx = i
+                    break
+            
+            headers = data[header_idx]
+            max_cols = max(len(row) for row in data[header_idx:])
+            
+            unique_headers = []
+            for i in range(max_cols):
+                col_name = headers[i] if i < len(headers) and str(headers[i]).strip() else f"Unnamed_{i}"
+                col_name = str(col_name).strip()
+                if col_name in unique_headers:
+                    col_name = f"{col_name}_{i}"
+                unique_headers.append(col_name)
+
+            parsed_data = []
+            for row in data[header_idx+1:]:
+                padded_row = row + [''] * (max_cols - len(row))
+                parsed_data.append(padded_row)
+                
+            df = pd.DataFrame(parsed_data, columns=unique_headers)
+            if not df.empty and len(df.columns) > 1:
+                return df
+        except Exception as e:
+            continue
+            
     try:
         dfs = pd.read_html(file_path)
-        if dfs: return dfs[0]
+        if dfs: 
+            df = dfs[0]
+            header_idx = 0
+            for i in range(min(30, len(df))):
+                row_str = ' '.join(str(x).lower() for x in df.iloc[i].values)
+                if 'name' in row_str and ('type' in row_str or 'ip' in row_str):
+                    header_idx = i
+                    break
+            df.columns = df.iloc[header_idx]
+            return df.iloc[header_idx+1:].reset_index(drop=True)
     except Exception:
         pass
         
-    raise ValueError(f"Could not parse MgC export. Format not recognized. Last error: {last_error}")
+    raise ValueError("Could not parse MgC export. Format not recognized.")
 
 def parse_source_resources_excel(file_path: str) -> dict:
     try:
-        df = load_dataframe_safely(file_path)
+        df = load_dataframe_smart(file_path)
         
         # Clean column names to make matching easier
         df.columns = [str(c).strip().lower() for c in df.columns]
