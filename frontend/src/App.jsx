@@ -9,7 +9,6 @@ import LiveCloudNOC from './components/views/LiveCloudNOC';
 import RegionalMap from './components/views/RegionalMap';
 import MasterPipeline from './components/views/MasterPipeline';
 import PreSalesRadar from './components/views/PreSalesRadar';
-import FinOpsDashboard from './components/views/FinOpsDashboard';
 import ProjectWizard from './components/wizard/ProjectWizard';
 import GlobalDashboard from './components/views/GlobalDashboard';
 import GlobalSchedule from './components/views/GlobalSchedule';
