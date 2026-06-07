@@ -43,6 +43,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     
     const [showFaq, setShowFaq] = useState(false);
 
+    // Read the saved architecture from Step 2 to display global node counts
+    const nodes = activeProject?.mapperNodes || [];
+    const totalCompute = nodes.filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase())).length;
+    const totalDbs = nodes.filter(n => ['RDS', 'GAUSSDB', 'DB'].includes(String(n.type).toUpperCase())).length;
+
     useEffect(() => {
         if (activeProject?.physics) {
             const p = activeProject.physics;
@@ -208,7 +213,14 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-microscope text-rose-500"></i> Cloud Delivery Physics Engine</h3>
                     <p className="text-xs text-slate-500 mt-1">Calculates true SLA timelines using Agent constraints, Crypto/KMS overhead, E2E routing, and File Counts.</p>
                 </div>
-                <button onClick={saveContext} className="px-6 py-3 bg-rose-600 text-white hover:bg-rose-700 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-transform active:scale-95"><i className="fas fa-save mr-2"></i>Save Physics Context</button>
+                <div className="flex items-center gap-4">
+                    {/* Display Node counts fetched from Architecture Mapper */}
+                    <div className="hidden md:flex gap-4 mr-4 border-r border-slate-200 pr-6">
+                        <div className="text-right"><div className="text-[10px] uppercase font-bold text-slate-400">Mapped Compute</div><div className="text-sm font-black text-slate-700">{totalCompute}</div></div>
+                        <div className="text-right"><div className="text-[10px] uppercase font-bold text-slate-400">Mapped DBs</div><div className="text-sm font-black text-slate-700">{totalDbs}</div></div>
+                    </div>
+                    <button onClick={saveContext} className="px-6 py-3 bg-rose-600 text-white hover:bg-rose-700 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-transform active:scale-95"><i className="fas fa-save mr-2"></i>Save Physics Context</button>
+                </div>
             </div>
 
             {/* Educational FAQ Section */}
