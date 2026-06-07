@@ -3,17 +3,42 @@ import re
 import math
 
 def load_dataframe_safely(file_path: str):
-    """Fallback handler for disguised MgC exports"""
-    if str(file_path).lower().endswith('.csv'):
-        return pd.read_csv(file_path)
-    try:
-        return pd.read_excel(file_path)
-    except Exception as e:
-        print(f"⚠️ Native Excel parse failed in Discovery parser. Attempting fallback... {e}")
+    """
+    Robust fallback handler for disguised MgC exports.
+    Scans through multiple encodings and delimiters to ensure parsing success.
+    """
+    if str(file_path).lower().endswith('.xlsx') or str(file_path).lower().endswith('.xls'):
         try:
-            return pd.read_csv(file_path, sep=None, engine='python')
-        except:
-            raise ValueError("Could not read MgC export. Please resave as a standard CSV or XLSX.")
+            return pd.read_excel(file_path)
+        except Exception as e:
+            print(f"⚠️ Native Excel parse failed in Discovery parser. Attempting brute-force fallback. Error: {e}")
+            
+    encodings_to_try = ['utf-8-sig', 'utf-8', 'utf-16', 'utf-16le', 'latin1']
+    delimiters_to_try = [',', ';', '\t']
+    
+    last_error = None
+    for enc in encodings_to_try:
+        for delim in delimiters_to_try:
+            try:
+                df = pd.read_csv(file_path, encoding=enc, sep=delim, on_bad_lines='skip')
+                if len(df.columns) > 1:
+                    return df
+            except Exception as e:
+                last_error = str(e)
+                continue
+                
+    try:
+        return pd.read_csv(file_path, sep=None, engine='python', on_bad_lines='skip')
+    except Exception as e:
+        last_error = str(e)
+        
+    try:
+        dfs = pd.read_html(file_path)
+        if dfs: return dfs[0]
+    except Exception:
+        pass
+        
+    raise ValueError(f"Could not parse MgC export. Format not recognized. Last error: {last_error}")
 
 def parse_source_resources_excel(file_path: str) -> dict:
     try:
