@@ -17,6 +17,7 @@ export default function Sidebar() {
         setDesktopMenuOpen(false); // Closes menu automatically on selection
     };
 
+    // 🚨 ADDED 'finops' to the global navigation items
     const navItems = [
         { id: 'home', icon: 'fa-chart-pie', label: 'Dashboard', mobileLabel: 'Dash' },
         { id: 'pipeline', icon: 'fa-list-alt', label: 'Pipeline', mobileLabel: 'Pipeline' },
@@ -24,6 +25,7 @@ export default function Sidebar() {
         { id: 'master_hub', icon: 'fa-chess-board', label: 'Master Hub', mobileLabel: 'Hub' },
         { id: 'map', icon: 'fa-globe-americas', label: 'Regional Map', mobileLabel: 'Map' },
         { id: 'crm', icon: 'fa-building', label: 'CRM', mobileLabel: 'CRM' },
+        { id: 'finops', icon: 'fa-file-invoice-dollar', label: 'Partner FinOps', mobileLabel: 'FinOps' }, // 🚨 NEW
         { id: 'schedule', icon: 'fa-calendar-alt', label: 'Schedule', mobileLabel: 'Schedule' },
         { id: 'process', icon: 'fa-route', label: 'Process', mobileLabel: 'Process' },
         { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
@@ -119,14 +121,15 @@ export default function Sidebar() {
                 <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2 w-64 custom-scrollbar">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 mb-3">Global Overviews</p>
                     
-                    {navItems.slice(0, 7).map(item => (
+                    {/* 🚨 Updated slice to 8 to include the new FinOps tab above the line */}
+                    {navItems.slice(0, 8).map(item => (
                         <button key={item.id} onClick={() => navToPhase(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${activePhase === item.id && activeProjectId === 'none' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}>
                             <i className={`fas ${item.icon} w-5 text-center`}></i> {item.label}
                         </button>
                     ))}
                     
                     <div className="pt-4 mt-4 border-t border-slate-800">
-                        {navItems.slice(7).map(item => (
+                        {navItems.slice(8).map(item => (
                             <button key={item.id} onClick={() => navToPhase(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all mt-2 ${activePhase === item.id && activeProjectId === 'none' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}>
                                 <i className={`fas ${item.icon} w-5 text-center`}></i> {item.label}
                             </button>
@@ -175,7 +178,7 @@ export default function Sidebar() {
                                             className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200 ${isActive ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'text-slate-300 hover:bg-slate-800/50 hover:text-white border border-transparent'}`}
                                         >
                                             <i className={`fas ${item.icon} text-lg mb-1`}></i>
-                                            <span className="text-[9px] font-bold uppercase tracking-wider">{item.mobileLabel || item.label}</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-wider text-center">{item.mobileLabel || item.label}</span>
                                         </button>
                                     );
                                 })}
