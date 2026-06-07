@@ -10,6 +10,42 @@ export default function MasterPipeline() {
         setView('wizard');
     };
 
+    const handleExportCSV = () => {
+        const headers = ["Project Name", "Customer", "Country", "Phase", "Health", "Progress", "MRR", "Kickoff", "Go-Live", "SA", "Partner", "Complexity", "Scope", "Blockers"];
+        const activeProjects = (projects || []).filter(p => !p.isWaiting);
+        
+        const csvContent = [
+            headers.join(","), 
+            ...activeProjects.map(p => { 
+                return [
+                    `"${(p.name || '').replace(/"/g, '""')}"`, 
+                    `"${(p.customerName || '').replace(/"/g, '""')}"`, 
+                    `"${(p.country || '').replace(/"/g, '""')}"`, 
+                    `"${p.lifecycleState || ''}"`, 
+                    `"${p.health || 'Green'}"`, 
+                    `"${p.progress || '0%'}"`, 
+                    `"${p.mrr || 0}"`, 
+                    `"${p.kickoff || ''}"`, 
+                    `"${p.date || ''}"`, 
+                    `"${(p.sa || '').replace(/"/g, '""')}"`, 
+                    `"${(p.partner || '').replace(/"/g, '""')}"`, 
+                    `"${p.complexity || 'Medium'}"`, 
+                    `"${(p.scope || '').replace(/"/g, '""')}"`, 
+                    `"${(p.blocker || '').replace(/"/g, '""')}"`
+                ].join(","); 
+            })
+        ].join("\n");
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); 
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a"); 
+        link.setAttribute("href", url); 
+        link.setAttribute("download", `LATAM_Pipeline_Export_${new Date().toISOString().split('T')[0]}.csv`); 
+        document.body.appendChild(link); 
+        link.click(); 
+        document.body.removeChild(link);
+    };
+
     const getFlag = (country) => {
         const c = String(country||'').toLowerCase();
         if(c.includes('mexico')) return '🇲🇽';
@@ -18,7 +54,11 @@ export default function MasterPipeline() {
         if(c.includes('colombia')) return '🇨🇴';
         if(c.includes('argentina')) return '🇦🇷';
         if(c.includes('peru')) return '🇵🇪';
-        return '🏳️'; 
+        if(c.includes('panama')) return '🇵🇦';
+        if(c.includes('guatemala')) return '🇬🇹';
+        if(c.includes('costa rica')) return '🇨🇷';
+        if(c.includes('ecuador')) return '🇪🇨';
+        return <i className="fas fa-globe-americas text-indigo-400"></i>; 
     };
 
     const statuses = [
@@ -39,93 +79,117 @@ export default function MasterPipeline() {
                     <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><i className="fas fa-layer-group text-indigo-600"></i> Master Pipeline</h2>
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Cross-Functional Migration Delivery Portfolio</p>
                 </div>
-                <div className="flex gap-4">
-                    <input type="text" placeholder="Search projects..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 w-64" />
+                <div className="flex gap-3 items-center">
+                    <input type="text" placeholder="Search projects..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 w-64" />
+                    <button onClick={() => alert("Paste XLS feature is handled globally in Sidebar/App logic. Use 'Export CSV' for now.")} className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm border border-emerald-200 transition-colors"><i className="fas fa-upload mr-2"></i> Paste XLS</button>
+                    <button onClick={handleExportCSV} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-slate-600 shadow-sm"><i className="fas fa-download mr-2"></i> Export CSV</button>
                     <button onClick={() => {
                         const newProject = { 
                             id: `proj-${Date.now()}`, name: 'New Migration Project', lifecycleState: '1_arb', 
-                            mrr: 0, pocCap: 0, kickoff: new Date().toISOString().split('T')[0], health: 'Green'
+                            mrr: 0, pocCap: 0, kickoff: new Date().toISOString().split('T')[0], health: 'Green',
+                            progress: '0%', complexity: 'Medium', partner: 'Unassigned'
                         };
                         handleAddProject(newProject);
                         openProject(newProject.id);
-                    }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors"><i className="fas fa-plus mr-2"></i> New Project</button>
+                    }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors ml-2"><i className="fas fa-plus mr-2"></i> New Project</button>
                 </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="overflow-x-auto min-h-[600px] custom-scrollbar">
+                <div className="overflow-x-auto min-h-[600px] custom-scrollbar pb-16">
                     <table className="w-full text-left whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-72">Project & Identity</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-20 text-center">Geo</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">Phase</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-64">Project & Identity</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-20 text-center">Country</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-40">Phase & Progress</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">MRR & Comp</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Timelines</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">Health</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">Target MRR ($)</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-20 text-center">Actions</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">SA / Partner</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Scope</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Blockers / Notes</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-16 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {filtered.map(p => {
                                 const statusObj = statuses.find(s => s.id === p.lifecycleState) || statuses[0];
+                                const progNum = parseInt(p.progress) || 0;
                                 return (
                                     <tr key={p.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                        <td className="p-4">
-                                            {/* 🚨 ALL EDITABLE FIELDS RESTORED */}
+                                        <td className="p-4 align-top">
                                             <input value={p.name || ''} onChange={e => handleUpdateProject(p.id, 'name', e.target.value)} className="font-black text-sm text-indigo-700 w-full outline-none bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 pb-0.5 cursor-text" placeholder="Project Name" />
                                             <div className="flex items-center gap-2 mt-2">
                                                 <select value={p.customerId || ''} onChange={e => {
                                                     const cust = customers.find(c => c.id === e.target.value);
                                                     handleUpdateProject(p.id, 'customerId', e.target.value);
                                                     if(cust) handleUpdateProject(p.id, 'customerName', cust.name);
-                                                }} className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 outline-none w-32 cursor-pointer">
+                                                }} className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 outline-none w-full max-w-[120px] cursor-pointer">
                                                     <option value="">Select Customer...</option>
                                                     {(customers||[]).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                                 </select>
-                                                <input value={p.sa || ''} onChange={e => handleUpdateProject(p.id, 'sa', e.target.value)} placeholder="SA Name" className="text-[10px] font-bold text-slate-600 uppercase bg-slate-100 border border-slate-200 rounded px-1.5 py-1 outline-none w-24" />
                                             </div>
                                         </td>
-                                        <td className="p-4 text-center">
-                                            {/* 🚨 FIX: Flag size is now normal (text-xl) with hover text */}
-                                            <div className="text-xl cursor-help select-none hover:scale-110 transition-transform" title={p.country || 'No Country Configured'}>{getFlag(p.country)}</div>
+                                        <td className="p-4 text-center align-top pt-5">
+                                            <div className="text-2xl cursor-help select-none hover:scale-110 transition-transform" title={p.country || 'No Country Configured'}>{getFlag(p.country)}</div>
+                                            <input type="text" value={p.country || ''} onChange={e => handleUpdateProject(p.id, 'country', e.target.value)} className="w-full text-center text-[9px] uppercase tracking-widest font-bold text-slate-400 mt-1 bg-transparent outline-none hover:bg-slate-100 rounded" placeholder="Country" />
                                         </td>
-                                        <td className="p-4">
-                                            <select value={p.lifecycleState} onChange={e => handleUpdateProject(p.id, 'lifecycleState', e.target.value)} className={`text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded outline-none cursor-pointer border border-transparent hover:border-slate-300 ${statusObj.color}`}>
+                                        <td className="p-4 align-top">
+                                            <select value={p.lifecycleState} onChange={e => handleUpdateProject(p.id, 'lifecycleState', e.target.value)} className={`text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded outline-none cursor-pointer border border-transparent hover:border-slate-300 w-full mb-3 ${statusObj.color}`}>
                                                 {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                             </select>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="flex flex-col gap-1.5">
-                                                <div className="flex items-center justify-between w-full gap-2">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase">Start</span>
-                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(p.id, 'kickoff', e.target.value)} className="bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded px-2 py-1 text-xs font-mono font-bold text-slate-700 outline-none transition-colors" />
-                                                </div>
-                                                <div className="flex items-center justify-between w-full gap-2">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase">End</span>
-                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(p.id, 'date', e.target.value)} className="bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded px-2 py-1 text-xs font-mono font-bold text-slate-700 outline-none transition-colors" />
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4">
                                             <div className="flex items-center gap-2">
-                                                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${p.health==='Green'?'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]':p.health==='Red'?'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]':'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'}`}></div>
-                                                <select value={p.health || 'Green'} onChange={e => handleUpdateProject(p.id, 'health', e.target.value)} className="bg-transparent border border-transparent hover:border-slate-300 rounded text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                                                    <option value="Green">Green (On Track)</option>
-                                                    <option value="Amber">Amber (At Risk)</option>
-                                                    <option value="Red">Red (Delayed)</option>
-                                                </select>
+                                                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden shadow-inner">
+                                                    <div className={`h-full transition-all ${p.health==='Red'?'bg-rose-500':p.health==='Amber'?'bg-amber-500':'bg-emerald-500'}`} style={{width: `${progNum}%`}}></div>
+                                                </div>
+                                                <input type="text" value={p.progress || '0%'} onChange={e => handleUpdateProject(p.id, 'progress', e.target.value)} className="text-[10px] font-black w-10 text-right bg-transparent outline-none" />
+                                            </div>
+                                            <select value={p.health || 'Green'} onChange={e => handleUpdateProject(p.id, 'health', e.target.value)} className={`text-[9px] font-bold mt-1 bg-transparent outline-none cursor-pointer ${p.health==='Red'?'text-rose-600':p.health==='Amber'?'text-amber-600':'text-emerald-600'}`}>
+                                                <option value="Green">● Green (On Track)</option>
+                                                <option value="Amber">● Amber (At Risk)</option>
+                                                <option value="Red">● Red (Blocked)</option>
+                                            </select>
+                                        </td>
+                                        <td className="p-4 align-top">
+                                            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 w-full shadow-sm mb-2 text-emerald-800">
+                                                <span className="text-xs font-black opacity-50">$</span>
+                                                <input type="number" value={p.mrr || 0} onChange={e => handleUpdateProject(p.id, 'mrr', e.target.value)} className="w-full bg-transparent outline-none font-black text-sm" />
+                                            </div>
+                                            <select value={p.complexity || 'Medium'} onChange={e => handleUpdateProject(p.id, 'complexity', e.target.value)} className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 rounded px-2 py-1 text-[10px] font-bold text-slate-600 outline-none uppercase tracking-wider">
+                                                <option value="Low">Low Comp</option><option value="Medium">Medium Comp</option><option value="High">High Comp</option><option value="Ultra-High">Ultra-High</option>
+                                            </select>
+                                        </td>
+                                        <td className="p-4 align-top">
+                                            <div className="flex flex-col gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                                <div className="flex items-center justify-between w-full gap-2 border-b border-slate-200 pb-1.5">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase"><i className="fas fa-flag-checkered text-blue-500 mr-1"></i> Start</span>
+                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(p.id, 'kickoff', e.target.value)} className="bg-transparent border border-transparent hover:border-indigo-300 rounded px-1 py-0.5 text-[10px] font-mono font-bold text-slate-700 outline-none transition-colors" />
+                                                </div>
+                                                <div className="flex items-center justify-between w-full gap-2 pt-1">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase"><i className="fas fa-rocket text-emerald-500 mr-1"></i> Live</span>
+                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(p.id, 'date', e.target.value)} className="bg-transparent border border-transparent hover:border-indigo-300 rounded px-1 py-0.5 text-[10px] font-mono font-black text-emerald-700 outline-none transition-colors" />
+                                                </div>
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 w-24">
-                                                <span className="text-xs font-black text-slate-400">$</span>
-                                                <input type="number" value={p.mrr || 0} onChange={e => handleUpdateProject(p.id, 'mrr', e.target.value)} className="w-full bg-transparent outline-none font-black text-sm text-slate-800" />
+                                        <td className="p-4 align-top space-y-2">
+                                            <div>
+                                                <div className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Sales Arch</div>
+                                                <input value={p.sa || ''} onChange={e => handleUpdateProject(p.id, 'sa', e.target.value)} placeholder="SA Name" className="text-xs font-bold text-blue-700 w-full outline-none bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 pb-0.5" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Partner</div>
+                                                <input value={p.partner || ''} onChange={e => handleUpdateProject(p.id, 'partner', e.target.value)} placeholder="Partner Org" className="text-xs font-bold text-slate-700 w-full outline-none bg-transparent border-b border-transparent hover:border-slate-300 focus:border-slate-500 pb-0.5" />
                                             </div>
                                         </td>
-                                        <td className="p-4 text-center space-x-3">
-                                            <button onClick={()=>openProject(p.id)} className="text-slate-400 hover:text-indigo-600 transition-colors p-2 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-indigo-300" title="Open Project Wizard"><i className="fas fa-external-link-alt"></i></button>
-                                            <button onClick={()=>{ if(window.confirm('Delete project permanently?')) handleDeleteProject(p.id); }} className="text-slate-400 hover:text-rose-600 transition-colors p-2 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-rose-300" title="Delete Project"><i className="fas fa-trash-alt"></i></button>
+                                        <td className="p-4 align-top">
+                                            <textarea value={p.scope || ''} onChange={e => handleUpdateProject(p.id, 'scope', e.target.value)} placeholder="Scope details..." className="w-full h-16 bg-purple-50 hover:bg-white border border-purple-100 hover:border-purple-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-purple-500 custom-scrollbar leading-relaxed resize-none transition-colors" />
+                                        </td>
+                                        <td className="p-4 align-top">
+                                            <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(p.id, 'blocker', e.target.value)} placeholder="Notes or current blockers..." className="w-full h-16 bg-amber-50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors" />
+                                        </td>
+                                        <td className="p-4 text-center align-top pt-5 space-y-2">
+                                            <button onClick={()=>openProject(p.id)} className="w-full bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"><i className="fas fa-external-link-alt mr-1"></i> Open</button>
+                                            <button onClick={()=>{ if(window.confirm('Delete project permanently?')) handleDeleteProject(p.id); }} className="w-full bg-white hover:bg-rose-50 text-rose-500 border border-slate-200 hover:border-rose-300 rounded py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Del</button>
                                         </td>
                                     </tr>
                                 );
