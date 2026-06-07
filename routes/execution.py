@@ -38,15 +38,22 @@ def provision_sts_token():
         if not customer or not customer.ak or not customer.sk:
             return jsonify({"success": False, "error": "Customer Master AK/SK missing from Secure Vault."}), 400
 
-        # 2. Decrypt Master Credentials
-        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-        try:
-            ak, sk = get_credential_manager(master_password).decrypt_credentials({
-                'encrypted_ak': customer.ak, 
-                'encrypted_sk': customer.sk
-            })
-        except Exception as e:
-            return jsonify({"success": False, "error": "Failed to decrypt Vault Credentials."}), 500
+        # 2. Extract Credentials (Safely handling both Plaintext and Encrypted formats)
+        ak_str = str(customer.ak).strip()
+        sk_str = str(customer.sk).strip()
+
+        if not ak_str.startswith('{') and len(ak_str) > 5:
+            # Credentials are in plaintext format
+            ak = ak_str
+            sk = sk_str
+        else:
+            # Credentials are in encrypted JSON format
+            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+            try:
+                ak_data = json.loads(ak_str)
+                ak, sk = get_credential_manager(master_password).decrypt_credentials(ak_data)
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Failed to decrypt Vault Credentials: {str(e)}"}), 500
 
         # 3. Call the Identity Provisioner to hit Huawei STS API
         result = IdentityProvisioner.generate_ephemeral_token(
@@ -70,7 +77,6 @@ def execute_project(project_id):
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
-        project_data = json.loads(project_record.data)
         
         return jsonify({"success": True, "message": "Terraform Execution Started."})
         
