@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import AssessmentView from './AssessmentView';
 import TopologyMapperView from './TopologyMapperView';
 import MgCReconciliationView from './MgCReconciliationView';
@@ -13,6 +13,21 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
     const totalMgcNodes = Object.keys(rawInv).filter(k => k !== 'diagnostics' && k !== 'summary').reduce((acc, curr) => acc + (Array.isArray(rawInv[curr]) ? rawInv[curr].length : 0), 0);
     const hasScanned = !!project.mgcData;
     const isLocked = project.status === 'Approved' || project.status === 'Locked';
+
+    // 🚨 FIX: Accurately calculate the true Target Scope vs the Upsell Opportunity
+    const { targetCount, upsellCount } = useMemo(() => {
+        if (nodes.length === 0) {
+            // If mapping hasn't happened yet, fall back to the original SOW blueprint count
+            const compute = project.blueprintData?.topology?.compute?.length || 0;
+            const dbs = project.blueprintData?.topology?.database?.length || 0;
+            return { targetCount: compute + dbs, upsellCount: 0 };
+        }
+        // Count only resources that are Quoted, Matched, or Manually added for execution
+        const target = nodes.filter(n => n.status !== 'Live Only').length;
+        // Count resources discovered that were never quoted
+        const upsell = nodes.filter(n => n.status === 'Live Only').length;
+        return { targetCount: target, upsellCount: upsell };
+    }, [nodes, project.blueprintData]);
 
     let displayRisk = 'Pending';
     let riskColor = 'text-slate-500';
@@ -52,10 +67,13 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                             <div className={`text-xl font-black ${riskColor}`}>{displayRisk}</div>
                             <button onClick={()=>setSubTab('ora')} className={`mt-2 text-left text-[10px] uppercase font-bold ${riskColor} hover:underline`}>Configure Details &gt;</button>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col">
+                        <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col relative overflow-hidden">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Target Topology</h4><i className="fas fa-sitemap text-slate-500"></i></div>
-                            <div className="text-xs text-slate-500 mb-4 flex-1">Final execution architecture.</div>
-                            <div className="text-xl font-black text-slate-800">{nodes.length > 0 ? `${nodes.length} Nodes` : 'Pending'}</div>
+                            <div className="text-xs text-slate-500 mb-4 flex-1">SOW Quoted Execution Baseline.</div>
+                            <div className="flex items-end gap-3">
+                                <div className="text-xl font-black text-slate-800">{targetCount > 0 ? `${targetCount} Nodes` : 'Pending'}</div>
+                                {upsellCount > 0 && <div className="text-[9px] font-black uppercase tracking-widest text-purple-600 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mb-1">+{upsellCount} Upsell</div>}
+                            </div>
                             <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
                         <div className={`p-6 rounded-2xl shadow-sm border flex flex-col ${isLocked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
