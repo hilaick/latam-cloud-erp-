@@ -25,7 +25,7 @@ export default function Sidebar() {
         { id: 'master_hub', icon: 'fa-chess-board', label: 'Master Hub', mobileLabel: 'Hub' },
         { id: 'map', icon: 'fa-globe-americas', label: 'Regional Map', mobileLabel: 'Map' },
         { id: 'crm', icon: 'fa-building', label: 'CRM', mobileLabel: 'CRM' },
-        { id: 'finops', icon: 'fa-file-invoice-dollar', label: 'Partner FinOps', mobileLabel: 'FinOps' }, // 🚨 NEW
+        { id: 'finops', icon: 'fa-file-invoice-dollar', label: 'FinOps (COC)', mobileLabel: 'FinOps' }, // 🚨 NEW
         { id: 'schedule', icon: 'fa-calendar-alt', label: 'Schedule', mobileLabel: 'Schedule' },
         { id: 'process', icon: 'fa-route', label: 'Process', mobileLabel: 'Process' },
         { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
