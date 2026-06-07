@@ -2,7 +2,7 @@
 """
 Excel/CSV Quotation Normalization Engine
 Transforms messy Sales Architect spreadsheets into strict blueprint.json schema.
-Features Bulletproof Parent/Child detection for the new Huawei Cloud CSV Exports.
+Features Bulletproof Parent/Child detection and Brute-Force Encoding fallback.
 """
 
 import pandas as pd
@@ -11,33 +11,75 @@ from typing import Optional, Dict, Any
 from services.semantic_classifier import classify_unknown_service_with_ai
 
 # ============================================================================
-# ROBUST FILE LOADER (MASQUERADE FALLBACK)
+# ROBUST FILE LOADER (BRUTE-FORCE ENCODING & DELIMITER SNIFFER)
 # ============================================================================
-def load_dataframe_safely(file_path: str, header=0, nrows=None):
-    """
-    Cloud providers frequently export CSV or HTML tables but save them with an 
-    '.xlsx' extension. This robust loader attempts native Excel parsing first, 
-    and gracefully falls back to CSV/HTML parsing to prevent engine crashes.
-    """
-    if str(file_path).lower().endswith('.csv'):
-        return pd.read_csv(file_path, header=header, nrows=nrows)
-    
-    try:
-        # 1. Try parsing as a native Excel file
-        return pd.read_excel(file_path, header=header, nrows=nrows)
-    except Exception as e:
-        print(f"⚠️ Native Excel parse failed. Attempting masquerade fallback. Error: {e}")
+
+def find_header_index(file_path: str) -> int:
+    """Manually scans the file to locate the true header row containing 'Service' and 'Description'"""
+    if str(file_path).lower().endswith('.xlsx') or str(file_path).lower().endswith('.xls'):
         try:
-            # 2. Fallback: It's actually a CSV disguised as .xlsx
-            return pd.read_csv(file_path, header=header, nrows=nrows, sep=None, engine='python')
-        except Exception as e2:
+            df = pd.read_excel(file_path, header=None, nrows=30)
+            for i in range(len(df)):
+                row_str = ' '.join(str(x).lower() for x in df.iloc[i].values)
+                if 'service' in row_str and 'description' in row_str:
+                    return i
+        except Exception:
+            pass # Fall through to text scanning if it's a disguised CSV
+            
+    encodings = ['utf-8-sig', 'utf-8', 'utf-16', 'utf-16le', 'latin1']
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                for i, line in enumerate(f):
+                    lower_line = line.lower()
+                    if 'service' in lower_line and 'description' in lower_line:
+                        return i
+                    if i > 50: # Give up if we search 50 lines and find nothing
+                        break
+        except Exception:
+            continue
+            
+    return 0
+
+def load_dataframe_safely(file_path: str, header_idx: int = 0) -> pd.DataFrame:
+    """Attempts native Excel parsing, then brute-forces CSV encodings and delimiters."""
+    # 1. Native Excel
+    if str(file_path).lower().endswith('.xlsx') or str(file_path).lower().endswith('.xls'):
+        try:
+            return pd.read_excel(file_path, header=header_idx)
+        except Exception as e:
+            print(f"Native Excel parse failed (might be disguised CSV). Falling back to brute-force.")
+            
+    # 2. Brute-Force CSV Fallback Loop
+    encodings_to_try = ['utf-8-sig', 'utf-8', 'utf-16', 'utf-16le', 'latin1']
+    delimiters_to_try = [',', ';', '\t']
+    
+    last_error = None
+    for enc in encodings_to_try:
+        for delim in delimiters_to_try:
             try:
-                # 3. Fallback: It's actually an HTML table disguised as .xlsx
-                dfs = pd.read_html(file_path, header=header)
-                if dfs: return dfs[0]
-            except Exception as e3:
-                pass
-            raise ValueError("Format cannot be determined. Please open the file in Excel and 'Save As' a true .xlsx or .csv")
+                df = pd.read_csv(file_path, header=header_idx, encoding=enc, sep=delim, on_bad_lines='skip')
+                # If we got more than 1 column, the delimiter and encoding worked!
+                if len(df.columns) > 1: 
+                    return df
+            except Exception as e:
+                last_error = str(e)
+                continue
+                
+    # 3. Pandas Engine Auto-sniff (Last resort for CSVs)
+    try:
+        return pd.read_csv(file_path, header=header_idx, sep=None, engine='python', on_bad_lines='skip')
+    except Exception as e:
+        last_error = str(e)
+        
+    # 4. HTML Table Fallback (Huawei sometimes exports HTML disguised as .xls)
+    try:
+        dfs = pd.read_html(file_path, header=header_idx)
+        if dfs: return dfs[0]
+    except Exception:
+        pass
+        
+    raise ValueError(f"Format cannot be determined. Last error: {last_error}")
 
 # ============================================================================
 # GENERIC FALLBACK MATCHING DICTIONARY
@@ -175,28 +217,19 @@ def _finalize_resource(res, blueprint):
 def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
-    header_idx = 0
-    is_huawei = False
+    header_idx = find_header_index(file_path)
+    print(f"📌 Detected Header Index: {header_idx}")
     
-    # 1. Locate the dynamic header row securely using the new robust loader
-    try:
-        df_check = load_dataframe_safely(file_path, header=None, nrows=30)
-        for i in range(len(df_check)):
-            row_str = ' '.join(str(x).lower() for x in df_check.iloc[i].values)
-            if 'service' in row_str and 'description' in row_str:
-                header_idx = i
-                is_huawei = True
-                break
-    except Exception as e:
-        print(f"⚠️ Header scanning issue: {str(e)}")
-
-    if not is_huawei:
-        return process_generic_quotation(file_path, customer_name)
-
-    # 2. Parse Dataframe securely
-    df = load_dataframe_safely(file_path, header=header_idx)
+    # Safely load the dataframe using our new brute-force method
+    df = load_dataframe_safely(file_path, header_idx=header_idx)
     
+    # Normalize columns
     df.columns = [str(c).strip().lower() for c in df.columns]
+    
+    # Verify Huawei Format
+    if 'service' not in df.columns or 'description' not in df.columns:
+        print("🔍 Columns don't match Huawei structure. Switching to Generic Parser.")
+        return process_generic_quotation_df(df, customer_name)
     
     blueprint = {
         "customer": customer_name,
@@ -256,13 +289,7 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
 
     return blueprint
 
-def process_generic_quotation(file_path: str, customer_name: str) -> Dict[str, Any]:
-    print("🔍 Format unknown. Attempting generic column mapping...")
-    try:
-        df = load_dataframe_safely(file_path)
-    except Exception as e:
-        raise ValueError(f"Failed to read file {file_path}: {str(e)}")
-    
+def process_generic_quotation_df(df: pd.DataFrame, customer_name: str) -> Dict[str, Any]:
     col_name = find_column(df, COLUMN_MAP['server_name'])
     col_flavor = find_column(df, COLUMN_MAP['flavor'])
     col_cpu = find_column(df, COLUMN_MAP['cpu'])
@@ -272,7 +299,7 @@ def process_generic_quotation(file_path: str, customer_name: str) -> Dict[str, A
     col_os = find_column(df, COLUMN_MAP['os_type'])
     col_storage = find_column(df, COLUMN_MAP['storage_gb'])
     
-    if not col_name: raise ValueError("Could not find a recognizable 'Hostname' or 'Server Name' column.")
+    if not col_name: raise ValueError("Could not find a recognizable 'Hostname' or 'Server Name' column. Please verify your file headers.")
     
     blueprint = {
         "customer": customer_name,
