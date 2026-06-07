@@ -3,7 +3,6 @@ import json
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from models import db, ProjectData, Customer
-from services.orchestrator import ExecutionOrchestrator
 from services.credential_manager import get_credential_manager
 from services.identity_provisioner import IdentityProvisioner
 
@@ -73,11 +72,11 @@ def execute_project(project_id):
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
         project_data = json.loads(project_record.data)
         
-        # MOCK IMPLEMENTATION for Execution Phase 2
         return jsonify({"success": True, "message": "Terraform Execution Started."})
         
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 @execution_bp.route('/api/projects/<project_id>/sync-status', methods=['GET'])
 @jwt_required()
