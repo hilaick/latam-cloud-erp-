@@ -6,6 +6,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     const [showDiscoveryHelp, setShowDiscoveryHelp] = useState(false);
     const [migrationTools, setMigrationTools] = useState(null);
     const [provider, setProvider] = useState('Huawei'); // AWS, Azure, Huawei
+    const [subscriptionId, setSubscriptionId] = useState(''); // 🚨 NEW: Azure Override State
     
     const hasData = activeProject?.mgcData?.raw_inventory && (
         (activeProject.mgcData.raw_inventory.compute?.length > 0) ||
@@ -42,7 +43,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     customer_id: activeProject.customerId, 
                     projectId: activeProject.id, 
                     region: activeProject.region || 'la-south-2',
-                    provider: provider 
+                    provider: provider,
+                    subscriptionId: subscriptionId // 🚨 NEW: Sent to Backend
                 })
             });
             const data = await res.json();
@@ -175,6 +177,18 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                                         <option value="AWS">Amazon Web Services (AWS)</option>
                                         <option value="Azure">Microsoft Azure</option>
                                     </select>
+                                    
+                                    {/* 🚨 NEW: Azure Subscription Override */}
+                                    {provider === 'Azure' && (
+                                        <input 
+                                            type="text" 
+                                            placeholder="Azure Subscription ID (Optional if saved in Vault)" 
+                                            value={subscriptionId} 
+                                            onChange={(e) => setSubscriptionId(e.target.value)} 
+                                            className="w-full p-2.5 text-xs font-mono text-slate-700 border border-blue-300 rounded-lg outline-none focus:border-blue-600 bg-white shadow-inner"
+                                        />
+                                    )}
+
                                     <button onClick={handleLiveScan} disabled={isScanning} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                                         {isScanning ? <><i className="fas fa-circle-notch fa-spin mr-2"></i> Syncing {provider}...</> : <><i className="fas fa-bolt mr-2"></i> Run {provider} Sync</>}
                                     </button>
