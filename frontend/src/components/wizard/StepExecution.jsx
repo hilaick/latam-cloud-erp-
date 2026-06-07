@@ -21,7 +21,15 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const prodEpsRaw = project.prodEps?.trim() || '';
     const isVpcIsolationMode = !sandboxEpsRaw || !prodEpsRaw;
 
-    // 🚨 FIX: Correctly read from raw_inventory
+    // 🚨 RESTORED THE MISSING STRATEGY VARIABLE HERE
+    const getStrategyDetails = () => {
+        if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via SSM/Run-Command. Control Plane active.' };
+        if (authLevel.includes('Active Directory')) return { icon: 'fa-windows', color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-200', text: 'Automated GPO/WinRM batch push. Centralized Data Plane active.' };
+        if (authLevel.includes('Local OS Admin')) return { icon: 'fa-terminal', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200', text: 'Automated SSH/WinRM Injection loop. Sequential Data Plane active.' };
+        return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust. Generating custom Runbooks for customer manual execution.' };
+    };
+    const strategy = getStrategyDetails();
+
     const discoveryComputeCount = useMemo(() => {
         const raw = project?.mgcData?.raw_inventory || {};
         return (raw.compute || raw.servers || []).length;
@@ -42,7 +50,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }
     }, [hasPassedPreflight, vectorAssignments, preflightStatus, project.id]);
 
-    // 🚨 CRASH FIX: Dedicated Partial Update Function using PATCH
+    // Dedicated Partial Update Function using PATCH
     const safePartialUpdate = async (updates) => {
         const token = localStorage.getItem('erp_jwt_token');
         try {
@@ -51,7 +59,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updates)
             });
-            // Update React Context state locally so UI updates instantly
             Object.keys(updates).forEach(k => {
                 onUpdateProject(project.id, k, updates[k]);
             });
@@ -65,7 +72,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         if (newStatus === 'syncing') setDriftAlert(true);
     };
 
-    // 🚨 THE REAL HUAWEI STS API CALL
     const handleProvisionIAM = async () => {
         setIamStatus('provisioning');
         const token = localStorage.getItem('erp_jwt_token');
@@ -88,7 +94,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 setEphemeralKeys(keys);
                 setIamStatus('active');
                 
-                // Persist the keys via the crash-proof partial update
                 safePartialUpdate({ ephemeralKeys: keys });
                 alert("Huawei Cloud STS Token Successfully Provisioned!\n\nYou can now verify the 'GetSessionToken' event in the Huawei Cloud Trace Service (CTS) console.");
             } else {
@@ -472,9 +477,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// ==========================================
-// 🚀 DELIVERY COMMAND CENTER COMPONENT
-// ==========================================
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
@@ -561,9 +563,6 @@ function SingleProjectGantt({ project }) {
     )
 }
 
-// ==========================================
-// 🎧 3. TAM SERVICE GOVERNANCE COMPONENT
-// ==========================================
 function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
     const safeTamData = project.tamData || { 
         supportPlan: "Enterprise", welinkGroup: "", 
