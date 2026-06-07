@@ -5,15 +5,19 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [showMasterGuide, setShowMasterGuide] = useState(false);
     
+    // 🚨 DRIFT & EXECUTION STATE
     const [driftAlert, setDriftAlert] = useState(true);
     const execStatus = project.execStatus || 'pending'; 
     const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
     
-    const [iamStatus, setIamStatus] = useState('pending'); // pending, provisioning, active
-    const [ephemeralKeys, setEphemeralKeys] = useState(null);
-
-    const [preflightStatus, setPreflightStatus] = useState('pending'); // pending, scanning, done
-    const [vectorAssignments, setVectorAssignments] = useState({});
+    // Determine if we've already passed the preflight phase based on the DB state
+    const hasPassedPreflight = ['preflight_complete', 'sandbox_built', 'agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus);
+    
+    // 🚨 STATE PERSISTENCE FIX: Hydrate from DB or determine by status
+    const [iamStatus, setIamStatus] = useState(hasPassedPreflight ? 'active' : 'pending'); 
+    const [ephemeralKeys, setEphemeralKeys] = useState(hasPassedPreflight ? { ak: `HW_STS_CACHED_TOKEN`, sk: '********' } : null);
+    const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
+    const [vectorAssignments, setVectorAssignments] = useState(project.vectorAssignments || {});
     
     const sandboxEpsRaw = project.sandboxEps?.trim() || '';
     const prodEpsRaw = project.prodEps?.trim() || '';
@@ -21,13 +25,20 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
     const discoveryComputeCount = project?.mgcData?.compute?.length || project?.mgcData?.servers?.length || 0;
     
-    // Base Scope: Everything left in the Target Architecture that isn't 'Quoted Only'
     const inScopeNodes = useMemo(() => {
         return (project.mapperNodes || []).filter(n => 
             ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && 
             n.status !== 'Quoted Only' 
         );
     }, [project.mapperNodes]);
+
+    // FAILSAFE: If the DB says we passed preflight but the assignments are empty, force the UI to let us run it again
+    useEffect(() => {
+        if (hasPassedPreflight && Object.keys(vectorAssignments).length === 0 && preflightStatus === 'done') {
+            setPreflightStatus('pending');
+            onUpdateProject(project.id, 'execStatus', 'pending');
+        }
+    }, [hasPassedPreflight, vectorAssignments, preflightStatus, project.id, onUpdateProject]);
 
     const getStrategyDetails = () => {
         if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via SSM/Run-Command. Control Plane active.' };
@@ -50,7 +61,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }, 2000);
     };
 
-    // 🚨 GOVERNANCE HARD-STOP: Intercepting Scope Creep servers if CR is not signed.
     const handleRunPreflight = () => {
         setPreflightStatus('scanning');
         setTimeout(() => {
@@ -70,14 +80,21 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     else assignments[n.id] = { status: 'OS Healthy & Compatible', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
                 }
             });
+            
             setVectorAssignments(assignments);
             setPreflightStatus('done');
+            
+            // 🚨 PERSISTENCE FIX: Save assignments to DB so they survive reload
+            onUpdateProject(project.id, 'vectorAssignments', assignments);
             advanceStatus('preflight_complete');
         }, 2500);
     };
 
     const handleVectorChange = (nodeId, newVector) => {
-        setVectorAssignments(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], vector: newVector } }));
+        const updated = { ...vectorAssignments, [nodeId]: { ...vectorAssignments[nodeId], vector: newVector } };
+        setVectorAssignments(updated);
+        // Persist override to DB
+        onUpdateProject(project.id, 'vectorAssignments', updated);
     };
 
     return (
@@ -182,7 +199,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${iamStatus === 'active' ? 'text-blue-500' : 'text-slate-500'}`}>Phase 1</div>
                                             <h4 className="text-lg font-black text-white mb-2">Scope Filter & Pre-Flight Diagnostics</h4>
                                         </div>
-                                        {execStatus === 'pending' ? (
+                                        {execStatus === 'pending' || preflightStatus === 'pending' ? (
                                             <button 
                                                 onClick={handleRunPreflight} 
                                                 disabled={iamStatus !== 'active' || preflightStatus === 'scanning'}
@@ -191,7 +208,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 {preflightStatus === 'scanning' ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</> : <><i className="fas fa-microscope mr-2"></i> Run Dry-Run Diagnostics</>}
                                             </button>
                                         ) : (
-                                            <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                            <div className="flex items-center gap-4">
+                                                {/* Allow user to reset and re-run if needed */}
+                                                <button onClick={() => { setPreflightStatus('pending'); onUpdateProject(project.id, 'execStatus', 'pending'); }} className="text-xs text-slate-400 hover:text-white underline">Re-Run</button>
+                                                <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                            </div>
                                         )}
                                     </div>
 
@@ -241,7 +262,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                         </span>
                                                                     </td>
                                                                     <td className="p-3">
-                                                                        {/* 🚨 THE HARD STOP RENDER */}
                                                                         {data.vector.includes('Blocked') ? (
                                                                             <div className="bg-rose-950 border border-rose-700 text-rose-400 px-2 py-1.5 rounded font-black text-[10px] uppercase tracking-wider text-center">
                                                                                 <i className="fas fa-hand-paper mr-2"></i> {data.vector}
@@ -424,6 +444,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         </div>
     );
 }
+
+// ... [ExecutionHubView and TAMHubView remain exactly the same as previously defined] ...
 
 // ==========================================
 // 🚀 DELIVERY COMMAND CENTER COMPONENT
