@@ -10,24 +10,23 @@ class HyperscalerDiscoveryEngine:
     def run_aws_agentless_discovery(self, region='us-east-1'):
         """
         Agentless Control Plane Pull via AWS boto3 SDK.
-        Bypasses MgC to instantly retrieve infrastructure counts.
         """
         if not self.customer.aws_ak or not self.customer.aws_sk:
             raise ValueError("AWS Multi-Cloud Credentials are missing in the Secure Vault.")
 
-        # Initialize AWS SDK Client
         session = boto3.Session(
             aws_access_key_id=self.customer.aws_ak,
             aws_secret_access_key=self.customer.aws_sk,
             region_name=region
         )
 
+        # 🚨 FIX: Ensure we return Arrays/Lists for the Frontend Architecture Canvas, not integers
         inventory = {
-            "compute": 0,
-            "databases": 0,
-            "network": 0,
-            "storage": 0,
-            "security": 0,
+            "compute": [],
+            "databases": [],
+            "network": [],
+            "storage": [],
+            "security": [],
             "raw_inventory": []
         }
 
@@ -38,22 +37,25 @@ class HyperscalerDiscoveryEngine:
             for reservation in instances.get('Reservations', []):
                 for inst in reservation.get('Instances', []):
                     if inst.get('State', {}).get('Name') == 'running':
-                        inventory["compute"] += 1
-                        inventory["raw_inventory"].append({"name": inst.get('InstanceId'), "type": inst.get('InstanceType'), "category": "compute", "region": region})
+                        item = {"name": inst.get('InstanceId'), "type": inst.get('InstanceType'), "category": "compute", "region": region, "source": "AWS"}
+                        inventory["compute"].append(item)
+                        inventory["raw_inventory"].append(item)
 
             # 2. Discover RDS Databases
             rds = session.client('rds')
             dbs = rds.describe_db_instances()
             for db in dbs.get('DBInstances', []):
-                inventory["databases"] += 1
-                inventory["raw_inventory"].append({"name": db.get('DBInstanceIdentifier'), "type": db.get('Engine'), "category": "database", "region": region})
+                item = {"name": db.get('DBInstanceIdentifier'), "type": db.get('Engine'), "category": "database", "region": region, "source": "AWS"}
+                inventory["databases"].append(item)
+                inventory["raw_inventory"].append(item)
 
             # 3. Discover WAF & Security
             waf = session.client('wafv2')
             web_acls = waf.list_web_acls(Scope='REGIONAL')
             for acl in web_acls.get('WebACLs', []):
-                inventory["security"] += 1
-                inventory["raw_inventory"].append({"name": acl.get('Name'), "type": "WAF", "category": "security", "region": region})
+                item = {"name": acl.get('Name'), "type": "WAF", "category": "security", "region": region, "source": "AWS"}
+                inventory["security"].append(item)
+                inventory["raw_inventory"].append(item)
 
             return {"success": True, "inventory": inventory}
 
@@ -84,29 +86,45 @@ class HyperscalerDiscoveryEngine:
                 client_secret=self.customer.azure_client_secret
             )
 
-            inventory = {"compute": 0, "databases": 0, "network": 0, "storage": 0, "security": 0, "raw_inventory": []}
+            # 🚨 FIX: Ensure we return Arrays/Lists for the Frontend Architecture Canvas
+            inventory = {
+                "compute": [],
+                "databases": [],
+                "network": [],
+                "storage": [],
+                "security": [],
+                "raw_inventory": []
+            }
 
             # 1. Discover Azure VMs
             compute_client = ComputeManagementClient(credential, subscription_id)
             for vm in compute_client.virtual_machines.list_all():
-                inventory["compute"] += 1
-                inventory["raw_inventory"].append({
+                vm_type = "Azure VM"
+                if vm.hardware_profile and hasattr(vm.hardware_profile, 'vm_size'):
+                    vm_type = vm.hardware_profile.vm_size
+                    
+                item = {
                     "name": vm.name,
-                    "type": vm.hardware_profile.vm_size if vm.hardware_profile else "Azure VM",
+                    "type": vm_type,
                     "category": "compute",
-                    "region": vm.location
-                })
+                    "region": vm.location,
+                    "source": "Azure"
+                }
+                inventory["compute"].append(item)
+                inventory["raw_inventory"].append(item)
 
             # 2. Discover Azure VNets
             network_client = NetworkManagementClient(credential, subscription_id)
             for vnet in network_client.virtual_networks.list_all():
-                inventory["network"] += 1
-                inventory["raw_inventory"].append({
+                item = {
                     "name": vnet.name,
                     "type": "VNet",
                     "category": "network",
-                    "region": vnet.location
-                })
+                    "region": vnet.location,
+                    "source": "Azure"
+                }
+                inventory["network"].append(item)
+                inventory["raw_inventory"].append(item)
 
             return {"success": True, "inventory": inventory}
 
