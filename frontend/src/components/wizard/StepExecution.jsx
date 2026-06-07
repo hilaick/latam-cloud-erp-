@@ -5,6 +5,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [showMasterGuide, setShowMasterGuide] = useState(false);
     
+    // 🚨 DRIFT ALERT STATE
+    const [driftAlert, setDriftAlert] = useState(true);
+    
     const execStatus = project.execStatus || 'pending'; 
     const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
     
@@ -24,12 +27,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
     const advanceStatus = (newStatus) => {
         onUpdateProject(project.id, 'execStatus', newStatus);
+        // Reset drift alert for demo purposes if we move back to syncing
+        if (newStatus === 'syncing') setDriftAlert(true);
     };
 
     return (
         <div className="max-w-[1600px] mx-auto pb-12 animate-fade-in relative space-y-6">
             
-            {/* 🚨 INTEGRATED TAB NAVIGATION */}
+            {/* INTEGRATED TAB NAVIGATION */}
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button 
                     onClick={() => setSubTab('orchestrator')} 
@@ -51,7 +56,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 </button>
             </div>
 
-            {/* 🚀 TAB 1: THE ORIGINAL EXECUTION ORCHESTRATOR */}
+            {/* TAB 1: EXECUTION ORCHESTRATOR */}
             {subTab === 'orchestrator' && (
                 <div className="space-y-6 animate-fade-in">
                     {/* DYNAMIC VPC ISOLATION WARNING */}
@@ -141,13 +146,36 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
-                                        <div>
+                                        <div className="flex-1 pr-6">
                                             <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 3</div>
                                             <h4 className="text-lg font-black text-white mb-2">Continuous Sync & Drift Monitor</h4>
                                             <p className="text-xs text-slate-400">Polling `task_poll_latest.json`. Continuous checks running to detect source environment drift before cutover.</p>
+                                            
+                                            {/* 🚨 DRIFT DETECTION FEATURE */}
+                                            {execStatus === 'syncing' && driftAlert && (
+                                                <div className="mt-5 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 animate-pulse">
+                                                    <div className="flex items-start gap-3">
+                                                        <i className="fas fa-radar text-rose-500 text-xl mt-0.5"></i>
+                                                        <div>
+                                                            <h5 className="font-black text-rose-400 text-sm">Drift Detection: Unauthorized Modification</h5>
+                                                            <p className="text-[11px] text-rose-200/70 mt-1 font-medium leading-relaxed">
+                                                                Unexpected ECS instance <span className="font-mono text-white">dev-test-ubuntu (10.0.1.99)</span> detected in Target VPC. Does not match approved SOW baseline.
+                                                            </p>
+                                                            <div className="flex gap-3 mt-4">
+                                                                <button onClick={() => { alert("API Call: Forcing deletion of unauthorized instance to maintain SOW compliance..."); setDriftAlert(false); }} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-md">
+                                                                    <i className="fas fa-fire mr-1"></i> Auto-Revert (Destroy VM)
+                                                                </button>
+                                                                <button onClick={() => { alert("Drift Alert routed to TAM Governance Board."); setDriftAlert(false); }} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-rose-500/50 text-rose-400 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">
+                                                                    <i className="fas fa-headset mr-1"></i> Alert TAM
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                         {execStatus === 'syncing' ? (
-                                            <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-forward mr-2"></i> Simulate Sync Complete</button>
+                                            <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap"><i className="fas fa-forward mr-2"></i> Simulate Sync Complete</button>
                                         ) : ['cutover_ready', 'completed'].includes(execStatus) ? (
                                             <div className="text-purple-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
@@ -162,7 +190,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             <p className="text-xs text-slate-400">Promotes resources from Sandbox to {prodEpsRaw ? 'Production EPS' : 'Production VPC'}. Rebinds EIPs, validates Security Groups, and destroys Sandbox.</p>
                                         </div>
                                         {execStatus === 'cutover_ready' ? (
-                                            <button onClick={() => advanceStatus('completed')} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"><i className="fas fa-power-off mr-2"></i> Execute Cutover</button>
+                                            <button onClick={() => advanceStatus('completed')} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap"><i className="fas fa-power-off mr-2"></i> Execute Cutover</button>
                                         ) : execStatus === 'completed' ? (
                                             <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
@@ -180,15 +208,15 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 </div>
             )}
 
-            {/* 🚀 TAB 2: DELIVERY COMMAND CENTER */}
+            {/* TAB 2: DELIVERY COMMAND CENTER */}
             {subTab === 'hub' && <ExecutionHubView project={project} onUpdateProject={onUpdateProject} />}
 
-            {/* 🚀 TAB 3: TAM SERVICE GOVERNANCE */}
+            {/* TAB 3: TAM SERVICE GOVERNANCE */}
             {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} />}
 
             {/* MASTER EXECUTION GUIDE (Drawer) */}
             {showMasterGuide && (
-                <div className="fixed inset-y-0 right-0 w-[800px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
+                <div className="fixed inset-y-0 right-0 w-full sm:w-[800px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                     <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
                         <div>
                             <h3 className="font-black text-xl"><i className="fas fa-book-open mr-2"></i> Execution & Provisioning Master Guide</h3>
@@ -369,7 +397,7 @@ function SingleProjectGantt({ project }) {
 }
 
 // ==========================================
-// 🎧 3. TAM SERVICE GOVERNANCE COMPONENT
+// 🎧 TAM SERVICE GOVERNANCE COMPONENT
 // ==========================================
 function TAMHubView({ project, onUpdateProject }) {
     const safeTamData = project.tamData || { 
