@@ -20,18 +20,9 @@ class HyperscalerDiscoveryEngine:
             region_name=region
         )
 
-        # 🚨 FIX: Ensure we return Arrays/Lists for the Frontend Architecture Canvas, not integers
-        inventory = {
-            "compute": [],
-            "databases": [],
-            "network": [],
-            "storage": [],
-            "security": [],
-            "raw_inventory": []
-        }
+        inventory = {"compute": [], "databases": [], "network": [], "storage": [], "security": [], "raw_inventory": []}
 
         try:
-            # 1. Discover EC2 Compute
             ec2 = session.client('ec2')
             instances = ec2.describe_instances()
             for reservation in instances.get('Reservations', []):
@@ -41,7 +32,6 @@ class HyperscalerDiscoveryEngine:
                         inventory["compute"].append(item)
                         inventory["raw_inventory"].append(item)
 
-            # 2. Discover RDS Databases
             rds = session.client('rds')
             dbs = rds.describe_db_instances()
             for db in dbs.get('DBInstances', []):
@@ -49,7 +39,6 @@ class HyperscalerDiscoveryEngine:
                 inventory["databases"].append(item)
                 inventory["raw_inventory"].append(item)
 
-            # 3. Discover WAF & Security
             waf = session.client('wafv2')
             web_acls = waf.list_web_acls(Scope='REGIONAL')
             for acl in web_acls.get('WebACLs', []):
@@ -65,16 +54,16 @@ class HyperscalerDiscoveryEngine:
     def run_azure_agentless_discovery(self, subscription_id=None):
         """
         Agentless Control Plane Pull via Azure SDK.
+        Uses Azure Resource Graph logic to map Compute, Storage, Network, and Databases.
         """
         if not self.customer.azure_tenant_id or not self.customer.azure_client_id or not self.customer.azure_client_secret:
             return {"success": False, "error": "Azure Credentials are missing in the Secure Vault."}
 
         try:
             from azure.identity import ClientSecretCredential
-            from azure.mgmt.compute import ComputeManagementClient
-            from azure.mgmt.network import NetworkManagementClient
+            from azure.mgmt.resource import ResourceManagementClient
         except ImportError:
-            return {"success": False, "error": "Azure SDKs missing. Please run: pip install azure-identity azure-mgmt-compute azure-mgmt-network"}
+            return {"success": False, "error": "Azure SDKs missing. Please run: pip install azure-identity azure-mgmt-resource"}
 
         if not subscription_id or subscription_id == '00000000-0000-0000-0000-000000000000':
             return {"success": False, "error": "Azure requires a specific Subscription ID to discover resources. Please provide one."}
@@ -86,44 +75,36 @@ class HyperscalerDiscoveryEngine:
                 client_secret=self.customer.azure_client_secret
             )
 
-            # 🚨 FIX: Ensure we return Arrays/Lists for the Frontend Architecture Canvas
-            inventory = {
-                "compute": [],
-                "databases": [],
-                "network": [],
-                "storage": [],
-                "security": [],
-                "raw_inventory": []
-            }
+            # 🚨 FIX: Switched to ResourceManagementClient to pull EVERYTHING across the subscription
+            resource_client = ResourceManagementClient(credential, subscription_id)
+            inventory = {"compute": [], "databases": [], "network": [], "storage": [], "security": [], "raw_inventory": []}
 
-            # 1. Discover Azure VMs
-            compute_client = ComputeManagementClient(credential, subscription_id)
-            for vm in compute_client.virtual_machines.list_all():
-                vm_type = "Azure VM"
-                if vm.hardware_profile and hasattr(vm.hardware_profile, 'vm_size'):
-                    vm_type = vm.hardware_profile.vm_size
-                    
+            for resource in resource_client.resources.list():
+                rtype = str(resource.type).lower()
+                
                 item = {
-                    "name": vm.name,
-                    "type": vm_type,
-                    "category": "compute",
-                    "region": vm.location,
+                    "name": resource.name,
+                    "type": resource.type,
+                    "category": "unknown",
+                    "region": resource.location,
                     "source": "Azure"
                 }
-                inventory["compute"].append(item)
-                inventory["raw_inventory"].append(item)
 
-            # 2. Discover Azure VNets
-            network_client = NetworkManagementClient(credential, subscription_id)
-            for vnet in network_client.virtual_networks.list_all():
-                item = {
-                    "name": vnet.name,
-                    "type": "VNet",
-                    "category": "network",
-                    "region": vnet.location,
-                    "source": "Azure"
-                }
-                inventory["network"].append(item)
+                if 'microsoft.compute/virtualmachines' in rtype:
+                    item['category'] = 'compute'
+                    inventory["compute"].append(item)
+                elif 'microsoft.sql/servers' in rtype or 'microsoft.dbfor' in rtype:
+                    item['category'] = 'database'
+                    inventory["databases"].append(item)
+                elif 'microsoft.network/virtualnetworks' in rtype or 'microsoft.network/networksecuritygroups' in rtype or 'microsoft.network/publicipaddresses' in rtype:
+                    item['category'] = 'network'
+                    inventory["network"].append(item)
+                elif 'microsoft.storage/storageaccounts' in rtype:
+                    item['category'] = 'storage'
+                    inventory["storage"].append(item)
+                else:
+                    continue # Skip highly granular child items to avoid cluttering the UI
+
                 inventory["raw_inventory"].append(item)
 
             return {"success": True, "inventory": inventory}
