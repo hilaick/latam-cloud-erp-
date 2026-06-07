@@ -85,7 +85,6 @@ def upload_quotation():
         
         current_user = get_jwt_identity()
         
-        # 🚨 FIX: If the user pasted raw text, wrap it into a virtual CSV file
         if raw_text:
             text_bytes = raw_text.encode('utf-8')
             filename = f"pasted_data_{int(datetime.utcnow().timestamp())}.csv"
@@ -96,7 +95,6 @@ def upload_quotation():
         from services.quotation_versioning import save_quotation_file, create_quotation_version
         file_path = save_quotation_file(project_id, file, filename)
         
-        # Reset file stream position after saving version so we can read it again for processing
         file.stream.seek(0)
         
         upload_dir = PROJECT_ROOT / 'uploads'
@@ -126,8 +124,7 @@ def upload_quotation():
             project.updated_at = datetime.utcnow()
             db.session.commit()
         
-        os.makedirs('config', exist_ok=True)
-        with open('config/blueprint.json', 'w') as f: json.dump(blueprint, f, indent=2)
+        # 🚨 Removed the `config/blueprint.json` writing logic here to prevent Flask Hot-Reload crashes!
         
         temp_path.unlink(missing_ok=True)
         
@@ -173,8 +170,7 @@ def revert_quotation_version(version_id):
         if not blueprint:
             return jsonify({'success': False, 'error': 'Failed to revert version'}), 400
         
-        os.makedirs('config', exist_ok=True)
-        with open('config/blueprint.json', 'w') as f: json.dump(blueprint, f, indent=2)
+        # 🚨 Removed the `config/blueprint.json` writing logic here as well
         
         return jsonify({'success': True, 'blueprint': blueprint})
     except Exception as e:
@@ -201,6 +197,5 @@ def link_quotation_to_cr():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# 🚨 FIX: use_reloader=False stops Flask from restarting during uploads
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9119, debug=True, use_reloader=False)
