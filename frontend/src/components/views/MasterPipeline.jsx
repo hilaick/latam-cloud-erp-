@@ -2,16 +2,16 @@ import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function MasterPipeline() {
-    const { projects, customers, handleUpdateProject, handleAddProject, handleDeleteProject, setActiveProjectId, setView } = useContext(ERPContext);
+    const { projects, handleUpdateProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [searchTerm, setSearchTerm] = useState('');
 
     const openProject = (id) => {
         setActiveProjectId(id);
-        setView('wizard');
+        setActivePhase('wizard');
     };
 
     const handleExportCSV = () => {
-        const headers = ["Project Name", "Customer", "Country", "Phase", "Health", "Progress", "MRR", "Kickoff", "Go-Live", "SA", "Partner", "Complexity", "Scope", "Blockers"];
+        const headers = ["Project Name", "Customer", "Country", "Phase", "Health", "Progress", "MRR", "Kickoff", "Go-Live", "SA", "Partner", "Complexity", "Blockers"];
         const activeProjects = (projects || []).filter(p => !p.isWaiting);
         
         const csvContent = [
@@ -30,7 +30,6 @@ export default function MasterPipeline() {
                     `"${(p.sa || '').replace(/"/g, '""')}"`, 
                     `"${(p.partner || '').replace(/"/g, '""')}"`, 
                     `"${p.complexity || 'Medium'}"`, 
-                    `"${(p.scope || '').replace(/"/g, '""')}"`, 
                     `"${(p.blocker || '').replace(/"/g, '""')}"`
                 ].join(","); 
             })
@@ -47,17 +46,27 @@ export default function MasterPipeline() {
     };
 
     const getFlag = (country) => {
-        const c = String(country||'').toLowerCase();
-        if(c.includes('mexico')) return '🇲🇽';
-        if(c.includes('brazil')) return '🇧🇷';
-        if(c.includes('chile')) return '🇨🇱';
-        if(c.includes('colombia')) return '🇨🇴';
-        if(c.includes('argentina')) return '🇦🇷';
-        if(c.includes('peru')) return '🇵🇪';
-        if(c.includes('panama')) return '🇵🇦';
-        if(c.includes('guatemala')) return '🇬🇹';
-        if(c.includes('costa rica')) return '🇨🇷';
-        if(c.includes('ecuador')) return '🇪🇨';
+        const c = String(country || '').toLowerCase().trim();
+        if (c.includes('mexico')) return '🇲🇽';
+        if (c.includes('brazil') || c.includes('brasil')) return '🇧🇷';
+        if (c.includes('chile')) return '🇨🇱';
+        if (c.includes('colombia')) return '🇨🇴';
+        if (c.includes('argentina')) return '🇦🇷';
+        if (c.includes('peru') || c.includes('perú')) return '🇵🇪';
+        if (c.includes('panama') || c.includes('panamá')) return '🇵🇦';
+        if (c.includes('guatemala')) return '🇬🇹';
+        if (c.includes('costa rica')) return '🇨🇷';
+        if (c.includes('ecuador')) return '🇪🇨';
+        if (c.includes('bolivia')) return '🇧🇴';
+        if (c.includes('uruguay')) return '🇺🇾';
+        if (c.includes('paraguay')) return '🇵🇾';
+        if (c.includes('venezuela')) return '🇻🇪';
+        if (c.includes('salvador')) return '🇸🇻';
+        if (c.includes('honduras')) return '🇭🇳';
+        if (c.includes('nicaragua')) return '🇳🇮';
+        if (c.includes('dominican') || c.includes('republica dominicana')) return '🇩🇴';
+        if (c.includes('puerto rico')) return '🇵🇷';
+        if (c.includes('cuba')) return '🇨🇺';
         return <i className="fas fa-globe-americas text-indigo-400"></i>; 
     };
 
@@ -70,7 +79,7 @@ export default function MasterPipeline() {
         { id: '6_completed', name: 'Completed', color: 'bg-emerald-100 text-emerald-800' }
     ];
 
-    const filtered = (projects || []).filter(p => p && !p.isWaiting && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filtered = (projects || []).filter(p => p && !p.isWaiting && p.name.toUpperCase().includes(searchTerm.toUpperCase()));
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto pb-12">
@@ -81,17 +90,8 @@ export default function MasterPipeline() {
                 </div>
                 <div className="flex gap-3 items-center">
                     <input type="text" placeholder="Search projects..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 w-64" />
-                    <button onClick={() => alert("Paste XLS feature is handled globally in Sidebar/App logic. Use 'Export CSV' for now.")} className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm border border-emerald-200 transition-colors"><i className="fas fa-upload mr-2"></i> Paste XLS</button>
                     <button onClick={handleExportCSV} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-slate-600 shadow-sm"><i className="fas fa-download mr-2"></i> Export CSV</button>
-                    <button onClick={() => {
-                        const newProject = { 
-                            id: `proj-${Date.now()}`, name: 'New Migration Project', lifecycleState: '1_arb', 
-                            mrr: 0, pocCap: 0, kickoff: new Date().toISOString().split('T')[0], health: 'Green',
-                            progress: '0%', complexity: 'Medium', partner: 'Unassigned'
-                        };
-                        handleAddProject(newProject);
-                        openProject(newProject.id);
-                    }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors ml-2"><i className="fas fa-plus mr-2"></i> New Project</button>
+                    <button onClick={() => setActivePhase('radar')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors ml-2"><i className="fas fa-plus mr-2"></i> New Project</button>
                 </div>
             </div>
 
@@ -100,15 +100,13 @@ export default function MasterPipeline() {
                     <table className="w-full text-left whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-64">Project & Identity</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-72">Project & Identity</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-20 text-center">Country</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-40">Phase & Progress</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">MRR & Comp</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Timelines</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Timelines (Edit)</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">SA / Partner</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Scope</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Blockers / Notes</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-16 text-center">Action</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Blockers / Notes (Edit)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -117,79 +115,57 @@ export default function MasterPipeline() {
                                 const progNum = parseInt(p.progress) || 0;
                                 return (
                                     <tr key={p.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                        <td className="p-4 align-top">
-                                            <input value={p.name || ''} onChange={e => handleUpdateProject(p.id, 'name', e.target.value)} className="font-black text-sm text-indigo-700 w-full outline-none bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 pb-0.5 cursor-text" placeholder="Project Name" />
-                                            <div className="flex items-center gap-2 mt-2">
-                                                <select value={p.customerId || ''} onChange={e => {
-                                                    const cust = customers.find(c => c.id === e.target.value);
-                                                    handleUpdateProject(p.id, 'customerId', e.target.value);
-                                                    if(cust) handleUpdateProject(p.id, 'customerName', cust.name);
-                                                }} className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 outline-none w-full max-w-[120px] cursor-pointer">
-                                                    <option value="">Select Customer...</option>
-                                                    {(customers||[]).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                </select>
+                                        <td className="p-4 align-top cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => openProject(p.id)} title="Click to Open Project Context">
+                                            <div className="font-black text-sm text-indigo-700 w-full uppercase truncate">{p.name}</div>
+                                            <div className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 w-max mt-2 uppercase">
+                                                {p.customerName || (p.name || '').split('-')[0] || 'UNLINKED'}
                                             </div>
                                         </td>
                                         <td className="p-4 text-center align-top pt-5">
-                                            <div className="text-2xl cursor-help select-none hover:scale-110 transition-transform" title={p.country || 'No Country Configured'}>{getFlag(p.country)}</div>
-                                            <input type="text" value={p.country || ''} onChange={e => handleUpdateProject(p.id, 'country', e.target.value)} className="w-full text-center text-[9px] uppercase tracking-widest font-bold text-slate-400 mt-1 bg-transparent outline-none hover:bg-slate-100 rounded" placeholder="Country" />
+                                            <div className="text-3xl cursor-help select-none hover:scale-110 transition-transform" title={p.country || 'No Country Configured'}>{getFlag(p.country)}</div>
                                         </td>
                                         <td className="p-4 align-top">
-                                            <select value={p.lifecycleState} onChange={e => handleUpdateProject(p.id, 'lifecycleState', e.target.value)} className={`text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded outline-none cursor-pointer border border-transparent hover:border-slate-300 w-full mb-3 ${statusObj.color}`}>
-                                                {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                            </select>
+                                            <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded w-max mb-3 border border-transparent shadow-sm ${statusObj.color}`}>
+                                                {statusObj.name}
+                                            </div>
                                             <div className="flex items-center gap-2">
                                                 <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden shadow-inner">
-                                                    <div className={`h-full transition-all ${p.health==='Red'?'bg-rose-500':p.health==='Amber'?'bg-amber-500':'bg-emerald-500'}`} style={{width: `${progNum}%`}}></div>
+                                                    <div className={`h-full transition-all ${p.health==='Red'?'bg-rose-500':p.health==='Yellow'?'bg-amber-500':'bg-emerald-500'}`} style={{width: `${progNum}%`}}></div>
                                                 </div>
-                                                <input type="text" value={p.progress || '0%'} onChange={e => handleUpdateProject(p.id, 'progress', e.target.value)} className="text-[10px] font-black w-10 text-right bg-transparent outline-none" />
+                                                <div className="text-[10px] font-black w-10 text-right text-slate-700">{p.progress || '0%'}</div>
                                             </div>
-                                            <select value={p.health || 'Green'} onChange={e => handleUpdateProject(p.id, 'health', e.target.value)} className={`text-[9px] font-bold mt-1 bg-transparent outline-none cursor-pointer ${p.health==='Red'?'text-rose-600':p.health==='Amber'?'text-amber-600':'text-emerald-600'}`}>
-                                                <option value="Green">● Green (On Track)</option>
-                                                <option value="Amber">● Amber (At Risk)</option>
-                                                <option value="Red">● Red (Blocked)</option>
-                                            </select>
+                                            <div className={`text-[9px] font-bold mt-1 uppercase tracking-widest ${p.health==='Red'?'text-rose-600':p.health==='Yellow'?'text-amber-600':'text-emerald-600'}`}>
+                                                ● {p.health || 'Green'}
+                                            </div>
                                         </td>
                                         <td className="p-4 align-top">
-                                            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 w-full shadow-sm mb-2 text-emerald-800">
-                                                <span className="text-xs font-black opacity-50">$</span>
-                                                <input type="number" value={p.mrr || 0} onChange={e => handleUpdateProject(p.id, 'mrr', e.target.value)} className="w-full bg-transparent outline-none font-black text-sm" />
-                                            </div>
-                                            <select value={p.complexity || 'Medium'} onChange={e => handleUpdateProject(p.id, 'complexity', e.target.value)} className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 rounded px-2 py-1 text-[10px] font-bold text-slate-600 outline-none uppercase tracking-wider">
-                                                <option value="Low">Low Comp</option><option value="Medium">Medium Comp</option><option value="High">High Comp</option><option value="Ultra-High">Ultra-High</option>
-                                            </select>
+                                            <div className="font-black text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 w-max shadow-sm mb-2">${p.mrr || 0}</div>
+                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{p.complexity || 'MEDIUM'} COMP</div>
                                         </td>
                                         <td className="p-4 align-top">
-                                            <div className="flex flex-col gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                                <div className="flex items-center justify-between w-full gap-2 border-b border-slate-200 pb-1.5">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase"><i className="fas fa-flag-checkered text-blue-500 mr-1"></i> Start</span>
-                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(p.id, 'kickoff', e.target.value)} className="bg-transparent border border-transparent hover:border-indigo-300 rounded px-1 py-0.5 text-[10px] font-mono font-bold text-slate-700 outline-none transition-colors" />
+                                            <div className="flex flex-col gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200 w-max shadow-inner">
+                                                <div className="flex items-center justify-between w-full gap-3 border-b border-slate-200 pb-1.5">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-flag-checkered text-blue-500 mr-1.5"></i> Start</span>
+                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(p.id, 'kickoff', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-700 outline-none transition-colors shadow-sm cursor-pointer" />
                                                 </div>
-                                                <div className="flex items-center justify-between w-full gap-2 pt-1">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase"><i className="fas fa-rocket text-emerald-500 mr-1"></i> Live</span>
-                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(p.id, 'date', e.target.value)} className="bg-transparent border border-transparent hover:border-indigo-300 rounded px-1 py-0.5 text-[10px] font-mono font-black text-emerald-700 outline-none transition-colors" />
+                                                <div className="flex items-center justify-between w-full gap-3 pt-1">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-rocket text-emerald-500 mr-1.5"></i> Live</span>
+                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(p.id, 'date', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-black text-emerald-700 outline-none transition-colors shadow-sm cursor-pointer" />
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="p-4 align-top space-y-2">
                                             <div>
                                                 <div className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Sales Arch</div>
-                                                <input value={p.sa || ''} onChange={e => handleUpdateProject(p.id, 'sa', e.target.value)} placeholder="SA Name" className="text-xs font-bold text-blue-700 w-full outline-none bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 pb-0.5" />
+                                                <div className="text-xs font-bold text-blue-700 uppercase truncate max-w-[150px]">{p.sa || 'UNASSIGNED'}</div>
                                             </div>
                                             <div>
                                                 <div className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Partner</div>
-                                                <input value={p.partner || ''} onChange={e => handleUpdateProject(p.id, 'partner', e.target.value)} placeholder="Partner Org" className="text-xs font-bold text-slate-700 w-full outline-none bg-transparent border-b border-transparent hover:border-slate-300 focus:border-slate-500 pb-0.5" />
+                                                <div className="text-xs font-bold text-slate-700 uppercase truncate max-w-[150px]">{p.partner || 'TBD'}</div>
                                             </div>
                                         </td>
                                         <td className="p-4 align-top">
-                                            <textarea value={p.scope || ''} onChange={e => handleUpdateProject(p.id, 'scope', e.target.value)} placeholder="Scope details..." className="w-full h-16 bg-purple-50 hover:bg-white border border-purple-100 hover:border-purple-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-purple-500 custom-scrollbar leading-relaxed resize-none transition-colors" />
-                                        </td>
-                                        <td className="p-4 align-top">
-                                            <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(p.id, 'blocker', e.target.value)} placeholder="Notes or current blockers..." className="w-full h-16 bg-amber-50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors" />
-                                        </td>
-                                        <td className="p-4 text-center align-top pt-5 space-y-2">
-                                            <button onClick={()=>openProject(p.id)} className="w-full bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"><i className="fas fa-external-link-alt mr-1"></i> Open</button>
-                                            <button onClick={()=>{ if(window.confirm('Delete project permanently?')) handleDeleteProject(p.id); }} className="w-full bg-white hover:bg-rose-50 text-rose-500 border border-slate-200 hover:border-rose-300 rounded py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Del</button>
+                                            <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(p.id, 'blocker', e.target.value)} placeholder="Type notes or current blockers..." className="w-full h-16 bg-amber-50/50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors shadow-inner" />
                                         </td>
                                     </tr>
                                 );
