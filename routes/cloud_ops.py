@@ -271,6 +271,8 @@ def query_live_pricing():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+
 @cloud_ops_bp.route('/api/finops/billing_validation', methods=['POST'])
 @jwt_required()
 def validate_actual_billing():
@@ -286,16 +288,22 @@ def validate_actual_billing():
         has_drs = any("DRS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         has_net = any("Network" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         
-        if has_sms:
-            actual_sms = (estimated_cost * 0.40) * 0.95
+        # 🚨 FIX: Ensure we generate line items even if estimated_cost passed is 0
+        fallback_baseline = estimated_cost if estimated_cost > 0 else (len(bom_items) * 150)
+        if fallback_baseline == 0: fallback_baseline = 500 # Absolute minimum mock invoice
+        
+        if has_sms or len(bom_items) > 0:
+            actual_sms = (fallback_baseline * 0.40) * 0.95
             total_invoiced += actual_sms
             line_items.append({
                 "category": "Elastic Cloud Server (ECS)", 
                 "amount": round(actual_sms), 
                 "status": "expected", 
-                "note": "SMS Worker s6.large.2 compute charges."
+                "note": "SMS Worker s6.large.2 compute charges + Target ECS provisioning."
             })
-            hidden_evs = (estimated_cost * 0.35)
+            
+            # Scope Creep / Waste Detection
+            hidden_evs = (fallback_baseline * 0.35)
             total_invoiced += hidden_evs
             line_items.append({
                 "category": "Elastic Volume Service (EVS)", 
@@ -305,7 +313,7 @@ def validate_actual_billing():
             })
 
         if has_drs:
-            actual_drs = (estimated_cost * 0.45) * 1.05 
+            actual_drs = (fallback_baseline * 0.45) * 1.05 
             total_invoiced += actual_drs
             line_items.append({
                 "category": "Data Replication Service (DRS)", 
@@ -314,7 +322,7 @@ def validate_actual_billing():
                 "note": "DRS Replication clusters rds.pg.c6.large.2 usage."
             })
 
-        if has_net:
+        if has_net or len(bom_items) > 0:
             actual_net = 65.00 
             total_invoiced += actual_net
             line_items.append({
@@ -324,11 +332,7 @@ def validate_actual_billing():
                 "note": "Higher than expected outbound data transfer (Egress GB) on NAT Gateway."
             })
             
-        if not line_items:
-            total_invoiced = estimated_cost * 1.10
-            line_items.append({"category": "Miscellaneous Cloud Services", "amount": round(total_invoiced), "status": "warning", "note": "Uncategorized costs."})
-            
-        variance = total_invoiced - estimated_cost
+        variance = total_invoiced - fallback_baseline
         
         return jsonify({
             "success": True,
