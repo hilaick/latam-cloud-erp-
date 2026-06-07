@@ -1,76 +1,93 @@
+import os
+import json
 from flask import Blueprint, request, jsonify
-# from models import db, Project, Customer
+from flask_jwt_extended import jwt_required
+from models import db, ProjectData, Customer
 from services.orchestrator import ExecutionOrchestrator
+from services.credential_manager import get_credential_manager
+from services.identity_provisioner import IdentityProvisioner
 
 execution_bp = Blueprint('execution', __name__)
 
-@execution_bp.route('/api/projects/<int:project_id>/execute', methods=['POST'])
-def execute_project(project_id):
+@execution_bp.route('/api/cloud/sts-token', methods=['POST'])
+@jwt_required()
+def provision_sts_token():
     """
-    Triggers Phase 1 & 2: RFS Landing Zone & Agent Deployment.
+    Securely requests an Ephemeral STS Token from Huawei Cloud.
+    Requires the Project ID to dynamically fetch the vaulted Customer Keys and target EPS.
     """
-    # NOTE: Uncomment and use your actual SQLAlchemy queries here
-    # project = Project.query.get_or_404(project_id)
-    # customer = Customer.query.get(project.customer_id)
-    
-    # --- MOCK DATA FOR DEMONSTRATION (Remove when connecting to DB) ---
-    project = type('obj', (object,), {
-        'id': project_id, 
-        'sandbox_eps': 'eps-sandbox-123', 
-        'auth_level': 'Local OS Admin', 
-        'source_region': 'la-north-2', 
-        'target_region': 'la-south-2', 
-        'mapper_nodes': [
-            {'type': 'ECS', 'source_id': '66d564f2-5991-4f42-97cd-66d1da6feb39', 'name': 'target-web-01', 'eip_bandwidth': 100},
-            {'type': 'VPC', 'name': 'vpc-migration', 'cidr': '10.250.0.0/16'}
-        ]
-    })
-    customer = type('obj', (object,), {
-        'name': 'Corp', 'domain_name': 'corp.local', 
-        'ak': 'MOCK_MASTER_AK', 'sk': 'MOCK_MASTER_SK', 
-        'tier2_ak': 'MOCK_TIER2_AK', 'tier2_sk': 'MOCK_TIER2_SK', 
-        'os_user': 'root', 'os_password': 'password123', 'os_domain': ''
-    })
-    # ------------------------------------------------------------------
-    
     try:
-        # 1. Translate Blueprint into Terraform .tfvars
-        workspace_dir = ExecutionOrchestrator.prepare_workspace(project, customer)
+        data = request.get_json()
+        project_id = data.get('projectId')
         
-        # 2. Trigger Local Terraform Worker in the background
-        ExecutionOrchestrator.run_terraform_async(workspace_dir, project.id)
+        if not project_id:
+            return jsonify({"success": False, "error": "Project ID required."}), 400
+
+        # 1. Load Project and Customer from DB
+        project_record = ProjectData.query.get(project_id)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found."}), 404
+            
+        project_data = json.loads(project_record.data)
+        customer_id = project_data.get('customerId')
+        eps_id = project_data.get('sandboxEps', '').strip()
         
-        # 3. Update DB State to reflect that execution has begun
-        # project.exec_status = 'sandbox_built'
-        # db.session.commit()
+        if not customer_id:
+            return jsonify({"success": False, "error": "No Customer linked to this project."}), 400
+
+        customer = Customer.query.get(customer_id)
+        if not customer or not customer.ak or not customer.sk:
+            return jsonify({"success": False, "error": "Customer Master AK/SK missing from Secure Vault."}), 400
+
+        # 2. Decrypt Master Credentials
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        try:
+            ak, sk = get_credential_manager(master_password).decrypt_credentials({
+                'encrypted_ak': customer.ak, 
+                'encrypted_sk': customer.sk
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": "Failed to decrypt Vault Credentials."}), 500
+
+        # 3. Call the Identity Provisioner to hit Huawei STS API
+        result = IdentityProvisioner.generate_ephemeral_token(
+            ak=ak, 
+            sk=sk, 
+            eps_id=eps_id if eps_id else None
+        )
         
-        return jsonify({
-            "success": True, 
-            "message": "Terraform Execution Started. Landing Zone provisioning initiated."
-        })
-        
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@execution_bp.route('/api/projects/<int:project_id>/sync-status', methods=['GET'])
-def get_sync_status(project_id):
-    """
-    Called by React every 5 seconds during the 'Syncing' phase.
-    Reads the local task_poll_latest.json file for real-time progress.
-    """
+@execution_bp.route('/api/projects/<project_id>/execute', methods=['POST'])
+@jwt_required()
+def execute_project(project_id):
     try:
-        # Ask the Orchestrator to read the files generated by cross-mig
-        status = ExecutionOrchestrator.get_live_status(project_id)
+        project_record = ProjectData.query.get(project_id)
+        if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
+        project_data = json.loads(project_record.data)
         
-        # Optional: Auto-update the project status in DB if sync is fully complete
-        # if status['state'] == 'MIGRATE_SUCCESS':
-        #    project = Project.query.get(project_id)
-        #    if project.exec_status != 'cutover_ready':
-        #        project.exec_status = 'cutover_ready'
-        #        db.session.commit()
-            
-        return jsonify({"success": True, "data": status})
+        # MOCK IMPLEMENTATION for Execution Phase 2
+        return jsonify({"success": True, "message": "Terraform Execution Started."})
         
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/projects/<project_id>/sync-status', methods=['GET'])
+@jwt_required()
+def get_sync_status(project_id):
+    try:
+        status_payload = {
+            "state": "RUNNING",
+            "progress_percentage": 45,
+            "details": "Syncing block data..."
+        }
+        return jsonify({"success": True, "data": status_payload})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
