@@ -73,6 +73,7 @@ class Customer(db.Model):
     azure_tenant_id = db.Column(db.String(120))
     azure_client_id = db.Column(db.String(120))
     azure_client_secret = db.Column(db.String(120))
+    azure_subscription_id = db.Column(db.String(120))
     vcenter_host = db.Column(db.String(120))
 
     # 3. OS DATA PLANE (Local/Domain Admin for Rsync/WinRM)
