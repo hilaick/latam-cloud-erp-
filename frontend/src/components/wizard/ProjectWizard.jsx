@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import StepARB from './StepARB';
 import StepArchitecture from './StepArchitecture';
@@ -10,7 +10,11 @@ export default function ProjectWizard() {
     const { projects, activeProjectId, handleUpdateProject, customers } = useContext(ERPContext);
     const [editingProject, setEditingProject] = useState(null);
     const [showMatrixHelp, setShowMatrixHelp] = useState(false);
-    const [showTheoryModal, setShowTheoryModal] = useState(false); // 🚨 NEW: Theory Modal State
+    const [showTheoryModal, setShowTheoryModal] = useState(false);
+    
+    // Dynamic SA and Partner memory cache for autocomplete
+    const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
+    const uniquePartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
     
     const project = projects.find(p => String(p.id) === String(activeProjectId));
 
@@ -70,7 +74,7 @@ export default function ProjectWizard() {
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center group">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-800 flex items-center">
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center uppercase">
                         {project.name}
                         <button 
                             onClick={() => setEditingProject({...project})} 
@@ -116,30 +120,32 @@ export default function ProjectWizard() {
                                         <select 
                                             value={editingProject.customerName || ''} 
                                             onChange={e => {
-                                                const selectedName = e.target.value;
-                                                const matched = (customers || []).find(c => c.name === selectedName);
+                                                const selectedName = e.target.value.toUpperCase();
+                                                const matched = (customers || []).find(c => c.name.toUpperCase() === selectedName);
                                                 setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null });
                                             }} 
-                                            className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer"
+                                            className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer uppercase"
                                         >
                                             <option value="">-- Select Customer Profile --</option>
-                                            {(customers || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                            {(customers || []).map(c => <option key={c.id} value={c.name.toUpperCase()}>{c.name.toUpperCase()}</option>)}
                                         </select>
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug"><i className="fas fa-shield-alt text-slate-300 mr-1"></i>Links this project to secure Multi-Cloud and OS credentials located in the Customer Directory.</p>
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name</label>
-                                        <input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold" />
+                                        <input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">The internal reference identifier for this specific SOW/migration scope.</p>
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label>
-                                        <input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold" />
+                                        <input type="text" list="wizard-sa-list" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <datalist id="wizard-sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Primary contact for technical escalation during delivery.</p>
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label>
-                                        <input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold" />
+                                        <input type="text" list="wizard-partner-list" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <datalist id="wizard-partner-list">{uniquePartners.map(pt => <option key={pt} value={pt} />)}</datalist>
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Third-party or internal NOC responsible for execution tasks.</p>
                                     </div>
                                     <div>
@@ -149,7 +155,7 @@ export default function ProjectWizard() {
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Health</label>
-                                        <select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white">
+                                        <select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
                                             <option>Green</option><option>Yellow</option><option>Red</option>
                                         </select>
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Override the auto-calculated health status for manual escalation.</p>
@@ -166,7 +172,6 @@ export default function ProjectWizard() {
                                         <div className="flex justify-between items-center mb-1">
                                             <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest">Source Authentication Level (Agent Strategy)</label>
                                             
-                                            {/* 🚨 NEW: Theory Buttons */}
                                             <div className="flex gap-2">
                                                 <button onClick={() => setShowMatrixHelp(!showMatrixHelp)} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-100 px-3 py-1 rounded transition-colors flex items-center gap-2">
                                                     <i className="fas fa-bolt"></i> Quick Overview
@@ -217,17 +222,17 @@ export default function ProjectWizard() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5 mb-5">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kickoff / Start Date</label>
-                                        <input type="date" value={editingProject.kickoff || ''} onChange={e=>setEditingProject({...editingProject, kickoff: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono" />
+                                        <input type="date" value={editingProject.kickoff || ''} onChange={e=>setEditingProject({...editingProject, kickoff: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono cursor-pointer" />
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Tracks total migration duration.</p>
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Go-Live Date</label>
-                                        <input type="date" value={editingProject.date || ''} onChange={e=>setEditingProject({...editingProject, date: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono" />
+                                        <input type="date" value={editingProject.date || ''} onChange={e=>setEditingProject({...editingProject, date: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono cursor-pointer" />
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Feeds the Global Dashboard countdown.</p>
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Complexity</label>
-                                        <select value={editingProject.complexity || 'Medium'} onChange={e=>setEditingProject({...editingProject, complexity: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white">
+                                        <select value={editingProject.complexity || 'Medium'} onChange={e=>setEditingProject({...editingProject, complexity: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
                                             <option>Low</option><option>Medium</option><option>High</option><option>Ultra-High</option>
                                         </select>
                                         <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Dictates baseline Physics SLA.</p>
@@ -253,7 +258,7 @@ export default function ProjectWizard() {
                 </div>
             )}
 
-            {/* 🚨 NEW: DETAILED THEORY MODAL */}
+            {/* THEORY MODAL (Same as before) */}
             {showTheoryModal && (
                 <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -306,13 +311,6 @@ export default function ProjectWizard() {
                                         <li><strong className="text-slate-900 bg-slate-200 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> Zero automation access. The ERP recognizes this block and shifts to generating customized copy-paste runbook scripts. The delivery engineer hands these scripts to the customer's internal IT team, who manually deploys the agents themselves.</li>
                                     </ul>
                                 </div>
-                            </div>
-
-                            <div className="bg-emerald-50 border-l-4 border-emerald-500 p-6 rounded-r-xl mt-8 shadow-sm">
-                                <h4 className="font-black text-emerald-900 text-lg mb-2"><i className="fas fa-lightbulb mr-2 text-emerald-500"></i>The Business Value of the Matrix</h4>
-                                <p className="leading-relaxed text-emerald-800">
-                                    By having this matrix, the platform ensures it never hits a "dead end" during delivery. If a financial institution says, <em>"You cannot have API access,"</em> the project doesn't fail; the delivery manager simply toggles the matrix down to "Read-Only," and the pipeline seamlessly pivots from an automated push to generating manual compliance runbooks. It accommodates every possible enterprise security posture.
-                                </p>
                             </div>
                         </div>
                     </div>
