@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { ERPContext } from './context/ERPContext';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
-
+import FinOpsDashboard from './components/views/FinOpsDashboard';
 import CustomerDirectory from './components/views/CustomerDirectory';
 import MasterExecutionHub from './components/views/MasterExecutionHub';
 import LiveCloudNOC from './components/views/LiveCloudNOC';
