@@ -7,8 +7,6 @@ Features Bulletproof Parent/Child detection and Aggressive Smart Text Parsing.
 
 import pandas as pd
 import re
-import csv
-from io import StringIO
 from typing import Optional, Dict, Any
 from services.semantic_classifier import classify_unknown_service_with_ai
 
@@ -19,82 +17,55 @@ from services.semantic_classifier import classify_unknown_service_with_ai
 def load_dataframe_smart(file_path: str) -> pd.DataFrame:
     """
     Aggressively parses Cloud Consoles' messy exports.
-    Bypasses strict Pandas engines to extract data even from offset CSVs and disguised HTML/XLSX files.
+    Scans the file in raw text mode to dynamically locate the true header row, 
+    bypassing junk lines injected by cloud consoles.
     """
-    # 1. Native Excel
-    if str(file_path).lower().endswith(('.xlsx', '.xls')):
-        try:
-            df = pd.read_excel(file_path, header=None)
-            if not df.empty:
-                header_idx = 0
-                for i in range(min(30, len(df))):
-                    row_str = ' '.join(str(x).lower() for x in df.iloc[i].values)
-                    if 'service' in row_str and 'description' in row_str:
-                        header_idx = i
-                        break
-                return pd.read_excel(file_path, header=header_idx)
-        except Exception as e:
-            print(f"Native Excel parse failed. Attempting text fallback. Error: {e}")
-
-    # 2. Aggressive Text / CSV Parsing
+    header_idx = 0
     encodings = ['utf-8-sig', 'utf-8', 'latin1', 'utf-16le', 'cp1252']
+    
+    # 1. Find the true header line index by scanning raw text directly
     for enc in encodings:
         try:
-            with open(file_path, 'r', encoding=enc, errors='replace') as f:
-                content = f.read()
-            
-            if not content.strip(): continue
-
-            delim = ','
-            if content.count(';') > content.count(','): delim = ';'
-            if content.count('\t') > content.count(','): delim = '\t'
-
-            reader = csv.reader(StringIO(content), delimiter=delim)
-            data = list(reader)
-            if not data: continue
-                
-            header_idx = 0
-            for i, row in enumerate(data[:30]):
-                row_str = ' '.join(str(x).lower() for x in row)
-                if 'service' in row_str and 'description' in row_str:
-                    header_idx = i
-                    break
-            
-            headers = data[header_idx]
-            max_cols = max(len(row) for row in data[header_idx:])
-            
-            unique_headers = []
-            for i in range(max_cols):
-                col_name = headers[i] if i < len(headers) and str(headers[i]).strip() else f"Unnamed_{i}"
-                col_name = str(col_name).strip()
-                if col_name in unique_headers:
-                    col_name = f"{col_name}_{i}"
-                unique_headers.append(col_name)
-
-            parsed_data = []
-            for row in data[header_idx+1:]:
-                padded_row = row + [''] * (max_cols - len(row))
-                parsed_data.append(padded_row)
-                
-            df = pd.DataFrame(parsed_data, columns=unique_headers)
-            if not df.empty and len(df.columns) > 1:
-                return df
-        except Exception as e:
+            with open(file_path, 'r', encoding=enc) as f:
+                for i, line in enumerate(f):
+                    lower_line = line.lower()
+                    if 'service' in lower_line and 'description' in lower_line:
+                        header_idx = i
+                        break
+            break # Found a working encoding without throwing read errors
+        except Exception:
             continue
 
-    # 3. HTML Table Fallback (for .xls disguised exports)
+    print(f"📌 Detected true header at row index: {header_idx}")
+
+    # 2. Try parsing as Native Excel first
+    if str(file_path).lower().endswith(('.xlsx', '.xls')):
+        try:
+            return pd.read_excel(file_path, header=header_idx)
+        except Exception as e:
+            print(f"⚠️ Native Excel parse failed. Attempting text fallback. Error: {e}")
+
+    # 3. Aggressive CSV Parsing (Skips the junk rows at the top)
+    for enc in encodings:
+        for delim in [',', ';', '\t']:
+            try:
+                df = pd.read_csv(file_path, skiprows=header_idx, encoding=enc, sep=delim, on_bad_lines='skip')
+                # If we parsed more than 1 column, we successfully mapped it
+                if not df.empty and len(df.columns) > 1:
+                    return df
+            except Exception:
+                continue
+
+    # 4. Fallback to Pandas Python engine
     try:
-        dfs = pd.read_html(file_path)
-        if dfs: 
-            df = dfs[0]
-            header_idx = 0
-            for i in range(min(30, len(df))):
-                row_str = ' '.join(str(x).lower() for x in df.iloc[i].values)
-                if 'service' in row_str and 'description' in row_str:
-                    header_idx = i
-                    break
-            df.columns = df.iloc[header_idx]
-            return df.iloc[header_idx+1:].reset_index(drop=True)
+        return pd.read_csv(file_path, skiprows=header_idx, sep=None, engine='python', on_bad_lines='skip')
+    except Exception:
+        pass
+
+    # 5. HTML Table Fallback (for .xls disguised exports)
+    try:
+        dfs = pd.read_html(file_path, header=header_idx)
+        if dfs: return dfs[0]
     except Exception:
         pass
 
