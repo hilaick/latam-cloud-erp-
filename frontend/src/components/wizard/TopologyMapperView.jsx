@@ -42,11 +42,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return result;
     }, [localNodes, statusFilter, typeFilter, sortConfig]);
 
-    // 🚨 FIX: Save Architecture now strictly saves the FILTERED list. 
-    // If you filter by "Matched" and save, everything else is dropped permanently.
+    // 🚨 SCOPE FILTER FIX: Save Architecture strictly saves the FILTERED list. 
     const saveArchitecture = () => {
         onUpdateProject(activeProject.id, 'mapperNodes', filteredAndSortedNodes);
-        setLocalNodes(filteredAndSortedNodes); // Update local state to reflect the drop
+        setLocalNodes(filteredAndSortedNodes);
         alert(`Target Architecture Saved!\n\n${filteredAndSortedNodes.length} filtered nodes have been locked as the official execution baseline.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
     };
 
