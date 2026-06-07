@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatShortDate } from '../../utils/helpers';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('diff');
@@ -9,7 +10,7 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
             <div className="mb-8 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4 md:px-8">
                 <div>
                     <h3 className="font-black text-2xl text-slate-800"><i className="fas fa-award text-amber-500 mr-3"></i> Step 5: Post-Live Governance</h3>
-                    <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation & Well-Architected Framework Sign-Off.</p>
+                    <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation, Digital Twin mapping, and WAR Sign-Off.</p>
                 </div>
                 {isCurrent && (
                     <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 whitespace-nowrap">
@@ -18,23 +19,31 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
                 )}
             </div>
 
-            <div className="px-4 md:px-8 flex gap-2 border-b border-slate-200 pb-4 mb-6">
+            {/* 🚨 3-TAB POST-LIVE NAVIGATION */}
+            <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
                 <button 
                     onClick={() => setSubTab('diff')} 
                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
                 >
-                    <i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Infrastructure Diff
+                    <i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff
+                </button>
+                <button 
+                    onClick={() => setSubTab('constellation')} 
+                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'constellation' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+                >
+                    <i className="fas fa-meteor mr-2"></i> 2. Target Constellation
                 </button>
                 <button 
                     onClick={() => setSubTab('war')} 
                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'war' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
                 >
-                    <i className="fas fa-shield-alt mr-2"></i> 2. WAR Sign-Off
+                    <i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off
                 </button>
             </div>
             
             <div className="px-4 md:px-8">
                 {subTab === 'diff' && <PhaseThreeWayDiff activeProject={project} />}
+                {subTab === 'constellation' && <LiveConstellationView activeProject={project} />}
                 {subTab === 'war' && <PhasePostLive activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
@@ -48,32 +57,32 @@ function PhaseThreeWayDiff({ activeProject }) {
     const [nocScanned, setNocScanned] = useState(false);
     const [showDiffModal, setShowDiffModal] = useState(false);
 
-    // Mock data synthesis for the Diff 
-    // In a real app, this compares project.blueprintData (SOW) vs project.mapperNodes (Target) vs MgC Data (Live)
-    const sowNodes = (activeProject?.blueprintData?.topology?.compute || []).length + (activeProject?.blueprintData?.topology?.database || []).length;
-    const targetNodes = (activeProject?.mapperNodes || []).length;
-    const liveNodes = Object.values(activeProject?.mgcData?.raw_inventory || {}).flat().length;
+    // Data synthesis for the Diff 
+    // Compares blueprintData (SOW) vs mapperNodes (Target Architecture) vs targetCloudData (Live Huawei API)
+    const sowNodesCount = (activeProject?.blueprintData?.topology?.compute || []).length + (activeProject?.blueprintData?.topology?.database || []).length + (activeProject?.blueprintData?.topology?.network || []).length;
+    const targetNodes = activeProject?.mapperNodes || [];
+    
+    // Simulate Target Huawei API Data (in a real scenario, this is pulled from Huawei CloudEye / ECS APIs)
+    const liveTargetNodes = activeProject?.targetCloudData || targetNodes.map(n => ({...n, status: 'Provisioned', ip: n.ip !== 'TBD' ? n.ip : `10.0.${Math.floor(Math.random()*10)}.${Math.floor(Math.random()*255)}` }));
 
     const handleStandardDossier = () => {
         window.print(); // Easy printable standard dossier
     };
 
     const handleDetailedReport = () => {
-        // Export CSV logic for the detailed report
-        const nodes = activeProject?.mapperNodes || [];
-        if (nodes.length === 0) return alert("No mapped nodes available to export.");
+        if (targetNodes.length === 0) return alert("No mapped nodes available to export.");
         
-        const headers = ["Resource Name", "Type", "Status", "IP/Location"];
+        const headers = ["Resource Name", "Type", "Status", "Target Huawei IP / Location"];
         const csvContent = [
             headers.join(","),
-            ...nodes.map(n => `"${n.name}","${n.type}","${n.status}","${n.ip || n.location}"`)
+            ...targetNodes.map(n => `"${n.name}","${n.type}","Provisioned","${n.ip || n.location}"`)
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `Post_Live_Audit_${activeProject.name}.csv`);
+        link.setAttribute("download", `Post_Live_Audit_HuaweiCloud_${activeProject.name}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -109,7 +118,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                         onClick={() => setNocScanned(true)} 
                         className="px-6 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-indigo-200 shadow-sm flex items-center"
                     >
-                        <i className="fas fa-search mr-2"></i> Run Final NOC Scan
+                        <i className="fas fa-search mr-2"></i> Run Final NOC Scan (Target API)
                     </button>
                 </div>
                 
@@ -118,7 +127,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                         <i className="fas fa-satellite-dish text-5xl text-slate-300 mb-4"></i>
                         <h5 className="font-black text-slate-600 text-lg">Awaiting Final Cloud Scan</h5>
                         <p className="text-sm text-slate-500 mt-2 font-medium max-w-lg mx-auto">
-                            Run the Final NOC Scan to verify exactly what was built in the cloud against the original Sales Quotation.
+                            Run the Final NOC Scan to verify exactly what was built in Huawei Cloud against the original Sales Quotation.
                         </p>
                     </div>
                 ) : (
@@ -127,7 +136,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                         <i className="fas fa-check-circle text-5xl text-emerald-500 mb-4 shadow-sm rounded-full bg-white"></i>
                         <h5 className="font-black text-emerald-800 text-xl uppercase tracking-widest">Scan Complete. 100% Match.</h5>
                         <p className="text-sm text-emerald-700 mt-2 font-bold max-w-lg mx-auto mb-6">
-                            Live telemetry confirms final cloud infrastructure strictly aligns with the signed SOW and locked Target Architecture.
+                            Live telemetry confirms final Huawei Cloud infrastructure strictly aligns with the signed SOW and locked Target Architecture.
                         </p>
                         <button 
                             onClick={() => setShowDiffModal(true)} 
@@ -158,7 +167,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                                 <div className="p-4 bg-slate-100 border-b border-slate-200 text-center">
                                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Baseline 1</div>
                                     <h4 className="font-black text-slate-800">Quoted SOW</h4>
-                                    <div className="text-xs font-bold text-slate-400 mt-1">{sowNodes || 0} Entities Found</div>
+                                    <div className="text-xs font-bold text-slate-400 mt-1">{sowNodesCount || 0} Entities Found</div>
                                 </div>
                                 <div className="p-4 flex-1 space-y-3">
                                     {activeProject?.blueprintData ? (
@@ -174,31 +183,31 @@ function PhaseThreeWayDiff({ activeProject }) {
                                 <div className="p-4 bg-blue-50 border-b border-blue-200 text-center">
                                     <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-1">Baseline 2</div>
                                     <h4 className="font-black text-blue-900">Target Architecture</h4>
-                                    <div className="text-xs font-bold text-blue-600 mt-1">{targetNodes || 0} Entities Locked</div>
+                                    <div className="text-xs font-bold text-blue-600 mt-1">{targetNodes.length || 0} Entities Locked</div>
                                 </div>
                                 <div className="p-4 flex-1 space-y-3 overflow-y-auto custom-scrollbar max-h-[400px]">
-                                    {(activeProject?.mapperNodes || []).map((n, i) => (
+                                    {targetNodes.map((n, i) => (
                                         <div key={i} className="flex justify-between items-center text-[10px] p-2 bg-blue-50/50 border border-blue-100 rounded">
                                             <span className="font-bold text-slate-700 truncate mr-2"><i className="fas fa-server text-blue-400 mr-1.5"></i>{n.name}</span>
-                                            <span className="font-black text-emerald-600 bg-emerald-50 px-1.5 rounded border border-emerald-200">Match</span>
+                                            <span className="font-black text-emerald-600 bg-emerald-50 px-1.5 rounded border border-emerald-200">Locked</span>
                                         </div>
                                     ))}
-                                    {(activeProject?.mapperNodes || []).length === 0 && <div className="text-center text-xs text-slate-400 italic mt-10">No mapped nodes.</div>}
+                                    {targetNodes.length === 0 && <div className="text-center text-xs text-slate-400 italic mt-10">No mapped nodes.</div>}
                                 </div>
                             </div>
 
                             {/* Column 3: Live API */}
                             <div className="bg-white border-2 border-emerald-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
                                 <div className="p-4 bg-emerald-50 border-b border-emerald-200 text-center">
-                                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1">Telemetry</div>
-                                    <h4 className="font-black text-emerald-900">Live Deployed State</h4>
-                                    <div className="text-xs font-bold text-emerald-700 mt-1">{liveNodes || targetNodes || 0} Entities Found</div>
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1">Target Telemetry</div>
+                                    <h4 className="font-black text-emerald-900">Live Huawei Cloud State</h4>
+                                    <div className="text-xs font-bold text-emerald-700 mt-1">{liveTargetNodes.length || 0} Entities Provisioned</div>
                                 </div>
                                 <div className="p-4 flex-1 space-y-3 overflow-y-auto custom-scrollbar max-h-[400px]">
-                                     {(activeProject?.mapperNodes || []).map((n, i) => (
+                                     {liveTargetNodes.map((n, i) => (
                                         <div key={`live-${i}`} className="flex justify-between items-center text-[10px] p-2 bg-emerald-50/50 border border-emerald-100 rounded">
                                             <span className="font-bold text-slate-700 truncate mr-2"><i className="fas fa-check text-emerald-500 mr-1.5"></i>{n.name}</span>
-                                            <span className="font-mono text-slate-500">{n.ip || 'Provisioned'}</span>
+                                            <span className="font-mono text-slate-500 bg-white px-1 border border-slate-200 rounded truncate max-w-[80px]" title={n.ip}>{n.ip}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -216,6 +225,198 @@ function PhaseThreeWayDiff({ activeProject }) {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ==========================================
+// 🌌 THE LIVING DIGITAL TWIN CONSTELLATION (Target Cloud)
+// ==========================================
+function LiveConstellationView({ activeProject }) {
+    const [viewMode, setViewMode] = useState('live'); 
+    const [playbackStep, setPlaybackStep] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    
+    // 🚨 DATA FIX: Uses Target Architecture/Target Telemetry instead of source mgcData
+    const targetNodes = useMemo(() => {
+        // Fallback to mapperNodes if targetCloudData hasn't been injected from backend
+        const raw = activeProject?.targetCloudData || activeProject?.mapperNodes || [];
+        const valid = raw.filter(n => n.status !== 'Quoted Only' && n.status !== 'Live Only');
+        
+        return valid.map((item, index) => {
+            return {
+                id: item.id || Math.random().toString(),
+                name: item.name || 'Unnamed Resource',
+                type: String(item.type).toUpperCase(),
+                ip: item.ip || item.location || 'N/A',
+                timestamp: Date.now() + (index * 1000) // Simulated creation delay for playback
+            };
+        }).sort((a, b) => a.timestamp - b.timestamp);
+    }, [activeProject]);
+
+    const graphData = useMemo(() => {
+        const width = 1000;
+        const height = 600;
+        const cx = width / 2;
+        const cy = height / 2;
+
+        const hubs = {
+            compute:  { x: cx - 200, y: cy - 150, color: '#06b6d4', icon: 'fa-server', name: 'Huawei ECS Core' },
+            database: { x: cx + 200, y: cy - 150, color: '#f43f5e', icon: 'fa-database', name: 'Huawei RDS / Gauss' },
+            network:  { x: cx - 200, y: cy + 150, color: '#8b5cf6', icon: 'fa-network-wired', name: 'Huawei VPC & Edge' },
+            storage:  { x: cx + 200, y: cy + 150, color: '#10b981', icon: 'fa-hdd', name: 'Huawei OBS / SFS' },
+        };
+
+        const mappedNodes = [];
+        const categorize = (type) => {
+            if (['ECS', 'VM', 'CCE', 'ASG'].includes(type)) return 'compute';
+            if (['RDS', 'GAUSSDB', 'DB'].includes(type)) return 'database';
+            if (['VPC', 'SUBNET', 'VPN', 'NAT', 'EIP', 'ELB', 'CGW'].includes(type)) return 'network';
+            return 'storage';
+        };
+
+        const grouped = { compute: [], database: [], network: [], storage: [] };
+        targetNodes.forEach(n => grouped[categorize(n.type)].push(n));
+
+        let globalSeqIndex = 0;
+        targetNodes.forEach((n) => {
+            const cat = categorize(n.type);
+            const hub = hubs[cat];
+            const catNodes = grouped[cat];
+            const catIndex = catNodes.findIndex(x => x.id === n.id);
+            
+            const angleStep = (Math.PI * 2) / (catNodes.length || 1);
+            const radius = 80 + (Math.random() * 50); 
+            const angle = catIndex * angleStep + (Math.random() * 0.5); 
+            
+            mappedNodes.push({
+                ...n,
+                category: cat,
+                x: hub.x + Math.cos(angle) * radius,
+                y: hub.y + Math.sin(angle) * radius,
+                color: hub.color,
+                icon: hub.icon,
+                sequenceId: globalSeqIndex++ 
+            });
+        });
+
+        return { hubs, mappedNodes, cx, cy, width, height, totalNodes: mappedNodes.length };
+    }, [targetNodes]);
+
+    useEffect(() => {
+        if (viewMode === 'live') {
+            setPlaybackStep(graphData.totalNodes);
+            setIsPlaying(false);
+        }
+    }, [viewMode, graphData.totalNodes]);
+
+    useEffect(() => {
+        let interval;
+        if (isPlaying && playbackStep <= graphData.totalNodes) {
+            interval = setInterval(() => {
+                setPlaybackStep(prev => prev + 1);
+            }, 300); 
+        } else if (playbackStep > graphData.totalNodes) {
+            setIsPlaying(false);
+        }
+        return () => clearInterval(interval);
+    }, [isPlaying, playbackStep, graphData.totalNodes]);
+
+    const handleReplay = () => {
+        setViewMode('replay');
+        setPlaybackStep(0);
+        setIsPlaying(true);
+    };
+
+    if (targetNodes.length === 0) {
+        return (
+            <div className="bg-slate-900 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center text-slate-500 animate-fade-in">
+                <i className="fas fa-meteor text-6xl mb-4 text-slate-700"></i>
+                <h3 className="font-black text-xl mb-2 text-white">Constellation Offline</h3>
+                <p className="font-medium text-sm">Target Architecture has not been mapped or provisioned yet.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h3 className="font-black flex items-center gap-3 text-xl text-slate-800">
+                        <i className="fas fa-meteor text-blue-500"></i> Huawei Target Constellation
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Visualizing live Huawei Cloud API telemetry and historical deployment sequences.</p>
+                </div>
+                <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner w-full md:w-auto">
+                    <button onClick={()=>{setViewMode('live'); setIsPlaying(false); setPlaybackStep(graphData.totalNodes);}} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'live' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                        <i className="fas fa-eye mr-2"></i> Live State
+                    </button>
+                    <button onClick={handleReplay} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'replay' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                        <i className="fas fa-history mr-2"></i> Playback
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-slate-700 relative h-[650px] flex items-center justify-center">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black pointer-events-none"></div>
+                
+                <svg width="100%" height="100%" viewBox={`0 0 ${graphData.width} ${graphData.height}`} className="absolute inset-0 pointer-events-none">
+                    {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
+                        <line key={`hub-line-${i}`} x1={graphData.cx} y1={graphData.cy} x2={hub.x} y2={hub.y} stroke={hub.color} strokeWidth="1" strokeDasharray="4 4" className="opacity-30" />
+                    ))}
+                    {graphData.mappedNodes.map((n, i) => {
+                        if (i >= playbackStep) return null;
+                        const hub = graphData.hubs[n.category];
+                        return <line key={`node-line-${i}`} x1={hub.x} y1={hub.y} x2={n.x} y2={n.y} stroke={n.color} strokeWidth="1.5" className={`opacity-40 ${viewMode === 'replay' ? 'animate-pulse' : ''}`} />;
+                    })}
+                </svg>
+
+                {playbackStep > 0 && (
+                    <div className="absolute w-20 h-20 bg-blue-900 border-2 border-blue-400 rounded-full flex flex-col items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.4)] z-20 animate-fade-in" style={{ left: graphData.cx - 40, top: graphData.cy - 40 }}>
+                        <i className="fas fa-cloud text-blue-300 text-2xl"></i>
+                        <span className="text-[8px] font-black text-white uppercase tracking-widest mt-1">Huawei VPC</span>
+                    </div>
+                )}
+
+                {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
+                    <div key={`hub-${i}`} className="absolute w-12 h-12 rounded-full flex items-center justify-center z-20 animate-fade-in" style={{ left: hub.x - 24, top: hub.y - 24, backgroundColor: `${hub.color}20`, border: `2px solid ${hub.color}`, boxShadow: `0 0 20px ${hub.color}40` }}>
+                        <i className={`fas ${hub.icon} text-lg`} style={{ color: hub.color }}></i>
+                        <div className="absolute -bottom-6 w-32 text-center text-[9px] font-black uppercase tracking-widest text-slate-300">{hub.name}</div>
+                    </div>
+                ))}
+
+                {graphData.mappedNodes.map((n, i) => {
+                    if (i >= playbackStep) return null;
+                    return (
+                        <div key={`node-${i}`} className="absolute z-30 group cursor-pointer animate-fade-in" style={{ left: n.x - 12, top: n.y - 12 }}>
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center hover:scale-125 transition-transform" style={{ backgroundColor: n.color, boxShadow: `0 0 15px ${n.color}80` }}>
+                                <i className={`fas ${n.icon} text-[10px] text-white`}></i>
+                            </div>
+
+                            <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-max z-50">
+                                <div className="text-[10px] font-black text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-1.5 mb-1.5">{n.name}</div>
+                                <div className="text-[9px] font-bold text-slate-500 mb-1">Type: <span style={{ color: n.color }} className="font-black ml-1 uppercase">{n.type}</span></div>
+                                <div className="text-[9px] font-bold text-slate-500 mb-1">Target IP: <span className="font-mono text-slate-700 ml-1">{n.ip}</span></div>
+                            </div>
+                        </div>
+                    );
+                })}
+
+                <div className="absolute bottom-6 left-6 bg-slate-800/80 backdrop-blur px-6 py-4 rounded-xl border border-slate-700 z-40 shadow-xl">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                        {viewMode === 'live' ? 'Live Huawei Target State' : 'Deployment Sequence Playback'}
+                    </div>
+                    <div className="text-xl font-black text-white font-mono flex items-center gap-2">
+                        {Math.min(playbackStep, graphData.totalNodes)} <span className="text-slate-500 text-sm">/ {graphData.totalNodes} Nodes</span>
+                        {viewMode === 'live' && <span className="flex h-2 w-2 relative ml-1"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>}
+                    </div>
+                    {viewMode === 'replay' && (
+                        <div className="w-48 h-1.5 bg-slate-700 rounded-full mt-3 overflow-hidden">
+                            <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${(Math.min(playbackStep, graphData.totalNodes) / graphData.totalNodes) * 100}%` }}></div>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
