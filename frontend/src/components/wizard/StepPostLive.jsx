@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
-export default function WizardStepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
+export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('constellation');
 
     return (
@@ -119,7 +119,7 @@ function LiveConstellationView({ activeProject }) {
 
     if (validNodes.length === 0) {
         return (
-            <div className="bg-slate-900 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center text-slate-500">
+            <div className="bg-slate-900 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center text-slate-500 animate-fade-in">
                 <i className="fas fa-meteor text-6xl mb-4 text-slate-700"></i>
                 <h3 className="font-black text-xl mb-2 text-white">Constellation Offline</h3>
                 <p className="font-medium text-sm">No live architecture nodes detected to map.</p>
@@ -151,7 +151,7 @@ function LiveConstellationView({ activeProject }) {
                 
                 <svg width="100%" height="100%" viewBox={`0 0 ${graphData.width} ${graphData.height}`} className="absolute inset-0 pointer-events-none">
                     
-                    {/* Lines connecting Central VPC to 4 Hubs (Only show if at least 1 node exists) */}
+                    {/* Lines connecting Central VPC to 4 Hubs */}
                     {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
                         <line 
                             key={`hub-line-${i}`} x1={graphData.cx} y1={graphData.cy} x2={hub.x} y2={hub.y} 
