@@ -17,15 +17,13 @@ class IdentityProvisioner:
     def generate_ephemeral_token(ak: str, sk: str, eps_id: str = None, duration_seconds: int = 3600) -> dict:
         """
         Calls Huawei Cloud IAM to generate a temporary Security Token.
-        This drops a physical event in Cloud Trace Service (CTS).
+        This drops a physical 'create_temporary_access_key' event in Cloud Trace Service (CTS).
         """
         try:
             # 1. Define the REST API endpoint for Huawei STS
             url = "https://iam.myhuaweicloud.com/v3.0/OS-CREDENTIAL/securitytokens"
             
             # 2. Build the Zero-Trust IAM Policy
-            # We allow everything, but IF an Enterprise Project (eps_id) is provided, 
-            # we inject a strict mathematical boundary condition.
             policy = {
                 "Version": "1.1",
                 "Statement": [
@@ -36,6 +34,7 @@ class IdentityProvisioner:
                 ]
             }
             
+            # If an Enterprise Project ID is provided, restrict the token to ONLY that EPS
             if eps_id and str(eps_id).strip() != "":
                 policy["Statement"][0]["Condition"] = {
                     "StringEquals": {
@@ -55,12 +54,11 @@ class IdentityProvisioner:
             payload_json = json.dumps(payload)
 
             # 4. Cryptographically Sign the Request using the Master AK/SK
-            # This is exactly what Huawei Cloud expects to authenticate the API call
             signer = Signer(ak, sk)
             request = HttpRequest("POST", url, {"Content-Type": "application/json"}, payload_json)
             signer.sign(request)
 
-            # 5. Execute the Call
+            # 5. Execute the Call to Huawei
             response = requests.post(
                 request.url,
                 headers=request.headers,
@@ -80,8 +78,7 @@ class IdentityProvisioner:
                     "sk": cred.get('secret'),
                     "security_token": cred.get('securitytoken'),
                     "expires_at": cred.get('expires_at'),
-                    "eps_restricted": bool(eps_id),
-                    "policy_applied": policy
+                    "eps_restricted": bool(eps_id)
                 }
             else:
                 logger.error(f"STS Request Failed: {response.status_code} - {response.text}")
