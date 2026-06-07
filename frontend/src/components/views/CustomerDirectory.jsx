@@ -20,7 +20,7 @@ export default function CustomerDirectory() {
             id: String(Date.now()), name: '', contact: '', email: '', region: 'la-south-2',
             ak: '', sk: '', 
             tier1AK: '', tier1SK: '', tier2AK: '', tier2SK: '', tier3AK: '', tier3SK: '', 
-            awsAK: '', awsSK: '', azureTenant: '', azureClient: '', azureSecret: '', vCenterHost: '',
+            awsAK: '', awsSK: '', azureTenant: '', azureClient: '', azureSecret: '', azureSubscriptionId: '', vCenterHost: '',
             osDomain: '', osUser: '', osPassword: ''
         });
         setIsCreating(true);
@@ -230,8 +230,9 @@ export default function CustomerDirectory() {
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="grid grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-2 gap-4">
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tenant ID</label><input type="password" value={editingCustomer.azureTenant || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureTenant: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
+                                            <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Subscription ID</label><input type="text" value={editingCustomer.azureSubscriptionId || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureSubscriptionId: e.target.value})} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client ID</label><input type="password" value={editingCustomer.azureClient || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureClient: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client Secret</label><input type="password" value={editingCustomer.azureSecret || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureSecret: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                         </div>
