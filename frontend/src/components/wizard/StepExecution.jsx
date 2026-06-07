@@ -5,16 +5,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [showMasterGuide, setShowMasterGuide] = useState(false);
     
-    // 🚨 DRIFT & EXECUTION STATE
     const [driftAlert, setDriftAlert] = useState(true);
     const execStatus = project.execStatus || 'pending'; 
     const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
     
-    // 🚨 ZERO-TRUST IAM STATE
     const [iamStatus, setIamStatus] = useState('pending'); // pending, provisioning, active
     const [ephemeralKeys, setEphemeralKeys] = useState(null);
 
-    // 🚨 STRATEGY MATRIX STATE
     const [preflightStatus, setPreflightStatus] = useState('pending'); // pending, scanning, done
     const [vectorAssignments, setVectorAssignments] = useState({});
     
@@ -22,9 +19,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const prodEpsRaw = project.prodEps?.trim() || '';
     const isVpcIsolationMode = !sandboxEpsRaw || !prodEpsRaw;
 
-    // Filter compute nodes from Architecture
-    const computeNodes = useMemo(() => {
-        return (project.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && n.status !== 'Quoted Only');
+    const discoveryComputeCount = project?.mgcData?.compute?.length || project?.mgcData?.servers?.length || 0;
+    
+    // Base Scope: Everything left in the Target Architecture that isn't 'Quoted Only'
+    const inScopeNodes = useMemo(() => {
+        return (project.mapperNodes || []).filter(n => 
+            ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && 
+            n.status !== 'Quoted Only' 
+        );
     }, [project.mapperNodes]);
 
     const getStrategyDetails = () => {
@@ -40,7 +42,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         if (newStatus === 'syncing') setDriftAlert(true);
     };
 
-    // 🚨 SIMULATE ZERO-TRUST IAM PROVISIONING
     const handleProvisionIAM = () => {
         setIamStatus('provisioning');
         setTimeout(() => {
@@ -49,17 +50,25 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }, 2000);
     };
 
-    // 🚨 SIMULATE PRE-FLIGHT OS DIAGNOSTICS & VECTOR ASSIGNMENT
+    // 🚨 GOVERNANCE HARD-STOP: Intercepting Scope Creep servers if CR is not signed.
     const handleRunPreflight = () => {
         setPreflightStatus('scanning');
         setTimeout(() => {
             const assignments = {};
-            computeNodes.forEach((n, idx) => {
-                // Mock diagnostic logic to show the different vectors
-                if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
-                else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
-                else if (idx % 7 === 0) assignments[n.id] = { status: 'Strict Firewall Block', vector: 'Vector 4: Direct OS-Level Rsync', icon: 'fa-lock', color: 'text-purple-500' };
-                else assignments[n.id] = { status: 'OS Healthy & Compatible', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
+            inScopeNodes.forEach((n, idx) => {
+                if (n.status === 'Live Only' && !project.crApproved) {
+                    assignments[n.id] = { 
+                        status: 'Scope Creep Detected', 
+                        vector: 'Blocked (Missing CR)', 
+                        icon: 'fa-hand-paper', 
+                        color: 'text-rose-500' 
+                    };
+                } else {
+                    if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
+                    else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
+                    else if (idx % 7 === 0) assignments[n.id] = { status: 'Strict Firewall Block', vector: 'Vector 4: Direct OS-Level Rsync', icon: 'fa-lock', color: 'text-purple-500' };
+                    else assignments[n.id] = { status: 'OS Healthy & Compatible', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
+                }
             });
             setVectorAssignments(assignments);
             setPreflightStatus('done');
@@ -74,7 +83,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     return (
         <div className="max-w-[1600px] mx-auto pb-12 animate-fade-in relative space-y-6">
             
-            {/* INTEGRATED TAB NAVIGATION */}
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button onClick={() => setSubTab('orchestrator')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center ${subTab === 'orchestrator' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>
                     <i className="fas fa-cogs mr-2"></i> 1. Execution Orchestrator
@@ -87,7 +95,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 </button>
             </div>
 
-            {/* 🚀 TAB 1: THE COGNITIVE EXECUTION ORCHESTRATOR */}
             {subTab === 'orchestrator' && (
                 <div className="space-y-6 animate-fade-in">
                     
@@ -116,7 +123,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 relative z-10">
                             
-                            {/* LEFT SIDEBAR: ZERO TRUST & BOUNDARIES */}
                             <div className="p-8 border-r border-slate-700 bg-slate-800/50 flex flex-col gap-8">
                                 <div>
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2">Source Plane Strategy</h4>
@@ -129,7 +135,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* 🚨 NEW: ZERO-TRUST IAM PROVISIONER */}
                                 <div>
                                     <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2 flex items-center"><i className="fas fa-shield-alt mr-2"></i> Zero-Trust Target IAM</h4>
                                     
@@ -169,16 +174,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 </div>
                             </div>
 
-                            {/* RIGHT MAIN AREA: EXECUTION PHASES */}
                             <div className="p-8 lg:col-span-2 space-y-6">
                                 
-                                {/* 🚨 NEW: PHASE 1 - PRE-FLIGHT & STRATEGY MATRIX */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'pending' || execStatus === 'preflight_complete' ? (iamStatus === 'active' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'border-slate-600 bg-slate-800/80') : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
-                                    <div className="flex justify-between items-start mb-4">
+                                    <div className="flex justify-between items-start mb-6">
                                         <div>
                                             <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${iamStatus === 'active' ? 'text-blue-500' : 'text-slate-500'}`}>Phase 1</div>
-                                            <h4 className="text-lg font-black text-white mb-2">Pre-Flight & Execution Strategy Matrix</h4>
-                                            <p className="text-xs text-slate-400">ERP securely tunnels to source OS to run read-only diagnostics and automatically assigns the safest Execution Vector (SMS, VHD, Rsync).</p>
+                                            <h4 className="text-lg font-black text-white mb-2">Scope Filter & Pre-Flight Diagnostics</h4>
                                         </div>
                                         {execStatus === 'pending' ? (
                                             <button 
@@ -193,45 +195,76 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                         )}
                                     </div>
 
-                                    {/* The Strategy Matrix Table */}
+                                    <div className="flex gap-4 mb-5">
+                                        <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg text-center flex-1">
+                                            <div className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Total Discovered</div>
+                                            <div className="text-xl font-black text-slate-300">{discoveryComputeCount}</div>
+                                        </div>
+                                        <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg text-center flex-1">
+                                            <div className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Out of Scope</div>
+                                            <div className="text-xl font-black text-rose-500/70">{Math.max(0, discoveryComputeCount - inScopeNodes.length)}</div>
+                                        </div>
+                                        <div className="bg-blue-900/20 border border-blue-500/50 p-3 rounded-lg text-center flex-1 relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                            <div className="text-[9px] text-blue-300 uppercase tracking-widest mb-1">Approved In Target Mapper</div>
+                                            <div className="text-xl font-black text-blue-400">{inScopeNodes.length}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <p className="text-xs text-slate-400 leading-relaxed border-b border-slate-700 pb-5">
+                                        The Execution Orchestrator explicitly ignores out-of-scope servers. It securely tunnels to the <strong>{inScopeNodes.length} approved source nodes</strong> to run read-only diagnostics and assigns the safest Execution Vector.
+                                    </p>
+
                                     {preflightStatus === 'done' && (
                                         <div className="mt-6 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-inner animate-fade-in">
-                                            <table className="w-full text-left text-xs">
-                                                <thead className="bg-slate-800/80 text-[9px] uppercase tracking-widest text-slate-400">
-                                                    <tr>
-                                                        <th className="p-3">Compute Node</th>
-                                                        <th className="p-3">OS Diagnostic Status</th>
-                                                        <th className="p-3">Assigned Execution Vector</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-700/50 text-slate-300">
-                                                    {computeNodes.map(n => {
-                                                        const data = vectorAssignments[n.id] || { status: 'Pending', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-circle-notch', color: 'text-slate-500' };
-                                                        return (
-                                                            <tr key={n.id} className="hover:bg-slate-800 transition-colors">
-                                                                <td className="p-3 font-bold text-white"><i className="fas fa-server text-blue-400 mr-2 opacity-70"></i>{n.name}</td>
-                                                                <td className="p-3">
-                                                                    <span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color}`}>
-                                                                        <i className={`fas ${data.icon} mr-1.5`}></i> {data.status}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="p-3">
-                                                                    <select 
-                                                                        value={data.vector} 
-                                                                        onChange={(e) => handleVectorChange(n.id, e.target.value)}
-                                                                        className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none focus:border-blue-500 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                                                                    >
-                                                                        <option value="Vector 1: SMS Auto-Provision">Vector 1: SMS Auto-Provision</option>
-                                                                        <option value="Vector 2: Pre-Provisioned SMS Target">Vector 2: Pre-Provisioned SMS Target</option>
-                                                                        <option value="Vector 3: OBS VHD Image Import">Vector 3: OBS VHD Image Import</option>
-                                                                        <option value="Vector 4: Direct OS-Level Rsync">Vector 4: Direct OS-Level Rsync</option>
-                                                                    </select>
-                                                                </td>
-                                                            </tr>
-                                                        )
-                                                    })}
-                                                </tbody>
-                                            </table>
+                                            <div className="overflow-y-auto max-h-[300px] custom-scrollbar">
+                                                <table className="w-full text-left text-xs">
+                                                    <thead className="bg-slate-800/80 text-[9px] uppercase tracking-widest text-slate-400 sticky top-0 z-10">
+                                                        <tr>
+                                                            <th className="p-3">Compute Node</th>
+                                                            <th className="p-3">OS Diagnostic Status</th>
+                                                            <th className="p-3">Assigned Execution Vector</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-700/50 text-slate-300">
+                                                        {inScopeNodes.map(n => {
+                                                            const data = vectorAssignments[n.id] || { status: 'Pending', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-circle-notch', color: 'text-slate-500' };
+                                                            return (
+                                                                <tr key={n.id} className="hover:bg-slate-800 transition-colors">
+                                                                    <td className="p-3 font-bold text-white">
+                                                                        <i className="fas fa-server text-blue-400 mr-2 opacity-70"></i>{n.name}
+                                                                        {n.status === 'Live Only' && <span className="ml-2 bg-rose-900 text-rose-300 px-1 py-0.5 rounded text-[8px] uppercase tracking-widest">Scope Creep</span>}
+                                                                    </td>
+                                                                    <td className="p-3">
+                                                                        <span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color} flex w-max items-center`}>
+                                                                            <i className={`fas ${data.icon} mr-1.5`}></i> {data.status}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="p-3">
+                                                                        {/* 🚨 THE HARD STOP RENDER */}
+                                                                        {data.vector.includes('Blocked') ? (
+                                                                            <div className="bg-rose-950 border border-rose-700 text-rose-400 px-2 py-1.5 rounded font-black text-[10px] uppercase tracking-wider text-center">
+                                                                                <i className="fas fa-hand-paper mr-2"></i> {data.vector}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <select 
+                                                                                value={data.vector} 
+                                                                                onChange={(e) => handleVectorChange(n.id, e.target.value)}
+                                                                                className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none focus:border-blue-500 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                                                                            >
+                                                                                <option value="Vector 1: SMS Auto-Provision">Vector 1: SMS Auto-Provision</option>
+                                                                                <option value="Vector 2: Pre-Provisioned SMS Target">Vector 2: Pre-Provisioned SMS Target</option>
+                                                                                <option value="Vector 3: OBS VHD Image Import">Vector 3: OBS VHD Image Import</option>
+                                                                                <option value="Vector 4: Direct OS-Level Rsync">Vector 4: Direct OS-Level Rsync</option>
+                                                                            </select>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            )
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                             <div className="p-3 bg-slate-800/80 border-t border-slate-700 text-right">
                                                 <button onClick={() => advanceStatus('sandbox_built')} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center ml-auto shadow-md">
                                                     <i className="fas fa-lock mr-2"></i> Approve Matrix & Proceed
@@ -241,7 +274,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     )}
                                 </div>
 
-                                {/* PHASE 2: BUILD LANDING ZONE */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -257,7 +289,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 3: DEPLOY AGENTS & SYNC */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -273,7 +304,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 4: DRIFT MONITOR */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1 pr-6">
@@ -281,7 +311,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             <h4 className="text-lg font-black text-white mb-2">Continuous Sync & Drift Monitor</h4>
                                             <p className="text-xs text-slate-400">Polling `task_poll_latest.json`. Continuous background checks running to detect source environment drift before cutover.</p>
                                             
-                                            {/* DRIFT DETECTION FEATURE */}
                                             {execStatus === 'syncing' && driftAlert && (
                                                 <div className="mt-5 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 animate-pulse">
                                                     <div className="flex items-start gap-3">
@@ -312,7 +341,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 5: CUTOVER */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'cutover_ready' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -345,7 +373,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             {/* TAB 3: TAM SERVICE GOVERNANCE */}
             {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} />}
 
-            {/* MASTER EXECUTION GUIDE (Drawer) */}
+            {/* MASTER EXECUTION GUIDE */}
             {showMasterGuide && (
                 <div className="fixed inset-y-0 right-0 w-full sm:w-[800px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                     <div className="bg-indigo-600 text-white p-6 border-b border-indigo-700 flex justify-between items-center shrink-0">
@@ -389,28 +417,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <li>The token is strictly scoped to the <strong>Sandbox Enterprise Project (EPS)</strong> defined in the boundaries.</li>
                                 <li>If the AI Orchestrator attempts to provision resources outside this Sandbox, or delete resources in Production, the Huawei Cloud IAM drops the request immediately.</li>
                             </ul>
-                        </div>
-
-                        <div className="space-y-4">
-                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">3. The Control Plane vs. Data Plane Framework</h4>
-                            <div className="bg-slate-900 text-indigo-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
-<pre>{`       ┌────────────────────────────────────────────────────────┐
-       │             LATAM CLOUD ERP CORE ENGINE                │
-       └───────────────────────────┬────────────────────────────┘
-                                   │
-         ┌─────────────────────────┴─────────────────────────┐
-         ▼                                                   ▼
- ┌───────────────┐                                   ┌───────────────┐
- │ CONTROL PLANE │ [Cloud Management API]            │  DATA PLANE   │ [OS-Level Tunneling]
- └───────┬───────┘                                   └───────┬───────┘
-         │ (AWS AK/SK, Azure SP, vCenter)                    │ (SSH Key, local Admin)
-         ▼                                                   ▼
-┌─────────────────┐                                 ┌─────────────────┐
-│ Cloud Providers │ (AWS, Azure, vCenter API)       │ Target Guest OS │ (Direct VM Access)
-└────────┬────────┘                                 └────────┬────────┘
-         │                                                   │
-         └─────────────► [ AUTOMATED AGENT DEPLOYMENT ] ◄────┘`}</pre>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -552,18 +558,14 @@ function TAMHubView({ project, onUpdateProject }) {
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
-                    
-                    {/* Card 1: Escalation & Plans */}
                     <div className="p-8 bg-slate-50 space-y-6">
                         <div><h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-widest"><i className="fas fa-sitemap text-slate-400 mr-2"></i> Escalation Pathways</h4></div>
-                        
                         <div>
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Contracted Support Plan</label>
                             <select value={tamData.supportPlan} onChange={e=>setTamData({...tamData, supportPlan: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white cursor-pointer shadow-sm">
                                 <option>Developer</option><option>Business</option><option>Enterprise</option><option>Premier</option>
                             </select>
                         </div>
-                        
                         <div>
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Internal WeLink Group (NOC/Escalations)</label>
                             <div className="flex gap-2">
@@ -571,20 +573,17 @@ function TAMHubView({ project, onUpdateProject }) {
                                 <a href={tamData.welinkGroup || '#'} target="_blank" rel="noreferrer" className="px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-sm flex items-center justify-center transition-colors"><i className="fas fa-external-link-alt"></i></a>
                             </div>
                         </div>
-                        
                         <div>
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">External Customer Comms (WhatsApp/Teams)</label>
                             <input type="text" value={project.comms?.chat || ''} disabled className="w-full p-3 border border-slate-200 rounded-xl text-xs text-slate-500 bg-slate-100 cursor-not-allowed shadow-inner" title="Edit in Command Center tab" placeholder="No link provided in Command Center" />
                         </div>
                     </div>
 
-                    {/* Card 2: Enablement Tracker */}
                     <div className="p-8 bg-white space-y-6">
                         <div>
                             <h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-widest"><i className="fas fa-graduation-cap text-blue-500 mr-2"></i> Cloud Enablement Tracker</h4>
                             <p className="text-[10px] text-slate-500 font-bold leading-relaxed mb-4">Tracking hands-on workshops prevents post-live churn and documents TAM educational effort.</p>
                         </div>
-                        
                         <div className="space-y-3">
                             {(tamData.workshops||[]).map(w => (
                                 <label key={w.id} className={`flex items-center gap-4 p-4 border rounded-xl cursor-pointer transition-colors shadow-sm ${w.done ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'}`}>
@@ -601,13 +600,11 @@ function TAMHubView({ project, onUpdateProject }) {
                         </div>
                     </div>
 
-                    {/* Card 3: Tickets */}
                     <div className="p-8 bg-slate-50 flex flex-col h-full min-h-[400px]">
                         <div className="flex justify-between items-end border-b border-slate-200 pb-3 mb-4 shrink-0">
                             <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-ticket-alt text-rose-500 mr-2"></i> Migration Support Tickets</h4>
                             <button onClick={addTicket} className="text-[10px] font-black uppercase tracking-widest text-blue-700 hover:text-white bg-blue-100 hover:bg-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 hover:border-blue-700 transition-colors shadow-sm"><i className="fas fa-plus mr-1"></i> Log Ticket</button>
                         </div>
-                        
                         <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                             {(!tamData.tickets || tamData.tickets.length === 0) ? (
                                 <div className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 rounded-xl bg-white text-xs shadow-sm">No active escalations.</div> 
