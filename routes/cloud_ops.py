@@ -134,9 +134,13 @@ def get_live_inventory():
 
         elif provider == 'Azure':
             engine = HyperscalerDiscoveryEngine(customer_id)
-            # Azure requires a Subscription ID to search. We default to zeros so the Azure SDK throws an 
-            # authentic Azure Active Directory error (proving the SDK works) instead of a local 400 error.
-            sub_id = data.get('subscriptionId', '00000000-0000-0000-0000-000000000000')
+            sub_id = data.get('subscriptionId')
+            if not sub_id and getattr(customer, 'azure_subscription_id', None):
+                sub_id = customer.azure_subscription_id
+            
+            if not sub_id:
+                sub_id = '00000000-0000-0000-0000-000000000000'
+                
             result = engine.run_azure_agentless_discovery(subscription_id=sub_id)
 
         else:
