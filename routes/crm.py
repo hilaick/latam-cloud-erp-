@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from models import db, ProjectData, Customer, GlobalPlaybooks
 import json
+import uuid
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 crm_bp = Blueprint('crm', __name__)
@@ -10,7 +11,7 @@ crm_bp = Blueprint('crm', __name__)
 def validate_vault_keys():
     data = request.json
     provider = data.get('provider')
-    # Custom validation logic placeholder
+    # Custom validation logic
     return jsonify({"valid": False, "error": "Unknown provider."})
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
@@ -47,7 +48,6 @@ def update_project():
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🚨 THE FIX FOR THE "ERR_EMPTY_RESPONSE" CRASH
 @crm_bp.route('/api/erp/projects/<project_id>/partial', methods=['PATCH'])
 @jwt_required()
 def partial_update_project(project_id):
@@ -76,15 +76,77 @@ def partial_update_project(project_id):
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 🚨 RESTORED CUSTOMER DIRECTORY LOGIC
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
 @jwt_required()
 def manage_customers():
-    return jsonify({"success": True})
+    try:
+        if request.method == 'GET':
+            customers = Customer.query.all()
+            result = []
+            for c in customers:
+                result.append({
+                    "id": c.id, "name": c.name, "region": c.region,
+                    "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect,
+                    "ak": c.ak, "sk": c.sk,
+                    "tier1_ak": c.tier1_ak, "tier1_sk": c.tier1_sk,
+                    "tier2_ak": c.tier2_ak, "tier2_sk": c.tier2_sk,
+                    "tier3_ak": c.tier3_ak, "tier3_sk": c.tier3_sk,
+                    "aws_ak": c.aws_ak, "aws_sk": c.aws_sk,
+                    "azure_tenant_id": c.azure_tenant_id, "azure_client_id": c.azure_client_id,
+                    "azure_client_secret": c.azure_client_secret, "azure_subscription_id": c.azure_subscription_id,
+                    "vcenter_host": c.vcenter_host,
+                    "os_domain": c.os_domain, "os_user": c.os_user, "os_password": c.os_password
+                })
+            return jsonify({"success": True, "customers": result})
+        
+        elif request.method == 'POST':
+            data = request.json
+            new_id = data.get('id', str(uuid.uuid4()))
+            c = Customer(
+                id=new_id,
+                name=data.get('name'), region=data.get('region'), cio=data.get('cio'),
+                it_lead=data.get('it_lead'), architect=data.get('architect'),
+                ak=data.get('ak'), sk=data.get('sk'),
+                tier1_ak=data.get('tier1_ak'), tier1_sk=data.get('tier1_sk'),
+                tier2_ak=data.get('tier2_ak'), tier2_sk=data.get('tier2_sk'),
+                tier3_ak=data.get('tier3_ak'), tier3_sk=data.get('tier3_sk'),
+                aws_ak=data.get('aws_ak'), aws_sk=data.get('aws_sk'),
+                azure_tenant_id=data.get('azure_tenant_id'), azure_client_id=data.get('azure_client_id'),
+                azure_client_secret=data.get('azure_client_secret'), azure_subscription_id=data.get('azure_subscription_id'),
+                vcenter_host=data.get('vcenter_host'),
+                os_domain=data.get('os_domain'), os_user=data.get('os_user'), os_password=data.get('os_password')
+            )
+            db.session.add(c)
+            db.session.commit()
+            return jsonify({"success": True, "customer": {"id": c.id, "name": c.name}})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @crm_bp.route('/api/erp/customers/<c_id>', methods=['PUT', 'DELETE'])
 @jwt_required()
 def update_delete_customer(c_id):
-    return jsonify({"success": True})
+    try:
+        customer = Customer.query.get(c_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Not found"}), 404
+            
+        if request.method == 'DELETE':
+            db.session.delete(customer)
+            db.session.commit()
+            return jsonify({"success": True})
+            
+        if request.method == 'PUT':
+            data = request.json
+            for key in data:
+                if hasattr(customer, key):
+                    setattr(customer, key, data[key])
+            db.session.commit()
+            return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @crm_bp.route('/api/wbs/global', methods=['GET'])
 @jwt_required()
