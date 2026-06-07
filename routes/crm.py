@@ -10,7 +10,7 @@ crm_bp = Blueprint('crm', __name__)
 def validate_vault_keys():
     data = request.json
     provider = data.get('provider')
-    # ... [Keep your existing AWS/Azure validation logic here] ...
+    # Custom validation logic placeholder
     return jsonify({"valid": False, "error": "Unknown provider."})
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
@@ -53,7 +53,7 @@ def update_project():
 def partial_update_project(project_id):
     """
     Atomic Partial Update: Only updates the specific JSON keys passed in the request body.
-    Prevents Flask from crashing out of memory when updating massive projects with MgC data.
+    Prevents Flask from crashing out of memory when updating massive projects.
     """
     try:
         data_updates = request.json
@@ -62,7 +62,6 @@ def partial_update_project(project_id):
         if not project:
             return jsonify({"success": False, "error": "Project not found"}), 404
             
-        # Load existing data, merge the updates, and save back
         current_data = json.loads(project.data)
         
         for key, value in data_updates.items():
@@ -80,23 +79,19 @@ def partial_update_project(project_id):
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
 @jwt_required()
 def manage_customers():
-    # ... [Keep your existing customer management logic here] ...
     return jsonify({"success": True})
 
 @crm_bp.route('/api/erp/customers/<c_id>', methods=['PUT', 'DELETE'])
 @jwt_required()
 def update_delete_customer(c_id):
-    # ... [Keep your existing customer update logic here] ...
     return jsonify({"success": True})
 
 @crm_bp.route('/api/wbs/global', methods=['GET'])
 @jwt_required()
 def get_global_wbs():
-    # ... [Keep your existing WBS logic here] ...
     return jsonify({"success": True, "tasks": []})
 
 @crm_bp.route('/api/erp/playbooks', methods=['GET', 'POST'])
 @jwt_required()
 def manage_playbooks():
-    # ... [Keep your existing playbooks logic here] ...
     return jsonify({"success": True})
