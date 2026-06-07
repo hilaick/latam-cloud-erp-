@@ -1,12 +1,11 @@
 import pandas as pd
 import re
-import math
 import csv
 from io import StringIO
 
 def load_dataframe_smart(file_path: str) -> pd.DataFrame:
     """
-    Robust fallback handler for disguised MgC exports.
+    Robust fallback handler for disguised MgC exports and Azure Graph Results.
     Scans through multiple encodings and delimiters to strip out junk headers.
     """
     if str(file_path).lower().endswith(('.xlsx', '.xls')):
@@ -83,13 +82,13 @@ def load_dataframe_smart(file_path: str) -> pd.DataFrame:
     except Exception:
         pass
         
-    raise ValueError("Could not parse MgC export. Format not recognized.")
+    raise ValueError("Could not parse MgC or Azure Graph export. Format not recognized.")
 
 def parse_source_resources_excel(file_path: str) -> dict:
     try:
         df = load_dataframe_smart(file_path)
         
-        # Clean column names to make matching easier
+        # Clean column names
         df.columns = [str(c).strip().lower() for c in df.columns]
         
         resources = {
@@ -107,7 +106,7 @@ def parse_source_resources_excel(file_path: str) -> dict:
             
         name_col = find_col(['name', 'resource', 'host', 'server', 'instance'])
         type_col = find_col(['type', 'flavor', 'instance type', 'engine', 'os', 'system'])
-        ip_col = find_col(['ip', 'address', 'private ip', 'endpoint', 'cidr'])
+        ip_col = find_col(['ip', 'address', 'private ip', 'endpoint', 'cidr', 'location']) # Added location to extract region
         
         if not name_col:
             return {"success": False, "error": "Could not identify a 'Name' column in the uploaded file."}
@@ -121,13 +120,15 @@ def parse_source_resources_excel(file_path: str) -> dict:
             ip_val = str(row.get(ip_col, 'N/A')).strip() if ip_col else 'N/A'
             
             type_lower = type_val.lower()
-            if any(k in type_lower for k in ['sql', 'db', 'oracle', 'postgres', 'mongo', 'redis', 'rds']):
+            
+            # 🚨 NEW: Azure Resource Graph (ARG) keyword detection mapped securely
+            if any(k in type_lower for k in ['sql', 'db', 'oracle', 'postgres', 'mongo', 'redis', 'rds', 'microsoft.sql', 'microsoft.dbfor']):
                 resources["databases"].append({"name": name, "engine": type_val, "ip": ip_val, "source": "Offline Import"})
-            elif any(k in type_lower for k in ['vpc', 'subnet', 'nat', 'gateway', 'vpn', 'firewall', 'sg']):
+            elif any(k in type_lower for k in ['vpc', 'subnet', 'nat', 'gateway', 'vpn', 'firewall', 'sg', 'microsoft.network']):
                 resources["network"].append({"name": name, "type": type_val, "cidr": ip_val, "source": "Offline Import"})
-            elif any(k in type_lower for k in ['storage', 'disk', 'volume', 's3', 'obs', 'backup', 'nfs']):
+            elif any(k in type_lower for k in ['storage', 'disk', 'volume', 's3', 'obs', 'backup', 'nfs', 'microsoft.storage']):
                 resources["storage"].append({"name": name, "type": type_val, "location": ip_val, "source": "Offline Import"})
-            else:
+            elif any(k in type_lower for k in ['compute', 'virtualmachines', 'server', 'ecs']):
                 resources["servers"].append({
                     "name": name,
                     "os": type_val,
