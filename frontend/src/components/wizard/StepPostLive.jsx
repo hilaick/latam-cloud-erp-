@@ -2,30 +2,31 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { formatShortDate } from '../../utils/helpers';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
+    // Default to the Diff view as the first step of Post-Live
     const [subTab, setSubTab] = useState('diff');
 
     return (
         <div className="animate-fade-in pb-12">
-            
-            <div className="mb-8 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4 md:px-8">
+            {/* Phase 5 Header & Archive */}
+            <div className="px-8 py-5 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div>
                     <h3 className="font-black text-2xl text-slate-800"><i className="fas fa-award text-amber-500 mr-3"></i> Step 5: Post-Live Governance</h3>
                     <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation, Digital Twin mapping, and WAR Sign-Off.</p>
                 </div>
                 {isCurrent && (
-                    <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 whitespace-nowrap">
+                    <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95 whitespace-nowrap">
                         Archive Project <i className="fas fa-check-double ml-2"></i>
                     </button>
                 )}
             </div>
 
-            {/* 🚨 3-TAB POST-LIVE NAVIGATION */}
-            <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
+            {/* 3-TAB POST-LIVE NAVIGATION */}
+            <div className="px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
                 <button 
                     onClick={() => setSubTab('diff')} 
                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
                 >
-                    <i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff
+                    <i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff Matrix
                 </button>
                 <button 
                     onClick={() => setSubTab('constellation')} 
@@ -41,7 +42,7 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
                 </button>
             </div>
             
-            <div className="px-4 md:px-8">
+            <div className="px-8">
                 {subTab === 'diff' && <PhaseThreeWayDiff activeProject={project} />}
                 {subTab === 'constellation' && <LiveConstellationView activeProject={project} />}
                 {subTab === 'war' && <PhasePostLive activeProject={project} onUpdateProject={onUpdateProject} />}
@@ -51,7 +52,7 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 }
 
 // ==========================================
-// ⚖️ RESTORED: 3-WAY INFRASTRUCTURE DIFF
+// ⚖️ 1. 3-WAY INFRASTRUCTURE DIFF MATRIX
 // ==========================================
 function PhaseThreeWayDiff({ activeProject }) {
     const [nocScanned, setNocScanned] = useState(false);
@@ -90,6 +91,7 @@ function PhaseThreeWayDiff({ activeProject }) {
 
     return (
         <div className="animate-fade-in space-y-6 max-w-[1600px] mx-auto">
+            {/* Header & Export Actions */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                 <div>
                     <h3 className="font-black text-xl text-slate-800 flex items-center gap-3">
@@ -109,6 +111,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                 </div>
             </div>
 
+            {/* NOC Scan Section */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-4 gap-4">
                     <h4 className="font-black text-lg text-slate-800 uppercase tracking-widest flex items-center">
@@ -148,7 +151,7 @@ function PhaseThreeWayDiff({ activeProject }) {
                 )}
             </div>
 
-            {/* THE 3-WAY DIFF MODAL */}
+            {/* THE 3-WAY DIFF MODAL (3 Columns) */}
             {showDiffModal && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-slate-700">
@@ -214,6 +217,8 @@ function PhaseThreeWayDiff({ activeProject }) {
                             </div>
 
                         </div>
+                        
+                        {/* Footer */}
                         <div className="bg-white p-5 border-t border-slate-200 rounded-b-2xl flex justify-between items-center shrink-0">
                             <div className="text-xs font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-200">
                                 <i className="fas fa-check-circle mr-2"></i> Diff Passed Validation
@@ -230,16 +235,15 @@ function PhaseThreeWayDiff({ activeProject }) {
 }
 
 // ==========================================
-// 🌌 THE LIVING DIGITAL TWIN CONSTELLATION (Target Cloud)
+// 🌌 2. THE LIVING DIGITAL TWIN CONSTELLATION (Huawei Target)
 // ==========================================
 function LiveConstellationView({ activeProject }) {
     const [viewMode, setViewMode] = useState('live'); 
     const [playbackStep, setPlaybackStep] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     
-    // 🚨 DATA FIX: Uses Target Architecture/Target Telemetry instead of source mgcData
+    // Uses Target Architecture/Target Telemetry instead of source mgcData
     const targetNodes = useMemo(() => {
-        // Fallback to mapperNodes if targetCloudData hasn't been injected from backend
         const raw = activeProject?.targetCloudData || activeProject?.mapperNodes || [];
         const valid = raw.filter(n => n.status !== 'Quoted Only' && n.status !== 'Live Only');
         
@@ -422,7 +426,7 @@ function LiveConstellationView({ activeProject }) {
 }
 
 // ==========================================
-// 🏆 RESTORED: WELL-ARCHITECTED REVIEW (WAR)
+// 🛡️ 3. WELL-ARCHITECTED REVIEW (WAR)
 // ==========================================
 function PhasePostLive({ activeProject, onUpdateProject }) {
     const [r, setR] = useState(activeProject?.war?.r || 0); 
