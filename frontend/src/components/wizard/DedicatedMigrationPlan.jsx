@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { EditableCell } from '../../utils/helpers';
+import { ERPContext } from '../../context/ERPContext';
 
-export default function DedicatedMigrationPlan({ project, onUpdateProject, customPlaybooks }) {
+export default function DedicatedMigrationPlan({ activeProject, onUpdateProject }) {
+    // 🚨 FIX: Fetch playbooks natively from Context so we don't rely on parent props
+    const { customPlaybooks } = useContext(ERPContext);
+
     const handlePlanUpdate = (taskId, field, value) => {
-        if(!project) return;
-        const newPlan = (project.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
+        if(!activeProject) return;
+        const newPlan = (activeProject.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
         
         let updatePayload = { migrationPlan: newPlan };
         
-        // 🚨 AUTO-CALCULATE OVERALL PROGRESS WHEN A TASK COMPLETES
+        // AUTO-CALCULATE OVERALL PROGRESS WHEN A TASK COMPLETES
         if (field === 'prog') {
             const childTasks = newPlan.filter(t => !t.isParent);
             if (childTasks.length > 0) {
@@ -18,13 +22,13 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
             }
         }
         
-        onUpdateProject(project.id, updatePayload);
+        onUpdateProject(activeProject.id, updatePayload);
     };
 
     const injectPlaybook = (playbookKey) => {
         if(!playbookKey || !customPlaybooks[playbookKey]) return;
         if(window.confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
-            onUpdateProject(project.id, { migrationPlan: JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)), progress: '0%' });
+            onUpdateProject(activeProject.id, { migrationPlan: JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)), progress: '0%' });
         }
     };
 
@@ -32,8 +36,11 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
         const id = window.prompt("Enter new WBS ID (e.g. 5.1):");
         if (!id) return;
         const newTask = { id, name: "New Custom Task", prog: "0%", resp: "Unassigned", start: "", end: "", isParent: !id.includes('.') };
-        onUpdateProject(project.id, 'migrationPlan', [...(project.migrationPlan || []), newTask]);
+        onUpdateProject(activeProject.id, 'migrationPlan', [...(activeProject.migrationPlan || []), newTask]);
     };
+
+    // 🚨 FIX: Safety check to prevent crashes if activeProject is ever undefined
+    if (!activeProject) return null;
 
     return (
         <div className="max-w-[1800px] mx-auto pb-12 animate-fade-in">
@@ -67,7 +74,8 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs bg-white">
-                            {(project.migrationPlan || []).map(task => (
+                            {/* 🚨 FIX: Changed project.migrationPlan to activeProject.migrationPlan */}
+                            {(activeProject.migrationPlan || []).map(task => (
                                 <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
                                     <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
                                     <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
@@ -85,7 +93,7 @@ export default function DedicatedMigrationPlan({ project, onUpdateProject, custo
                                     <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.end} onSave={v=>handlePlanUpdate(task.id, 'end', v)} /></td>
                                 </tr>
                             ))}
-                            {(!project.migrationPlan || project.migrationPlan.length === 0) && (
+                            {(!activeProject.migrationPlan || activeProject.migrationPlan.length === 0) && (
                                 <tr><td colSpan="6" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">No WBS tasks defined. Load a playbook or generate from Topology Mapper.</td></tr>
                             )}
                         </tbody>
