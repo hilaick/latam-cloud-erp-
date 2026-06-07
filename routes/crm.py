@@ -17,45 +17,49 @@ def validate_vault_keys():
     """
     data = request.json
     provider = data.get('provider')
-    ak = data.get('ak')
-    sk = data.get('sk')
-
-    if not ak or not sk:
-        return jsonify({"valid": False, "error": "Keys cannot be empty."})
 
     if provider == 'AWS':
+        ak = data.get('ak')
+        sk = data.get('sk')
+        if not ak or not sk: return jsonify({"valid": False, "error": "AWS Keys cannot be empty."})
         try:
-            # 1. Initialize session and verify identity
             session = boto3.Session(aws_access_key_id=ak, aws_secret_access_key=sk, region_name='us-east-1')
             sts = session.client('sts')
             identity = sts.get_caller_identity()
             
-            # 2. Check Permissions Level using a Dry-Run for an Admin action
             ec2 = session.client('ec2')
             try:
                 ec2.run_instances(ImageId='ami-00000000', MinCount=1, MaxCount=1, DryRun=True)
             except ClientError as e:
                 error_msg = str(e)
                 if 'DryRunOperation' in error_msg:
-                    # DryRun successful = They have Write/Admin Access!
                     return jsonify({"valid": True, "level": "Admin", "account": identity['Account']})
                 elif 'UnauthorizedOperation' in error_msg:
-                    # Unauthorized = They only have Read Access
                     return jsonify({"valid": True, "level": "Read-Only", "account": identity['Account']})
-                    
         except ClientError as e:
-            error_msg = str(e)
-            if 'InvalidClientTokenId' in error_msg or 'SignatureDoesNotMatch' in error_msg:
-                return jsonify({"valid": False, "error": "Invalid API Keys or Signature."})
-            return jsonify({"valid": False, "error": f"API Error: {error_msg}"})
+            return jsonify({"valid": False, "error": f"Invalid API Keys or Signature: {str(e)}"})
         except Exception as e:
             return jsonify({"valid": False, "error": str(e)})
 
     elif provider == 'Azure':
-        return jsonify({"valid": False, "error": "Azure validation requires Graph API integration (Pending)."})
+        tenant = data.get('azureTenant')
+        client = data.get('azureClient')
+        secret = data.get('azureSecret')
+        
+        if not tenant or not client or not secret:
+            return jsonify({"valid": False, "error": "Azure Tenant, Client ID, and Secret are required."})
+            
+        try:
+            from azure.identity import ClientSecretCredential
+            credential = ClientSecretCredential(tenant_id=tenant, client_id=client, client_secret=secret)
+            # Request a simple token to verify credentials are physically valid with Azure Active Directory
+            token = credential.get_token("https://management.azure.com/.default")
+            if token:
+                return jsonify({"valid": True, "level": "Active Service Principal", "account": tenant})
+        except Exception as e:
+            return jsonify({"valid": False, "error": f"Azure Validation Failed: {str(e)}"})
 
     return jsonify({"valid": False, "error": "Unknown provider."})
-
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
 @jwt_required()
@@ -107,6 +111,7 @@ def manage_customers():
                     "tier3AK": c.tier3_ak, "tier3SK": c.tier3_sk,
                     "awsAK": c.aws_ak, "awsSK": c.aws_sk,
                     "azureTenant": c.azure_tenant_id, "azureClient": c.azure_client_id, "azureSecret": c.azure_client_secret,
+                    "azureSubscriptionId": getattr(c, 'azure_subscription_id', ''), # 🚨 Added Safely
                     "vCenterHost": c.vcenter_host,
                     "osDomain": c.os_domain, "osUser": c.os_user, "osPassword": c.os_password
                 } for c in customers]
@@ -131,6 +136,7 @@ def manage_customers():
                 tier3_ak=data.get('tier3AK'), tier3_sk=data.get('tier3SK'),
                 aws_ak=data.get('awsAK'), aws_sk=data.get('awsSK'),
                 azure_tenant_id=data.get('azureTenant'), azure_client_id=data.get('azureClient'), azure_client_secret=data.get('azureSecret'),
+                azure_subscription_id=data.get('azureSubscriptionId'), # 🚨 ADDED HERE
                 vcenter_host=data.get('vCenterHost'),
                 os_domain=data.get('osDomain'), os_user=data.get('osUser'), os_password=data.get('osPassword')
             )
@@ -170,6 +176,9 @@ def update_delete_customer(c_id):
             customer.azure_tenant_id = data.get('azureTenant', customer.azure_tenant_id)
             customer.azure_client_id = data.get('azureClient', customer.azure_client_id)
             customer.azure_client_secret = data.get('azureSecret', customer.azure_client_secret)
+            # 🚨 ADDED HERE
+            if hasattr(customer, 'azure_subscription_id'):
+                customer.azure_subscription_id = data.get('azureSubscriptionId', customer.azure_subscription_id)
             customer.vcenter_host = data.get('vCenterHost', customer.vcenter_host)
             customer.os_domain = data.get('osDomain', customer.os_domain)
             customer.os_user = data.get('osUser', customer.os_user)
