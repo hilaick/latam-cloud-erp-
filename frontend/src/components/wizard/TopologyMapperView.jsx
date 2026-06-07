@@ -12,24 +12,42 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
     
-    // 🚨 NEW: Streamlined 2-Tab Navigation
-    const [activeTab, setActiveTab] = useState('reconcile'); // 'reconcile' | 'target'
-    const [reconcileView, setReconcileView] = useState('table'); // 'table' | 'canvas'
-    const [targetView, setTargetView] = useState('list'); // 'list' | 'canvas'
+    const [activeTab, setActiveTab] = useState('reconcile'); 
+    const [reconcileView, setReconcileView] = useState('table'); 
+    const [targetView, setTargetView] = useState('list'); 
     
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
     
-    // Sorting and Filtering States
     const [statusFilter, setStatusFilter] = useState('All');
     const [typeFilter, setTypeFilter] = useState('All');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
     
+    const filteredAndSortedNodes = useMemo(() => {
+        let result = localNodes.filter(n => {
+            if (statusFilter !== 'All' && n.status !== statusFilter) return false;
+            if (typeFilter !== 'All' && n.type !== typeFilter) return false;
+            return true;
+        });
+
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return result;
+    }, [localNodes, statusFilter, typeFilter, sortConfig]);
+
+    // 🚨 FIX: Save Architecture now strictly saves the FILTERED list. 
+    // If you filter by "Matched" and save, everything else is dropped permanently.
     const saveArchitecture = () => {
-        onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
-        alert("Target Architecture Saved!\n\nPlease proceed to the '4. DTRB Governance' tab to submit this baseline for technical and commercial approval.");
+        onUpdateProject(activeProject.id, 'mapperNodes', filteredAndSortedNodes);
+        setLocalNodes(filteredAndSortedNodes); // Update local state to reflect the drop
+        alert(`Target Architecture Saved!\n\n${filteredAndSortedNodes.length} filtered nodes have been locked as the official execution baseline.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
     };
 
     const toggleFullScreen = (elementId) => {
@@ -115,7 +133,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         tempQuoted.forEach((q, i) => merged.push({ id: `quo-${Date.now()}-${i}`, ...q, status: 'Quoted Only', config: {} }));
         setLocalNodes(merged);
         
-        // 🚨 Automatically switch to the Target Architecture List view
         setActiveTab('target');
         setTargetView('list');
     };
@@ -151,23 +168,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         setSortConfig({ key, direction });
     };
 
-    const filteredAndSortedNodes = useMemo(() => {
-        let result = localNodes.filter(n => {
-            if (statusFilter !== 'All' && n.status !== statusFilter) return false;
-            if (typeFilter !== 'All' && n.type !== typeFilter) return false;
-            return true;
-        });
-
-        if (sortConfig.key) {
-            result.sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-        }
-        return result;
-    }, [localNodes, statusFilter, typeFilter, sortConfig]);
-
     const uniqueTypes = ['All', ...new Set(localNodes.map(n => n.type))];
 
     return (
@@ -185,7 +185,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-8 relative overflow-hidden flex flex-col h-full">
                 
-                {/* 🚨 STREAMLINED 2-TAB HEADER */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-200 pb-4 gap-4 shrink-0">
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-lg text-slate-800"><i className="fas fa-sitemap text-indigo-500"></i> Architecture & Scope Manager</h3>
@@ -197,7 +196,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
 
-                {/* TAB 1: RECONCILIATION */}
                 {activeTab === 'reconcile' && (
                     <div id="reconcile-container" className="animate-fade-in flex flex-col flex-1 min-h-[600px] bg-white resize-y overflow-auto pb-4">
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
@@ -262,14 +260,11 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                     </div>
                 )}
 
-                {/* TAB 2: TARGET ARCHITECTURE (Contains List / Diagram Toggle) */}
                 {activeTab === 'target' && (
                     <div id="target-container" className="flex flex-col flex-1 bg-white resize-y overflow-auto min-h-[600px] animate-fade-in">
                         
-                        {/* Target Toolbar */}
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white shrink-0 rounded-t-2xl">
                             <div className="flex gap-4 flex-wrap items-center">
-                                {/* Sub-Toggle */}
                                 <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner">
                                     <button onClick={()=>setTargetView('list')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-colors ${targetView === 'list' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-list mr-1"></i> View List</button>
                                     <button onClick={()=>setTargetView('canvas')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-colors ${targetView === 'canvas' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-project-diagram mr-1"></i> View Diagram</button>
@@ -289,7 +284,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                             </div>
                         </div>
 
-                        {/* LIST VIEW */}
                         {targetView === 'list' && (
                             <div className="flex flex-col flex-1 bg-slate-50 overflow-hidden">
                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none shadow-sm z-10 relative">
@@ -365,7 +359,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                             </div>
                         )}
 
-                        {/* CANVAS VIEW */}
                         {targetView === 'canvas' && (
                             <div className="flex-1 bg-slate-50 relative overflow-hidden flex flex-col border-t border-slate-200">
                                 {localNodes.length === 0 ? (
@@ -381,7 +374,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                     </div>
                 )}
 
-                {/* NODE PROPERTIES DRAWER (Global overlay) */}
                 {selectedNode && (
                     <div className="fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl border-l border-slate-200 z-[10000] flex flex-col animate-slide-left overflow-hidden">
                         <div className="bg-slate-800 text-white p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
