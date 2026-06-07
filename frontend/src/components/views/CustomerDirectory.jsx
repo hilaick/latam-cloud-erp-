@@ -9,7 +9,7 @@ export default function CustomerDirectory() {
     const [isCreating, setIsCreating] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
     
-    // NEW: Validation State
+    // Validation State
     const [validationStatus, setValidationStatus] = useState({});
     const [isValidating, setIsValidating] = useState(false);
 
@@ -52,7 +52,12 @@ export default function CustomerDirectory() {
             const token = localStorage.getItem('erp_jwt_token');
             const bodyData = provider === 'AWS' 
                 ? { provider: 'AWS', ak: editingCustomer.awsAK, sk: editingCustomer.awsSK }
-                : { provider: 'Azure' }; // Azure placeholder
+                : { 
+                    provider: 'Azure', 
+                    azureTenant: editingCustomer.azureTenant, 
+                    azureClient: editingCustomer.azureClient, 
+                    azureSecret: editingCustomer.azureSecret 
+                  };
 
             const res = await fetch('/api/vault/validate', {
                 method: 'POST',
@@ -215,15 +220,25 @@ export default function CustomerDirectory() {
                                     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                                         <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                             <h4 className="font-black text-slate-800 text-sm"><i className="fab fa-windows text-blue-500 mr-2"></i>Azure Control Plane</h4>
+                                            
+                                            {/* AZURE VALIDATION STATUS BADGE */}
+                                            {validationStatus['Azure'] && (
+                                                <div className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${validationStatus['Azure'].valid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                                                    {validationStatus['Azure'].valid 
+                                                        ? <><i className="fas fa-check-circle mr-1"></i> Verified: {validationStatus['Azure'].level}</> 
+                                                        : <><i className="fas fa-times-circle mr-1"></i> Invalid Keys</>}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="grid grid-cols-3 gap-4">
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tenant ID</label><input type="password" value={editingCustomer.azureTenant || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureTenant: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client ID</label><input type="password" value={editingCustomer.azureClient || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureClient: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                             <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Client Secret</label><input type="password" value={editingCustomer.azureSecret || ''} onChange={e=>setEditingCustomer({...editingCustomer, azureSecret: e.target.value})} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-blue-500" /></div>
                                         </div>
+                                        {/* AZURE VALIDATE BUTTON */}
                                         <div className="mt-4 flex justify-end">
-                                            <button onClick={() => validateKeys('Azure')} disabled className="px-4 py-2 bg-slate-200 text-slate-400 rounded text-[10px] font-black uppercase tracking-widest cursor-not-allowed">
-                                                <i className="fas fa-lock mr-1"></i> Assess Permissions (Soon)
+                                            <button onClick={() => validateKeys('Azure')} disabled={isValidating || !editingCustomer.azureTenant || !editingCustomer.azureClient || !editingCustomer.azureSecret} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                                                {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Checking...</> : <><i className="fas fa-shield-alt mr-1"></i> Assess Permissions</>}
                                             </button>
                                         </div>
                                     </div>
