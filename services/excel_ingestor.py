@@ -7,6 +7,8 @@ Features Bulletproof Parent/Child detection and Aggressive Smart Text Parsing.
 
 import pandas as pd
 import re
+import csv
+from io import StringIO
 from typing import Optional, Dict, Any
 from services.semantic_classifier import classify_unknown_service_with_ai
 
@@ -23,7 +25,6 @@ def load_dataframe_smart(file_path: str) -> pd.DataFrame:
     header_idx = 0
     encodings = ['utf-8-sig', 'utf-8', 'latin1', 'utf-16le', 'cp1252']
     
-    # 1. Find the true header line index by scanning raw text directly
     for enc in encodings:
         try:
             with open(file_path, 'r', encoding=enc) as f:
@@ -32,37 +33,30 @@ def load_dataframe_smart(file_path: str) -> pd.DataFrame:
                     if 'service' in lower_line and 'description' in lower_line:
                         header_idx = i
                         break
-            break # Found a working encoding without throwing read errors
+            break 
         except Exception:
             continue
 
-    print(f"📌 Detected true header at row index: {header_idx}")
-
-    # 2. Try parsing as Native Excel first
     if str(file_path).lower().endswith(('.xlsx', '.xls')):
         try:
             return pd.read_excel(file_path, header=header_idx)
         except Exception as e:
             print(f"⚠️ Native Excel parse failed. Attempting text fallback. Error: {e}")
 
-    # 3. Aggressive CSV Parsing (Skips the junk rows at the top)
     for enc in encodings:
         for delim in [',', ';', '\t']:
             try:
                 df = pd.read_csv(file_path, skiprows=header_idx, encoding=enc, sep=delim, on_bad_lines='skip')
-                # If we parsed more than 1 column, we successfully mapped it
                 if not df.empty and len(df.columns) > 1:
                     return df
             except Exception:
                 continue
 
-    # 4. Fallback to Pandas Python engine
     try:
         return pd.read_csv(file_path, skiprows=header_idx, sep=None, engine='python', on_bad_lines='skip')
     except Exception:
         pass
 
-    # 5. HTML Table Fallback (for .xls disguised exports)
     try:
         dfs = pd.read_html(file_path, header=header_idx)
         if dfs: return dfs[0]
@@ -207,13 +201,9 @@ def _finalize_resource(res, blueprint):
 def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
-    # Safely load the dataframe using our new aggressive brute-force method
     df = load_dataframe_smart(file_path)
-    
-    # Normalize columns
     df.columns = [str(c).strip().lower() for c in df.columns]
     
-    # Verify Huawei Format
     if 'service' not in df.columns or 'description' not in df.columns:
         print("🔍 Columns don't match Huawei structure. Switching to Generic Parser.")
         return process_generic_quotation_df(df, customer_name)
@@ -228,47 +218,46 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
     current_resource = None
 
     for index, row in df.iterrows():
-        svc_val = str(row.get('service', ''))
-        desc_val = str(row.get('description', ''))
+        # 🚨 FIX: Correctly mapping the Huawei Phase 2 columns
+        svc_cat_raw = str(row.get('service', '')).strip()
+        svc_name_raw = str(row.get('description', '')).strip()
+        svc_specs_raw = str(row.get('specifications', '')).strip()
         region_val = str(row.get('region', ''))
         
-        if not svc_val.strip() or svc_val == 'nan':
+        if not svc_cat_raw or svc_cat_raw == 'nan':
             continue
         
         is_main_resource = bool(region_val.strip() and region_val != 'nan')
         
         if not is_main_resource:
             if current_resource and current_resource['category'] == 'compute':
-                current_resource['specs'] += f" | {svc_val.strip()}: {desc_val.strip()}"
+                current_resource['specs'] += f" | {svc_cat_raw}: {svc_name_raw}"
             continue
 
         if current_resource:
             _finalize_resource(current_resource, blueprint)
         
-        svc_name = svc_val.strip()
-        svc_type = desc_val.strip()
-
         cat = 'unknown'
-        if any(x in svc_type for x in ['Elastic Cloud Server', 'Bare Metal', 'Flexus X Instance', 'ECS']):
+        svc_lower = svc_cat_raw.lower()
+        if any(x in svc_lower for x in ['elastic cloud server', 'bare metal', 'flexus x instance', 'ecs']):
             cat = 'compute'
-        elif any(x in svc_type for x in ['Relational Database', 'GaussDB', 'Document Database', 'RDS', 'Redis']):
+        elif any(x in svc_lower for x in ['relational database', 'gaussdb', 'document database', 'rds', 'redis']):
             cat = 'database'
-        elif any(x in svc_type for x in ['NAT Gateway', 'Virtual Private Network', 'Elastic IP', 'VPC', 'Direct Connect', 'Bandwidth', 'Content Delivery Network', 'Whole Site Acceleration', 'CDN', 'Edge']):
+        elif any(x in svc_lower for x in ['nat gateway', 'virtual private network', 'elastic ip', 'vpc', 'direct connect', 'bandwidth', 'content delivery network', 'whole site acceleration', 'cdn', 'edge']):
             cat = 'network'
-        elif any(x in svc_type for x in ['Cloud Backup and Recovery', 'Object Storage', 'SFS']):
+        elif any(x in svc_lower for x in ['cloud backup and recovery', 'object storage', 'sfs']):
             cat = 'storage'
-        elif any(x in svc_type for x in ['Host Security', 'Web Application Firewall', 'WAF', 'Anti-DDoS', 'Cloud Bastion Host']):
+        elif any(x in svc_lower for x in ['host security', 'web application firewall', 'waf', 'anti-ddos', 'cloud bastion host']):
             cat = 'security'
 
         if cat == 'unknown':
-            print(f"⚠️ Unrecognized service '{svc_name}'. Triggering AI Semantic Fallback...")
-            cat = classify_unknown_service_with_ai(svc_name, svc_type)
+            cat = classify_unknown_service_with_ai(svc_cat_raw, svc_name_raw)
 
         current_resource = {
-            'name': svc_name,
-            'type': svc_type,
+            'name': svc_name_raw,      # e.g., ALUCEMOOD02
+            'type': svc_cat_raw,       # e.g., Elastic Cloud Server 1
             'category': cat,
-            'specs': svc_type 
+            'specs': svc_specs_raw     # e.g., 2 vCPUs | 8GiB...
         }
 
     if current_resource:
