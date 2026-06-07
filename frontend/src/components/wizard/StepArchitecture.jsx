@@ -14,18 +14,20 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
     const hasScanned = !!project.mgcData;
     const isLocked = project.status === 'Approved' || project.status === 'Locked';
 
-    // 🚨 FIX: Accurately calculate the true Target Scope vs the Upsell Opportunity
+    // 🚨 FIX: Upsell logic strictly counts BILLABLE resources.
     const { targetCount, upsellCount } = useMemo(() => {
         if (nodes.length === 0) {
-            // If mapping hasn't happened yet, fall back to the original SOW blueprint count
             const compute = project.blueprintData?.topology?.compute?.length || 0;
             const dbs = project.blueprintData?.topology?.database?.length || 0;
             return { targetCount: compute + dbs, upsellCount: 0 };
         }
-        // Count only resources that are Quoted, Matched, or Manually added for execution
-        const target = nodes.filter(n => n.status !== 'Live Only').length;
-        // Count resources discovered that were never quoted
-        const upsell = nodes.filter(n => n.status === 'Live Only').length;
+        
+        const billableTypes = ['ECS', 'RDS', 'NAT', 'VPN', 'CGW', 'OBS', 'CBR', 'ELB', 'CCE'];
+        const target = nodes.filter(n => n.status !== 'Live Only' && billableTypes.includes(String(n.type).toUpperCase())).length;
+        
+        // Scope Creep is only an opportunity if we can bill for it
+        const upsell = nodes.filter(n => n.status === 'Live Only' && billableTypes.some(bt => String(n.type).toUpperCase().includes(bt))).length;
+        
         return { targetCount: target, upsellCount: upsell };
     }, [nodes, project.blueprintData]);
 
@@ -43,10 +45,9 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
                 <button onClick={()=>setSubTab('summary')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='summary'?'bg-indigo-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>Summary</button>
-                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. MgC Discovery</button>
+                <button onClick={()=>setSubTab('mgc')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mgc'?'bg-emerald-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}><i className="fas fa-search mr-1"></i> 1. Source Discovery</button>
                 <button onClick={()=>setSubTab('ora')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='ora'?'bg-purple-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>2. ORA Profile</button>
                 <button onClick={()=>setSubTab('mapper')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab==='mapper'?'bg-blue-600 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>3. Target Architecture</button>
-                
                 <button onClick={()=>setSubTab('gov')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${subTab==='gov'?'bg-slate-800 text-white shadow-sm':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
                     4. DTRB Governance {isLocked && <i className="fas fa-lock text-emerald-400"></i>}
                 </button>
@@ -56,7 +57,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                 <div className="animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm flex flex-col">
-                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">MgC Discovery</h4><i className="fas fa-search text-blue-500"></i></div>
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-black text-blue-900 text-sm">Source Discovery</h4><i className="fas fa-search text-blue-500"></i></div>
                             <div className="text-xs text-blue-700 mb-4 flex-1">Raw inventory found in live env.</div>
                             <div className="text-xl font-black text-blue-800">{hasScanned ? `${totalMgcNodes} Resources` : 'Pending'}</div>
                             <button onClick={()=>setSubTab('mgc')} className="mt-2 text-left text-[10px] uppercase font-bold text-blue-600 hover:underline">View Live Data &gt;</button>
@@ -69,10 +70,10 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
                         </div>
                         <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col relative overflow-hidden">
                             <div className="flex justify-between items-start mb-2"><h4 className="font-black text-slate-700 text-sm">Target Topology</h4><i className="fas fa-sitemap text-slate-500"></i></div>
-                            <div className="text-xs text-slate-500 mb-4 flex-1">SOW Quoted Execution Baseline.</div>
+                            <div className="text-xs text-slate-500 mb-4 flex-1">Billable Execution Baseline.</div>
                             <div className="flex items-end gap-3">
                                 <div className="text-xl font-black text-slate-800">{targetCount > 0 ? `${targetCount} Nodes` : 'Pending'}</div>
-                                {upsellCount > 0 && <div className="text-[9px] font-black uppercase tracking-widest text-purple-600 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mb-1">+{upsellCount} Upsell</div>}
+                                {upsellCount > 0 && <div className="text-[9px] font-black uppercase tracking-widest text-purple-600 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mb-1" title="Billable Scope Creep discovered">+{upsellCount} Upsell</div>}
                             </div>
                             <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                         </div>
@@ -88,22 +89,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote, 
             
             {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
-            
-            {subTab === 'mapper' && (
-                <div className="relative">
-                    {isLocked && (
-                        <div className="absolute top-0 left-0 w-full h-full z-50 bg-white/40 backdrop-blur-[1px] flex items-center justify-center" title="Architecture is Locked by Governance">
-                            <div className="bg-slate-800 text-white px-8 py-5 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-700">
-                                <i className="fas fa-lock text-4xl mb-3 text-emerald-400"></i>
-                                <div className="font-black uppercase tracking-widest text-sm">Blueprint Locked</div>
-                                <div className="text-xs text-slate-300 mt-2 text-center">You must raise a Change Request (CR)<br/>in the DTRB Governance tab to make edits.</div>
-                            </div>
-                        </div>
-                    )}
-                    <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />
-                </div>
-            )}
-            
+            {subTab === 'mapper' && <TopologyMapperView activeProject={project} onUpdateProject={onUpdateProject} onPromote={onPromote} />}
             {subTab === 'gov' && <GovernanceAndCRView activeProject={project} onUpdateProject={onUpdateProject} />}
         </div>
     );
