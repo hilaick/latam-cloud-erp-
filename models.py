@@ -7,7 +7,7 @@ db = SQLAlchemy()
 def setup_db(app):
     database_url = os.environ.get('DATABASE_URL')
     
-    # 🚨 STRICT ENFORCEMENT: No more SQLite fallback!
+    # STRICT ENFORCEMENT: No more SQLite fallback!
     if not database_url:
         raise ValueError("CRITICAL ERROR: DATABASE_URL is missing from .env. PostgreSQL is strictly required.")
     
@@ -73,7 +73,7 @@ class Customer(db.Model):
     azure_tenant_id = db.Column(db.String(120))
     azure_client_id = db.Column(db.String(120))
     azure_client_secret = db.Column(db.String(120))
-    azure_subscription_id = db.Column(db.String(120))
+    azure_subscription_id = db.Column(db.String(120)) # 🚨 NEW FIELD
     vcenter_host = db.Column(db.String(120))
 
     # 3. OS DATA PLANE (Local/Domain Admin for Rsync/WinRM)
@@ -160,14 +160,9 @@ class QuotationVersion(db.Model):
     quotation_path = db.Column(db.String(500), nullable=False)
     uploaded_by = db.Column(db.String(120), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    blueprint_snapshot = db.Column(db.Text, nullable=False)  # JSON string of blueprint
+    blueprint_snapshot = db.Column(db.Text, nullable=False)
     change_summary = db.Column(db.Text)
-    cr_id = db.Column(db.String(50))  # Linked Change Request ID
+    cr_id = db.Column(db.String(50))
     previous_version_id = db.Column(db.String(50), db.ForeignKey('quotation_versions.id'))
-    
-    # Relationships
     previous_version = db.relationship('QuotationVersion', remote_side=[id], backref='next_versions')
-    
-    __table_args__ = (
-        db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),
-    )
+    __table_args__ = (db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),)
