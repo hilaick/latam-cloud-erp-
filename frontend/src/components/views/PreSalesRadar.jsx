@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import { EditableCell } from '../../utils/helpers'; 
 import TwoFactorModal from '../utils/TwoFactorModal';
@@ -7,6 +7,10 @@ export default function PreSalesRadar() {
     const { projects, customers, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
+    // Dynamic SA memory cache for autocomplete
+    const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
+    const uniquePartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
+
     const [newLeadCustomer, setNewLeadCustomer] = useState("");
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadCountry, setNewLeadCountry] = useState("");
@@ -14,7 +18,6 @@ export default function PreSalesRadar() {
     const [isPoC, setIsPoC] = useState(false);
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
-    
     const [editingProject, setEditingProject] = useState(null);
     const [projectToDelete, setProjectToDelete] = useState(null);
 
@@ -31,7 +34,6 @@ export default function PreSalesRadar() {
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA || !newLeadCountry || !newLeadCustomer) return alert("Project Name, Customer Account, Target Country, and SA are required."); 
         
-        // Find the matched customer record from the CRM list to extract its persistent unique ID
         const matchedCustomer = (customers || []).find(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim());
 
         handleAddProject({
@@ -75,33 +77,34 @@ export default function PreSalesRadar() {
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    {/* 🚨 INTEGRATED: Hybrid Text Input + Dropdown via datalist */}
+                    {/* ENFORCED UPPERCASE */}
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account *</label>
                         <input 
-                            type="text" 
-                            list="new-lead-customers"
-                            value={newLeadCustomer} 
-                            onChange={e=>setNewLeadCustomer(e.target.value)} 
+                            type="text" list="new-lead-customers" value={newLeadCustomer} 
+                            onChange={e=>setNewLeadCustomer(e.target.value.toUpperCase())} 
                             placeholder="Type new or select existing..."
-                            className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold"
+                            className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold uppercase"
                         />
-                        <datalist id="new-lead-customers">
-                            {(customers || []).map(c => <option key={c.id} value={c.name} />)}
-                        </datalist>
-                        {newLeadCustomer && (!customers || !customers.find(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase())) && (
-                            <div className="mt-1 text-[9px] font-bold text-amber-600 uppercase tracking-widest flex items-center">
-                                <i className="fas fa-info-circle mr-1"></i> New entry will be auto-registered to Vault later.
-                            </div>
-                        )}
+                        <datalist id="new-lead-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
                     </div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Name *</label><input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Target Country *</label><select value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white"><option value="" disabled>-- Select --</option>{targetCountries.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Sales Architect *</label><input type="text" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold" /></div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Name *</label>
+                        <input type="text" value={newLeadName} onChange={e=>setNewLeadName(e.target.value.toUpperCase())} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold uppercase" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Target Country *</label>
+                        <select value={newLeadCountry} onChange={e=>setNewLeadCountry(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white"><option value="" disabled>-- Select --</option>{targetCountries.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Sales Architect *</label>
+                        <input type="text" list="sa-list" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value.toUpperCase())} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold uppercase" />
+                        <datalist id="sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
+                    </div>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-slate-100">
                     <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={isPoC} onChange={e => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" /><span className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</span></label>
-                    <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors"><i className="fas fa-plus mr-2"></i> Add Lead</button>
+                    <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors shadow-md"><i className="fas fa-plus mr-2"></i> Add Lead</button>
                 </div>
             </div>
             
@@ -121,7 +124,7 @@ export default function PreSalesRadar() {
                                                 <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerId ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
                                                     {p.customerId ? <><i className="fas fa-shield-alt text-[9px] mr-1"></i> {p.customerName}</> : <><i className="fas fa-exclamation-triangle mr-1"></i> Account Unlinked</>}
                                                 </div>
-                                                {p.name} {p.project_type === 'poc' && <span className="ml-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm"><i className="fas fa-bolt mr-1"></i> PoC</span>}
+                                                <div className="uppercase">{p.name}</div> {p.project_type === 'poc' && <span className="mt-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-bolt mr-1"></i> PoC</span>}
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => setEditingProject({...p})} className="flex-1 text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200"><i className="fas fa-expand-arrows-alt mr-1"></i> Assess</button>
@@ -150,7 +153,6 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
-            {/* DEEP EDIT ASSESSMENT MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -159,32 +161,22 @@ export default function PreSalesRadar() {
                             <div className="bg-white p-6 rounded-xl border border-slate-200">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Basic Information</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    {/* 🚨 INTEGRATED: Deep Edit Hybrid Text Input + Dropdown via datalist */}
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
-                                        <input 
-                                            type="text"
-                                            list="edit-customers"
-                                            value={editingProject.customerName || ''} 
-                                            onChange={e => {
-                                                const selectedName = e.target.value;
-                                                const matched = (customers || []).find(c => c.name.toLowerCase() === selectedName.toLowerCase());
-                                                setEditingProject({
-                                                    ...editingProject,
-                                                    customerName: selectedName,
-                                                    customerId: matched ? matched.id : null
-                                                });
-                                            }} 
-                                            placeholder="Type new or select existing..."
-                                            className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold"
-                                        />
-                                        <datalist id="edit-customers">
-                                            {(customers || []).map(c => <option key={c.id} value={c.name} />)}
-                                        </datalist>
+                                        <input type="text" list="edit-customers" value={editingProject.customerName || ''} onChange={e => { const selectedName = e.target.value.toUpperCase(); const matched = (customers || []).find(c => c.name.toLowerCase() === selectedName.toLowerCase()); setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null }); }} className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <datalist id="edit-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
                                     </div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label><input type="text" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label><input type="text" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" /></div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label>
+                                        <input type="text" list="sa-list-edit" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <datalist id="sa-list-edit">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label>
+                                        <input type="text" list="partner-list-edit" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <datalist id="partner-list-edit">{uniquePartners.map(pt => <option key={pt} value={pt} />)}</datalist>
+                                    </div>
                                 </div>
                             </div>
                             <div className="bg-white p-6 rounded-xl border border-slate-200">
@@ -196,24 +188,6 @@ export default function PreSalesRadar() {
                                 </div>
                                 <div className="space-y-4">
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Notes / Scope</label><textarea rows="2" value={editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, discoveryNotes: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-medium"></textarea></div>
-                                </div>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-server text-purple-500 mr-2"></i> Technical Sizing</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Source Environment</label><select value={editingProject.sourceEnvironment || ''} onChange={e=>setEditingProject({...editingProject, sourceEnvironment: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option value="">-- Select --</option><option>On-Premises Physical Servers</option><option>On-Premises VMware, Hyper-V, KVM, AHV (Nutanix)</option><option>Public Cloud AWS, Azure, Alibaba, Google Cloud</option><option>Huawei Cloud (Cross Region/Cross-Account)</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Migration Type</label><select value={editingProject.migrationType || 'Lift & Shift'} onChange={e=>setEditingProject({...editingProject, migrationType: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option>Lift & Shift</option><option>Replatform</option><option>Refactor</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Workloads</label><input type="number" value={editingProject.estimatedWorkloads === undefined || editingProject.estimatedWorkloads === null ? '' : editingProject.estimatedWorkloads} onChange={e=>setEditingProject({...editingProject, estimatedWorkloads: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
-                                </div>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-exclamation-triangle text-amber-500 mr-2"></i> Risks & Timelines</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Proposed Start Date</label><input type="date" value={editingProject.proposedStartDate || ''} onChange={e=>setEditingProject({...editingProject, proposedStartDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Proposed End Date</label><input type="date" value={editingProject.proposedEndDate || ''} onChange={e=>setEditingProject({...editingProject, proposedEndDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded outline-none text-sm font-bold font-mono" /></div>
-                                </div>
-                                <div className="space-y-4">
-                                    <div><label className="block text-[10px] font-bold text-rose-500 uppercase mb-1">Technical & Business Blockers</label><textarea rows="2" value={editingProject.blocker || ''} onChange={e=>setEditingProject({...editingProject, blocker: e.target.value})} className="w-full p-2 border border-rose-300 bg-rose-50 rounded outline-none text-sm font-medium"></textarea></div>
                                 </div>
                             </div>
                         </div>
