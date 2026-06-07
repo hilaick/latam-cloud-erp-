@@ -5,7 +5,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [showMasterGuide, setShowMasterGuide] = useState(false);
     
-    // 🚨 DRIFT & EXECUTION STATE
     const [driftAlert, setDriftAlert] = useState(true);
     const execStatus = project.execStatus || 'pending'; 
     const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
@@ -13,7 +12,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     // Determine if we've already passed the preflight phase based on the DB state
     const hasPassedPreflight = ['preflight_complete', 'sandbox_built', 'agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus);
     
-    // 🚨 STATE PERSISTENCE FIX: Hydrate from DB or determine by status
+    // STATE PERSISTENCE: Hydrate from DB or determine by status
     const [iamStatus, setIamStatus] = useState(hasPassedPreflight ? 'active' : 'pending'); 
     const [ephemeralKeys, setEphemeralKeys] = useState(hasPassedPreflight ? { ak: `HW_STS_CACHED_TOKEN`, sk: '********' } : null);
     const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
@@ -61,6 +60,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }, 2000);
     };
 
+    // 🚨 GOVERNANCE HARD-STOP & STATE PERSISTENCE
     const handleRunPreflight = () => {
         setPreflightStatus('scanning');
         setTimeout(() => {
@@ -84,7 +84,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             setVectorAssignments(assignments);
             setPreflightStatus('done');
             
-            // 🚨 PERSISTENCE FIX: Save assignments to DB so they survive reload
+            // Persist assignments to DB so they survive reload
             onUpdateProject(project.id, 'vectorAssignments', assignments);
             advanceStatus('preflight_complete');
         }, 2500);
@@ -93,7 +93,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const handleVectorChange = (nodeId, newVector) => {
         const updated = { ...vectorAssignments, [nodeId]: { ...vectorAssignments[nodeId], vector: newVector } };
         setVectorAssignments(updated);
-        // Persist override to DB
         onUpdateProject(project.id, 'vectorAssignments', updated);
     };
 
@@ -209,7 +208,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             </button>
                                         ) : (
                                             <div className="flex items-center gap-4">
-                                                {/* Allow user to reset and re-run if needed */}
                                                 <button onClick={() => { setPreflightStatus('pending'); onUpdateProject(project.id, 'execStatus', 'pending'); }} className="text-xs text-slate-400 hover:text-white underline">Re-Run</button>
                                                 <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                             </div>
@@ -438,6 +436,28 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <li>If the AI Orchestrator attempts to provision resources outside this Sandbox, or delete resources in Production, the Huawei Cloud IAM drops the request immediately.</li>
                             </ul>
                         </div>
+
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">3. The Control Plane vs. Data Plane Framework</h4>
+                            <div className="bg-slate-900 text-indigo-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
+<pre>{`       ┌────────────────────────────────────────────────────────┐
+       │             LATAM CLOUD ERP CORE ENGINE                │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+ ┌───────────────┐                                   ┌───────────────┐
+ │ CONTROL PLANE │ [Cloud Management API]            │  DATA PLANE   │ [OS-Level Tunneling]
+ └───────┬───────┘                                   └───────┬───────┘
+         │ (AWS AK/SK, Azure SP, vCenter)                    │ (SSH Key, local Admin)
+         ▼                                                   ▼
+┌─────────────────┐                                 ┌─────────────────┐
+│ Cloud Providers │ (AWS, Azure, vCenter API)       │ Target Guest OS │ (Direct VM Access)
+└────────┬────────┘                                 └────────┬────────┘
+         │                                                   │
+         └─────────────► [ AUTOMATED AGENT DEPLOYMENT ] ◄────┘`}</pre>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -445,11 +465,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// ... [ExecutionHubView and TAMHubView remain exactly the same as previously defined] ...
-
-// ==========================================
-// 🚀 DELIVERY COMMAND CENTER COMPONENT
-// ==========================================
 function ExecutionHubView({ project, onUpdateProject }) {
     const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
@@ -532,9 +547,6 @@ function SingleProjectGantt({ project }) {
     )
 }
 
-// ==========================================
-// 🎧 3. TAM SERVICE GOVERNANCE COMPONENT
-// ==========================================
 function TAMHubView({ project, onUpdateProject }) {
     const safeTamData = project.tamData || { 
         supportPlan: "Enterprise", welinkGroup: "", 
