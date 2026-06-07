@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-export default function PhysicsEngine({ project, onUpdateProject }) {
+// 🚨 FIX: Changed 'project' to 'activeProject' to match StepPlanning's prop injection
+export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [netSource, setNetSource] = useState(1000); 
     const [transitType, setTransitType] = useState('IPsec VPN'); 
     const [netTunnel, setNetTunnel] = useState(300); 
     const [targetKMS, setTargetKMS] = useState(false);
     
-    const nodes = project?.mapperNodes || [];
+    // Now it correctly reads the saved architecture from Step 2
+    const nodes = activeProject?.mapperNodes || [];
     
     // Global Aggregates
     const totalCompute = nodes.filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase())).length;
@@ -34,18 +36,18 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
     const [waveConfigs, setWaveConfigs] = useState({});
 
     useEffect(() => {
-        if (project?.physics?.waveConfigs) {
-            setWaveConfigs(project.physics.waveConfigs);
-            setNetSource(project.physics.netSource || 1000);
-            setTransitType(project.physics.transitType || 'IPsec VPN');
-            setNetTunnel(project.physics.netTunnel || 300);
-            setTargetKMS(project.physics.targetKMS || false);
+        if (activeProject?.physics?.waveConfigs) {
+            setWaveConfigs(activeProject.physics.waveConfigs);
+            setNetSource(activeProject.physics.netSource || 1000);
+            setTransitType(activeProject.physics.transitType || 'IPsec VPN');
+            setNetTunnel(activeProject.physics.netTunnel || 300);
+            setTargetKMS(activeProject.physics.targetKMS || false);
         } else {
             const defaults = {};
             waves.forEach(w => { defaults[w.name] = { storageSizeTB: ((w.nodeCount * 0.5) + (w.dbCount * 1.0)).toFixed(1), computeCPU: 60 }; });
             setWaveConfigs(defaults);
         }
-    }, [project, waves]);
+    }, [activeProject, waves]);
 
     const handleWaveConfigChange = (waveName, field, value) => {
         setWaveConfigs(prev => ({ ...prev, [waveName]: { ...prev[waveName], [field]: value } }));
@@ -81,7 +83,7 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
 
     const saveContext = () => { 
         const data = { waveConfigs, netSource, transitType, netTunnel, targetKMS, calculatedTotalHours: longestWaveHours, totalStorageTB: totalPayload };
-        onUpdateProject(project.id, 'physics', data); 
+        onUpdateProject(activeProject.id, 'physics', data); 
         alert("Wave Physics Parameters Saved."); 
     };
 
@@ -90,14 +92,14 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
             <div className="bg-white rounded-2xl border-2 border-dashed border-slate-300 p-12 text-center text-slate-500 animate-fade-in">
                 <i className="fas fa-layer-group text-4xl mb-4 text-slate-400"></i>
                 <h3 className="font-black text-xl mb-2">No Application Waves Detected</h3>
-                {/* 🚨 FIX: Updated instructions to match new UI architecture naming */}
-                <p className="font-medium text-sm">Please return to Step 2 (Architecture) and populate the Target Architecture list.</p>
+                <p className="font-medium text-sm">Please return to Step 2 (Architecture) and ensure you have ECS or RDS nodes in your Target Architecture list.</p>
             </div>
         );
     }
 
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in">
+            {/* Global Summary */}
             <div className="bg-slate-900 rounded-2xl shadow-xl p-8 flex flex-col md:flex-row justify-between items-center text-white border border-slate-700 gap-6">
                 <div>
                     <h2 className="text-2xl font-black mb-2"><i className="fas fa-water text-blue-400 mr-3"></i> Wave-Based Physics Engine</h2>
@@ -125,6 +127,7 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
             </div>
 
             <div className="flex flex-col xl:flex-row gap-6">
+                {/* Left: Global Pipeline Constraints */}
                 <div className="xl:w-80 shrink-0 space-y-6">
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                         <h4 className="font-black text-sm text-slate-800 mb-6 border-b pb-2"><i className="fas fa-network-wired text-amber-500 mr-2"></i> Global Network Pipe</h4>
@@ -146,12 +149,14 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
                     </div>
                 </div>
 
+                {/* Right: The Application Waves */}
                 <div className="flex-1 space-y-4">
                     {waveResults.map((wave, idx) => {
                         const config = waveConfigs[wave.name] || { storageSizeTB: 1.0, computeCPU: 60 };
                         
                         return (
                             <div key={wave.name} className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row overflow-hidden hover:border-blue-300 transition-colors">
+                                {/* Wave Header */}
                                 <div className="bg-slate-50 border-r border-slate-200 p-6 md:w-64 flex flex-col justify-center relative overflow-hidden">
                                     <div className="absolute -right-4 -top-4 text-8xl text-slate-200 opacity-30 pointer-events-none font-black">{idx+1}</div>
                                     <h4 className="font-black text-lg text-slate-800 relative z-10">{wave.name}</h4>
@@ -163,6 +168,7 @@ export default function PhysicsEngine({ project, onUpdateProject }) {
                                     </div>
                                 </div>
                                 
+                                {/* Wave Configurations */}
                                 <div className="p-6 flex-1 grid grid-cols-1 sm:grid-cols-2 gap-8 items-center">
                                     <div className="space-y-4">
                                         <div>
