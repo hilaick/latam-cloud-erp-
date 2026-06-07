@@ -38,16 +38,16 @@ def provision_sts_token():
         if not customer or not customer.ak or not customer.sk:
             return jsonify({"success": False, "error": "Customer Master AK/SK missing from Secure Vault."}), 400
 
-        # 2. Extract Credentials (Safely handling both Plaintext and Encrypted formats)
+        # 🚨 THE 500 ERROR FIX: Safely parse keys (Plaintext vs Encrypted)
         ak_str = str(customer.ak).strip()
         sk_str = str(customer.sk).strip()
 
         if not ak_str.startswith('{') and len(ak_str) > 5:
-            # Credentials are in plaintext format
+            # Keys are saved in plain text from the UI
             ak = ak_str
             sk = sk_str
         else:
-            # Credentials are in encrypted JSON format
+            # Keys are JSON formatted (AES Encrypted)
             master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
             try:
                 ak_data = json.loads(ak_str)
@@ -77,6 +77,7 @@ def execute_project(project_id):
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
+        project_data = json.loads(project_record.data)
         
         return jsonify({"success": True, "message": "Terraform Execution Started."})
         
