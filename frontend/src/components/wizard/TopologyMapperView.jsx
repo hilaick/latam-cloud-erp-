@@ -5,15 +5,10 @@ import ArchitectureCanvas from './ArchitectureCanvas';
 
 export const HUAWEI_REGIONS = [
     { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] }
-]; // Truncated for space, keep your original list in your real file!
+];
 
 export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const { customers } = useContext(ERPContext); 
-
-    const servers = activeProject?.blueprintData?.topology?.compute || [];
-    const databases = activeProject?.blueprintData?.topology?.database || [];
-    const networks = activeProject?.blueprintData?.topology?.network || [];
-    const storages = activeProject?.blueprintData?.topology?.storage || [];
 
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
     const [activeTab, setActiveTab] = useState('reconcile'); 
@@ -21,14 +16,18 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const [selectedNode, setSelectedNode] = useState(null);
     const [reconcileView, setReconcileView] = useState('canvas'); 
     
+    // 🚨 NEW: Sorting and Filtering States
+    const [statusFilter, setStatusFilter] = useState('All');
+    const [typeFilter, setTypeFilter] = useState('All');
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+    
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
     
     const saveArchitecture = () => {
         onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
-        alert("Architecture Configuration Saved Successfully.");
+        alert("Target Architecture Configuration Saved Successfully. This is now the Source of Truth for Phase 4 Execution.");
     };
 
-    // 🚨 INDEPENDENT FULLSCREEN LOGIC
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
         if (!el) return;
@@ -65,10 +64,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
-        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: d.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: n.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: s.metadata?.region || fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
@@ -76,10 +75,11 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         const raw = activeProject?.mgcData?.raw_inventory || {};
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const mNodes = [];
-        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: net.region || net.specs?.region || fallbackRegion, status: 'Live Only' }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: st.location || st.region || 'Global', status: 'Live Only' }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: srv.region || srv.specs?.region || fallbackRegion, status: 'Live Only' }));
-        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: db.region || db.specs?.region || fallbackRegion, status: 'Live Only' }));
+        // 🚨 FIX: Force region to Target Huawei Region, discard Source Region (e.g. eastus2)
+        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: fallbackRegion, status: 'Live Only' }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: fallbackRegion, status: 'Live Only' }));
+        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: fallbackRegion, status: 'Live Only' }));
         return mNodes;
     }, [activeProject?.mgcData, activeProject?.region]);
 
@@ -133,16 +133,38 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     };
 
     const getStatusIcon = (status) => {
-        if(status === 'Matched') return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)] shrink-0" title="Matched"></div>;
-        if(status === 'Live Only') return <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)] animate-pulse shrink-0" title="Scope Creep"></div>;
-        if(status === 'Quoted Only') return <div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)] shrink-0" title="Missing"></div>;
-        if(status === 'Manual') return <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)] shrink-0" title="Manual"></div>;
+        if(status === 'Matched') return <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)] shrink-0"></div>;
+        if(status === 'Live Only') return <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)] animate-pulse shrink-0"></div>;
+        if(status === 'Quoted Only') return <div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)] shrink-0"></div>;
+        if(status === 'Manual') return <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)] shrink-0"></div>;
         return <div className="w-2.5 h-2.5 bg-slate-300 rounded-full shadow-sm shrink-0"></div>;
     };
 
-    const uniqueRegions = ['All', ...new Set([
-        ...localNodes.map(n => n.region), ...quotedNodes.map(n => n.region), ...liveNodes.map(n => n.region)
-    ].filter(r => r && r !== 'TBD' && r !== 'Global'))];
+    // 🚨 NEW: Dynamic Filtering and Sorting Logic
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+        setSortConfig({ key, direction });
+    };
+
+    const filteredAndSortedNodes = useMemo(() => {
+        let result = localNodes.filter(n => {
+            if (statusFilter !== 'All' && n.status !== statusFilter) return false;
+            if (typeFilter !== 'All' && n.type !== typeFilter) return false;
+            return true;
+        });
+
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return result;
+    }, [localNodes, statusFilter, typeFilter, sortConfig]);
+
+    const uniqueTypes = ['All', ...new Set(localNodes.map(n => n.type))];
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto pb-12 relative">
@@ -218,7 +240,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
                         {reconcileView === 'canvas' && (
                             <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-hidden animate-fade-in">
-                                {/* 🚨 QUOTED CANVAS (INDEPENDENT FULLSCREEN) */}
                                 <div id="quoted-canvas-pane" className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
                                     <button onClick={()=>toggleFullScreen('quoted-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
                                         <i className="fas fa-expand"></i>
@@ -226,7 +247,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                     {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-20 bg-slate-50 flex-1">No SOW data imported.</div> : <ArchitectureCanvas title="Quoted Architecture (SOW)" nodes={quotedNodes} regionFilter={regionFilter} />}
                                 </div>
                                 
-                                {/* 🚨 LIVE CANVAS (INDEPENDENT FULLSCREEN) */}
                                 <div id="live-canvas-pane" className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
                                     <button onClick={()=>toggleFullScreen('live-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
                                         <i className="fas fa-expand"></i>
@@ -244,61 +264,113 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                         <div className="p-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3 bg-white shrink-0">
                             <div className="flex gap-2 flex-wrap items-center">
                                 <h4 className="font-black text-slate-800 mr-4">Target Architecture List</h4>
+                                
+                                {/* 🚨 NEW: Type Filter Dropdown */}
+                                <select 
+                                    value={typeFilter} 
+                                    onChange={(e) => setTypeFilter(e.target.value)} 
+                                    className="p-2 border border-slate-300 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none focus:border-indigo-400"
+                                >
+                                    {uniqueTypes.map(t => <option key={t} value={t}>{t === 'All' ? 'All Types' : t}</option>)}
+                                </select>
+
                                 <button onClick={handleAddNode} className="py-2 px-4 bg-white border border-slate-300 hover:border-indigo-400 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-2"></i> Add Custom Node</button>
-                                <button onClick={saveArchitecture} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95 ml-2"><i className="fas fa-save mr-2"></i> Save Blueprint</button>
+                                <button onClick={saveArchitecture} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95 ml-2"><i className="fas fa-save mr-2"></i> Save Target Architecture</button>
                             </div>
                             <button onClick={()=>toggleFullScreen('table-container')} className="py-2 px-4 bg-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-200 transition-colors border border-slate-300"><i className="fas fa-expand mr-2"></i> Full Screen</button>
                         </div>
                         
-                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex gap-6 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap">
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)]"></div> Matched (SOW + Live)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)]"></div> Scope Creep (Live Only)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)]"></div> Missing (SOW Only)</div>
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)]"></div> Manual Addition</div>
+                        {/* 🚨 NEW: Clickable Tooltip Legend Filter */}
+                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none">
+                            <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter:</div>
+                            
+                            <div onClick={() => setStatusFilter(statusFilter === 'Matched' ? 'All' : 'Matched')} 
+                                 className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Matched' ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} 
+                                 title="Resource exists in BOTH the signed Quotation (SOW) and the live Discovery data.">
+                                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)]"></div> Matched
+                            </div>
+                            
+                            <div onClick={() => setStatusFilter(statusFilter === 'Live Only' ? 'All' : 'Live Only')} 
+                                 className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Live Only' ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} 
+                                 title="Resource was discovered in the live environment but is NOT in the signed Quotation (SOW). May require a Change Request (CR).">
+                                <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)]"></div> Scope Creep
+                            </div>
+                            
+                            <div onClick={() => setStatusFilter(statusFilter === 'Quoted Only' ? 'All' : 'Quoted Only')} 
+                                 className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Quoted Only' ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} 
+                                 title="Resource is in the signed Quotation (SOW) but could not be found in the live environment.">
+                                <div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)]"></div> Missing SOW
+                            </div>
+                            
+                            <div onClick={() => setStatusFilter(statusFilter === 'Manual' ? 'All' : 'Manual')} 
+                                 className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Manual' ? 'bg-blue-50 border-blue-300 text-blue-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} 
+                                 title="Manually added to the Target Architecture by an engineer.">
+                                <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)]"></div> Manual Addition
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-auto custom-scrollbar bg-white relative">
                             <table className="w-full text-left min-w-[1000px]">
                                 <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0 z-10 shadow-sm border-b border-slate-200">
                                     <tr>
-                                        <th className="p-4 w-64 font-black">Target Resource Name</th>
-                                        <th className="p-4 w-32 font-black">Target Region</th>
-                                        <th className="p-4 w-28 font-black">Resource Type</th>
-                                        <th className="p-4 w-32 font-black">Target IP / CIDR</th>
-                                        <th className="p-4 w-40 font-black">Target Subnet / Zone</th>
+                                        {/* 🚨 NEW: Sortable Column Headers */}
+                                        <th className="p-4 w-72 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>
+                                            Target Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}
+                                        </th>
+                                        <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>
+                                            Target Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}
+                                        </th>
+                                        <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>
+                                            Resource Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}
+                                        </th>
+                                        <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>
+                                            Target IP / CIDR {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}
+                                        </th>
+                                        <th className="p-4 w-40 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('location')}>
+                                            Target Subnet / Zone {sortConfig.key==='location' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}
+                                        </th>
                                         <th className="p-4 w-24 text-center font-black">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
-                                    {localNodes.length === 0 ? (
-                                        <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">Go to Reconcile tab and click Merge to generate Target Architecture.</td></tr>
+                                    {filteredAndSortedNodes.length === 0 ? (
+                                        <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">No resources match the current filter or data is empty.</td></tr>
                                     ) : (
-                                        localNodes.map(n => (
-                                            <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                                <td className="p-4 font-bold text-slate-800">
-                                                    <div className="flex items-center gap-3">
-                                                        {getStatusIcon(n.status)}
-                                                        <div className="flex-1"><EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} /></div>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
-                                                <td className="p-4 font-bold text-indigo-700">
-                                                    <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer">
-                                                        <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
-                                                        <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
-                                                        <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
-                                                        <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
-                                                        <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
-                                                    </select>
-                                                </td>
-                                                <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
-                                                <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
-                                                <td className="p-4 text-center space-x-3">
-                                                    <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
-                                                    <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
-                                                </td>
-                                            </tr>
-                                        ))
+                                        filteredAndSortedNodes.map(n => {
+                                            // 🚨 NEW: Visual Badge for SOW origin
+                                            const inSow = n.status === 'Matched' || n.status === 'Quoted Only';
+                                            return (
+                                                <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                                    <td className="p-4 font-bold text-slate-800">
+                                                        <div className="flex items-center gap-3">
+                                                            {getStatusIcon(n.status)}
+                                                            <div className="flex flex-col flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <EditableCell value={n.name} onSave={v=>handleUpdateNode(n.id, 'name', v)} />
+                                                                    {inSow && <span className="bg-blue-100 text-blue-700 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest uppercase border border-blue-200" title="This resource was paid for in the original Statement of Work">SOW</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
+                                                    <td className="p-4 font-bold text-indigo-700">
+                                                        <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer">
+                                                            <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
+                                                            <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
+                                                            <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
+                                                            <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
+                                                            <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
+                                                        </select>
+                                                    </td>
+                                                    <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
+                                                    <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
+                                                    <td className="p-4 text-center space-x-3">
+                                                        <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
+                                                        <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
@@ -360,7 +432,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                         </div>
                         <div className="p-4 bg-white border-t border-slate-200 flex gap-2 shrink-0">
                             <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
-                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save Blueprint</button>
+                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save Architecture</button>
                         </div>
                     </div>
                 )}
