@@ -16,6 +16,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [ephemeralKeys, setEphemeralKeys] = useState(project.ephemeralKeys || null);
     const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
     const [vectorAssignments, setVectorAssignments] = useState(project.vectorAssignments || {});
+    const [tokenValidated, setTokenValidated] = useState(false); // New state for token validation
     
     const sandboxEpsRaw = project.sandboxEps?.trim() || '';
     const prodEpsRaw = project.prodEps?.trim() || '';
@@ -88,7 +89,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             if (data.success) {
                 const keys = { 
                     ak: data.ak, 
-                    sk: '********************************', // Masked for security in UI
+                    sk: data.sk, // Store real SK for execution orchestrator
                     expires: data.expires_at 
                 };
                 setEphemeralKeys(keys);
@@ -103,6 +104,29 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         } catch (err) {
             setIamStatus('pending');
             alert(`Network Error during STS provision: ${err.message}`);
+        }
+    };
+
+    const handleValidateToken = async () => {
+        const token = localStorage.getItem('erp_jwt_token');
+        
+        try {
+            const res = await fetch('/api/cloud/validate-sts-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ projectId: project.id })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success && data.valid) {
+                setTokenValidated(true);
+                alert(`✅ STS Token Validated Successfully!\n\nToken expires: ${new Date(data.expires).toLocaleString()}\n${data.warning ? `\nNote: ${data.warning}` : ''}`);
+            } else {
+                alert(`❌ Token Validation Failed:\n\n${data.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            alert(`Network Error during token validation: ${err.message}`);
         }
     };
 
@@ -224,6 +248,25 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest border-t border-slate-700 pt-3">Restricted Token Active</div>
                                                     <div className="text-[10px] font-mono text-slate-300 break-all">AK: {ephemeralKeys.ak}</div>
                                                     <p className="text-[9px] text-slate-500 leading-snug mt-2">The Cognitive Engine will execute strictly using this token. Blast-radius isolated.</p>
+                                                    
+                                                    {!tokenValidated ? (
+                                                        <button 
+                                                            onClick={handleValidateToken}
+                                                            className="w-full mt-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-md flex items-center justify-center"
+                                                        >
+                                                            <i className="fas fa-check-circle mr-2"></i> Validate Token with Huawei Cloud
+                                                        </button>
+                                                    ) : (
+                                                        <div className="mt-3 p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center">
+                                                                    <i className="fas fa-check-circle text-emerald-500 mr-2"></i>
+                                                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Token Validated</span>
+                                                                </div>
+                                                                <span className="text-[9px] text-emerald-400 bg-emerald-900/50 px-2 py-0.5 rounded">Ready for Execution</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -325,9 +368,18 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 </table>
                                             </div>
                                             <div className="p-3 bg-slate-800/80 border-t border-slate-700 text-right">
-                                                <button onClick={() => advanceStatus('sandbox_built')} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center ml-auto shadow-md">
+                                                <button 
+                                                    onClick={() => advanceStatus('sandbox_built')} 
+                                                    disabled={!tokenValidated}
+                                                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center ml-auto shadow-md"
+                                                >
                                                     <i className="fas fa-lock mr-2"></i> Approve Matrix & Proceed
                                                 </button>
+                                                {!tokenValidated && (
+                                                    <p className="text-[9px] text-amber-500 mt-2 text-center">
+                                                        <i className="fas fa-exclamation-triangle mr-1"></i> Validate STS token first
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -444,7 +496,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             <div className="space-y-4 pt-2">
                                 <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
                                     <div className="font-black text-emerald-600 text-sm mb-1"><i className="fas fa-check-circle w-5"></i> Vector 1: SMS Auto-Provision (The Happy Path)</div>
-                                    <p className="text-xs text-slate-600 ml-5">Source OS is modern and fully supported. ERP installs SMS -> SMS registers with Huawei -> Huawei SMS dynamically creates the target ECS -> Sync begins.</p>
+                                    <p className="text-xs text-slate-600 ml-5">Source OS is modern and fully supported. ERP installs SMS -&gt; SMS registers with Huawei -&gt; Huawei SMS dynamically creates the target ECS -&gt; Sync begins.</p>
                                 </div>
                                 <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
                                     <div className="font-black text-amber-600 text-sm mb-1"><i className="fas fa-exclamation-triangle w-5"></i> Vector 2: Pre-Provisioned Target (SMS Override)</div>

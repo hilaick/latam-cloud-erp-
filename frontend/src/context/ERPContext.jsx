@@ -260,10 +260,29 @@ export const ERPProvider = ({ children }) => {
     };
 
     const handleDeleteProject = (id) => {
-        if (!window.confirm("Delete this project?")) return;
-        setProjects(prev => prev.filter(p => String(p.id) !== String(id)));
-        fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ id, isDeleted: true, lifecycleState: 'archived' }) });
-        if (String(activeProjectId) === String(id)) { setActiveProjectId('none'); setActivePhase('home'); }
+        if (!window.confirm("Are you sure you want to delete this project? This action cannot be undone.")) return;
+        
+        fetch(`/api/erp/projects/${id}`, { 
+            method: 'DELETE', 
+            headers: getAuthHeaders() 
+        })
+        .then(r => {
+            if (r.status === 401) handleAuthError();
+            else if (!r.ok) throw new Error(`Failed to delete project: ${r.status} ${r.statusText}`);
+            else {
+                // Remove from local state
+                setProjects(prev => prev.filter(p => String(p.id) !== String(id)));
+                // If this was the active project, clear it
+                if (String(activeProjectId) === String(id)) { 
+                    setActiveProjectId('none'); 
+                    setActivePhase('home'); 
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Error deleting project:', err);
+            alert(`Failed to delete project: ${err.message}`);
+        });
     };
 
     return (

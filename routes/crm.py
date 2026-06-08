@@ -76,6 +76,30 @@ def partial_update_project(project_id):
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
+@crm_bp.route('/api/erp/projects/<project_id>', methods=['DELETE'])
+@jwt_required()
+def delete_project(project_id):
+    """Delete a project permanently"""
+    try:
+        project = ProjectData.query.get(project_id)
+        
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        # First delete related quotation versions
+        from models import QuotationVersion
+        QuotationVersion.query.filter_by(project_id=project_id).delete()
+            
+        # Then delete the project
+        db.session.delete(project)
+        db.session.commit()
+        
+        return jsonify({"success": True, "message": f"Project {project_id} deleted"})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # 🚨 RESTORED CUSTOMER DIRECTORY LOGIC
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
 @jwt_required()

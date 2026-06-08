@@ -2,7 +2,7 @@ import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function MasterPipeline() {
-    const { projects, handleUpdateProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
+    const { projects, handleUpdateProject, handleDeleteProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [searchTerm, setSearchTerm] = useState('');
 
     const openProject = (id) => {
@@ -107,6 +107,7 @@ export default function MasterPipeline() {
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Timelines (Edit)</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">SA / Partner</th>
                                 <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Blockers / Notes (Edit)</th>
+                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-24 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -166,6 +167,18 @@ export default function MasterPipeline() {
                                         </td>
                                         <td className="p-4 align-top">
                                             <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(p.id, 'blocker', e.target.value)} placeholder="Type notes or current blockers..." className="w-full h-16 bg-amber-50/50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors shadow-inner" />
+                                        </td>
+                                        <td className="p-4 align-top text-center">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteProject(p.id);
+                                                }}
+                                                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 hover:border-rose-300 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"
+                                                title="Delete Project"
+                                            >
+                                                <i className="fas fa-trash-alt mr-1"></i> Delete
+                                            </button>
                                         </td>
                                     </tr>
                                 );
