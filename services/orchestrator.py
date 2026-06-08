@@ -2,7 +2,8 @@ import json
 import logging
 import requests
 from datetime import datetime
-from huaweicloudsdkcore.signer.signer import Signer, HttpRequest
+from huaweicloudsdkcore.auth.credentials import BasicCredentials
+from huaweicloudsdkcore.signer.signer import Signer, SdkRequest
 
 logger = logging.getLogger(__name__)
 
@@ -92,15 +93,16 @@ class ExecutionOrchestrator:
                 "enable_rollback": True
             }
 
-            signer = Signer(ak, sk)
-            request = HttpRequest("POST", url, {"Content-Type": "application/json"}, json.dumps(payload))
+            credentials = BasicCredentials(ak=ak, sk=sk)
+            signer = Signer(credentials)
+            request = SdkRequest(method="POST", uri=url, header_params={"Content-Type": "application/json"}, body=json.dumps(payload))
             signer.sign(request)
             
-            headers = dict(request.headers)
+            headers = dict(request.header_params)
             if security_token:
                 headers['X-Security-Token'] = security_token
 
-            response = requests.post(request.url, headers=headers, data=request.body, timeout=15)
+            response = requests.post(url, headers=headers, data=request.body, timeout=15)
 
             if response.status_code in [200, 201, 202]:
                 data = response.json()
