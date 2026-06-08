@@ -67,7 +67,40 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const advanceStatus = (newStatus) => {
         safePartialUpdate({ execStatus: newStatus });
         if (newStatus === 'syncing') setDriftAlert(true);
+    }
+    // 🚀 PHASE NAVIGATION FUNCTIONS
+    const goToPhase = (targetStatus) => {
+        if (confirm(`Are you sure you want to navigate to Phase ${getPhaseNumber(targetStatus)}? This is for testing only.`)) {
+            safePartialUpdate({ execStatus: targetStatus });
+        }
     };
+
+    const getPhaseNumber = (status) => {
+        const phases = {
+            'pending': 1,
+            'preflight_complete': 1,
+            'sandbox_built': 2,
+            'agents_deployed': 3,
+            'syncing': 4,
+            'cutover_ready': 5,
+            'completed': 5
+        };
+        return phases[status] || 1;
+    };
+
+    const getPhaseInfo = (status) => {
+        const phases = {
+            'pending': { number: 1, name: 'Scope Filter & Pre-Flight Diagnostics', color: 'blue' },
+            'preflight_complete': { number: 1, name: 'Scope Filter & Pre-Flight Diagnostics', color: 'blue' },
+            'sandbox_built': { number: 2, name: 'Build Landing Zone & Pre-Provision Targets', color: 'amber' },
+            'agents_deployed': { number: 3, name: 'Deploy Agents & Execute Syncs', color: 'purple' },
+            'syncing': { number: 4, name: 'Continuous Sync & Drift Monitor', color: 'rose' },
+            'cutover_ready': { number: 5, name: 'Production Cutover & Optimization', color: 'emerald' },
+            'completed': { number: 5, name: 'Production Cutover & Optimization', color: 'emerald' }
+        };
+        return phases[status] || phases['pending'];
+    };
+;
 
     const handleProvisionIAM = async () => {
         setIamStatus('provisioning');
@@ -214,6 +247,54 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             <i className="fas fa-exclamation-triangle mr-3 text-amber-600 text-lg"></i> 
                             <div>
                                 <div>VPC Isolation Fallback Active</div>
+                    {/* 🚀 PHASE NAVIGATION BAR */}
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+                        <div className="flex items-center justify-between">
+                            <div className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                                <i className="fas fa-exchange-alt mr-2"></i> Phase Navigation
+                            </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => goToPhase('pending')}
+                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
+                                    title="Reset to Phase 1"
+                                >
+                                    <i className="fas fa-undo mr-1"></i> Phase 1
+                                </button>
+                                <button 
+                                    onClick={() => goToPhase('sandbox_built')}
+                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
+                                    title="Jump to Phase 2"
+                                >
+                                    <i className="fas fa-arrow-right mr-1"></i> Phase 2
+                                </button>
+                                <button 
+                                    onClick={() => goToPhase('agents_deployed')}
+                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
+                                    title="Jump to Phase 3"
+                                >
+                                    <i className="fas fa-arrow-right mr-1"></i> Phase 3
+                                </button>
+                                <button 
+                                    onClick={() => goToPhase('syncing')}
+                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
+                                    title="Jump to Phase 4"
+                                >
+                                    <i className="fas fa-arrow-right mr-1"></i> Phase 4
+                                </button>
+                                <button 
+                                    onClick={() => goToPhase('cutover_ready')}
+                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
+                                    title="Jump to Phase 5"
+                                >
+                                    <i className="fas fa-arrow-right mr-1"></i> Phase 5
+                                </button>
+                            </div>
+                        </div>
+                        <div className="mt-2 text-[10px] text-slate-500">
+                            <i className="fas fa-info-circle mr-1"></i> Use these buttons to navigate between phases for testing. Current phase: <span className="font-bold text-blue-400">{getPhaseInfo(execStatus).number}</span> - {getPhaseInfo(execStatus).name}
+                        </div>
+                    </div>
                                 <div className="text-[10px] font-bold text-amber-700/70 lowercase tracking-normal mt-0.5">Enterprise Project (EPS) missing. ERP reverting to isolated Sandbox VPC methodology.</div>
                             </div>
                         </div>
@@ -429,8 +510,18 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             <p className="text-xs text-slate-400">Compiles the blueprint into Terraform and pushes to Huawei RFS. Deploys network skeleton and pre-builds specific ECS targets mandated by Vector 2 & 3.</p>
                                         </div>
                                         {execStatus === 'sandbox_built' ? (
-                                            <button onClick={handleExecuteTerraform} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
-                                        ) : ['agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={handleExecuteTerraform} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
+                                                {execStatus !== "sandbox_built" && (
+                                                    <button 
+                                                        onClick={() => goToPhase("sandbox_built")}
+                                                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
+                                                        title="Navigate back to Phase 2 for testing"
+                                                    >
+                                                        <i className="fas fa-arrow-left mr-2"></i> Test Phase 2
+                                                    </button>
+                                                )}
+                                            </div>) : ['agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
                                             <div className="text-amber-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
                                     </div>
@@ -479,9 +570,27 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             )}
                                         </div>
                                         {execStatus === 'syncing' ? (
-                                            <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-forward mr-2"></i> Sync Complete</button>
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-forward mr-2"></i> Sync Complete</button>
+                                                <button 
+                                                    onClick={() => goToPhase('syncing')}
+                                                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
+                                                    title="Stay in Phase 4 for testing"
+                                                >
+                                                    <i className="fas fa-redo mr-2"></i> Re-Test
+                                                </button>
+                                            </div>
                                         ) : ['cutover_ready', 'completed'].includes(execStatus) ? (
-                                            <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                                <button 
+                                                    onClick={() => goToPhase('syncing')}
+                                                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
+                                                    title="Navigate back to Phase 4 for testing"
+                                                >
+                                                    <i className="fas fa-arrow-left mr-2"></i> Test
+                                                </button>
+                                            </div>
                                         ) : null}
                                     </div>
                                 </div>
