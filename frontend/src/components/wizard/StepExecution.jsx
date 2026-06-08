@@ -11,7 +11,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     
     const hasPassedPreflight = ['preflight_complete', 'sandbox_built', 'agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus);
     
-    // STATE PERSISTENCE: Read exactly from the database
     const [iamStatus, setIamStatus] = useState(project.ephemeralKeys ? 'active' : 'pending'); 
     const [ephemeralKeys, setEphemeralKeys] = useState(project.ephemeralKeys || null);
     const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
@@ -42,7 +41,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         );
     }, [project.mapperNodes]);
 
-    // FAILSAFE: If the DB says we passed preflight but assignments are empty
     useEffect(() => {
         if (hasPassedPreflight && Object.keys(vectorAssignments).length === 0 && preflightStatus === 'done') {
             setPreflightStatus('pending');
@@ -50,7 +48,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }
     }, [hasPassedPreflight, vectorAssignments, preflightStatus, project.id]);
 
-    // Dedicated Partial Update Function using PATCH
     const safePartialUpdate = async (updates) => {
         const token = localStorage.getItem('erp_jwt_token');
         try {
@@ -88,7 +85,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             if (data.success) {
                 const keys = { 
                     ak: data.ak, 
-                    sk: data.sk, // Store real SK for execution orchestrator
+                    sk: data.sk, 
                     expires: data.expires_at,
                     security_token: data.security_token
                 };
@@ -171,6 +168,27 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         const updated = { ...vectorAssignments, [nodeId]: { ...vectorAssignments[nodeId], vector: newVector } };
         setVectorAssignments(updated);
         safePartialUpdate({ vectorAssignments: updated });
+    };
+
+    // 🚨 NEW: Phase 2 RFS Execute Function
+    const handleExecuteTerraform = async () => {
+        const token = localStorage.getItem('erp_jwt_token');
+        try {
+            const res = await fetch(`/api/projects/${project.id}/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert(`✅ ${data.message}${data.warning ? `\n\nNote: ${data.warning}` : ''}`);
+                advanceStatus('agents_deployed');
+            } else {
+                alert(`❌ Execution Failed:\n\n${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network Error during Terraform execution: ${err.message}`);
+        }
     };
 
     return (
@@ -403,23 +421,21 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     )}
                                 </div>
 
-                                {/* PHASE 2: BUILD LANDING ZONE */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Phase 2</div>
                                             <h4 className="text-lg font-black text-white mb-2">Build Landing Zone & Pre-Provision Targets</h4>
-                                            <p className="text-xs text-slate-400">Compiles the blueprint into Terraform. Deploys network skeleton and pre-builds specific ECS targets mandated by Vector 2 & 3.</p>
+                                            <p className="text-xs text-slate-400">Compiles the blueprint into Terraform and pushes to Huawei RFS. Deploys network skeleton and pre-builds specific ECS targets mandated by Vector 2 & 3.</p>
                                         </div>
                                         {execStatus === 'sandbox_built' ? (
-                                            <button onClick={() => advanceStatus('agents_deployed')} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
+                                            <button onClick={handleExecuteTerraform} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
                                         ) : ['agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
                                             <div className="text-amber-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
                                     </div>
                                 </div>
 
-                                {/* PHASE 3: DEPLOY AGENTS & SYNC */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -434,7 +450,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 4: DRIFT MONITOR */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1 pr-6">
@@ -471,7 +486,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 5: CUTOVER */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'cutover_ready' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -545,7 +559,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             </ul>
                         </div>
                         
-                        {/* 🚨 NEW ADDITION: Autonomous Pre-Flight Engine Explanation */}
                         <div className="space-y-4">
                             <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">4. The Autonomous Pre-Flight Engine</h4>
                             <p>The system determines execution vectors without manual intervention using an agentless pre-flight sequence:</p>
