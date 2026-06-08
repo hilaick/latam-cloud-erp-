@@ -16,13 +16,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [ephemeralKeys, setEphemeralKeys] = useState(project.ephemeralKeys || null);
     const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
     const [vectorAssignments, setVectorAssignments] = useState(project.vectorAssignments || {});
-    const [tokenValidated, setTokenValidated] = useState(false); // New state for token validation
+    const [tokenValidated, setTokenValidated] = useState(false);
     
     const sandboxEpsRaw = project.sandboxEps?.trim() || '';
     const prodEpsRaw = project.prodEps?.trim() || '';
     const isVpcIsolationMode = !sandboxEpsRaw || !prodEpsRaw;
 
-    // 🚨 RESTORED THE MISSING STRATEGY VARIABLE HERE
     const getStrategyDetails = () => {
         if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via SSM/Run-Command. Control Plane active.' };
         if (authLevel.includes('Active Directory')) return { icon: 'fa-windows', color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-200', text: 'Automated GPO/WinRM batch push. Centralized Data Plane active.' };
@@ -90,10 +89,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 const keys = { 
                     ak: data.ak, 
                     sk: data.sk, // Store real SK for execution orchestrator
-                    expires: data.expires_at 
+                    expires: data.expires_at,
+                    security_token: data.security_token
                 };
                 setEphemeralKeys(keys);
                 setIamStatus('active');
+                setTokenValidated(false);
                 
                 safePartialUpdate({ ephemeralKeys: keys });
                 alert("Huawei Cloud STS Token Successfully Provisioned!\n\nYou can now verify the 'GetSessionToken' event in the Huawei Cloud Trace Service (CTS) console.");
@@ -107,6 +108,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }
     };
 
+    // 🚨 EXPIRATION FIX: Reset UI state when validation fails
     const handleValidateToken = async () => {
         const token = localStorage.getItem('erp_jwt_token');
         
@@ -124,10 +126,22 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 alert(`✅ STS Token Validated Successfully!\n\nToken expires: ${new Date(data.expires).toLocaleString()}\n${data.warning ? `\nNote: ${data.warning}` : ''}`);
             } else {
                 alert(`❌ Token Validation Failed:\n\n${data.error || 'Unknown error'}`);
+                // Automatically reset UI to allow generating a new token
+                setIamStatus('pending');
+                setEphemeralKeys(null);
+                setTokenValidated(false);
+                safePartialUpdate({ ephemeralKeys: null });
             }
         } catch (err) {
             alert(`Network Error during token validation: ${err.message}`);
         }
+    };
+
+    const handleResetToken = () => {
+        setIamStatus('pending');
+        setEphemeralKeys(null);
+        setTokenValidated(false);
+        safePartialUpdate({ ephemeralKeys: null });
     };
 
     const handleRunPreflight = () => {
@@ -267,6 +281,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                             </div>
                                                         </div>
                                                     )}
+
+                                                    {/* 🚨 EXPLICIT RE-PROVISION BUTTON */}
+                                                    <button onClick={handleResetToken} className="w-full mt-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors flex items-center justify-center border border-slate-600">
+                                                        <i className="fas fa-sync-alt mr-2"></i> Reset & Re-Provision
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
@@ -367,19 +386,21 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     </tbody>
                                                 </table>
                                             </div>
-                                            <div className="p-3 bg-slate-800/80 border-t border-slate-700 text-right">
+                                            <div className="p-3 bg-slate-800/80 border-t border-slate-700 text-right flex justify-between items-center">
+                                                {!tokenValidated ? (
+                                                    <span className="text-[10px] text-amber-500 font-bold uppercase tracking-widest ml-4">
+                                                        <i className="fas fa-exclamation-triangle mr-1"></i> Token validation required
+                                                    </span>
+                                                ) : (
+                                                    <span></span>
+                                                )}
                                                 <button 
                                                     onClick={() => advanceStatus('sandbox_built')} 
                                                     disabled={!tokenValidated}
-                                                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center ml-auto shadow-md"
+                                                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center shadow-md"
                                                 >
                                                     <i className="fas fa-lock mr-2"></i> Approve Matrix & Proceed
                                                 </button>
-                                                {!tokenValidated && (
-                                                    <p className="text-[9px] text-amber-500 mt-2 text-center">
-                                                        <i className="fas fa-exclamation-triangle mr-1"></i> Validate STS token first
-                                                    </p>
-                                                )}
                                             </div>
                                         </div>
                                     )}
