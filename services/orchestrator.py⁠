@@ -57,8 +57,6 @@ class ExecutionOrchestrator:
         # Vector 1 (SMS Auto-Provision) handles its own creation, so we skip them here.
         for idx, node in enumerate(mapper_nodes):
             if node.get('type') == 'ECS':
-                # In a real environment, you'd pull the exact Vector from vectorAssignments.
-                # Here we pre-build the ECS instance skeleton.
                 resource_name = f"ecs_target_{idx}"
                 tf_template["resource"]["huaweicloud_compute_instance"][resource_name] = {
                     "name": str(node.get('name', f"target-vm-{idx}")),
