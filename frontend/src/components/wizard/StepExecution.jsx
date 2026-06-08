@@ -23,10 +23,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const isVpcIsolationMode = !sandboxEpsRaw || !prodEpsRaw;
 
     const getStrategyDetails = () => {
-        if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via SSM/Run-Command. Control Plane active.' };
+        if (authLevel.includes('Cloud Admin API')) return { icon: 'fa-cloud', color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'Automated Agentless Push via AWS SSM, Azure Run Command, or vCenter Guest Ops. Control Plane active.' };
         if (authLevel.includes('Active Directory')) return { icon: 'fa-windows', color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-200', text: 'Automated GPO/WinRM batch push. Centralized Data Plane active.' };
         if (authLevel.includes('Local OS Admin')) return { icon: 'fa-terminal', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200', text: 'Automated SSH/WinRM Injection loop. Sequential Data Plane active.' };
-        return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust. Generating custom Runbooks for customer manual execution.' };
+        return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust (Customer Managed). Generating custom SCCM/Ansible Runbooks for client IT execution.' };
     };
     const strategy = getStrategyDetails();
 
@@ -108,7 +108,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }
     };
 
-    // 🚨 EXPIRATION FIX: Reset UI state when validation fails
     const handleValidateToken = async () => {
         const token = localStorage.getItem('erp_jwt_token');
         
@@ -126,7 +125,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 alert(`✅ STS Token Validated Successfully!\n\nToken expires: ${new Date(data.expires).toLocaleString()}\n${data.warning ? `\nNote: ${data.warning}` : ''}`);
             } else {
                 alert(`❌ Token Validation Failed:\n\n${data.error || 'Unknown error'}`);
-                // Automatically reset UI to allow generating a new token
                 setIamStatus('pending');
                 setEphemeralKeys(null);
                 setTokenValidated(false);
@@ -282,7 +280,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                         </div>
                                                     )}
 
-                                                    {/* 🚨 EXPLICIT RE-PROVISION BUTTON */}
                                                     <button onClick={handleResetToken} className="w-full mt-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors flex items-center justify-center border border-slate-600">
                                                         <i className="fas fa-sync-alt mr-2"></i> Reset & Re-Provision
                                                     </button>
@@ -406,6 +403,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     )}
                                 </div>
 
+                                {/* PHASE 2: BUILD LANDING ZONE */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -421,6 +419,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
+                                {/* PHASE 3: DEPLOY AGENTS & SYNC */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -435,6 +434,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
+                                {/* PHASE 4: DRIFT MONITOR */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1 pr-6">
@@ -471,6 +471,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
+                                {/* PHASE 5: CUTOVER */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'cutover_ready' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -542,6 +543,40 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <li>The token is strictly scoped to the <strong>Sandbox Enterprise Project (EPS)</strong> defined in the boundaries.</li>
                                 <li>If the AI Orchestrator attempts to provision resources outside this Sandbox, or delete resources in Production, the Huawei Cloud IAM drops the request immediately.</li>
                             </ul>
+                        </div>
+                        
+                        {/* 🚨 NEW ADDITION: Autonomous Pre-Flight Engine Explanation */}
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">4. The Autonomous Pre-Flight Engine</h4>
+                            <p>The system determines execution vectors without manual intervention using an agentless pre-flight sequence:</p>
+                            <ul className="list-decimal pl-5 space-y-2 text-xs">
+                                <li><strong>Secure Retrieval:</strong> The ERP decrypts source credentials (SSH/WinRM or Cloud IAM) from the Zero-Trust vault.</li>
+                                <li><strong>The Read-Only Tunnel:</strong> Silent, parallel background connections are opened to approved source servers.</li>
+                                <li><strong>Diagnostic Probes:</strong> Read-only scripts check kernel versions, UEFI/BIOS boot modes, and available disk space. No agents are installed during this phase.</li>
+                                <li><strong>Cognitive Decision:</strong> The engine evaluates the probe results and autonomously assigns the safest execution vector (e.g., forcing Vector 2 if UEFI is detected) to prevent target failure.</li>
+                            </ul>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">3. The Control Plane vs. Data Plane Framework</h4>
+                            <div className="bg-slate-900 text-indigo-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
+<pre>{`       ┌────────────────────────────────────────────────────────┐
+       │             LATAM CLOUD ERP CORE ENGINE                │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+ ┌───────────────┐                                   ┌───────────────┐
+ │ CONTROL PLANE │ [Cloud Management API]            │  DATA PLANE   │ [OS-Level Tunneling]
+ └───────┬───────┘                                   └───────┬───────┘
+         │ (AWS AK/SK, Azure SP, vCenter)                    │ (SSH Key, local Admin)
+         ▼                                                   ▼
+┌─────────────────┐                                 ┌─────────────────┐
+│ Cloud Providers │ (AWS, Azure, vCenter API)       │ Target Guest OS │ (Direct VM Access)
+└────────┬────────┘                                 └────────┬────────┘
+         │                                                   │
+         └─────────────► [ AUTOMATED AGENT DEPLOYMENT ] ◄────┘`}</pre>
+                            </div>
                         </div>
                     </div>
                 </div>
