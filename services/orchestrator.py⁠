@@ -1,152 +1,117 @@
-import os
 import json
-import shutil
-import subprocess
-import threading
-from pathlib import Path
+import logging
+import requests
+from datetime import datetime
+from huaweicloudsdkcore.signer.signer import Signer, HttpRequest
 
-# NOTE: Adjust these imports based on your actual Flask models
-# from models import db, Project, Customer
-
-# Path where your cross-mig repository is stored on the ERP server
-CROSS_MIG_TEMPLATE_DIR = "/opt/erp/templates/cross-mig" 
-# Path where individual project executions will run
-EXECUTIONS_BASE_DIR = "/opt/erp/executions"
+logger = logging.getLogger(__name__)
 
 class ExecutionOrchestrator:
+    """
+    Phase 2 Engine: Converts the approved Target Architecture into Terraform 
+    and deploys it natively via Huawei Cloud Resource Formation Service (RFS).
+    """
+
     @staticmethod
-    def prepare_workspace(project, customer):
-        """Creates an isolated execution directory for the project and generates .tfvars"""
-        workspace_dir = os.path.join(EXECUTIONS_BASE_DIR, f"proj_{project.id}")
-        
-        # 1. Create an isolated copy of the cross-mig terraform repo for this specific run
-        if not os.path.exists(workspace_dir):
-            shutil.copytree(CROSS_MIG_TEMPLATE_DIR, workspace_dir)
-            
-        # 2. Extract Target Node (Assuming basic 1-1 migration for now)
-        target_node = next((n for n in project.mapper_nodes if n.get('type') == 'ECS'), None)
-        target_network = next((n for n in project.mapper_nodes if n.get('type') == 'VPC'), None)
-        
-        if not target_node or not target_network:
-            raise ValueError("Blueprint missing required ECS or VPC nodes.")
-
-        # 3. Determine the Active Credentials based on Least-Privilege
-        # The ERP uses Tier 2 (Sandbox) if available, otherwise falls back to Master AK/SK
-        active_ak = customer.tier2_ak or customer.ak
-        active_sk = customer.tier2_sk or customer.sk
-
-        if not active_ak or not active_sk:
-            raise ValueError("No valid execution credentials (Tier 2 or Master) found in Customer Vault.")
-
-        # 4. Map ERP variables directly to cross-mig main.tf expected inputs
-        tfvars = {
-            "access_key": active_ak,
-            "secret_key": active_sk,
-            "domain_name": customer.domain_name or customer.name,
-            
-            # Enterprise Project Boundaries
-            "enterprise_project_id": project.sandbox_eps,
-            
-            # Regional & Infrastructure Specs
-            "source_region": project.source_region or "la-south-2",
-            "target_region": project.target_region or "la-south-2",
-            "source_server_id": target_node.get('source_id', ''),
-            "target_vpc_name": target_network.get('name', 'vpc-migration'),
-            "target_vpc_cidr": target_network.get('cidr', '10.0.0.0/16'),
-            "target_subnet_cidr": target_network.get('subnet_cidr', '10.0.1.0/24'),
-            "target_server_name": target_node.get('name', 'migrated-ecs'),
-            "target_image_id": target_node.get('os_image_id', ''),
-            "target_flavor_id": target_node.get('flavor', ''),
-            "eip_bandwidth_mbps": int(target_node.get('eip_bandwidth', 0)),
+    def generate_terraform_payload(mapper_nodes: list, region: str) -> str:
+        """
+        Dynamically translates the Target Architecture UI matrix into 
+        a declarative Terraform JSON structure.
+        """
+        # Base Terraform setup
+        tf_template = {
+            "terraform": {
+                "required_providers": {
+                    "huaweicloud": {
+                        "source": "huaweicloud/huaweicloud",
+                        "version": ">= 1.60.0"
+                    }
+                }
+            },
+            "provider": {
+                "huaweicloud": {
+                    "region": region
+                }
+            },
+            "resource": {
+                "huaweicloud_vpc": {},
+                "huaweicloud_vpc_subnet": {},
+                "huaweicloud_compute_instance": {}
+            }
         }
 
-        # 5. Handle Data Plane / OS Credentials based on the Strategy Matrix
-        if 'Local OS Admin' in project.auth_level or 'Active Directory' in project.auth_level:
-            tfvars["rsync_target_user"] = customer.os_user
-            tfvars["rsync_target_password"] = customer.os_password
-            if customer.os_domain:
-                # Format for Windows WinRM domain logins
-                tfvars["rsync_target_user"] = f"{customer.os_domain}\\{customer.os_user}"
-
-        # 6. Write the terraform.tfvars.json file into the isolated workspace
-        tfvars_path = os.path.join(workspace_dir, "terraform.tfvars.json")
-        with open(tfvars_path, "w") as f:
-            json.dump(tfvars, f, indent=2)
-            
-        return workspace_dir
-
-    @staticmethod
-    def run_terraform_async(workspace_dir, project_id):
-        """Runs the Terraform apply locally in a background thread."""
-        def worker():
-            try:
-                print(f"[PROJ {project_id}] Starting Terraform Init...")
-                subprocess.run(["terraform", "init"], cwd=workspace_dir, check=True, capture_output=True)
-                
-                print(f"[PROJ {project_id}] Starting Terraform Apply...")
-                # Triggers main.tf which natively runs the Python migration scripts
-                subprocess.run(
-                    ["terraform", "apply", "-var-file=terraform.tfvars.json", "-auto-approve"], 
-                    cwd=workspace_dir, 
-                    check=True,
-                    capture_output=True
-                )
-                print(f"[PROJ {project_id}] Terraform Execution Completed Successfully.")
-                
-            except subprocess.CalledProcessError as e:
-                print(f"[PROJ {project_id}] ❌ Terraform Execution Failed: {e.stderr.decode('utf-8')}")
-
-        # Spawn background thread so we don't block the Flask API response
-        thread = threading.Thread(target=worker)
-        thread.start()
-
-    @staticmethod
-    def get_live_status(project_id):
-        """Reads the task_poll_latest.json generated by cross-mig to feed the UI Progress Bar."""
-        workspace_dir = os.path.join(EXECUTIONS_BASE_DIR, f"proj_{project_id}")
-        poll_file = os.path.join(workspace_dir, "out", "task_poll_latest.json")
-        result_file = os.path.join(workspace_dir, "out", "migration_result.json")
-
-        status_payload = {
-            "state": "INITIALIZING",
-            "progress_percentage": 0,
-            "details": "Provisioning RFS Landing Zone..."
+        # Step 1: Always ensure a Base VPC and Subnet exists for the Landing Zone
+        tf_template["resource"]["huaweicloud_vpc"]["migration_vpc"] = {
+            "name": "migration-target-vpc",
+            "cidr": "10.0.0.0/16"
+        }
+        tf_template["resource"]["huaweicloud_vpc_subnet"]["migration_subnet"] = {
+            "name": "migration-target-subnet",
+            "cidr": "10.0.1.0/24",
+            "gateway_ip": "10.0.1.1",
+            "vpc_id": "${huaweicloud_vpc.migration_vpc.id}"
         }
 
-        # 1. Check if the final result file exists (Execution Complete)
-        if os.path.exists(result_file):
-            try:
-                with open(result_file, "r") as f:
-                    data = json.load(f)
-                status_payload["state"] = "MIGRATE_SUCCESS" if data.get("success") else "FAILED"
-                status_payload["progress_percentage"] = 100
-                status_payload["details"] = f"Final Target Server: {data.get('target_server_name', 'Unknown')} | Target IP: {data.get('target_fixed_ip', 'Unknown')}"
-                return status_payload
-            except json.JSONDecodeError:
-                pass
+        # Step 2: Parse mapperNodes for specific Vectors
+        # We only pre-provision Compute nodes if they were assigned Vector 2 or Vector 3
+        # Vector 1 (SMS Auto-Provision) handles its own creation, so we skip them here.
+        for idx, node in enumerate(mapper_nodes):
+            if node.get('type') == 'ECS':
+                # In a real environment, you'd pull the exact Vector from vectorAssignments.
+                # Here we pre-build the ECS instance skeleton.
+                resource_name = f"ecs_target_{idx}"
+                tf_template["resource"]["huaweicloud_compute_instance"][resource_name] = {
+                    "name": str(node.get('name', f"target-vm-{idx}")),
+                    "flavor_id": "s6.large.2",  # Defaulting for safety, would map from config
+                    "image_id": "ubuntu_20_04_x86_64", # Base image placeholder
+                    "system_disk_type": "SAS",
+                    "system_disk_size": 40,
+                    "network": {
+                        "uuid": "${huaweicloud_vpc_subnet.migration_subnet.id}",
+                        "fixed_ip_v4": str(node.get('ip')) if node.get('ip') and node.get('ip') != 'TBD' else ""
+                    }
+                }
 
-        # 2. Check the live polling file for in-flight progress
-        if os.path.exists(poll_file):
-            try:
-                with open(poll_file, "r") as f:
-                    data = json.load(f)
-                    
-                raw_state = data.get("state", "RUNNING")
-                status_payload["state"] = raw_state
-                
-                # Calculate percentages from replicatesize / totalsize
-                rep = data.get("replicatesize")
-                tot = data.get("totalsize")
-                
-                if rep is not None and tot is not None and tot > 0:
-                    status_payload["progress_percentage"] = round((rep / tot) * 100, 1)
-                else:
-                    # Fallback if MgC API doesn't return sizes yet
-                    status_payload["progress_percentage"] = data.get("progress") or 25
-                
-                status_payload["details"] = f"Attempt {data.get('attempt', 1)}. Sync Status: {raw_state}"
-                
-            except json.JSONDecodeError:
-                pass # File might be mid-write by the local terraform script
+        # Remove empty resource blocks
+        tf_template["resource"] = {k: v for k, v in tf_template["resource"].items() if v}
+        
+        return json.dumps(tf_template)
 
-        return status_payload
+    @staticmethod
+    def deploy_to_rfs(ak: str, sk: str, security_token: str, region: str, project_id: str, tf_json: str):
+        """
+        Takes the generated Terraform JSON and pushes it to Huawei Cloud RFS.
+        Uses the ephemeral STS token to guarantee Zero-Trust compliance.
+        """
+        try:
+            # Huawei RFS API Endpoint (Resource Formation Service)
+            url = f"https://rfs.{region}.myhuaweicloud.com/v1/stacks"
+
+            payload = {
+                "name": f"migration-landing-zone-{project_id[-6:]}",
+                "description": "Latam Cloud ERP - Automated Landing Zone via RFS+Terraform",
+                "template_body": tf_json, # RFS natively accepts Terraform config strings!
+                "enable_rollback": True
+            }
+
+            signer = Signer(ak, sk)
+            request = HttpRequest("POST", url, {"Content-Type": "application/json"}, json.dumps(payload))
+            signer.sign(request)
+            
+            headers = dict(request.headers)
+            if security_token:
+                headers['X-Security-Token'] = security_token
+
+            response = requests.post(request.url, headers=headers, data=request.body, timeout=15)
+
+            if response.status_code in [200, 201, 202]:
+                data = response.json()
+                logger.info(f"✅ RFS Stack Successfully Created: {data.get('stack_id')}")
+                return {"success": True, "stack_id": data.get('stack_id')}
+            else:
+                logger.error(f"RFS Deployment Failed: {response.text}")
+                return {"success": False, "error": response.text}
+
+        except Exception as e:
+            logger.error(f"Orchestrator RFS Error: {str(e)}")
+            return {"success": False, "error": str(e)}
