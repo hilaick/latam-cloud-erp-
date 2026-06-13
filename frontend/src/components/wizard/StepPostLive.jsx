@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { formatShortDate } from '../../utils/helpers';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
@@ -491,18 +491,58 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 }
 
 // ==========================================
-// 🌌 2. THE LIVING DIGITAL TWIN CONSTELLATION
+// 🌌 2. INTERACTIVE DIGITAL TWIN CONSTELLATION
 // ==========================================
 function LiveConstellationView({ activeProject }) {
     const [viewMode, setViewMode] = useState('live'); 
     const [playbackStep, setPlaybackStep] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     
-    // 🚨 UPDATED SOURCE: Read strictly from Live NOC Telemetry if available.
+    // Pan & Zoom State
+    const [zoom, setZoom] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const containerRef = useRef(null);
+
+    // Zoom Controls
+    const handleZoom = (factor) => setZoom(prev => Math.min(Math.max(0.4, prev + factor), 3));
+    const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
+    // Fullscreen Controls
+    const toggleFullscreen = () => {
+        if (!containerRef.current) return;
+        if (!document.fullscreenElement) {
+            containerRef.current.requestFullscreen().catch(err => alert(`Error enabling fullscreen: ${err.message}`));
+        } else {
+            document.exitFullscreen();
+        }
+    };
+
+    useEffect(() => {
+        const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    // Drag / Pan Controls
+    const handleMouseDown = (e) => {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDragging) return;
+        setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    };
+
+    const handleMouseUp = () => setIsDragging(false);
+
+    // Source Data: Prioritize Live NOC over Mapper Nodes
     const targetNodes = useMemo(() => {
         const rawNoc = activeProject?.nocData?.raw;
         
-        // 1. If Final NOC Scan exists, Map the Actual Physical Live Resources
         if (rawNoc && Object.keys(rawNoc).length > 0) {
             const nodes = [];
             (rawNoc.compute || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name, type: 'ECS', ip: n.private_ip_address || n.ip || 'N/A' }));
@@ -516,7 +556,6 @@ function LiveConstellationView({ activeProject }) {
             })).sort((a, b) => a.timestamp - b.timestamp);
         }
 
-        // 2. Fallback: If NOC Scan hasn't run, use the intended Target Architecture
         const rawMap = activeProject?.mapperNodes || [];
         const valid = rawMap.filter(n => n.status !== 'Quoted Only' && n.status !== 'Live Only');
         
@@ -532,6 +571,7 @@ function LiveConstellationView({ activeProject }) {
 
     }, [activeProject]);
 
+    // D3-style Graph Logic
     const graphData = useMemo(() => {
         const width = 1000;
         const height = 600;
@@ -539,10 +579,10 @@ function LiveConstellationView({ activeProject }) {
         const cy = height / 2;
 
         const hubs = {
-            compute:  { x: cx - 200, y: cy - 150, color: '#06b6d4', icon: 'fa-server', name: 'Huawei ECS Core' },
-            database: { x: cx + 200, y: cy - 150, color: '#f43f5e', icon: 'fa-database', name: 'Huawei RDS / Gauss' },
-            network:  { x: cx - 200, y: cy + 150, color: '#8b5cf6', icon: 'fa-network-wired', name: 'Huawei VPC & Edge' },
-            storage:  { x: cx + 200, y: cy + 150, color: '#10b981', icon: 'fa-hdd', name: 'Huawei OBS / SFS' },
+            compute:  { x: cx - 250, y: cy - 150, color: '#06b6d4', icon: 'fa-server', name: 'Huawei ECS Core' },
+            database: { x: cx + 250, y: cy - 150, color: '#f43f5e', icon: 'fa-database', name: 'Huawei RDS / Gauss' },
+            network:  { x: cx - 250, y: cy + 150, color: '#8b5cf6', icon: 'fa-network-wired', name: 'Huawei VPC & Edge' },
+            storage:  { x: cx + 250, y: cy + 150, color: '#10b981', icon: 'fa-hdd', name: 'Huawei OBS / SFS' },
         };
 
         const mappedNodes = [];
@@ -564,7 +604,7 @@ function LiveConstellationView({ activeProject }) {
             const catIndex = catNodes.findIndex(x => x.id === n.id);
             
             const angleStep = (Math.PI * 2) / (catNodes.length || 1);
-            const radius = 80 + (Math.random() * 50); 
+            const radius = 90 + (Math.random() * 60); 
             const angle = catIndex * angleStep + (Math.random() * 0.5); 
             
             mappedNodes.push({
@@ -618,69 +658,44 @@ function LiveConstellationView({ activeProject }) {
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h3 className="font-black flex items-center gap-3 text-xl text-slate-800">
-                        <i className="fas fa-meteor text-blue-500"></i> Target Constellation {activeProject?.nocData && <span className="ml-2 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] uppercase tracking-widest font-black border border-emerald-200"><i className="fas fa-wifi mr-1"></i> Live</span>}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Visualizing the physical deployment sequences based on Huawei Cloud API telemetry.</p>
-                </div>
-                <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner w-full md:w-auto">
-                    <button onClick={()=>{setViewMode('live'); setIsPlaying(false); setPlaybackStep(graphData.totalNodes);}} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'live' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <i className="fas fa-eye mr-2"></i> Live State
-                    </button>
-                    <button onClick={handleReplay} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'replay' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <i className="fas fa-history mr-2"></i> Playback
-                    </button>
-                </div>
-            </div>
-
-            <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-slate-700 relative h-[650px] flex items-center justify-center">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black pointer-events-none"></div>
+            
+            <div ref={containerRef} className={`relative flex flex-col ${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-900 h-screen w-screen' : 'bg-slate-900 rounded-2xl shadow-xl h-[650px] border border-slate-700'} overflow-hidden select-none`}>
                 
-                <svg width="100%" height="100%" viewBox={`0 0 ${graphData.width} ${graphData.height}`} className="absolute inset-0 pointer-events-none">
-                    {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
-                        <line key={`hub-line-${i}`} x1={graphData.cx} y1={graphData.cy} x2={hub.x} y2={hub.y} stroke={hub.color} strokeWidth="1" strokeDasharray="4 4" className="opacity-30" />
-                    ))}
-                    {graphData.mappedNodes.map((n, i) => {
-                        if (i >= playbackStep) return null;
-                        const hub = graphData.hubs[n.category];
-                        return <line key={`node-line-${i}`} x1={hub.x} y1={hub.y} x2={n.x} y2={n.y} stroke={n.color} strokeWidth="1.5" className={`opacity-40 ${viewMode === 'replay' ? 'animate-pulse' : ''}`} />;
-                    })}
-                </svg>
-
-                {playbackStep > 0 && (
-                    <div className="absolute w-20 h-20 bg-blue-900 border-2 border-blue-400 rounded-full flex flex-col items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.4)] z-20 animate-fade-in" style={{ left: graphData.cx - 40, top: graphData.cy - 40 }}>
-                        <i className="fas fa-cloud text-blue-300 text-2xl"></i>
-                        <span className="text-[8px] font-black text-white uppercase tracking-widest mt-1">Huawei VPC</span>
+                {/* FLOATING HEADER CONTROLS */}
+                <div className="absolute top-4 left-4 right-4 z-40 flex justify-between items-start pointer-events-none">
+                    <div className="bg-slate-800/90 backdrop-blur border border-slate-700 px-5 py-3 rounded-xl shadow-lg pointer-events-auto">
+                        <h3 className="font-black flex items-center gap-3 text-lg text-white">
+                            <i className="fas fa-meteor text-blue-500"></i> Target Constellation
+                            {activeProject?.nocData && <span className="ml-2 bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[10px] uppercase tracking-widest font-black border border-emerald-500/30"><i className="fas fa-wifi mr-1"></i> Live</span>}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Interactive Digital Twin</p>
                     </div>
-                )}
-
-                {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
-                    <div key={`hub-${i}`} className="absolute w-12 h-12 rounded-full flex items-center justify-center z-20 animate-fade-in" style={{ left: hub.x - 24, top: hub.y - 24, backgroundColor: `${hub.color}20`, border: `2px solid ${hub.color}`, boxShadow: `0 0 20px ${hub.color}40` }}>
-                        <i className={`fas ${hub.icon} text-lg`} style={{ color: hub.color }}></i>
-                        <div className="absolute -bottom-6 w-32 text-center text-[9px] font-black uppercase tracking-widest text-slate-300">{hub.name}</div>
-                    </div>
-                ))}
-
-                {graphData.mappedNodes.map((n, i) => {
-                    if (i >= playbackStep) return null;
-                    return (
-                        <div key={`node-${i}`} className="absolute z-30 group cursor-pointer animate-fade-in" style={{ left: n.x - 12, top: n.y - 12 }}>
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center hover:scale-125 transition-transform" style={{ backgroundColor: n.color, boxShadow: `0 0 15px ${n.color}80` }}>
-                                <i className={`fas ${n.icon} text-[10px] text-white`}></i>
-                            </div>
-
-                            <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-max z-50">
-                                <div className="text-[10px] font-black text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-1.5 mb-1.5">{n.name}</div>
-                                <div className="text-[9px] font-bold text-slate-500 mb-1">Type: <span style={{ color: n.color }} className="font-black ml-1 uppercase">{n.type}</span></div>
-                                <div className="text-[9px] font-bold text-slate-500 mb-1">Target IP: <span className="font-mono text-slate-700 ml-1">{n.ip}</span></div>
-                            </div>
+                    
+                    <div className="flex gap-3 pointer-events-auto">
+                        <div className="bg-slate-800/90 backdrop-blur p-1.5 rounded-xl border border-slate-700 shadow-lg flex">
+                            <button onClick={()=>{setViewMode('live'); setIsPlaying(false); setPlaybackStep(graphData.totalNodes);}} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'live' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
+                                <i className="fas fa-eye mr-2"></i> Live State
+                            </button>
+                            <button onClick={handleReplay} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'replay' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
+                                <i className="fas fa-history mr-2"></i> Playback
+                            </button>
                         </div>
-                    );
-                })}
+                        <button onClick={toggleFullscreen} className="bg-slate-800/90 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-lg text-slate-400 hover:text-white transition-colors" title="Toggle Fullscreen">
+                            <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
+                        </button>
+                    </div>
+                </div>
 
-                <div className="absolute bottom-6 left-6 bg-slate-800/80 backdrop-blur px-6 py-4 rounded-xl border border-slate-700 z-40 shadow-xl">
+                {/* ZOOM CONTROLS */}
+                <div className="absolute bottom-4 right-4 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-xl shadow-lg z-40 flex overflow-hidden">
+                    <button onClick={()=>handleZoom(-0.2)} className="px-4 py-2.5 text-slate-400 hover:bg-slate-700 hover:text-white font-black transition-colors"><i className="fas fa-search-minus"></i></button>
+                    <div className="px-3 py-2.5 bg-slate-900 border-l border-r border-slate-700 text-[10px] font-black uppercase tracking-widest text-slate-300 w-16 text-center flex items-center justify-center">{Math.round(zoom * 100)}%</div>
+                    <button onClick={()=>handleZoom(0.2)} className="px-4 py-2.5 text-slate-400 hover:bg-slate-700 hover:text-white font-black transition-colors"><i className="fas fa-search-plus"></i></button>
+                    <button onClick={handleResetZoom} className="px-3 py-2.5 border-l border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-blue-400 font-black transition-colors" title="Reset View"><i className="fas fa-sync-alt"></i></button>
+                </div>
+
+                {/* PLAYBACK PROGRESS OVERLAY */}
+                <div className="absolute bottom-6 left-6 bg-slate-800/90 backdrop-blur px-6 py-4 rounded-xl border border-slate-700 z-40 shadow-xl pointer-events-none">
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
                         {viewMode === 'live' ? 'Live Target State' : 'Deployment Sequence Playback'}
                     </div>
@@ -693,6 +708,69 @@ function LiveConstellationView({ activeProject }) {
                             <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${(Math.min(playbackStep, graphData.totalNodes) / graphData.totalNodes) * 100}%` }}></div>
                         </div>
                     )}
+                </div>
+
+                {/* INTERACTIVE DRAG/PAN CANVAS AREA */}
+                <div 
+                    className="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                >
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black pointer-events-none"></div>
+                    
+                    {/* Transforming Container */}
+                    <div className="w-full h-full transform-origin-center transition-transform duration-75 ease-out flex items-center justify-center" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+                        
+                        <div style={{ width: graphData.width, height: graphData.height, position: 'relative' }}>
+                            <svg width="100%" height="100%" viewBox={`0 0 ${graphData.width} ${graphData.height}`} className="absolute inset-0 pointer-events-none overflow-visible">
+                                {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
+                                    <line key={`hub-line-${i}`} x1={graphData.cx} y1={graphData.cy} x2={hub.x} y2={hub.y} stroke={hub.color} strokeWidth="1" strokeDasharray="4 4" className="opacity-30" />
+                                ))}
+                                {graphData.mappedNodes.map((n, i) => {
+                                    if (i >= playbackStep) return null;
+                                    const hub = graphData.hubs[n.category];
+                                    return <line key={`node-line-${i}`} x1={hub.x} y1={hub.y} x2={n.x} y2={n.y} stroke={n.color} strokeWidth="1.5" className={`opacity-40 ${viewMode === 'replay' ? 'animate-pulse' : ''}`} />;
+                                })}
+                            </svg>
+
+                            {/* Core Router */}
+                            {playbackStep > 0 && (
+                                <div className="absolute w-20 h-20 bg-blue-900 border-2 border-blue-400 rounded-full flex flex-col items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.4)] z-20 animate-fade-in pointer-events-none" style={{ left: graphData.cx - 40, top: graphData.cy - 40 }}>
+                                    <i className="fas fa-cloud text-blue-300 text-2xl"></i>
+                                    <span className="text-[8px] font-black text-white uppercase tracking-widest mt-1">Huawei VPC</span>
+                                </div>
+                            )}
+
+                            {/* Service Hubs */}
+                            {playbackStep > 0 && Object.values(graphData.hubs).map((hub, i) => (
+                                <div key={`hub-${i}`} className="absolute w-12 h-12 rounded-full flex items-center justify-center z-20 animate-fade-in pointer-events-none" style={{ left: hub.x - 24, top: hub.y - 24, backgroundColor: `${hub.color}20`, border: `2px solid ${hub.color}`, boxShadow: `0 0 20px ${hub.color}40` }}>
+                                    <i className={`fas ${hub.icon} text-lg`} style={{ color: hub.color }}></i>
+                                    <div className="absolute -bottom-7 w-32 text-center text-[10px] font-black uppercase tracking-widest text-slate-300">{hub.name}</div>
+                                </div>
+                            ))}
+
+                            {/* Resources (Satellites) */}
+                            {graphData.mappedNodes.map((n, i) => {
+                                if (i >= playbackStep) return null;
+                                return (
+                                    <div key={`node-${i}`} className="absolute z-30 group animate-fade-in pointer-events-auto" style={{ left: n.x - 12, top: n.y - 12 }}>
+                                        <div className="w-6 h-6 rounded-full flex items-center justify-center hover:scale-125 transition-transform cursor-pointer" style={{ backgroundColor: n.color, boxShadow: `0 0 15px ${n.color}80` }}>
+                                            <i className={`fas ${n.icon} text-[10px] text-white`}></i>
+                                        </div>
+
+                                        {/* Hover Tooltip (Interactive) */}
+                                        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur border border-slate-600 p-3 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-max z-50">
+                                            <div className="text-[10px] font-black text-white uppercase tracking-widest border-b border-slate-600 pb-1.5 mb-1.5">{n.name}</div>
+                                            <div className="text-[9px] font-bold text-slate-400 mb-1">Type: <span style={{ color: n.color }} className="font-black ml-1 uppercase">{n.type}</span></div>
+                                            <div className="text-[9px] font-bold text-slate-400 mb-1">Target IP: <span className="font-mono text-emerald-400 ml-1">{n.ip}</span></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
