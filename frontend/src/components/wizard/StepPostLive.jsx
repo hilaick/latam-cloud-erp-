@@ -284,9 +284,8 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
             {/* MODAL 1: STANDARD DOSSIER */}
             {showDossier && (
-                <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative print:shadow-none print:max-h-none animate-slide-up">
-                        {/* Header (Shrink-0 prevents it from squishing, keeps it visible) */}
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl shrink-0">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-pdf text-rose-500 mr-2"></i> Handover Dossier Generated</h3>
                             <div className="space-x-3 flex items-center">
@@ -295,7 +294,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                             </div>
                         </div>
 
-                        {/* Printable Area (Scrolls independently) */}
                         <div className="p-8 md:p-12 overflow-y-auto custom-scrollbar bg-white flex-1 print:overflow-visible print:p-0 rounded-b-xl" id="printable-dossier">
                             <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                                 <div>
@@ -374,7 +372,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             {showDetailedReport && (
                 <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative print:shadow-none print:max-h-none animate-slide-up">
-                        {/* Header (Shrink-0 to keep visible) */}
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl shrink-0">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-contract text-indigo-600 mr-2"></i> Detailed Handover Report Generated</h3>
                             <div className="space-x-3 flex items-center">
@@ -383,7 +380,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                             </div>
                         </div>
 
-                        {/* Body (Scrollable independently) */}
                         <div className="p-8 md:p-12 overflow-y-auto custom-scrollbar bg-white flex-1 print:overflow-visible print:p-0 rounded-b-xl" id="printable-detailed-report">
                             <div className="prose prose-slate max-w-none">
                                 <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">
@@ -804,6 +800,7 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
         alert("WAR Sign-Off Saved"); 
     };
 
+    // 🚨 THIS IS THE AUTO EVALUATE FUNCTION
     const handleAutoEvaluate = () => {
         setAutoEval(true);
         // Simulate API evaluating the infrastructure and assigning scores
@@ -818,6 +815,7 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
                         <i className="fas fa-shield-alt text-amber-500 mr-3 text-xl"></i> Well-Architected Framework
                     </h4>
                     <div className="flex gap-3">
+                        {/* 🚨 THIS IS THE AUTO EVALUATE BUTTON */}
                         <button onClick={handleAutoEvaluate} className="px-6 py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-amber-200 shadow-sm flex items-center">
                             <i className="fas fa-magic mr-2"></i> Auto-Evaluate via API
                         </button>
