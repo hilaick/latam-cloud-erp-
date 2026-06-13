@@ -49,6 +49,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         alert(`Target Architecture Saved!\n\n${filteredAndSortedNodes.length} filtered nodes have been locked as the official execution baseline.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
     };
 
+    // Kept ONLY for the Target List View. Canvas handles its own fullscreen now.
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
         if (!el) return;
@@ -241,17 +242,11 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
                         {reconcileView === 'canvas' && (
                             <div className="flex flex-col xl:flex-row gap-6 flex-1 overflow-hidden animate-fade-in">
-                                <div id="quoted-canvas-pane" className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
-                                    <button onClick={()=>toggleFullScreen('quoted-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
-                                        <i className="fas fa-expand"></i>
-                                    </button>
+                                <div className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
                                     <ArchitectureCanvas title="Quoted Architecture (SOW)" nodes={quotedNodes} regionFilter={regionFilter} />
                                 </div>
                                 
-                                <div id="live-canvas-pane" className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
-                                    <button onClick={()=>toggleFullScreen('live-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
-                                        <i className="fas fa-expand"></i>
-                                    </button>
+                                <div className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
                                     <ArchitectureCanvas title="Discovered Architecture (Live)" nodes={liveNodes} regionFilter={regionFilter} />
                                 </div>
                             </div>
@@ -277,7 +272,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                             </div>
                             
                             <div className="flex items-center gap-2">
-                                <button onClick={()=>toggleFullScreen('target-container')} className="py-2 px-4 bg-white text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-50 transition-colors border border-slate-300"><i className="fas fa-expand mr-1"></i> Full Screen</button>
+                                {targetView === 'list' && <button onClick={()=>toggleFullScreen('target-container')} className="py-2 px-4 bg-white text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-50 transition-colors border border-slate-300"><i className="fas fa-expand mr-1"></i> Full Screen</button>}
                                 {targetView === 'list' && <button onClick={handleAddNode} className="py-2 px-4 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Node</button>}
                                 <button onClick={saveArchitecture} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95"><i className="fas fa-shield-alt mr-2"></i> Save & Proceed to Governance</button>
                             </div>
@@ -360,7 +355,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
                         {targetView === 'canvas' && (
                             <div className="flex-1 bg-slate-50 relative overflow-hidden flex flex-col border-t border-slate-200">
-                                    <ArchitectureCanvas title="Final Target Architecture" nodes={filteredAndSortedNodes} onNodeClick={setSelectedNode} regionFilter={regionFilter} />
+                                <ArchitectureCanvas 
+                                    title="Final Target Architecture" 
+                                    nodes={filteredAndSortedNodes} 
+                                    onNodeClick={setSelectedNode} 
+                                    regionFilter={regionFilter} 
+                                />
                             </div>
                         )}
                     </div>
