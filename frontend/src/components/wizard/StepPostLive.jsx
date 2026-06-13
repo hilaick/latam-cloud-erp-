@@ -95,7 +95,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     customer_id: project.customerId, 
                     projectId: project.id, 
                     region: project.region || 'la-south-2',
-                    provider: 'Huawei' // Final NOC Scan verifies Target Environment (Huawei)
+                    provider: 'Huawei' 
                 })
             });
             const data = await res.json();
@@ -784,7 +784,12 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
     const [p, setP] = useState(activeProject?.war?.p || 0); 
     const [c, setC] = useState(activeProject?.war?.c || 0); 
     const [o, setO] = useState(activeProject?.war?.o || 0);
-    const [autoEval, setAutoEval] = useState(false);
+    
+    // NEW: Progress Tracking State
+    const [isEvaluating, setIsEvaluating] = useState(false);
+    const [evalProgress, setEvalProgress] = useState(0);
+    const [evalMessage, setEvalMessage] = useState('');
+    const [showGuide, setShowGuide] = useState(false);
     
     useEffect(()=>{ 
         if(activeProject?.war) { 
@@ -800,34 +805,126 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
         alert("WAR Sign-Off Saved"); 
     };
 
-    // 🚨 THIS IS THE AUTO EVALUATE FUNCTION
-    const handleAutoEvaluate = () => {
-        setAutoEval(true);
-        // Simulate API evaluating the infrastructure and assigning scores
-        setR(95); setS(100); setP(90); setC(85); setO(95);
+    // 🚨 PERFECTLY ALIGNED TO CUSTOMER'S PRECISE BACKEND EXPECTATIONS
+    const handleAutoEvaluate = async () => {
+        setIsEvaluating(true);
+        setEvalProgress(0);
+        
+        const steps = [
+            "Analyzing Security Posture (WAF, SG, KMS)...",
+            "Evaluating Resilience & DR (CBR, Multi-AZ)...",
+            "Checking Performance Baselines (ELB, ASG, CDN)...",
+            "Calculating Cost Optimizations...",
+            "Reviewing Operational Excellence (CES, LTS, CTS)..."
+        ];
+
+        // Simulate progress bar visually while fetching
+        for (let i = 0; i < steps.length; i++) {
+            setEvalMessage(steps[i]);
+            setEvalProgress((i + 1) * 18);
+            await new Promise(res => setTimeout(res, 400));
+        }
+
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            
+            // 🚨 Map Live NOC Data to the exact 'target_architecture' structure the Python backend expects
+            const topologyPayload = {
+                compute: activeProject?.nocData?.raw?.compute || activeProject?.blueprintData?.topology?.compute || [],
+                databases: activeProject?.nocData?.raw?.databases || activeProject?.nocData?.raw?.database || activeProject?.blueprintData?.topology?.databases || [],
+                network: activeProject?.nocData?.raw?.network || activeProject?.blueprintData?.topology?.network || [],
+                storage: activeProject?.nocData?.raw?.storage || activeProject?.blueprintData?.topology?.storage || []
+            };
+
+            const res = await fetch('/api/war/evaluate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    project_id: activeProject.id,
+                    region: activeProject.region || 'la-south-2',
+                    target_architecture: { topology: topologyPayload }
+                })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok && data.scores) {
+                setEvalProgress(100);
+                setEvalMessage("Evaluation Complete!");
+                
+                // 🚨 Read the FULL WORD KEYS provided by the backend response
+                const newScores = {
+                    r: data.scores.resilience || 0,
+                    s: data.scores.security || 0,
+                    p: data.scores.performance || 0,
+                    c: data.scores.cost || 0,
+                    o: data.scores.operations || 0
+                };
+                
+                setR(newScores.r);
+                setS(newScores.s);
+                setP(newScores.p);
+                setC(newScores.c);
+                setO(newScores.o);
+                
+                // Auto-save to context
+                onUpdateProject(activeProject.id, 'war', newScores);
+                
+                setTimeout(() => {
+                    alert(`✅ WAR Evaluation Complete!\n\n📊 Overall Score: ${data.scores.total || 0}/100\n\n🏛️ Pillar Scores:\n  Resilience: ${newScores.r}%\n  Security: ${newScores.s}%\n  Performance: ${newScores.p}%\n  Cost: ${newScores.c}%\n  Operations: ${newScores.o}%`);
+                    setIsEvaluating(false);
+                }, 500);
+                
+            } else {
+                alert(`Evaluation Failed: ${data.error || 'Unknown Error'}`);
+                setIsEvaluating(false);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+            setIsEvaluating(false);
+        }
     };
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+        <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in relative">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 border-b border-slate-100 pb-4 gap-4">
-                    <h4 className="font-black text-lg text-slate-800 uppercase tracking-widest flex items-center">
-                        <i className="fas fa-shield-alt text-amber-500 mr-3 text-xl"></i> Well-Architected Framework
-                    </h4>
+                    <div>
+                        <h4 className="font-black text-lg text-slate-800 uppercase tracking-widest flex items-center">
+                            <i className="fas fa-shield-alt text-amber-500 mr-3 text-xl"></i> Well-Architected Framework
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1">Evaluates target environment against Huawei Cloud best practices.</p>
+                    </div>
                     <div className="flex gap-3">
-                        {/* 🚨 THIS IS THE AUTO EVALUATE BUTTON */}
-                        <button onClick={handleAutoEvaluate} className="px-6 py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-amber-200 shadow-sm flex items-center">
-                            <i className="fas fa-magic mr-2"></i> Auto-Evaluate via API
+                        <button onClick={() => setShowGuide(true)} className="px-5 py-2.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm flex items-center">
+                            <i className="fas fa-book-open mr-2"></i> View Guide
+                        </button>
+                        <button onClick={handleAutoEvaluate} disabled={isEvaluating} className="px-6 py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-amber-200 shadow-sm flex items-center">
+                            {isEvaluating ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-magic mr-2"></i>}
+                            {isEvaluating ? 'Evaluating...' : 'Auto-Evaluate via API'}
                         </button>
                         <button onClick={saveContext} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
                             <i className="fas fa-save mr-2"></i> Save Scores
                         </button>
                     </div>
                 </div>
+
+                {/* Progress Indicator */}
+                {isEvaluating && (
+                    <div className="mb-8 p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner animate-fade-in">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs font-black text-slate-700 uppercase tracking-widest"><i className="fas fa-microscope text-indigo-500 mr-2"></i> {evalMessage}</span>
+                            <span className="text-xs font-bold text-indigo-600">{evalProgress}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${evalProgress}%` }}></div>
+                        </div>
+                    </div>
+                )}
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
-                        {!autoEval && score === 0 && (
+                        {!isEvaluating && score === 0 && (
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex items-center shadow-inner">
                                 <i className="fas fa-clock mr-3 text-slate-400 text-lg"></i> Pending Baseline Evaluation
                             </div>
@@ -842,13 +939,85 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
 
                     <div className={`p-10 rounded-3xl border-4 flex flex-col items-center justify-center text-center transition-all ${score > 0 ? 'bg-amber-50 border-amber-300 shadow-inner' : 'bg-slate-50 border-slate-300'}`}>
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">Final Architecture Score</h4>
-                        <div className={`text-8xl font-black tracking-tighter ${score > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{score}</div>
-                        <div className={`mt-8 px-8 py-3 rounded-full font-black uppercase tracking-widest text-[10px] border-2 transition-all ${score >= 80 ? 'bg-amber-500 text-white border-amber-600 shadow-lg' : 'bg-slate-200 text-slate-400 border-slate-300'}`}>
-                            {score >= 80 ? 'Certified & Approved' : 'Pending Verification'}
+                        <div className={`text-8xl font-black tracking-tighter ${score >= 80 ? 'text-emerald-500' : score >= 60 ? 'text-amber-500' : score > 0 ? 'text-rose-500' : 'text-slate-300'}`}>{score}</div>
+                        <div className={`mt-8 px-8 py-3 rounded-full font-black uppercase tracking-widest text-[10px] border-2 transition-all ${score >= 80 ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg' : score >= 60 ? 'bg-amber-500 text-white border-amber-600 shadow-lg' : score > 0 ? 'bg-rose-500 text-white border-rose-600 shadow-lg' : 'bg-slate-200 text-slate-400 border-slate-300'}`}>
+                            {score >= 80 ? 'Certified & Approved' : score >= 60 ? 'Acceptable with Minor Gaps' : score > 0 ? 'High Risk Architecture' : 'Pending Verification'}
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Evaluation Guide Modal */}
+            {showGuide && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden animate-slide-up">
+                        <div className="bg-slate-900 px-6 py-4 flex justify-between items-center text-white shrink-0">
+                            <h3 className="font-black text-lg text-blue-400 flex items-center">
+                                <i className="fas fa-book-open mr-3"></i> Well-Architected Scoring Guide
+                            </h3>
+                            <button onClick={() => setShowGuide(false)} className="text-slate-400 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto bg-slate-50 space-y-6 flex-1 custom-scrollbar text-sm text-slate-700">
+                            <p className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm leading-relaxed">
+                                The Auto-Evaluate API inspects the provisioned resources in the Target Architecture and scores them based on Huawei Cloud best practices. A baseline score is granted for having infrastructure, with bonus points awarded for specific enterprise services.
+                            </p>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white p-4 rounded-xl border-l-4 border-rose-500 shadow-sm">
+                                    <h4 className="font-black text-rose-700 mb-2 uppercase tracking-widest text-[10px]"><i className="fas fa-shield-alt mr-1"></i> Security (Target: 100%)</h4>
+                                    <ul className="space-y-1 text-xs text-slate-600">
+                                        <li>• Baseline: 40%</li>
+                                        <li>• Security Groups / Firewall: +20%</li>
+                                        <li>• WAF (Web App Firewall): +20%</li>
+                                        <li>• KMS / Encryption: +10%</li>
+                                        <li>• IAM Restrictions: +10%</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border-l-4 border-blue-500 shadow-sm">
+                                    <h4 className="font-black text-blue-700 mb-2 uppercase tracking-widest text-[10px]"><i className="fas fa-server mr-1"></i> Resilience (Target: 100%)</h4>
+                                    <ul className="space-y-1 text-xs text-slate-600">
+                                        <li>• Baseline: 35%</li>
+                                        <li>• CBR (Backup Vaults): +25%</li>
+                                        <li>• ELB (Load Balancers): +20%</li>
+                                        <li>• ASG (Auto-Scaling): +10%</li>
+                                        <li>• Multi-Node Redundancy: +10%</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border-l-4 border-purple-500 shadow-sm">
+                                    <h4 className="font-black text-purple-700 mb-2 uppercase tracking-widest text-[10px]"><i className="fas fa-bolt mr-1"></i> Performance (Target: 100%)</h4>
+                                    <ul className="space-y-1 text-xs text-slate-600">
+                                        <li>• Baseline: 35%</li>
+                                        <li>• ELB (Traffic Routing): +25%</li>
+                                        <li>• CDN (Content Delivery): +15%</li>
+                                        <li>• ASG (Elastic Compute): +15%</li>
+                                        <li>• Redis/Memcached: +10%</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border-l-4 border-emerald-500 shadow-sm">
+                                    <h4 className="font-black text-emerald-700 mb-2 uppercase tracking-widest text-[10px]"><i className="fas fa-dollar-sign mr-1"></i> Cost Optimization (Target: 100%)</h4>
+                                    <ul className="space-y-1 text-xs text-slate-600">
+                                        <li>• Baseline: 40%</li>
+                                        <li>• ASG (Dynamic Downscaling): +20%</li>
+                                        <li>• Reserved/Spot Instances: +20%</li>
+                                        <li>• OBS (Cold Storage Tiering): +15%</li>
+                                        <li>• SFS (Shared File System): +5%</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border-l-4 border-slate-500 shadow-sm md:col-span-2">
+                                    <h4 className="font-black text-slate-700 mb-2 uppercase tracking-widest text-[10px]"><i className="fas fa-cogs mr-1"></i> Operational Excellence (Target: 100%)</h4>
+                                    <ul className="space-y-1 text-xs text-slate-600">
+                                        <li>• Baseline: 25%</li>
+                                        <li>• CES (Cloud Eye Monitoring): +30%</li>
+                                        <li>• CTS (Cloud Trace Service): +25%</li>
+                                        <li>• LTS (Log Tank Service): +20%</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
