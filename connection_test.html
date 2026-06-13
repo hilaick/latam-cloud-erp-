@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Server Connection Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Server Connection Diagnostic</h1>
+    
+    <div id="connection-info">
+        <h2>Testing connection to server...</h2>
+        <p id="server-ip">Server IP: Testing...</p>
+        <p id="server-port">Port: 9119</p>
+        <p id="connection-status">Status: Testing...</p>
+        <p id="fullscreen-test">Fullscreen API: Testing...</p>
+    </div>
+    
+    <div id="instructions">
+        <h2>If you cannot connect:</h2>
+        <ol>
+            <li>Make sure you're using the correct IP: <code id="correct-ip">192.168.0.76</code></li>
+            <li>Make sure port 9119 is not blocked by firewall</li>
+            <li>Try accessing from the server machine itself</li>
+            <li>Check network connectivity (ping the server IP)</li>
+        </ol>
+    </div>
+    
+    <script>
+        // Test server connection
+        fetch('/health')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('connection-status').innerHTML = 
+                    `<span class="success">✅ Connected to server</span>`;
+                document.getElementById('server-ip').innerHTML = 
+                    `Server IP: ${window.location.hostname}`;
+            })
+            .catch(err => {
+                document.getElementById('connection-status').innerHTML = 
+                    `<span class="error">❌ Cannot connect to server: ${err.message}</span>`;
+            });
+        
+        // Test Fullscreen API
+        const hasFullscreen = typeof document.documentElement.requestFullscreen !== 'undefined' &&
+                             typeof document.exitFullscreen !== 'undefined' &&
+                             typeof document.fullscreenElement !== 'undefined';
+        
+        document.getElementById('fullscreen-test').innerHTML = 
+            hasFullscreen ? 
+            `<span class="success">✅ Fullscreen API available</span>` :
+            `<span class="error">❌ Fullscreen API NOT available</span>`;
+        
+        // Show correct IP
+        document.getElementById('correct-ip').textContent = window.location.hostname || '192.168.0.76';
+    </script>
+</body>
+</html>

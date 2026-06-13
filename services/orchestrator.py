@@ -4,6 +4,7 @@ import requests
 from datetime import datetime
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
 from huaweicloudsdkcore.signer.signer import Signer, SdkRequest
+from services.tool_recommender import ToolRecommender
 
 logger = logging.getLogger(__name__)
 
@@ -114,4 +115,58 @@ class ExecutionOrchestrator:
 
         except Exception as e:
             logger.error(f"Orchestrator RFS Error: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    @staticmethod
+    def generate_migration_plan(discovery_data: dict, project_type: str = "execution") -> dict:
+        """
+        Generate migration plan with tool recommendations and WBS tasks
+        
+        Args:
+            discovery_data: Raw inventory from discovery
+            project_type: "technical" for engineering WBS, "sales" for high-level WBS
+            
+        Returns:
+            Dictionary with recommendations and WBS tasks
+        """
+        try:
+            # Get tool recommendations
+            recommendations = ToolRecommender.analyze_discovery_data(discovery_data)
+            
+            # Generate appropriate WBS tasks
+            wbs_tasks = ToolRecommender.generate_wbs_tasks(recommendations, project_type)
+            
+            # Calculate overall migration metrics
+            total_resources = recommendations["summary"]["total_resources"]
+            primary_tool = recommendations["summary"]["primary_tool"]
+            timeline = recommendations["summary"]["estimated_timeline"]
+            risk = recommendations["summary"]["risk_assessment"]
+            complexity = recommendations["summary"]["migration_complexity"]
+            
+            migration_plan = {
+                "success": True,
+                "project_type": project_type,
+                "total_resources": total_resources,
+                "primary_migration_tool": primary_tool,
+                "estimated_timeline": timeline,
+                "risk_assessment": risk,
+                "migration_complexity": complexity,
+                "tool_recommendations": recommendations["recommendations"],
+                "summary": recommendations["summary"],
+                "wbs_tasks": wbs_tasks,
+                "huawei_best_practices": recommendations["summary"]["huawei_best_practices"],
+                "next_steps": [
+                    "Review tool recommendations above",
+                    "Assign resources to WBS tasks",
+                    "Schedule pilot migration for non-production workload",
+                    "Validate network connectivity between source and target",
+                    "Prepare migration runbook based on selected tools"
+                ]
+            }
+            
+            logger.info(f"Generated migration plan for {total_resources} resources using {primary_tool}")
+            return migration_plan
+            
+        except Exception as e:
+            logger.error(f"Migration plan generation failed: {str(e)}")
             return {"success": False, "error": str(e)}

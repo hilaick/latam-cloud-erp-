@@ -705,10 +705,86 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
         alert("WAR Sign-Off Saved"); 
     };
 
-    const handleAutoEvaluate = () => {
-        setAutoEval(true);
-        // Simulate API evaluating the infrastructure and assigning scores
-        setR(95); setS(100); setP(90); setC(85); setO(95);
+    const [evaluating, setEvaluating] = useState(false);
+    const [evaluationResults, setEvaluationResults] = useState(null);
+    const [progress, setProgress] = useState(0);
+    const [showGuide, setShowGuide] = useState(false);
+    
+    const handleAutoEvaluate = async () => {
+        setEvaluating(true);
+        setProgress(0);
+        
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            if (!token) {
+                alert('Please log in to perform WAR evaluation');
+                setEvaluating(false);
+                return;
+            }
+            
+            // Get project data for evaluation
+            const projectData = {
+                project_id: activeProject?.id,
+                region: activeProject?.region || 'la-south-2',
+                target_architecture: activeProject?.blueprintData || {}
+            };
+            
+            setProgress(20);
+            
+            // Call WAR evaluation API
+            const response = await fetch('/api/war/evaluate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(projectData)
+            });
+            
+            setProgress(60);
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                setEvaluationResults(data);
+                // Update scores with real evaluation
+                setR(data.scores.resilience);
+                setS(data.scores.security);
+                setP(data.scores.performance);
+                setC(data.scores.cost);
+                setO(data.scores.operations);
+                setAutoEval(true);
+                
+                // Show success message with details
+                alert(`WAR Evaluation Complete!\n\nOverall Score: ${data.scores.total}/100\nStatus: ${data.status_message}\n\n${data.recommendations.length} recommendations generated.`);
+            } else {
+                throw new Error(data.error || 'Evaluation failed');
+            }
+            
+        } catch (error) {
+            console.error('WAR evaluation error:', error);
+            alert(`WAR Evaluation Failed: ${error.message}\n\nUsing fallback evaluation...`);
+            
+            // Fallback to simulated evaluation
+            setProgress(100);
+            setTimeout(() => {
+                setR(85);
+                setS(90);
+                setP(80);
+                setC(75);
+                setO(85);
+                setAutoEval(true);
+                setEvaluating(false);
+            }, 500);
+            return;
+        }
+        
+        setProgress(100);
+        setTimeout(() => setEvaluating(false), 500);
     };
 
     return (
@@ -718,15 +794,57 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
                     <h4 className="font-black text-lg text-slate-800 uppercase tracking-widest flex items-center">
                         <i className="fas fa-shield-alt text-amber-500 mr-3 text-xl"></i> Well-Architected Framework
                     </h4>
-                    <div className="flex gap-3">
-                        <button onClick={handleAutoEvaluate} className="px-6 py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-amber-200 shadow-sm flex items-center">
-                            <i className="fas fa-magic mr-2"></i> Auto-Evaluate via API
-                        </button>
-                        <button onClick={saveContext} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-                            <i className="fas fa-save mr-2"></i> Save Scores
-                        </button>
-                    </div>
-                </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <div className="flex flex-col gap-3">
+                            <div className="flex gap-3">
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={handleAutoEvaluate} 
+                                    disabled={evaluating}
+                                    className="px-6 py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white rounded-lg border border-amber-200 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {evaluating ? (
+                                        <>
+                                            <i className="fas fa-spinner fa-spin"></i>
+                                            Evaluating...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fas fa-magic"></i>
+                                            Auto-Evaluate via API
+                                        </>
+                                    )}
+                                </button>
+                                
+                                {/* Progress indicator */}
+                                {evaluating && (
+                                    <div className="flex-1 max-w-xs">
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div 
+                                                className="bg-amber-500 h-2.5 rounded-full transition-all duration-300" 
+                                                style={{ width: `${progress}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Analyzing {progress < 20 ? "Resilience" : progress < 40 ? "Security" : progress < 60 ? "Performance" : progress < 80 ? "Cost" : "Operations"}... ({progress}%)
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex items-center gap-4 text-xs">
+                                <span className="text-slate-500">Real-time analysis of Huawei Cloud infrastructure</span>
+                                
+                                {/* Evaluation Criteria Link - Now opens modal */}
+                                <button 
+                                    onClick={() => setShowGuide(true)}
+                                    className="text-[9px] text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1"
+                                >
+                                    <i className="fas fa-info-circle"></i> View Evaluation Guide
+                                </button>
+                            </div>
+                        </div>
+
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
@@ -751,6 +869,315 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
                         </div>
                     </div>
                 </div>
+                
+                {/* Evaluation Results & Recommendations */}
+                {evaluationResults && (
+                    <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <h5 className="font-black text-sm text-slate-800 uppercase tracking-widest mb-4 flex items-center">
+                            <i className="fas fa-chart-bar text-amber-500 mr-2"></i> Evaluation Results & Recommendations
+                        </h5>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Score Breakdown */}
+                            <div className="space-y-4">
+                                <h6 className="text-xs font-black text-slate-600 uppercase tracking-widest">Score Breakdown</h6>
+                                <div className="space-y-3">
+                                    {Object.entries(evaluationResults.scores).map(([key, value]) => (
+                                        key !== 'total' && (
+                                            <div key={key} className="flex items-center justify-between">
+                                                <span className="text-xs font-medium text-slate-700 capitalize">{key}</span>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-32 bg-slate-100 rounded-full h-2">
+                                                        <div 
+                                                            className={`h-2 rounded-full ${
+                                                                value >= 80 ? 'bg-emerald-500' :
+                                                                value >= 60 ? 'bg-amber-500' :
+                                                                value >= 40 ? 'bg-orange-500' : 'bg-rose-500'
+                                                            }`}
+                                                            style={{ width: `${value}%` }}
+                                                        ></div>
+                                                    </div>
+                                                    <span className="text-sm font-black text-slate-800 w-10 text-right">{value}%</span>
+                                                </div>
+                                            </div>
+                                        )
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* Recommendations */}
+                            <div className="space-y-4">
+                                <h6 className="text-xs font-black text-slate-600 uppercase tracking-widest">Recommendations</h6>
+                                <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+                                    {evaluationResults.recommendations && evaluationResults.recommendations.length > 0 ? (
+                                        evaluationResults.recommendations.map((rec, index) => (
+                                            <div key={index} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                                <div className={`mt-1 w-2 h-2 rounded-full ${
+                                                    rec.priority === 'high' ? 'bg-rose-500' :
+                                                    rec.priority === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                                                }`}></div>
+                                                <div className="flex-1">
+                                                    <div className="text-xs font-medium text-slate-800">{rec.action}</div>
+                                                    <div className="text-[10px] text-slate-500 mt-1">
+                                                        <span className="font-medium">Service:</span> {rec.huawei_service} • 
+                                                        <span className="font-medium ml-2">Impact:</span> {rec.impact}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-4 text-slate-400 text-sm">
+                                            <i className="fas fa-check-circle text-emerald-500 text-lg mb-2"></i>
+                                            <div>All pillars meet Huawei Cloud best practices!</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Next Steps */}
+                        {evaluationResults.next_steps && evaluationResults.next_steps.length > 0 && (
+                            <div className="mt-6 pt-6 border-t border-slate-200">
+                                <h6 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-3">Next Steps</h6>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {evaluationResults.next_steps.map((step, index) => (
+                                        <div key={index} className="flex items-center gap-2 text-sm text-slate-700">
+                                            <i className="fas fa-chevron-right text-slate-400 text-xs"></i>
+                                            <span>{step}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+            
+            {/* Evaluation Guide Modal */}
+            {showGuide && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-200">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">🏛️ Huawei Cloud Well-Architected Framework</h3>
+                                <p className="text-sm text-slate-600 mt-1">Version 2.0 - Interactive Evaluation Guide</p>
+                            </div>
+                            <button 
+                                onClick={() => setShowGuide(false)}
+                                className="text-slate-400 hover:text-slate-600 text-xl"
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="space-y-6">
+                                {/* Resilience Pillar */}
+                                <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-amber-800 flex items-center gap-2">
+                                        <i className="fas fa-shield-alt"></i>
+                                        Resilience (High Availability & Disaster Recovery)
+                                    </h4>
+                                    <p className="text-sm text-amber-700 mt-1">Ensures your workload can recover from infrastructure or service disruptions.</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-amber-100">
+                                            <span className="text-sm">Are critical workloads deployed across multiple Availability Zones?</span>
+                                            <span className="font-bold text-amber-600">15 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-amber-100">
+                                            <span className="text-sm">Do ECS instances have High Availability enabled?</span>
+                                            <span className="font-bold text-amber-600">40 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-amber-100">
+                                            <span className="text-sm">Are databases configured with replication?</span>
+                                            <span className="font-bold text-amber-600">30 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-amber-100">
+                                            <span className="text-sm">Is backup and disaster recovery configured?</span>
+                                            <span className="font-bold text-amber-600">15 pts</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded">SDRS</span>
+                                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded">CBR</span>
+                                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded">CSBS</span>
+                                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded">RDS HA</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Security Pillar */}
+                                <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-emerald-800 flex items-center gap-2">
+                                        <i className="fas fa-lock"></i>
+                                        Security & Compliance
+                                    </h4>
+                                    <p className="text-sm text-emerald-700 mt-1">Protects information, systems, and assets while delivering business value.</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-emerald-100">
+                                            <span className="text-sm">Are Security Groups properly configured?</span>
+                                            <span className="font-bold text-emerald-600">20 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-emerald-100">
+                                            <span className="text-sm">Is WAF or Anti-DDoS protection enabled?</span>
+                                            <span className="font-bold text-emerald-600">20 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-emerald-100">
+                                            <span className="text-sm">Is data encrypted at rest?</span>
+                                            <span className="font-bold text-emerald-600">30 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-emerald-100">
+                                            <span className="text-sm">Is IAM/RBAC implemented?</span>
+                                            <span className="font-bold text-emerald-600">30 pts</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded">SG</span>
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded">WAF</span>
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded">Anti-DDoS</span>
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded">KMS</span>
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded">IAM</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Performance Pillar */}
+                                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-blue-800 flex items-center gap-2">
+                                        <i className="fas fa-bolt"></i>
+                                        Performance Efficiency
+                                    </h4>
+                                    <p className="text-sm text-blue-700 mt-1">Uses computing resources efficiently to meet system requirements.</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-blue-100">
+                                            <span className="text-sm">Is load balancing implemented?</span>
+                                            <span className="font-bold text-blue-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-blue-100">
+                                            <span className="text-sm">Is CDN or acceleration enabled?</span>
+                                            <span className="font-bold text-blue-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-blue-100">
+                                            <span className="text-sm">Is auto-scaling configured?</span>
+                                            <span className="font-bold text-blue-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-blue-100">
+                                            <span className="text-sm">Are high-performance storage tiers used?</span>
+                                            <span className="font-bold text-blue-600">25 pts</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">ELB</span>
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">DCDN</span>
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">AS</span>
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">EVS Performance</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Cost Pillar */}
+                                <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-purple-800 flex items-center gap-2">
+                                        <i className="fas fa-coins"></i>
+                                        Cost Optimization
+                                    </h4>
+                                    <p className="text-sm text-purple-700 mt-1">Avoids unnecessary costs while maintaining business value.</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-purple-100">
+                                            <span className="text-sm">Are Reserved Instances used for steady-state workloads?</span>
+                                            <span className="font-bold text-purple-600">40 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-purple-100">
+                                            <span className="text-sm">Is auto-scaling optimized for cost?</span>
+                                            <span className="font-bold text-purple-600">30 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-purple-100">
+                                            <span className="text-sm">Are storage lifecycle policies implemented?</span>
+                                            <span className="font-bold text-purple-600">30 pts</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">Reserved ECS</span>
+                                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">Auto Scaling</span>
+                                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">OBS Lifecycle</span>
+                                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">Spot Instances</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Operations Pillar */}
+                                <div className="bg-slate-50 border-l-4 border-slate-500 p-4 rounded-r-lg">
+                                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                                        <i className="fas fa-tools"></i>
+                                        Operational Excellence
+                                    </h4>
+                                    <p className="text-sm text-slate-700 mt-1">Improves visibility, automation, and operational efficiency.</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-slate-100">
+                                            <span className="text-sm">Is comprehensive monitoring enabled?</span>
+                                            <span className="font-bold text-slate-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-slate-100">
+                                            <span className="text-sm">Are logs centralized and analyzed?</span>
+                                            <span className="font-bold text-slate-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-slate-100">
+                                            <span className="text-sm">Is infrastructure automation implemented?</span>
+                                            <span className="font-bold text-slate-600">25 pts</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded border border-slate-100">
+                                            <span className="text-sm">Are backups automated?</span>
+                                            <span className="font-bold text-slate-600">25 pts</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 bg-slate-100 text-slate-800 text-xs rounded">CES</span>
+                                        <span className="px-2 py-1 bg-slate-100 text-slate-800 text-xs rounded">LTS</span>
+                                        <span className="px-2 py-1 bg-slate-100 text-slate-800 text-xs rounded">AS</span>
+                                        <span className="px-2 py-1 bg-slate-100 text-slate-800 text-xs rounded">CCE</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Scoring Guide */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <h4 className="font-bold text-slate-800 mb-3">📊 Scoring Guide</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="bg-white p-3 rounded border border-emerald-200">
+                                            <div className="font-bold text-emerald-700">Excellent (80-100 points)</div>
+                                            <div className="text-sm text-slate-600 mt-1">Fully aligned with Huawei Cloud best practices</div>
+                                        </div>
+                                        <div className="bg-white p-3 rounded border border-amber-200">
+                                            <div className="font-bold text-amber-700">Good (60-79 points)</div>
+                                            <div className="text-sm text-slate-600 mt-1">Well-designed with minor improvements needed</div>
+                                        </div>
+                                        <div className="bg-white p-3 rounded border border-orange-200">
+                                            <div className="font-bold text-orange-700">Needs Improvement (40-59 points)</div>
+                                            <div className="text-sm text-slate-600 mt-1">Significant improvements required</div>
+                                        </div>
+                                        <div className="bg-white p-3 rounded border border-rose-200">
+                                            <div className="font-bold text-rose-700">Poor (0-39 points)</div>
+                                            <div className="text-sm text-slate-600 mt-1">Does not meet basic standards</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="p-6 border-t border-slate-200 bg-slate-50">
+                            <div className="flex justify-between items-center">
+                                <div className="text-sm text-slate-600">
+                                    <i className="fas fa-lightbulb text-amber-500 mr-2"></i>
+                                    Click each pillar above to see specific recommendations and Huawei Cloud services to implement.
+                                </div>
+                                <button 
+                                    onClick={() => setShowGuide(false)}
+                                    className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors"
+                                >
+                                    Close Guide
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            </div>
+            </div>
             </div>
         </div>
     );

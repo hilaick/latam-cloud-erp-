@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WAR Evaluation Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .test-result { padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .api-test { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        code { background: #f8f9fa; padding: 2px 5px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Huawei Cloud WAR Evaluation System Test</h1>
+    
+    <div class="api-test">
+        <h2>API Endpoints Test</h2>
+        
+        <div id="criteria-test" class="test-result">
+            <h3>1. GET /api/war/criteria</h3>
+            <p>Testing criteria endpoint...</p>
+        </div>
+        
+        <div id="evaluate-test" class="test-result">
+            <h3>2. POST /api/war/evaluate</h3>
+            <p>Testing evaluation endpoint...</p>
+        </div>
+        
+        <div id="frontend-test" class="test-result">
+            <h3>3. Frontend Integration</h3>
+            <p>Testing frontend accessibility...</p>
+        </div>
+    </div>
+    
+    <div class="api-test">
+        <h2>Implementation Summary</h2>
+        <p><strong>✅ WAR Evaluation System Successfully Deployed!</strong></p>
+        
+        <h3>What's Been Implemented:</h3>
+        <ul>
+            <li><strong>Real API Endpoints:</strong>
+                <ul>
+                    <li><code>GET /api/war/criteria</code> - Returns detailed evaluation criteria</li>
+                    <li><code>POST /api/war/evaluate</code> - Evaluates Huawei Cloud infrastructure</li>
+                </ul>
+            </li>
+            <li><strong>Enhanced Frontend Component:</strong>
+                <ul>
+                    <li>Progress indicator during evaluation</li>
+                    <li>Real API integration (not mock data)</li>
+                    <li>Detailed score breakdown with visual progress bars</li>
+                    <li>Priority-based recommendations</li>
+                    <li>Mobile-responsive design</li>
+                    <li>Fallback to simulated evaluation if API fails</li>
+                </ul>
+            </li>
+            <li><strong>Comprehensive Evaluation Logic:</strong>
+                <ul>
+                    <li>5 Pillars: Resilience, Security, Performance, Cost, Operations</li>
+                    <li>Huawei Cloud service-specific scoring</li>
+                    <li>Actionable recommendations with Huawei service references</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <h3>How to Use:</h3>
+        <ol>
+            <li>Navigate to the ERP application at <a href="http://localhost:9119" target="_blank">http://localhost:9119</a></li>
+            <li>Go to Step 5: Post-Live Governance</li>
+            <li>Click on "3. WAR Sign-Off" tab</li>
+            <li>Click "Auto-Evaluate via API" button</li>
+            <li>View detailed results with scores and recommendations</li>
+        </ol>
+        
+        <h3>Sample Evaluation Output:</h3>
+        <pre><code>Overall Score: 62/100 (Good)
+Status: Architecture is well-designed with minor improvements needed
+
+Recommendations:
+- [Medium] Enable multi-AZ deployment for critical workloads (SDRS, CBR)
+- [Medium] Add load balancers and enable auto-scaling (ELB, AS)
+- [Medium] Implement comprehensive monitoring and logging (CES, LTS)</code></pre>
+    </div>
+    
+    <script>
+        // Test API endpoints
+        async function testCriteria() {
+            try {
+                const response = await fetch('/api/war/criteria');
+                const data = await response.json();
+                document.getElementById('criteria-test').innerHTML = `
+                    <h3>✅ GET /api/war/criteria</h3>
+                    <p><strong>Success!</strong> Framework: ${data.framework} v${data.version}</p>
+                    <p>Pillars: ${Object.keys(data.pillars).join(', ')}</p>
+                `;
+                document.getElementById('criteria-test').className = 'test-result success';
+                return true;
+            } catch (error) {
+                document.getElementById('criteria-test').innerHTML = `
+                    <h3>❌ GET /api/war/criteria</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+                document.getElementById('criteria-test').className = 'test-result error';
+                return false;
+            }
+        }
+        
+        async function testEvaluate() {
+            try {
+                const testData = {
+                    project_id: "test-project-123",
+                    region: "la-south-2",
+                    target_architecture: {
+                        topology: {
+                            compute: [
+                                {type: "ECS", ha_enabled: true, auto_scaling: true, billing_type: "reserved"},
+                                {type: "ECS", ha_enabled: false, auto_scaling: false}
+                            ],
+                            databases: [
+                                {type: "RDS", ha_enabled: true, replication: true}
+                            ],
+                            network: [
+                                {type: "SG"},
+                                {type: "ELB"},
+                                {type: "WAF"},
+                                {type: "IAM"}
+                            ],
+                            storage: [
+                                {type: "EVS", encrypted: true, performance_tier: "high"},
+                                {type: "OBS", lifecycle_policy: true},
+                                {type: "CBR"}
+                            ]
+                        }
+                    }
+                };
+                
+                const response = await fetch('/api/war/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(testData)
+                });
+                
+                const data = await response.json();
+                document.getElementById('evaluate-test').innerHTML = `
+                    <h3>✅ POST /api/war/evaluate</h3>
+                    <p><strong>Success!</strong> Project: ${data.project_id}</p>
+                    <p>Overall Score: ${data.scores.total}/100 (${data.status})</p>
+                    <p>Recommendations: ${data.recommendations.length}</p>
+                `;
+                document.getElementById('evaluate-test').className = 'test-result success';
+                return true;
+            } catch (error) {
+                document.getElementById('evaluate-test').innerHTML = `
+                    <h3>❌ POST /api/war/evaluate</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+                document.getElementById('evaluate-test').className = 'test-result error';
+                return false;
+            }
+        }
+        
+        async function testFrontend() {
+            try {
+                const response = await fetch('/');
+                if (response.ok) {
+                    document.getElementById('frontend-test').innerHTML = `
+                        <h3>✅ Frontend Accessible</h3>
+                        <p><strong>Success!</strong> Frontend is running at <a href="http://localhost:9119" target="_blank">http://localhost:9119</a></p>
+                        <p>WAR Evaluation Component: <code>StepPostLive.jsx</code> updated with real API integration</p>
+                    `;
+                    document.getElementById('frontend-test').className = 'test-result success';
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                document.getElementById('frontend-test').innerHTML = `
+                    <h3>⚠️ Frontend Check</h3>
+                    <p><strong>Warning:</strong> ${error.message}</p>
+                    <p>Frontend might need rebuild: <code>cd frontend && npm run build</code></p>
+                `;
+                document.getElementById('frontend-test').className = 'test-result warning';
+                return false;
+            }
+        }
+        
+        // Run tests
+        async function runTests() {
+            document.getElementById('criteria-test').innerHTML = '<h3>1. GET /api/war/criteria</h3><p>Testing...</p>';
+            document.getElementById('evaluate-test').innerHTML = '<h3>2. POST /api/war/evaluate</h3><p>Testing...</p>';
+            document.getElementById('frontend-test').innerHTML = '<h3>3. Frontend Integration</h3><p>Testing...</p>';
+            
+            await testCriteria();
+            await testEvaluate();
+            await testFrontend();
+        }
+        
+        // Run tests on page load
+        window.onload = runTests;
+    </script>
+</body>
+</html>

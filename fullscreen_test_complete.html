@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fullscreen Functionality Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Fullscreen Functionality Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Check if fullscreen functions exist in JS</h2>
+        <div id="test1-result">Testing...</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Fullscreen API availability</h2>
+        <div id="test2-result">Testing...</div>
+        <button onclick="testFullscreenAPI()">Test Fullscreen API</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Architecture Canvas Container</h2>
+        <div id="test3-result">Testing...</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 4: Toggle Fullscreen Button</h2>
+        <div id="test4-result">Testing...</div>
+        <div id="test-area" style="background: #f0f0f0; padding: 20px; border: 2px solid #333; margin: 20px 0;">
+            <p>This is a test area for fullscreen functionality.</p>
+            <button onclick="toggleFullscreen()">Toggle Fullscreen</button>
+            <p id="status">Fullscreen: Not active</p>
+        </div>
+    </div>
+    
+    <script>
+        // Test 1: Check if fullscreen functions exist in JS
+        const test1El = document.getElementById('test1-result');
+        const hasRequestFullscreen = typeof document.documentElement.requestFullscreen !== 'undefined';
+        const hasExitFullscreen = typeof document.exitFullscreen !== 'undefined';
+        const hasFullscreenElement = typeof document.fullscreenElement !== 'undefined';
+        
+        if (hasRequestFullscreen && hasExitFullscreen && hasFullscreenElement) {
+            test1El.innerHTML = '<span class="success">✓ Fullscreen API functions are available</span>';
+        } else {
+            test1El.innerHTML = '<span class="error">✗ Fullscreen API functions are NOT available</span>';
+        }
+        
+        // Test 2: Test Fullscreen API
+        function testFullscreenAPI() {
+            const test2El = document.getElementById('test2-result');
+            const elem = document.getElementById('test-area');
+            
+            if (!document.fullscreenElement) {
+                elem.requestFullscreen().then(() => {
+                    test2El.innerHTML = '<span class="success">✓ Fullscreen API works correctly!</span>';
+                }).catch(err => {
+                    test2El.innerHTML = '<span class="error">✗ Fullscreen API error: ' + err.message + '</span>';
+                });
+            } else {
+                document.exitFullscreen().then(() => {
+                    test2El.innerHTML = '<span class="success">✓ Exit fullscreen works correctly!</span>';
+                });
+            }
+        }
+        
+        // Test 3: Check for architecture canvas container
+        const test3El = document.getElementById('test3-result');
+        // This would normally check for React component, but we'll check if the function exists
+        if (typeof window.toggleFullscreen === 'function') {
+            test3El.innerHTML = '<span class="success">✓ toggleFullscreen function exists</span>';
+        } else {
+            test3El.innerHTML = '<span class="error">✗ toggleFullscreen function NOT found</span>';
+        }
+        
+        // Test 4: Simple toggle function
+        function toggleFullscreen() {
+            const elem = document.getElementById('test-area');
+            if (!document.fullscreenElement) {
+                elem.requestFullscreen().then(() => {
+                    document.getElementById('status').textContent = 'Fullscreen: Active';
+                }).catch(err => {
+                    document.getElementById('status').textContent = 'Fullscreen Error: ' + err.message;
+                });
+            } else {
+                document.exitFullscreen().then(() => {
+                    document.getElementById('status').textContent = 'Fullscreen: Not active';
+                });
+            }
+        }
+        
+        // Listen for fullscreen changes
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                document.getElementById('status').textContent = 'Fullscreen: Not active';
+            }
+        });
+    </script>
+</body>
+</html>

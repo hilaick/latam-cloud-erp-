@@ -14,6 +14,7 @@ from models import Customer
 from services.huawei_discovery import HuaweiDiscovery
 from services.source_resources_parser import parse_source_resources_excel
 from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
+from services.tool_recommender import ToolRecommender
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -363,3 +364,31 @@ def get_migration_tools():
         ]
     }
     return jsonify({"success": True, "tools": tools})
+
+@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
+@jwt_required()
+def get_migration_recommendations():
+    """Get intelligent tool recommendations based on discovery data"""
+    try:
+        data = request.json
+        discovery_data = data.get('discovery_data', {})
+        source_type = data.get('source_type', 'discovery')
+        
+        if not discovery_data:
+            return jsonify({"success": False, "error": "No discovery data provided"}), 400
+        
+        recommendations = ToolRecommender.analyze_discovery_data(
+            discovery_data, 
+            is_blueprint=(source_type == 'blueprint')
+        )
+        
+        # Generate WBS tasks if requested
+        wbs_type = data.get('wbs_type', 'execution')  # 'execution' or 'proposal'
+        if data.get('generate_wbs', False):
+            wbs_tasks = ToolRecommender.generate_wbs_tasks(recommendations, wbs_type)
+            recommendations['wbs_tasks'] = wbs_tasks
+        
+        return jsonify({"success": True, "recommendations": recommendations})
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

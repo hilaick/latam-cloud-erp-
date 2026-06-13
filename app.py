@@ -1,5 +1,7 @@
 import os
-from flask import Flask, send_from_directory, request, jsonify
+import time
+import hashlib
+from flask import Flask, send_from_directory, request, jsonify, render_template_string
 from flask_cors import CORS
 import json
 from pathlib import Path
@@ -13,6 +15,15 @@ import mimetypes
 import io
 from werkzeug.datastructures import FileStorage
 
+# Route imports
+from routes.crm import crm_bp
+from routes.cloud_ops import cloud_ops_bp
+from routes.sms_migrations import sms_bp
+from routes.auth import auth_bp
+from routes.master_pipeline import master_pipeline_bp
+from routes.execution import execution_bp
+from routes.war_evaluation import war_bp
+
 load_dotenv()
 
 mimetypes.add_type('application/javascript', '.js')
@@ -22,12 +33,23 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')
 app = Flask(__name__, static_folder=dist_folder)
 
+# Cache busting version
+def get_js_version():
+    js_path = os.path.join(dist_folder, 'assets', 'index-CB_R2RlF.js')
+    if os.path.exists(js_path):
+        with open(js_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()[:8]
+    return str(int(time.time()))
+
 @app.after_request
 def add_header(response):
     if 'text/html' in response.headers.get('Content-Type', ''):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '-1'
+    elif response.headers.get('Content-Type', '').startswith('application/javascript'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
     return response
 
 @app.errorhandler(Exception)
@@ -46,27 +68,74 @@ jwt = JWTManager(app)
 setup_db(app)
 PROJECT_ROOT = Path(__file__).parent
 
-from routes.crm import crm_bp
-from routes.cloud_ops import cloud_ops_bp
-from routes.sms_migrations import sms_bp
-from routes.auth import auth_bp
-from routes.master_pipeline import master_pipeline_bp
-from routes.execution import execution_bp
+@app.route('/api/diagnostic')
+def diagnostic():
+    js_path = os.path.join(dist_folder, 'assets', 'index-CB_R2RlF.js')
+    js_exists = os.path.exists(js_path)
+    js_size = os.path.getsize(js_path) if js_exists else 0
+    js_mtime = os.path.getmtime(js_path) if js_exists else 0
+    
+    def check_js_for_fullscreen(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read(50000)  # Read first 50KB
+                return any(keyword in content for keyword in [
+                    'requestFullscreen', 'exitFullscreen', 'fullscreenElement', 
+                    'fullscreenchange', 'toggleFullscreen', 'isMobile'
+                ])
+        except:
+            return False
+    
+    return jsonify({
+        'timestamp': time.time(),
+        'server_time': time.strftime('%Y-%m-%d %H:%M:%S GMT', time.gmtime()),
+        'js_file': {
+            'exists': js_exists,
+            'path': js_path,
+            'size': js_size,
+            'modified': time.strftime('%Y-%m-%d %H:%M:%S GMT', time.gmtime(js_mtime)) if js_mtime else None,
+            'contains_fullscreen': check_js_for_fullscreen(js_path) if js_exists else False
+        },
+        'headers': dict(request.headers),
+        'cache_control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'build_info': {
+            'build_time': '2026-06-12 02:52:28 GMT',
+            'features': ['architecture-canvas-container', 'fullscreen-api', 'mobile-detection']
+        }
+    })
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'timestamp': time.time()})
 
 app.register_blueprint(crm_bp)
 app.register_blueprint(cloud_ops_bp)
 app.register_blueprint(sms_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(master_pipeline_bp)
-app.register_blueprint(execution_bp) 
+app.register_blueprint(execution_bp)
+app.register_blueprint(war_bp) 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
     if path.startswith('api/'):
         return jsonify({"success": False, "error": f"API Route Not Found: {path}"}), 404
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, str(path))):
         return send_from_directory(app.static_folder, path)
+    
+    # Serve index.html with cache-busting version
+    index_path = os.path.join(app.static_folder, 'index.html')
+    if os.path.exists(index_path):
+        with open(index_path, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+            # Add version parameter to JS file
+            version = get_js_version()
+            html_content = html_content.replace(
+                'src=\"/assets/index-BJU6pUef.js\"',
+                f'src=\"/assets/index-CB_R2RlF.js?v={version}\"'
+            )
+            return html_content
     return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])

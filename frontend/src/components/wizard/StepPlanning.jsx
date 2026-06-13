@@ -3,6 +3,7 @@ import PhysicsEngine from './PhysicsEngine';
 import FinOpsCalculator from './FinOpsCalculator';
 import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import CutoverRunbookView from './CutoverRunbookView';
+import ToolRecommendationView from './ToolRecommendationView';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('physics');
@@ -29,10 +30,16 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     3. WBS & RACI Matrix
                 </button>
                 <button 
+                    onClick={() => setSubTab('tools')} 
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'tools' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                    4. Tool Recommendations
+                </button>
+                <button 
                     onClick={() => setSubTab('runbook')} 
                     className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'runbook' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
                 >
-                    4. Cutover Runbook
+                    5. Cutover Runbook
                 </button>
             </div>
 
@@ -40,6 +47,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
             {subTab === 'physics' && <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'finops' && <FinOpsCalculator activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'tools' && <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />}
             
             {subTab === 'runbook' && (
                 <div className="space-y-6 animate-fade-in">
@@ -48,15 +56,16 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     {/* Execution Promotion Gate */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
                         <div>
-                            <h4 className="font-black text-slate-800 text-lg">Lock Plan & Execute</h4>
-                            <p className="text-xs text-slate-500 mt-1">Once the planning phase is approved, promote the project to Active Execution.</p>
+                            <h3 className="text-lg font-bold text-slate-800">Ready to execute migration?</h3>
+                            <p className="text-slate-600 mt-1">
+                                Complete planning and move to execution phase.
+                            </p>
                         </div>
-                        <button 
-                            onClick={onPromote} 
-                            className="px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-3 w-full md:w-auto justify-center"
+                        <button
+                            onClick={() => onPromote && onPromote('execution')}
+                            className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
                         >
-                            <span>Proceed to Execution</span>
-                            <i className="fas fa-rocket"></i>
+                            Promote to Execution Phase →
                         </button>
                     </div>
                 </div>

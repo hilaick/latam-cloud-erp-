@@ -1,14 +1,48 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 export default function ArchitectureCanvas({ title, nodes, onNodeClick, regionFilter }) {
     const [zoom, setZoom] = useState(1);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     
     // Independent collapse states for granular control
     const [collapsedVpcs, setCollapsedVpcs] = useState({});
     const [collapsedSgs, setCollapsedSgs] = useState({});
     const [collapsedSubnets, setCollapsedSubnets] = useState({});
 
+    // Check for mobile view
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
     const handleZoom = (factor) => setZoom(prev => Math.min(Math.max(0.4, prev + factor), 2.5));
+    const resetZoom = () => setZoom(1);
+
+    const toggleFullscreen = () => {
+        const element = document.getElementById('architecture-canvas-container');
+        if (!element) return;
+        
+        if (!document.fullscreenElement) {
+            element.requestFullscreen().catch(err => {
+                console.error(`Error enabling fullscreen: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    };
+
+    // Handle fullscreen change
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     const toggleState = (setter, key, e) => {
         e.stopPropagation();
@@ -67,18 +101,29 @@ export default function ArchitectureCanvas({ title, nodes, onNodeClick, regionFi
         return { edge, vpcsMap, regional, global, eips };
     }, [nodes, regionFilter]);
 
-    // Huawei-Native Color Aesthetics
+    // Huawei-Native Color Aesthetics with enhanced categorization
     const getVisuals = (type) => {
         const t = String(type).toUpperCase();
-        if (t.includes('ECS')) return { icon: 'fa-server', bg: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-200', lBg: 'bg-rose-50' }; 
-        if (t.includes('RDS')) return { icon: 'fa-database', bg: 'bg-rose-600', text: 'text-rose-600', border: 'border-rose-300', lBg: 'bg-rose-50' }; 
-        if (t.includes('VPN') || t.includes('CGW')) return { icon: 'fa-network-wired', bg: 'bg-purple-500', text: 'text-purple-500', border: 'border-purple-200', lBg: 'bg-purple-50' }; 
-        if (t.includes('EIP')) return { icon: 'fa-wifi', bg: 'bg-lime-500', text: 'text-lime-600', border: 'border-lime-200', lBg: 'bg-lime-50' }; 
-        if (t.includes('NAT')) return { icon: 'fa-route', bg: 'bg-indigo-500', text: 'text-indigo-500', border: 'border-indigo-200', lBg: 'bg-indigo-50' }; 
-        if (t.includes('OBS')) return { icon: 'fa-cloud-upload-alt', bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-200', lBg: 'bg-emerald-50' }; 
-        if (t.includes('CBR')) return { icon: 'fa-shield-alt', bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-200', lBg: 'bg-blue-50' }; 
-        if (t.includes('ELB')) return { icon: 'fa-sitemap', bg: 'bg-sky-500', text: 'text-sky-500', border: 'border-sky-200', lBg: 'bg-sky-50' }; 
-        return { icon: 'fa-cube', bg: 'bg-slate-500', text: 'text-slate-500', border: 'border-slate-200', lBg: 'bg-slate-50' };
+        
+        // Huawei Cloud Service Color Mapping with categories
+        if (t.includes('ECS')) return { icon: 'fa-server', bg: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-200', lBg: 'bg-rose-50', category: 'Compute' }; 
+        if (t.includes('RDS')) return { icon: 'fa-database', bg: 'bg-rose-600', text: 'text-rose-600', border: 'border-rose-300', lBg: 'bg-rose-50', category: 'Database' }; 
+        if (t.includes('VPN') || t.includes('CGW') || t.includes('VPN-CONN')) return { icon: 'fa-network-wired', bg: 'bg-purple-500', text: 'text-purple-500', border: 'border-purple-200', lBg: 'bg-purple-50', category: 'Networking' }; 
+        if (t.includes('EIP')) return { icon: 'fa-wifi', bg: 'bg-lime-500', text: 'text-lime-600', border: 'border-lime-200', lBg: 'bg-lime-50', category: 'Network' }; 
+        if (t.includes('NAT')) return { icon: 'fa-route', bg: 'bg-indigo-500', text: 'text-indigo-500', border: 'border-indigo-200', lBg: 'bg-indigo-50', category: 'Network' }; 
+        if (t.includes('OBS') || t.includes('STORAGE')) return { icon: 'fa-cloud-upload-alt', bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-200', lBg: 'bg-emerald-50', category: 'Storage' }; 
+        if (t.includes('CBR')) return { icon: 'fa-shield-alt', bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-200', lBg: 'bg-blue-50', category: 'Backup' }; 
+        if (t.includes('ELB') || t.includes('LOADBALANCER')) return { icon: 'fa-sitemap', bg: 'bg-sky-500', text: 'text-sky-500', border: 'border-sky-200', lBg: 'bg-sky-50', category: 'Network' }; 
+        if (t.includes('SG') || t.includes('SECURITY')) return { icon: 'fa-shield-alt', bg: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-200', lBg: 'bg-amber-50', category: 'Security' }; 
+        if (t.includes('VPC')) return { icon: 'fa-cloud', bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-200', lBg: 'bg-blue-50', category: 'Network' }; 
+        if (t.includes('SUBNET')) return { icon: 'fa-network-wired', bg: 'bg-slate-500', text: 'text-slate-500', border: 'border-slate-200', lBg: 'bg-slate-50', category: 'Network' }; 
+        if (t.includes('CCE')) return { icon: 'fa-cubes', bg: 'bg-violet-500', text: 'text-violet-500', border: 'border-violet-200', lBg: 'bg-violet-50', category: 'Container' }; 
+        if (t.includes('EVS')) return { icon: 'fa-hdd', bg: 'bg-cyan-500', text: 'text-cyan-500', border: 'border-cyan-200', lBg: 'bg-cyan-50', category: 'Storage' }; 
+        if (t.includes('IAM')) return { icon: 'fa-user-shield', bg: 'bg-pink-500', text: 'text-pink-500', border: 'border-pink-200', lBg: 'bg-pink-50', category: 'Security' }; 
+        if (t.includes('CES')) return { icon: 'fa-chart-line', bg: 'bg-teal-500', text: 'text-teal-500', border: 'border-teal-200', lBg: 'bg-teal-50', category: 'Monitoring' }; 
+        if (t.includes('AS')) return { icon: 'fa-expand-arrows-alt', bg: 'bg-orange-500', text: 'text-orange-500', border: 'border-orange-200', lBg: 'bg-orange-50', category: 'Compute' }; 
+        
+        return { icon: 'fa-cube', bg: 'bg-slate-500', text: 'text-slate-500', border: 'border-slate-200', lBg: 'bg-slate-50', category: 'Other' };
     };
 
     const getStatusBorder = (status) => {
@@ -92,14 +137,25 @@ export default function ArchitectureCanvas({ title, nodes, onNodeClick, regionFi
     const ResourceCard = ({ n }) => {
         const v = getVisuals(n.type);
         return (
-            <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border ${getStatusBorder(n.status)} rounded-xl p-2.5 flex items-center gap-3 w-52 shrink-0 relative ${onNodeClick ? 'cursor-pointer hover:-translate-y-1 hover:shadow-md hover:border-blue-400 transition-all' : ''}`}>
+            <div key={n.id} onClick={()=>onNodeClick && onNodeClick(n)} className={`bg-white border ${getStatusBorder(n.status)} rounded-xl p-2.5 flex items-center gap-3 ${isMobile ? 'w-full' : 'w-52'} shrink-0 relative ${onNodeClick ? 'cursor-pointer hover:-translate-y-1 hover:shadow-md hover:border-blue-400 transition-all' : ''}`}>
                 <div className={`w-9 h-9 rounded-lg ${v.lBg} ${v.text} flex items-center justify-center text-lg border ${v.border} shrink-0`}>
                     <i className={`fas ${v.icon}`}></i>
                 </div>
                 <div className="overflow-hidden flex-1">
                     <div className="text-[11px] font-black text-slate-800 truncate" title={n.name}>{n.name}</div>
                     <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{n.type} {n.ip !== 'N/A' && n.ip !== 'TBD' ? `| ${n.ip}` : ''}</div>
+                    <div className="text-[8px] font-medium text-slate-500 mt-0.5">{v.category}</div>
                 </div>
+                {n.status && (
+                    <div className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
+                        n.status === 'Matched' ? 'bg-emerald-100 text-emerald-800' :
+                        n.status === 'Live Only' ? 'bg-amber-100 text-amber-800' :
+                        n.status === 'Quoted Only' ? 'bg-rose-100 text-rose-800' :
+                        'bg-blue-100 text-blue-800'
+                    }`}>
+                        {n.status}
+                    </div>
+                )}
             </div>
         );
     };
@@ -107,31 +163,50 @@ export default function ArchitectureCanvas({ title, nodes, onNodeClick, regionFi
     const displayRegion = regionFilter === 'All' ? 'Cross-Region View' : regionFilter;
 
     return (
-        <div className="w-full h-full flex flex-col relative overflow-hidden bg-[#f8fafc]">
+        <div id="architecture-canvas-container" className="w-full h-full flex flex-col relative overflow-hidden bg-[#f8fafc]">
             
             {/* Diagram Header */}
-            <div className="absolute top-4 left-4 bg-white border border-slate-200 px-5 py-3 rounded-xl shadow-sm z-20 flex items-center gap-4">
-                <i className="fas fa-sitemap text-indigo-500 text-2xl"></i>
+            <div className={`absolute top-4 left-4 bg-white border border-slate-200 ${isMobile ? 'px-3 py-2' : 'px-5 py-3'} rounded-xl shadow-sm z-20 flex items-center gap-4`}>
+                <i className="fas fa-sitemap text-indigo-500 text-xl md:text-2xl"></i>
                 <div>
                     <h4 className="font-black text-slate-800 text-sm leading-none">{title}</h4>
                     <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">Region: {displayRegion}</div>
                 </div>
             </div>
 
-            {/* Zoom Controls */}
-            <div className="absolute bottom-4 right-4 bg-white border border-slate-200 rounded-lg shadow-lg z-20 flex overflow-hidden">
-                <button onClick={()=>handleZoom(-0.2)} className="px-3 py-2 text-slate-600 hover:bg-slate-100 font-black"><i className="fas fa-search-minus"></i></button>
-                <div className="px-3 py-2 bg-slate-50 border-l border-r border-slate-200 text-xs font-black text-slate-700 w-16 text-center flex items-center justify-center">{Math.round(zoom * 100)}%</div>
-                <button onClick={()=>handleZoom(0.2)} className="px-3 py-2 text-slate-600 hover:bg-slate-100 font-black"><i className="fas fa-search-plus"></i></button>
+            {/* Zoom & Fullscreen Controls */}
+            <div className={`absolute ${isMobile ? 'bottom-2 right-2' : 'bottom-4 right-4'} flex gap-2 z-20`}>
+                <div className="bg-white border border-slate-200 rounded-lg shadow-lg flex overflow-hidden">
+                    <button onClick={()=>handleZoom(-0.2)} className="px-3 py-2 text-slate-600 hover:bg-slate-100 font-black" title="Zoom Out">
+                        <i className="fas fa-search-minus"></i>
+                    </button>
+                    <div className="px-3 py-2 bg-slate-50 border-l border-r border-slate-200 text-xs font-black text-slate-700 w-16 text-center flex items-center justify-center">
+                        {Math.round(zoom * 100)}%
+                    </div>
+                    <button onClick={()=>handleZoom(0.2)} className="px-3 py-2 text-slate-600 hover:bg-slate-100 font-black" title="Zoom In">
+                        <i className="fas fa-search-plus"></i>
+                    </button>
+                    <button onClick={resetZoom} className="px-3 py-2 text-slate-600 hover:bg-slate-100 font-black border-l border-slate-200" title="Reset Zoom">
+                        <i className="fas fa-expand-alt"></i>
+                    </button>
+                </div>
+                
+                <button 
+                    onClick={toggleFullscreen}
+                    className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 font-black transition-colors"
+                    title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                    <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
+                </button>
             </div>
 
             {/* 🚨 DRAGGABLE / ZOOMABLE CANVAS */}
-            <div className="flex-1 overflow-auto custom-scrollbar relative p-8">
-                <div className="min-w-max min-h-full origin-top-left transition-transform duration-200 ease-out p-10 flex flex-col gap-8" style={{ transform: `scale(${zoom})` }}>
+            <div className="flex-1 overflow-auto custom-scrollbar relative p-4 md:p-8">
+                <div className="min-w-max min-h-full origin-top-left transition-transform duration-200 ease-out p-4 md:p-10 flex flex-col gap-4 md:gap-8" style={{ transform: `scale(${zoom})` }}>
                     
                     {/* OUTER BOUNDARY: CLOUD REGION */}
-                    <div className="border-[3px] border-dashed border-slate-300 bg-slate-100/50 rounded-3xl p-8 relative shadow-sm min-w-[900px]">
-                        <div className="absolute -top-4 left-8 bg-slate-200 border border-slate-300 px-4 py-1.5 rounded-lg text-[11px] font-black text-slate-700 uppercase tracking-widest shadow-sm">
+                    <div className="border-[3px] border-dashed border-slate-300 bg-slate-100/50 rounded-3xl p-4 md:p-8 relative shadow-sm min-w-[300px] md:min-w-[900px]">
+                        <div className="absolute -top-4 left-4 md:left-8 bg-slate-200 border border-slate-300 px-3 md:px-4 py-1.5 rounded-lg text-[10px] md:text-[11px] font-black text-slate-700 uppercase tracking-widest shadow-sm">
                             <i className="fas fa-map-marker-alt mr-2 text-slate-500"></i> Huawei Cloud Region
                         </div>
 

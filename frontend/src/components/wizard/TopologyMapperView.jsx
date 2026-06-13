@@ -245,14 +245,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                     <button onClick={()=>toggleFullScreen('quoted-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
                                         <i className="fas fa-expand"></i>
                                     </button>
-                                    {quotedNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-20 bg-slate-50 flex-1">No SOW data imported.</div> : <ArchitectureCanvas title="Quoted Architecture (SOW)" nodes={quotedNodes} regionFilter={regionFilter} />}
+                                    <ArchitectureCanvas title="Quoted Architecture (SOW)" nodes={quotedNodes} regionFilter={regionFilter} />
                                 </div>
                                 
                                 <div id="live-canvas-pane" className="xl:w-1/2 bg-white border border-slate-200 rounded-2xl shadow-inner overflow-hidden flex flex-col relative transition-all duration-300">
                                     <button onClick={()=>toggleFullScreen('live-canvas-pane')} className="absolute top-4 right-4 z-50 bg-white/90 border border-slate-300 p-2 rounded shadow-sm text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Full Screen Pane">
                                         <i className="fas fa-expand"></i>
                                     </button>
-                                    {liveNodes.length === 0 ? <div className="text-center text-slate-400 text-xs py-20 bg-slate-50 flex-1">No Live Discovery data found.</div> : <ArchitectureCanvas title="Discovered Architecture (Live)" nodes={liveNodes} regionFilter={regionFilter} />}
+                                    <ArchitectureCanvas title="Discovered Architecture (Live)" nodes={liveNodes} regionFilter={regionFilter} />
                                 </div>
                             </div>
                         )}
@@ -360,14 +360,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
                         {targetView === 'canvas' && (
                             <div className="flex-1 bg-slate-50 relative overflow-hidden flex flex-col border-t border-slate-200">
-                                {localNodes.length === 0 ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                        <i className="fas fa-project-diagram text-6xl mb-4 opacity-50"></i>
-                                        <p className="font-black text-lg">Awaiting Target Architecture Data</p>
-                                    </div>
-                                ) : (
                                     <ArchitectureCanvas title="Final Target Architecture" nodes={filteredAndSortedNodes} onNodeClick={setSelectedNode} regionFilter={regionFilter} />
-                                )}
                             </div>
                         )}
                     </div>
