@@ -284,19 +284,19 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
             {/* MODAL 1: STANDARD DOSSIER */}
             {showDossier && (
-                <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
-                        {/* Non-Printable Header */}
-                        <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
+                <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative print:shadow-none print:max-h-none animate-slide-up">
+                        {/* Header (Shrink-0 prevents it from squishing, keeps it visible) */}
+                        <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl shrink-0">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-pdf text-rose-500 mr-2"></i> Handover Dossier Generated</h3>
-                            <div className="space-x-3">
-                                <button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow transition-colors"><i className="fas fa-print mr-2"></i> Print / Save PDF</button>
-                                <button onClick={()=>setShowDossier(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow transition-colors"><i className="fas fa-times mr-2"></i> Close</button>
+                            <div className="space-x-3 flex items-center">
+                                <button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow transition-colors flex items-center"><i className="fas fa-print mr-2"></i> Print / Save PDF</button>
+                                <button onClick={()=>setShowDossier(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow transition-colors flex items-center"><i className="fas fa-times mr-2"></i> Close</button>
                             </div>
                         </div>
 
-                        {/* Printable Area */}
-                        <div className="p-12 print:p-0 bg-white flex-1 print:bg-transparent" id="printable-dossier">
+                        {/* Printable Area (Scrolls independently) */}
+                        <div className="p-8 md:p-12 overflow-y-auto custom-scrollbar bg-white flex-1 print:overflow-visible print:p-0 rounded-b-xl" id="printable-dossier">
                             <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                                 <div>
                                     <h1 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">LATAM Cloud</h1>
@@ -372,17 +372,19 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
             {/* MODAL 2: DETAILED MIGRATION HANDOVER REPORT */}
             {showDetailedReport && (
-                <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
-                        <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
+                <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative print:shadow-none print:max-h-none animate-slide-up">
+                        {/* Header (Shrink-0 to keep visible) */}
+                        <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl shrink-0">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-contract text-indigo-600 mr-2"></i> Detailed Handover Report Generated</h3>
-                            <div className="space-x-3">
-                                <button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow"><i className="fas fa-print mr-2"></i> Print / Save PDF</button>
-                                <button onClick={()=>setShowDetailedReport(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow"><i className="fas fa-times mr-2"></i> Close</button>
+                            <div className="space-x-3 flex items-center">
+                                <button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow flex items-center"><i className="fas fa-print mr-2"></i> Print / Save PDF</button>
+                                <button onClick={()=>setShowDetailedReport(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow flex items-center"><i className="fas fa-times mr-2"></i> Close</button>
                             </div>
                         </div>
 
-                        <div className="p-12 print:p-0 bg-white flex-1 print:bg-transparent" id="printable-detailed-report">
+                        {/* Body (Scrollable independently) */}
+                        <div className="p-8 md:p-12 overflow-y-auto custom-scrollbar bg-white flex-1 print:overflow-visible print:p-0 rounded-b-xl" id="printable-detailed-report">
                             <div className="prose prose-slate max-w-none">
                                 <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">
                                     COMPLETE MIGRATION HANDOVER<br/>
@@ -433,7 +435,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             {/* MODAL 3: RESOURCE DRILL-DOWN (The Table Modal) */}
             {detailsModal.show && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col border border-slate-700 animate-slide-up">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-700 animate-slide-up">
                         <div className="bg-slate-900 px-6 py-4 rounded-t-2xl flex justify-between items-center text-white shrink-0">
                             <h3 className="font-black text-lg text-emerald-400">
                                 <i className="fas fa-check-circle mr-2"></i> Verified {detailsModal.label}
@@ -687,7 +689,7 @@ function LiveConstellationView({ activeProject }) {
                 </div>
 
                 {/* ZOOM CONTROLS */}
-                <div className="absolute bottom-4 right-4 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-xl shadow-lg z-40 flex overflow-hidden">
+                <div className="absolute bottom-4 right-4 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-xl shadow-lg z-40 flex overflow-hidden pointer-events-auto">
                     <button onClick={()=>handleZoom(-0.2)} className="px-4 py-2.5 text-slate-400 hover:bg-slate-700 hover:text-white font-black transition-colors"><i className="fas fa-search-minus"></i></button>
                     <div className="px-3 py-2.5 bg-slate-900 border-l border-r border-slate-700 text-[10px] font-black uppercase tracking-widest text-slate-300 w-16 text-center flex items-center justify-center">{Math.round(zoom * 100)}%</div>
                     <button onClick={()=>handleZoom(0.2)} className="px-4 py-2.5 text-slate-400 hover:bg-slate-700 hover:text-white font-black transition-colors"><i className="fas fa-search-plus"></i></button>
