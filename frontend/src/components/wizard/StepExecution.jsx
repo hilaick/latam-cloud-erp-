@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatShortDate } from '../../utils/helpers';
-// Note: CutoverRunbookView is removed from Execution imports since it was correctly moved to Planning and Post-Live
 
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
-    const [sidebarOpen, setSidebarOpen] = useState(true); // 🚨 NEW COLLAPSE STATE
+    const [sidebarOpen, setSidebarOpen] = useState(true); 
     
-    // Existing States...
-    const [anticipationInsights, setAnticipationInsights] = useState(project.anticipationInsights || null);
+    // 🚨 FIXED: Added Optional Chaining (?.) to prevent undefined crashes
+    const [anticipationInsights, setAnticipationInsights] = useState(project?.anticipationInsights || null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
     const [runbookData, setRunbookData] = useState(null);
     const [runbookTab, setRunbookTab] = useState('linux');
@@ -15,16 +14,19 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         uniAgent: true, hss: project?.blueprintData?.topology?.security?.some(s => s.type === 'HSS') || false, lts: false
     });
     const [driftAlert, setDriftAlert] = useState(true);
-    const execStatus = project.execStatus || 'pending'; 
-    const authLevel = project.authLevel || 'Read-Only (Customer Managed)';
+    
+    const execStatus = project?.execStatus || 'pending'; 
+    const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
     const hasPassedPreflight = ['preflight_complete', 'sandbox_built', 'agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus);
-    const [iamStatus, setIamStatus] = useState(project.ephemeralKeys ? 'active' : 'pending'); 
-    const [ephemeralKeys, setEphemeralKeys] = useState(project.ephemeralKeys || null);
+    
+    const [iamStatus, setIamStatus] = useState(project?.ephemeralKeys ? 'active' : 'pending'); 
+    const [ephemeralKeys, setEphemeralKeys] = useState(project?.ephemeralKeys || null);
     const [preflightStatus, setPreflightStatus] = useState(hasPassedPreflight ? 'done' : 'pending'); 
-    const [vectorAssignments, setVectorAssignments] = useState(project.vectorAssignments || {});
+    const [vectorAssignments, setVectorAssignments] = useState(project?.vectorAssignments || {});
     const [tokenValidated, setTokenValidated] = useState(false);
-    const sandboxEpsRaw = project.sandboxEps?.trim() || '';
-    const prodEpsRaw = project.prodEps?.trim() || '';
+    
+    const sandboxEpsRaw = project?.sandboxEps?.trim() || '';
+    const prodEpsRaw = project?.prodEps?.trim() || '';
     const isVpcIsolationMode = !sandboxEpsRaw || !prodEpsRaw;
 
     const getStrategyDetails = () => {
@@ -34,11 +36,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust. Generating custom SCCM/Ansible Runbooks.' };
     };
     const strategy = getStrategyDetails();
+    
     const discoveryComputeCount = useMemo(() => (project?.mgcData?.raw_inventory?.compute || project?.mgcData?.raw_inventory?.servers || []).length, [project?.mgcData]);
-    const inScopeNodes = useMemo(() => (project.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && n.status !== 'Quoted Only'), [project.mapperNodes]);
+    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && n.status !== 'Quoted Only'), [project?.mapperNodes]);
 
-    // Same API Handlers...
     const safePartialUpdate = async (updates) => {
+        if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
         try {
             await fetch(`/api/erp/projects/${project.id}/partial`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(updates) });
@@ -49,6 +52,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const advanceStatus = (newStatus) => { safePartialUpdate({ execStatus: newStatus }); if (newStatus === 'syncing') setDriftAlert(true); };
 
     const handleProvisionIAM = async () => {
+        if (!project?.id) return;
         setIamStatus('provisioning');
         const token = localStorage.getItem('erp_jwt_token');
         try {
@@ -62,6 +66,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
 
     const handleValidateToken = async () => {
+        if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch('/api/cloud/validate-sts-token', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ projectId: project.id }) });
@@ -72,6 +77,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
 
     const handleRunPreflight = async () => {
+        if (!project?.id) return;
         setPreflightStatus('scanning');
         const token = localStorage.getItem('erp_jwt_token');
         try {
@@ -83,7 +89,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         setTimeout(() => {
             const assignments = {};
             inScopeNodes.forEach((n, idx) => {
-                if (n.status === 'Live Only' && !project.crApproved) assignments[n.id] = { status: 'Scope Creep', vector: 'Blocked (Missing CR)', icon: 'fa-hand-paper', color: 'text-rose-500' };
+                if (n.status === 'Live Only' && !project?.crApproved) assignments[n.id] = { status: 'Scope Creep', vector: 'Blocked (Missing CR)', icon: 'fa-hand-paper', color: 'text-rose-500' };
                 else {
                     if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
                     else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
@@ -96,6 +102,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
 
     const handleExecuteTerraform = async () => {
+        if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch(`/api/erp/projects/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } });
@@ -106,6 +113,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
 
     const handleDeployAgents = async () => {
+        if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch(`/api/erp/projects/${project.id}/deploy-agents`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ optIns: agentOptIns }) });
@@ -123,10 +131,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         { id: 'tam', num: '4.3', icon: 'fa-headset', label: 'TAM Service Governance' }
     ];
 
+    if (!project) {
+        return <div className="p-8 text-center text-slate-400"><i className="fas fa-spinner fa-spin text-2xl mb-4"></i><p>Loading Execution Environment...</p></div>;
+    }
+
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             
-            {/* Header Area */}
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
                     <button 
@@ -143,10 +154,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 </div>
             </div>
 
-            {/* Layout Container */}
             <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
                 
-                {/* Collapsible Left Navigation Sidebar */}
                 <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
                     {menuItems.map((item) => (
                         <button 
@@ -180,7 +189,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     </div>
                 </div>
 
-                {/* Right Content Area (Expands to 100% when sidebar collapses) */}
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     
                     {subTab === 'orchestrator' && (
@@ -229,7 +237,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
 
                                     <div className="p-8 lg:col-span-2 space-y-6 bg-slate-900">
-                                        {/* PHASE 4.1 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'pending' || execStatus === 'preflight_complete' ? (iamStatus === 'active' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'border-slate-600 bg-slate-800/80') : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start mb-6">
                                                 <div>
@@ -248,7 +255,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 )}
                                             </div>
 
-                                            {/* 🚨 COGNITIVE ALERTS */}
                                             {anticipationInsights && (
                                                 <div className="mb-6 space-y-3 animate-fade-in">
                                                     {anticipationInsights.quota_warnings?.map((warn, i) => (
@@ -298,7 +304,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             )}
                                         </div>
 
-                                        {/* PHASE 4.2 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div>
@@ -314,7 +319,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             </div>
                                         </div>
 
-                                        {/* PHASE 4.3 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div className="pr-6 w-full">
@@ -347,7 +351,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             </div>
                                         </div>
 
-                                        {/* PHASE 4.4 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div className="flex-1 pr-6">
@@ -412,14 +415,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// 🚨 FINOPS HUB (Unchanged, included for completeness)
+// 🚨 FINOPS HUB
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
-    const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
-    useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
-    const mrr = project.mrr || project.budget?.mrr || 5000; 
+    const [comms, setComms] = useState(project?.comms || { bridge: "", chat: "", notes: "" });
+    useEffect(() => { setComms(project?.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
+    const mrr = project?.mrr || project?.budget?.mrr || 5000; 
     const overheadBudget = mrr * 0.15; 
-    const currentBurn = (project.mapperNodes || []).length * 45; 
-    const handleSaveComms = () => { if (safePartialUpdate) safePartialUpdate({ comms }); else onUpdateProject(project.id, 'comms', comms); alert("Command Center Links Updated"); };
+    const currentBurn = (project?.mapperNodes || []).length * 45; 
+    const handleSaveComms = () => { if (safePartialUpdate) safePartialUpdate({ comms }); else onUpdateProject(project?.id, 'comms', comms); alert("Command Center Links Updated"); };
 
     return (
         <div className="animate-fade-in space-y-6 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -460,7 +463,8 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
 
 function SingleProjectGantt({ project }) {
     const timelineData = useMemo(() => {
-        const kickoffStr = project.kickoff || project.kickoffDate || project.startDate; const targetStr = project.date || project.targetDate || project.goLiveDate;
+        const kickoffStr = project?.kickoff || project?.kickoffDate || project?.startDate; 
+        const targetStr = project?.date || project?.targetDate || project?.goLiveDate;
         if(!kickoffStr || !targetStr || kickoffStr==='Pending' || targetStr==='TBD') return null;
         const start = new Date(kickoffStr); const end = new Date(targetStr);
         if(isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
@@ -473,17 +477,17 @@ function SingleProjectGantt({ project }) {
         <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8">
             <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center uppercase tracking-widest"><i className="fas fa-stream text-amber-500 mr-3"></i> Project Timeline Baseline</h3>
             {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-300 rounded-xl bg-white text-xs">Valid Kickoff and Go-Live dates required.</div> : (
-                <div className="overflow-x-auto w-full"><div className="min-w-[800px] relative h-[120px]"><div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div><div className="relative z-10 pt-8"><div className="h-12 relative bg-white border-y border-transparent rounded-xl shadow-sm"><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div><div className="absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden bg-blue-500 border-blue-600 text-white" style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}><span className="text-xs font-black truncate">{project.progress || '0%'} Complete</span></div><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div></div></div></div></div>
+                <div className="overflow-x-auto w-full"><div className="min-w-[800px] relative h-[120px]"><div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div><div className="relative z-10 pt-8"><div className="h-12 relative bg-white border-y border-transparent rounded-xl shadow-sm"><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div><div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project?.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project?.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}><span className="text-xs font-black truncate">{project?.progress || '0%'} Complete</span></div><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div></div></div></div></div>
             )}
         </div>
     )
 }
 
 function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
-    const safeTamData = project.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] };
+    const safeTamData = project?.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] };
     const [tamData, setTamData] = useState(safeTamData);
-    useEffect(() => { setTamData(project.tamData || safeTamData); }, [project]);
-    const handleSave = () => { if (safePartialUpdate) safePartialUpdate({ tamData }); else onUpdateProject(project.id, 'tamData', tamData); alert("TAM Operations Data Saved."); };
+    useEffect(() => { setTamData(project?.tamData || safeTamData); }, [project]);
+    const handleSave = () => { if (safePartialUpdate) safePartialUpdate({ tamData }); else onUpdateProject(project?.id, 'tamData', tamData); alert("TAM Operations Data Saved."); };
     
     return (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
