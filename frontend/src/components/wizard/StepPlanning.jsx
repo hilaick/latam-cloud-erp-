@@ -3,6 +3,7 @@ import PhysicsEngine from './PhysicsEngine';
 import FinOpsCalculator from './FinOpsCalculator';
 import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import ToolRecommendationView from './ToolRecommendationView';
+import CutoverRunbookView from './CutoverRunbookView';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('physics');
@@ -34,6 +35,12 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                 >
                     4. Tool Recommendations
                 </button>
+                <button 
+                    onClick={() => setSubTab('runbook')} 
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'runbook' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                    5. Wave & Runbook Planning
+                </button>
             </div>
 
             {/* Sub-Components rendered based on state */}
@@ -41,6 +48,18 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
             {subTab === 'finops' && <FinOpsCalculator activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'tools' && <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />}
+            
+            {subTab === 'runbook' && (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl flex items-start gap-3 text-purple-800">
+                        <i className="fas fa-info-circle mt-1"></i>
+                        <div className="text-sm">
+                            <strong>Iterative Wave Planning:</strong> Migrations are not linear. Use this tab to schedule individual servers into Cutover Waves based on customer downtime windows. You will execute these tasks in the Execution phase.
+                        </div>
+                    </div>
+                    <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
+                </div>
+            )}
             
             {/* Execution Promotion Gate */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mt-12 flex flex-col md:flex-row justify-between items-center gap-4">
