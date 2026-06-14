@@ -144,6 +144,7 @@ function App() {
                         </div>
                     )}
                 </div>
+                <GlobalGlossary />
             </main>
         </div>
     );
