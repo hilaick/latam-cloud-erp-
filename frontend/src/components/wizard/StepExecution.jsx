@@ -450,8 +450,8 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
     
-    // Calculates overlapping runtimes (Mattress)
-    const mrr = project.mrr || 5000; 
+    // Calculates overlapping runtimes (The Buffer)
+    const mrr = project.mrr || project.budget?.mrr || 5000; 
     const overheadBudget = mrr * 0.15; 
     const currentBurn = (project.mapperNodes || []).length * 45; 
 
@@ -466,8 +466,8 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-8">
                 <div className="flex justify-between items-end mb-6 border-b border-slate-100 pb-4">
                     <div>
-                        <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-wallet text-emerald-500 mr-2"></i> Migration FinOps Mattress</h3>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Tracking overlapping runtimes, NATs, and EIPs.</p>
+                        <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-wallet text-emerald-500 mr-2"></i> Migration Overlap Buffer</h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Tracking overlapping compute, NATs, and Data Plane EIPs.</p>
                     </div>
                     <div className="text-right">
                         <div className="text-2xl font-black text-slate-800">${overheadBudget.toLocaleString()}</div>
@@ -532,19 +532,36 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
 
 function SingleProjectGantt({ project }) {
     const timelineData = useMemo(() => {
-        if(!project.kickoff || !project.date || project.kickoff==='Pending' || project.date==='TBD') return null;
-        const start = new Date(project.kickoff); const end = new Date(project.date);
+        // Core Settings Date Fallbacks
+        const kickoffStr = project.kickoff || project.kickoffDate || project.startDate;
+        const targetStr = project.date || project.targetDate || project.goLiveDate;
+
+        if(!kickoffStr || !targetStr || kickoffStr==='Pending' || targetStr==='TBD') return null;
+        
+        const start = new Date(kickoffStr); 
+        const end = new Date(targetStr);
+        
         if(isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+        
         const pad = 10 * 24 * 60 * 60 * 1000;
-        const min = start.getTime() - pad; const max = end.getTime() + pad; const total = max - min;
-        const pStart = ((start.getTime() - min) / total) * 100; const pWidth = ((end.getTime() - start.getTime()) / total) * 100;
-        return { pStart, pWidth, startStr: formatShortDate(project.kickoff), endStr: formatShortDate(project.date) };
+        const min = start.getTime() - pad; 
+        const max = end.getTime() + pad; 
+        const total = max - min;
+        
+        const pStart = ((start.getTime() - min) / total) * 100; 
+        const pWidth = ((end.getTime() - start.getTime()) / total) * 100;
+        
+        return { pStart, pWidth, startStr: formatShortDate(kickoffStr), endStr: formatShortDate(targetStr) };
     }, [project]);
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-fade-in">
             <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center uppercase tracking-widest"><i className="fas fa-stream text-amber-500 mr-3"></i> Project Timeline Baseline</h3>
-            {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">Valid Kickoff and Go-Live dates required to render timeline.</div> : (
+            {!timelineData ? (
+                <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 text-xs">
+                    Valid Kickoff and Go-Live dates required in Pre-Sales Core Settings to render timeline.
+                </div>
+            ) : (
                 <div className="overflow-x-auto w-full">
                     <div className="min-w-[800px] relative h-[120px]">
                         <div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div>
@@ -552,7 +569,7 @@ function SingleProjectGantt({ project }) {
                             <div className="h-12 relative bg-slate-50 border-y border-transparent transition-colors rounded-xl shadow-inner">
                                 <div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div>
                                 <div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}>
-                                    <span className="text-xs font-black truncate">{project.progress} Complete</span>
+                                    <span className="text-xs font-black truncate">{project.progress || '0%'} Complete</span>
                                 </div>
                                 <div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div>
                             </div>
