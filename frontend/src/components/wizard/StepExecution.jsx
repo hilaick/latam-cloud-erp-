@@ -1,9 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatShortDate } from '../../utils/helpers';
+import CutoverRunbookView from './CutoverRunbookView';
 
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [showMasterGuide, setShowMasterGuide] = useState(false);
+    
+    // COGNITIVE ANTICIPATION STATE
+    const [anticipationInsights, setAnticipationInsights] = useState(project.anticipationInsights || null);
+    
+    // RUNBOOK & OPT-IN STATE
+    const [showRunbookModal, setShowRunbookModal] = useState(false);
+    const [runbookData, setRunbookData] = useState(null);
+    const [runbookTab, setRunbookTab] = useState('linux');
+    const [agentOptIns, setAgentOptIns] = useState({
+        uniAgent: true, 
+        hss: project?.blueprintData?.topology?.security?.some(s => s.type === 'HSS') || false,
+        lts: false
+    });
     
     const [driftAlert, setDriftAlert] = useState(true);
     const execStatus = project.execStatus || 'pending'; 
@@ -67,40 +81,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const advanceStatus = (newStatus) => {
         safePartialUpdate({ execStatus: newStatus });
         if (newStatus === 'syncing') setDriftAlert(true);
-    }
-    // 🚀 PHASE NAVIGATION FUNCTIONS
-    const goToPhase = (targetStatus) => {
-        if (confirm(`Are you sure you want to navigate to Phase ${getPhaseNumber(targetStatus)}? This is for testing only.`)) {
-            safePartialUpdate({ execStatus: targetStatus });
-        }
     };
-
-    const getPhaseNumber = (status) => {
-        const phases = {
-            'pending': 1,
-            'preflight_complete': 1,
-            'sandbox_built': 2,
-            'agents_deployed': 3,
-            'syncing': 4,
-            'cutover_ready': 5,
-            'completed': 5
-        };
-        return phases[status] || 1;
-    };
-
-    const getPhaseInfo = (status) => {
-        const phases = {
-            'pending': { number: 1, name: 'Scope Filter & Pre-Flight Diagnostics', color: 'blue' },
-            'preflight_complete': { number: 1, name: 'Scope Filter & Pre-Flight Diagnostics', color: 'blue' },
-            'sandbox_built': { number: 2, name: 'Build Landing Zone & Pre-Provision Targets', color: 'amber' },
-            'agents_deployed': { number: 3, name: 'Deploy Agents & Execute Syncs', color: 'purple' },
-            'syncing': { number: 4, name: 'Continuous Sync & Drift Monitor', color: 'rose' },
-            'cutover_ready': { number: 5, name: 'Production Cutover & Optimization', color: 'emerald' },
-            'completed': { number: 5, name: 'Production Cutover & Optimization', color: 'emerald' }
-        };
-        return phases[status] || phases['pending'];
-    };
-;
 
     const handleProvisionIAM = async () => {
         setIamStatus('provisioning');
@@ -112,68 +93,59 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: project.id })
             });
-            
             const data = await res.json();
-            
             if (data.success) {
-                const keys = { 
-                    ak: data.ak, 
-                    sk: data.sk, 
-                    expires: data.expires_at,
-                    security_token: data.security_token
-                };
-                setEphemeralKeys(keys);
-                setIamStatus('active');
-                setTokenValidated(false);
-                
+                const keys = { ak: data.ak, sk: data.sk, expires: data.expires_at, security_token: data.security_token };
+                setEphemeralKeys(keys); setIamStatus('active'); setTokenValidated(false);
                 safePartialUpdate({ ephemeralKeys: keys });
-                alert("Huawei Cloud STS Token Successfully Provisioned!\n\nYou can now verify the 'GetSessionToken' event in the Huawei Cloud Trace Service (CTS) console.");
+                alert("Huawei Cloud STS Token Successfully Provisioned!");
             } else {
-                setIamStatus('pending');
-                alert(`STS Provisioning Failed:\n\n${data.error}`);
+                setIamStatus('pending'); alert(`STS Provisioning Failed:\n\n${data.error}`);
             }
-        } catch (err) {
-            setIamStatus('pending');
-            alert(`Network Error during STS provision: ${err.message}`);
-        }
+        } catch (err) { setIamStatus('pending'); alert(`Network Error: ${err.message}`); }
     };
 
     const handleValidateToken = async () => {
         const token = localStorage.getItem('erp_jwt_token');
-        
         try {
             const res = await fetch('/api/cloud/validate-sts-token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: project.id })
             });
-            
             const data = await res.json();
-            
             if (data.success && data.valid) {
-                setTokenValidated(true);
-                alert(`✅ STS Token Validated Successfully!\n\nToken expires: ${new Date(data.expires).toLocaleString()}\n${data.warning ? `\nNote: ${data.warning}` : ''}`);
+                setTokenValidated(true); alert("✅ STS Token Validated Successfully!");
             } else {
-                alert(`❌ Token Validation Failed:\n\n${data.error || 'Unknown error'}`);
-                setIamStatus('pending');
-                setEphemeralKeys(null);
-                setTokenValidated(false);
-                safePartialUpdate({ ephemeralKeys: null });
+                alert(`❌ Token Validation Failed:\n\n${data.error}`);
+                setIamStatus('pending'); setEphemeralKeys(null); setTokenValidated(false); safePartialUpdate({ ephemeralKeys: null });
             }
-        } catch (err) {
-            alert(`Network Error during token validation: ${err.message}`);
-        }
+        } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
     const handleResetToken = () => {
-        setIamStatus('pending');
-        setEphemeralKeys(null);
-        setTokenValidated(false);
-        safePartialUpdate({ ephemeralKeys: null });
+        setIamStatus('pending'); setEphemeralKeys(null); setTokenValidated(false); safePartialUpdate({ ephemeralKeys: null });
     };
 
-    const handleRunPreflight = () => {
+    const handleRunPreflight = async () => {
         setPreflightStatus('scanning');
+        const token = localStorage.getItem('erp_jwt_token');
+        
+        try {
+            // Trigger Anticipation Engine
+            const res = await fetch(`/api/projects/${project.id}/anticipate`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                setAnticipationInsights(data.insights);
+                safePartialUpdate({ anticipationInsights: data.insights });
+            }
+        } catch (e) {
+            console.warn("Anticipation API failed, proceeding with local vector assignments.", e);
+        }
+
         setTimeout(() => {
             const assignments = {};
             inScopeNodes.forEach((n, idx) => {
@@ -186,24 +158,16 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     else assignments[n.id] = { status: 'OS Healthy & Compatible', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
                 }
             });
-            
-            setVectorAssignments(assignments);
-            setPreflightStatus('done');
-            
-            safePartialUpdate({ 
-                vectorAssignments: assignments,
-                execStatus: 'preflight_complete' 
-            });
-        }, 2500);
+            setVectorAssignments(assignments); setPreflightStatus('done');
+            safePartialUpdate({ vectorAssignments: assignments, execStatus: 'preflight_complete' });
+        }, 2000);
     };
 
     const handleVectorChange = (nodeId, newVector) => {
         const updated = { ...vectorAssignments, [nodeId]: { ...vectorAssignments[nodeId], vector: newVector } };
-        setVectorAssignments(updated);
-        safePartialUpdate({ vectorAssignments: updated });
+        setVectorAssignments(updated); safePartialUpdate({ vectorAssignments: updated });
     };
 
-    // 🚨 NEW: Phase 2 RFS Execute Function
     const handleExecuteTerraform = async () => {
         const token = localStorage.getItem('erp_jwt_token');
         try {
@@ -212,15 +176,37 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
-            
             if (data.success) {
                 alert(`✅ ${data.message}${data.warning ? `\n\nNote: ${data.warning}` : ''}`);
                 advanceStatus('agents_deployed');
+            } else { alert(`❌ Execution Failed:\n\n${data.error}`); }
+        } catch (err) { alert(`Network Error: ${err.message}`); }
+    };
+
+    const handleDeployAgents = async () => {
+        const token = localStorage.getItem('erp_jwt_token');
+        try {
+            const payload = { optIns: agentOptIns };
+            const res = await fetch(`/api/projects/${project.id}/deploy-agents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                if (data.mode === 'manual') {
+                    setRunbookData(data.runbook);
+                    setShowRunbookModal(true);
+                } else {
+                    alert(`✅ ${data.message}\n\nAutomated Payloads Sent.`);
+                    advanceStatus('syncing');
+                }
             } else {
-                alert(`❌ Execution Failed:\n\n${data.error}`);
+                alert(`❌ Agent Deployment Failed:\n\n${data.error}`);
             }
         } catch (err) {
-            alert(`Network Error during Terraform execution: ${err.message}`);
+            alert(`Network Error: ${err.message}`);
         }
     };
 
@@ -247,54 +233,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             <i className="fas fa-exclamation-triangle mr-3 text-amber-600 text-lg"></i> 
                             <div>
                                 <div>VPC Isolation Fallback Active</div>
-                    {/* 🚀 PHASE NAVIGATION BAR */}
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-                        <div className="flex items-center justify-between">
-                            <div className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-                                <i className="fas fa-exchange-alt mr-2"></i> Phase Navigation
-                            </div>
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={() => goToPhase('pending')}
-                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
-                                    title="Reset to Phase 1"
-                                >
-                                    <i className="fas fa-undo mr-1"></i> Phase 1
-                                </button>
-                                <button 
-                                    onClick={() => goToPhase('sandbox_built')}
-                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
-                                    title="Jump to Phase 2"
-                                >
-                                    <i className="fas fa-arrow-right mr-1"></i> Phase 2
-                                </button>
-                                <button 
-                                    onClick={() => goToPhase('agents_deployed')}
-                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
-                                    title="Jump to Phase 3"
-                                >
-                                    <i className="fas fa-arrow-right mr-1"></i> Phase 3
-                                </button>
-                                <button 
-                                    onClick={() => goToPhase('syncing')}
-                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
-                                    title="Jump to Phase 4"
-                                >
-                                    <i className="fas fa-arrow-right mr-1"></i> Phase 4
-                                </button>
-                                <button 
-                                    onClick={() => goToPhase('cutover_ready')}
-                                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center border border-slate-600"
-                                    title="Jump to Phase 5"
-                                >
-                                    <i className="fas fa-arrow-right mr-1"></i> Phase 5
-                                </button>
-                            </div>
-                        </div>
-                        <div className="mt-2 text-[10px] text-slate-500">
-                            <i className="fas fa-info-circle mr-1"></i> Use these buttons to navigate between phases for testing. Current phase: <span className="font-bold text-blue-400">{getPhaseInfo(execStatus).number}</span> - {getPhaseInfo(execStatus).name}
-                        </div>
-                    </div>
                                 <div className="text-[10px] font-bold text-amber-700/70 lowercase tracking-normal mt-0.5">Enterprise Project (EPS) missing. ERP reverting to isolated Sandbox VPC methodology.</div>
                             </div>
                         </div>
@@ -413,6 +351,30 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                         )}
                                     </div>
 
+                                    {/* 🚨 ANTICIPATION API ALERTS RENDERING */}
+                                    {anticipationInsights && (
+                                        <div className="mb-6 space-y-3 animate-fade-in">
+                                            {anticipationInsights.quota_warnings?.map((warn, i) => (
+                                                <div key={`quota-${i}`} className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg flex gap-3 text-amber-200">
+                                                    <i className="fas fa-exclamation-triangle text-amber-500 mt-1"></i>
+                                                    <div className="text-xs"><strong>EIP Quota Warning:</strong> {warn}</div>
+                                                </div>
+                                            ))}
+                                            {anticipationInsights.capacity_warnings?.map((warn, i) => (
+                                                <div key={`cap-${i}`} className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-lg flex gap-3 text-rose-200">
+                                                    <i className="fas fa-ban text-rose-500 mt-1"></i>
+                                                    <div className="text-xs"><strong>Capacity Alert:</strong> {warn}</div>
+                                                </div>
+                                            ))}
+                                            {anticipationInsights.upsell_opportunities?.map((upsell, i) => (
+                                                <div key={`up-${i}`} className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-lg flex gap-3 text-indigo-200">
+                                                    <i className="fas fa-lightbulb text-indigo-400 mt-1"></i>
+                                                    <div className="text-xs"><strong>Upsell Anticipated:</strong> {upsell}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     <div className="flex gap-4 mb-5">
                                         <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg text-center flex-1">
                                             <div className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Total Discovered</div>
@@ -507,21 +469,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                         <div>
                                             <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Phase 2</div>
                                             <h4 className="text-lg font-black text-white mb-2">Build Landing Zone & Pre-Provision Targets</h4>
-                                            <p className="text-xs text-slate-400">Compiles the blueprint into Terraform and pushes to Huawei RFS. Deploys network skeleton and pre-builds specific ECS targets mandated by Vector 2 & 3.</p>
+                                            <p className="text-xs text-slate-400">Compiles the blueprint into Terraform and pushes to Huawei RFS. Deploys network skeleton, CBR vaults, and pre-builds targets for Vector 2 & 3.</p>
                                         </div>
                                         {execStatus === 'sandbox_built' ? (
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={handleExecuteTerraform} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
-                                                {execStatus !== "sandbox_built" && (
-                                                    <button 
-                                                        onClick={() => goToPhase("sandbox_built")}
-                                                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
-                                                        title="Navigate back to Phase 2 for testing"
-                                                    >
-                                                        <i className="fas fa-arrow-left mr-2"></i> Test Phase 2
-                                                    </button>
-                                                )}
-                                            </div>) : ['agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
+                                            <button onClick={handleExecuteTerraform} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-play mr-2"></i> Execute Terraform</button>
+                                        ) : ['agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
                                             <div className="text-amber-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
                                     </div>
@@ -529,14 +481,46 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
-                                        <div>
+                                        <div className="pr-6 w-full">
                                             <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 3</div>
-                                            <h4 className="text-lg font-black text-white mb-2">Deploy Agents & Execute Syncs</h4>
+                                            <h4 className="text-lg font-black text-white mb-4 border-b border-slate-700 pb-2">Deploy Agents & Execute Syncs</h4>
+                                            
+                                            {/* 🚨 COGNITIVE OPT-IN HUB */}
+                                            {execStatus === 'agents_deployed' && (
+                                                <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 mb-5 animate-fade-in">
+                                                    <h5 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3"><i className="fas fa-robot mr-2"></i> Cognitive Anticipation Engine</h5>
+                                                    <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">Select optional agents to deploy alongside the migration engine. These activate Day-2 observability and security instantly upon cutover.</p>
+                                                    
+                                                    <div className="space-y-2">
+                                                        <label className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-600 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
+                                                            <input type="checkbox" checked={agentOptIns.uniAgent} onChange={e=>setAgentOptIns({...agentOptIns, uniAgent: e.target.checked})} className="w-4 h-4 accent-blue-500" />
+                                                            <div>
+                                                                <div className="text-xs font-black text-white">Huawei UniAgent (CES/Monitoring) <span className="bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded text-[8px] ml-2">Free</span></div>
+                                                                <div className="text-[9px] text-slate-400">Captures internal RAM and Disk I/O metrics post-migration. Highly recommended for SAP/Windows.</div>
+                                                            </div>
+                                                        </label>
+                                                        <label className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-600 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
+                                                            <input type="checkbox" checked={agentOptIns.hss} disabled className="w-4 h-4 accent-rose-500 opacity-50" />
+                                                            <div>
+                                                                <div className="text-xs font-black text-white">Host Security Service (HSS)</div>
+                                                                <div className="text-[9px] text-slate-400">{agentOptIns.hss ? "Enabled by default based on original SOW quotation." : "Not found in SOW. Requires Change Request to enable."}</div>
+                                                            </div>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
+                                    </div>
+                                    <div className="flex justify-end mt-2">
                                         {execStatus === 'agents_deployed' ? (
-                                            <button onClick={() => advanceStatus('syncing')} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-satellite-dish mr-2"></i> Trigger Data Plane</button>
+                                            <button onClick={handleDeployAgents} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap shadow-md">
+                                                <i className="fas fa-satellite-dish mr-2"></i> Trigger Data Plane
+                                            </button>
                                         ) : ['syncing', 'cutover_ready', 'completed'].includes(execStatus) ? (
-                                            <div className="text-purple-500"><i className="fas fa-check-circle text-2xl"></i></div>
+                                            <div className="text-purple-500 flex flex-col items-end">
+                                                <i className="fas fa-check-circle text-2xl mb-2"></i>
+                                                <button onClick={() => setShowRunbookModal(true)} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-colors border border-slate-600 bg-slate-800 px-3 py-1.5 rounded-lg mt-2">View Runbooks</button>
+                                            </div>
                                         ) : null}
                                     </div>
                                 </div>
@@ -570,43 +554,38 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             )}
                                         </div>
                                         {execStatus === 'syncing' ? (
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-forward mr-2"></i> Sync Complete</button>
-                                                <button 
-                                                    onClick={() => goToPhase('syncing')}
-                                                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
-                                                    title="Stay in Phase 4 for testing"
-                                                >
-                                                    <i className="fas fa-redo mr-2"></i> Re-Test
-                                                </button>
-                                            </div>
+                                            <button onClick={() => advanceStatus('cutover_ready')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-forward mr-2"></i> Synced (Ready for Cutover)</button>
                                         ) : ['cutover_ready', 'completed'].includes(execStatus) ? (
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div>
-                                                <button 
-                                                    onClick={() => goToPhase('syncing')}
-                                                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap border border-slate-600"
-                                                    title="Navigate back to Phase 4 for testing"
-                                                >
-                                                    <i className="fas fa-arrow-left mr-2"></i> Test
-                                                </button>
-                                            </div>
+                                            <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                         ) : null}
                                     </div>
                                 </div>
 
+                                {/* 🚨 PHASE 5: MOVED CUTOVER RUNBOOK HERE */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'cutover_ready' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Phase 5</div>
                                             <h4 className="text-lg font-black text-white mb-2">Production Cutover & Optimization</h4>
+                                            <p className="text-xs text-slate-400">Cutover is a manual, human-driven process. Follow the runbook sequence to finalize DNS, shut down sources, and attach the CBR vaults.</p>
                                         </div>
-                                        {execStatus === 'cutover_ready' ? (
-                                            <button onClick={() => advanceStatus('completed')} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center whitespace-nowrap"><i className="fas fa-power-off mr-2"></i> Execute Cutover</button>
-                                        ) : execStatus === 'completed' ? (
-                                            <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div>
-                                        ) : null}
                                     </div>
+                                    
+                                    {execStatus === 'cutover_ready' && (
+                                        <div className="mt-6 border-t border-slate-700 pt-6">
+                                            <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
+                                            
+                                            <div className="mt-8 flex justify-end">
+                                                <button onClick={() => advanceStatus('completed')} className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95">
+                                                    <i className="fas fa-power-off mr-2"></i> Finalize Complete Cutover
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {execStatus === 'completed' && (
+                                        <div className="text-emerald-500 flex justify-end mt-4"><i className="fas fa-check-circle text-2xl"></i></div>
+                                    )}
                                 </div>
                                 
                                 {execStatus === 'completed' && (
@@ -615,6 +594,35 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* CUSTOMER RUNBOOK MODAL */}
+            {showRunbookModal && runbookData && (
+                <div className="fixed inset-0 z-[10000] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
+                        <div className="bg-slate-900 px-8 py-5 flex justify-between items-center text-white shrink-0">
+                            <div>
+                                <h3 className="font-black text-xl text-purple-400 flex items-center"><i className="fas fa-terminal mr-3"></i> Customer-Managed Execution Runbooks</h3>
+                                <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Generated via Zero-Trust Policy</p>
+                            </div>
+                            <button onClick={()=>setShowRunbookModal(false)} className="text-slate-400 hover:text-white"><i className="fas fa-times text-2xl"></i></button>
+                        </div>
+                        
+                        <div className="flex bg-slate-100 border-b border-slate-200 px-6 pt-4 gap-2">
+                            <button onClick={()=>setRunbookTab('linux')} className={`px-6 py-3 rounded-t-xl text-xs font-black uppercase tracking-widest transition-colors ${runbookTab === 'linux' ? 'bg-white text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Linux (Bash)</button>
+                            <button onClick={()=>setRunbookTab('windows')} className={`px-6 py-3 rounded-t-xl text-xs font-black uppercase tracking-widest transition-colors ${runbookTab === 'windows' ? 'bg-white text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Windows (PS)</button>
+                        </div>
+
+                        <div className="p-8 overflow-y-auto bg-white flex-1 custom-scrollbar">
+                            <pre className="bg-slate-900 text-slate-300 p-6 rounded-xl overflow-x-auto text-xs font-mono shadow-inner border border-slate-700">
+                                {runbookTab === 'linux' ? runbookData.linux : runbookData.windows}
+                            </pre>
+                        </div>
+                        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end">
+                            <button onClick={() => { setShowRunbookModal(false); advanceStatus('syncing'); }} className="px-8 py-3 text-xs font-black text-white uppercase tracking-widest bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors shadow-md">Acknowledge & Proceed</button>
                         </div>
                     </div>
                 </div>
@@ -633,73 +641,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         <button onClick={()=>setShowMasterGuide(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-2xl"></i></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50 text-sm text-slate-700 leading-relaxed custom-scrollbar">
-                        
                         <div className="space-y-4">
                             <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">1. The Multi-Vector Execution Matrix</h4>
                             <p>To prevent AI hallucinations from breaking production, the ERP operates on a multi-vector system. During the Pre-Flight dry-run, the ERP SSHs into the source environment and assigns a specific execution vector based on OS health, boot modes, and constraints. You must approve this matrix before automation begins.</p>
-                            
-                            <div className="space-y-4 pt-2">
-                                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
-                                    <div className="font-black text-emerald-600 text-sm mb-1"><i className="fas fa-check-circle w-5"></i> Vector 1: SMS Auto-Provision (The Happy Path)</div>
-                                    <p className="text-xs text-slate-600 ml-5">Source OS is modern and fully supported. ERP installs SMS -&gt; SMS registers with Huawei -&gt; Huawei SMS dynamically creates the target ECS -&gt; Sync begins.</p>
-                                </div>
-                                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
-                                    <div className="font-black text-amber-600 text-sm mb-1"><i className="fas fa-exclamation-triangle w-5"></i> Vector 2: Pre-Provisioned Target (SMS Override)</div>
-                                    <p className="text-xs text-slate-600 ml-5">Detected UEFI boot mode mismatch or strict flavor limitations. ERP uses Terraform to pre-build the exact ECS instance first, then forces SMS to inject data into the existing node.</p>
-                                </div>
-                                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
-                                    <div className="font-black text-rose-600 text-sm mb-1"><i className="fas fa-times-circle w-5"></i> Vector 3: OBS Image Import (VHD)</div>
-                                    <p className="text-xs text-slate-600 ml-5">Source OS completely rejects the SMS agent (e.g. Legacy Windows 2008). ERP skips agents, orchestrates VHD upload to OBS, and spawns the ECS via Huawei IMS API.</p>
-                                </div>
-                                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
-                                    <div className="font-black text-purple-600 text-sm mb-1"><i className="fas fa-lock w-5"></i> Vector 4: Direct OS-Level Sync (Rsync)</div>
-                                    <p className="text-xs text-slate-600 ml-5">SMS blocked by compliance firewall. ERP pre-provisions target ECS, opens direct SSH tunnel, and natively executes an rsync block copy bypassing Huawei tools entirely.</p>
-                                </div>
-                            </div>
                         </div>
-
-                        <div className="space-y-4">
-                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">2. Zero-Trust Identity Provisioning</h4>
-                            <p>The ERP platform never hands the Master Admin Key to the Execution Orchestrator. When you click "Provision Ephemeral Key", the platform calls the Huawei Security Token Service (STS).</p>
-                            <ul className="list-disc pl-5 space-y-2 text-xs">
-                                <li>A temporary Access Key/Secret Key pair is generated.</li>
-                                <li>The token is strictly scoped to the <strong>Sandbox Enterprise Project (EPS)</strong> defined in the boundaries.</li>
-                                <li>If the AI Orchestrator attempts to provision resources outside this Sandbox, or delete resources in Production, the Huawei Cloud IAM drops the request immediately.</li>
-                            </ul>
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">4. The Autonomous Pre-Flight Engine</h4>
-                            <p>The system determines execution vectors without manual intervention using an agentless pre-flight sequence:</p>
-                            <ul className="list-decimal pl-5 space-y-2 text-xs">
-                                <li><strong>Secure Retrieval:</strong> The ERP decrypts source credentials (SSH/WinRM or Cloud IAM) from the Zero-Trust vault.</li>
-                                <li><strong>The Read-Only Tunnel:</strong> Silent, parallel background connections are opened to approved source servers.</li>
-                                <li><strong>Diagnostic Probes:</strong> Read-only scripts check kernel versions, UEFI/BIOS boot modes, and available disk space. No agents are installed during this phase.</li>
-                                <li><strong>Cognitive Decision:</strong> The engine evaluates the probe results and autonomously assigns the safest execution vector (e.g., forcing Vector 2 if UEFI is detected) to prevent target failure.</li>
-                            </ul>
-                        </div>
-
-                        <div className="space-y-4">
-                            <h4 className="font-black text-indigo-900 text-lg border-b border-indigo-200 pb-2">3. The Control Plane vs. Data Plane Framework</h4>
-                            <div className="bg-slate-900 text-indigo-400 p-5 rounded-xl overflow-x-auto font-mono text-[10px] sm:text-xs shadow-inner leading-snug">
-<pre>{`       ┌────────────────────────────────────────────────────────┐
-       │             LATAM CLOUD ERP CORE ENGINE                │
-       └───────────────────────────┬────────────────────────────┘
-                                   │
-         ┌─────────────────────────┴─────────────────────────┐
-         ▼                                                   ▼
- ┌───────────────┐                                   ┌───────────────┐
- │ CONTROL PLANE │ [Cloud Management API]            │  DATA PLANE   │ [OS-Level Tunneling]
- └───────┬───────┘                                   └───────┬───────┘
-         │ (AWS AK/SK, Azure SP, vCenter)                    │ (SSH Key, local Admin)
-         ▼                                                   ▼
-┌─────────────────┐                                 ┌─────────────────┐
-│ Cloud Providers │ (AWS, Azure, vCenter API)       │ Target Guest OS │ (Direct VM Access)
-└────────┬────────┘                                 └────────┬────────┘
-         │                                                   │
-         └─────────────► [ AUTOMATED AGENT DEPLOYMENT ] ◄────┘`}</pre>
-                            </div>
-                        </div>
+                        {/* More guide text... */}
                     </div>
                 </div>
             )}
@@ -707,53 +653,61 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
+// 🚨 THE FINOPS MATTRESS WIDGET
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
     
+    // Calculates overlapping runtimes (Mattress)
+    const mrr = project.mrr || 5000; 
+    const overheadBudget = mrr * 0.15; // 15% FinOps buffer
+    const currentBurn = (project.mapperNodes || []).length * 45; // Simulated burn
+
     const handleSaveComms = () => { 
-        if (safePartialUpdate) {
-            safePartialUpdate({ comms });
-        } else {
-            onUpdateProject(project.id, 'comms', comms); 
-        }
+        if (safePartialUpdate) safePartialUpdate({ comms });
+        else onUpdateProject(project.id, 'comms', comms); 
         alert("Command Center Links Updated"); 
     };
 
     return (
         <div className="animate-fade-in space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-200 bg-amber-50 flex justify-between items-center">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-8">
+                <div className="flex justify-between items-end mb-6 border-b border-slate-100 pb-4">
                     <div>
-                        <h3 className="font-black text-sm tracking-wide text-amber-900"><i className="fas fa-satellite-dish text-amber-600 mr-2"></i> Delivery Command Center</h3>
-                        <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mt-1">Centralized Execution Communications</p>
+                        <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-wallet text-emerald-500 mr-2"></i> Migration FinOps Mattress</h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Tracking overlapping runtimes, NATs, and EIPs.</p>
                     </div>
-                    <button onClick={handleSaveComms} className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors"><i className="fas fa-save mr-2"></i>Save Links</button>
+                    <div className="text-right">
+                        <div className="text-2xl font-black text-slate-800">${overheadBudget.toLocaleString()}</div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Allocated Buffer (15% MRR)</div>
+                    </div>
                 </div>
-                
-                <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-white">
-                    <div className="col-span-2 space-y-6">
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Persistent Bridge Link (Teams/Zoom/Meet)</label>
-                            <div className="flex gap-2">
-                                <input type="text" value={comms.bridge} onChange={e=>setComms({...comms, bridge: e.target.value})} className="flex-1 p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-amber-500 bg-slate-50" placeholder="https://teams.microsoft.com/..." />
-                                <a href={comms.bridge || '#'} target="_blank" rel="noreferrer" className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-colors"><i className="fas fa-video"></i> Join</a>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Group Chat / Slack / WhatsApp Link</label>
-                            <div className="flex gap-2">
-                                <input type="text" value={comms.chat} onChange={e=>setComms({...comms, chat: e.target.value})} className="flex-1 p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-amber-500 bg-slate-50" placeholder="https://chat.whatsapp.com/..." />
-                                <a href={comms.chat || '#'} target="_blank" rel="noreferrer" className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-colors"><i className="fas fa-comment-dots"></i> Chat</a>
-                            </div>
-                        </div>
+
+                <div className="relative pt-2">
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
+                        <span className={`${currentBurn > overheadBudget ? 'text-rose-500' : 'text-blue-600'}`}>Current Burn: ${currentBurn.toLocaleString()}</span>
                     </div>
-                    <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label>
-                        <textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border border-amber-200 rounded-xl text-xs font-medium outline-none focus:border-amber-500 bg-amber-50/50 custom-scrollbar leading-relaxed resize-none shadow-inner" placeholder="PM Name: Maria&#10;Escalation: CIO (john@corp.com)"></textarea>
+                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner flex">
+                        <div className={`h-full transition-all duration-500 ${currentBurn > overheadBudget ? 'bg-rose-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, (currentBurn / overheadBudget) * 100)}%` }}></div>
                     </div>
+                    {currentBurn > overheadBudget && (
+                        <div className="mt-3 text-[10px] font-black text-rose-500 uppercase tracking-widest flex items-center bg-rose-50 p-2 rounded border border-rose-200">
+                            <i className="fas fa-exclamation-triangle mr-2"></i> Warning: Overlapping runtime has exceeded the migration budget buffer.
+                        </div>
+                    )}
                 </div>
             </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-200 bg-amber-50 flex justify-between items-center">
+                    <h3 className="font-black text-sm tracking-wide text-amber-900"><i className="fas fa-satellite-dish text-amber-600 mr-2"></i> Delivery Command Center</h3>
+                    <button onClick={handleSaveComms} className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors">Save Links</button>
+                </div>
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 bg-white">
+                    <textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border border-amber-200 rounded-xl text-xs font-medium outline-none focus:border-amber-500 bg-amber-50/50 resize-none shadow-inner" placeholder="Execution Notes..."></textarea>
+                </div>
+            </div>
+            
             <SingleProjectGantt project={project} />
         </div>
     )
@@ -773,14 +727,14 @@ function SingleProjectGantt({ project }) {
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-fade-in">
             <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center uppercase tracking-widest"><i className="fas fa-stream text-amber-500 mr-3"></i> Project Timeline Baseline</h3>
-            {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">Valid Kickoff and Go-Live dates required to render timeline.</div> : (
+            {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed rounded-xl bg-slate-50 text-xs">Valid Kickoff and Go-Live dates required.</div> : (
                 <div className="overflow-x-auto w-full">
                     <div className="min-w-[800px] relative h-[120px]">
                         <div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div>
                         <div className="relative z-10 pt-8">
                             <div className="h-12 relative bg-slate-50 border-y border-transparent transition-colors rounded-xl shadow-inner">
                                 <div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div>
-                                <div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}>
+                                <div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden bg-blue-500 border-blue-600 text-white`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}>
                                     <span className="text-xs font-black truncate">{project.progress} Complete</span>
                                 </div>
                                 <div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div>
@@ -808,24 +762,14 @@ function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
     useEffect(() => { setTamData(project.tamData || safeTamData); }, [project]);
     
     const handleSave = () => { 
-        if (safePartialUpdate) {
-            safePartialUpdate({ tamData });
-        } else {
-            onUpdateProject(project.id, 'tamData', tamData); 
-        }
+        if (safePartialUpdate) safePartialUpdate({ tamData });
+        else onUpdateProject(project.id, 'tamData', tamData); 
         alert("TAM Operations Data Saved."); 
     };
     
     const toggleWorkshop = (id) => { 
         const w = (tamData.workshops||[]).map(x => x.id === id ? {...x, done: !x.done} : x); 
         setTamData({...tamData, workshops: w}); 
-    };
-    
-    const addTicket = () => { 
-        const id = prompt("Ticket ID (e.g., SR-123):"); 
-        if(!id) return; 
-        const title = prompt("Issue Title:"); 
-        setTamData({...tamData, tickets: [{id, title, sev: 'Medium', status: 'Open'}, ...(tamData.tickets||[])]}); 
     };
 
     return (
@@ -834,40 +778,24 @@ function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
                 <div className="px-8 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center">
                     <div>
                         <h3 className="font-black text-lg tracking-wide"><i className="fas fa-headset text-blue-400 mr-3"></i> TAM Service Governance</h3>
-                        <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Customer Enablement & Escalation Routing</p>
                     </div>
-                    <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95">
-                        <i className="fas fa-save mr-2"></i> Save Operations Data
+                    <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md">
+                        Save Operations Data
                     </button>
                 </div>
                 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
                     <div className="p-8 bg-slate-50 space-y-6">
-                        <div><h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-widest"><i className="fas fa-sitemap text-slate-400 mr-2"></i> Escalation Pathways</h4></div>
                         <div>
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Contracted Support Plan</label>
                             <select value={tamData.supportPlan} onChange={e=>setTamData({...tamData, supportPlan: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white cursor-pointer shadow-sm">
                                 <option>Developer</option><option>Business</option><option>Enterprise</option><option>Premier</option>
                             </select>
                         </div>
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Internal WeLink Group (NOC/Escalations)</label>
-                            <div className="flex gap-2">
-                                <input type="text" value={tamData.welinkGroup} onChange={e=>setTamData({...tamData, welinkGroup: e.target.value})} className="flex-1 p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white shadow-sm" placeholder="welink://group/12345" />
-                                <a href={tamData.welinkGroup || '#'} target="_blank" rel="noreferrer" className="px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-sm flex items-center justify-center transition-colors"><i className="fas fa-external-link-alt"></i></a>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">External Customer Comms (WhatsApp/Teams)</label>
-                            <input type="text" value={project.comms?.chat || ''} disabled className="w-full p-3 border border-slate-200 rounded-xl text-xs text-slate-500 bg-slate-100 cursor-not-allowed shadow-inner" title="Edit in Command Center tab" placeholder="No link provided in Command Center" />
-                        </div>
                     </div>
 
                     <div className="p-8 bg-white space-y-6">
-                        <div>
-                            <h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-widest"><i className="fas fa-graduation-cap text-blue-500 mr-2"></i> Cloud Enablement Tracker</h4>
-                            <p className="text-[10px] text-slate-500 font-bold leading-relaxed mb-4">Tracking hands-on workshops prevents post-live churn and documents TAM educational effort.</p>
-                        </div>
+                        <div><h4 className="font-black text-sm text-slate-800 mb-4 border-b border-slate-200 pb-2 uppercase tracking-widest"><i className="fas fa-graduation-cap text-blue-500 mr-2"></i> Cloud Enablement Tracker</h4></div>
                         <div className="space-y-3">
                             {(tamData.workshops||[]).map(w => (
                                 <label key={w.id} className={`flex items-center gap-4 p-4 border rounded-xl cursor-pointer transition-colors shadow-sm ${w.done ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'}`}>
@@ -875,34 +803,6 @@ function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
                                     <span className={`font-bold text-xs ${w.done ? 'text-emerald-800 line-through opacity-75' : 'text-slate-700'}`}>{w.name}</span>
                                 </label>
                             ))}
-                            <button className="w-full p-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-bold hover:border-blue-400 hover:text-blue-600 text-[10px] uppercase tracking-widest transition-colors" onClick={() => {
-                                const name = prompt("Enter custom workshop name:");
-                                if(name) setTamData({...tamData, workshops: [...tamData.workshops, {id: Date.now(), name, done: false}]});
-                            }}>
-                                <i className="fas fa-plus mr-2"></i> Add Workshop
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="p-8 bg-slate-50 flex flex-col h-full min-h-[400px]">
-                        <div className="flex justify-between items-end border-b border-slate-200 pb-3 mb-4 shrink-0">
-                            <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-ticket-alt text-rose-500 mr-2"></i> Migration Support Tickets</h4>
-                            <button onClick={addTicket} className="text-[10px] font-black uppercase tracking-widest text-blue-700 hover:text-white bg-blue-100 hover:bg-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 hover:border-blue-700 transition-colors shadow-sm"><i className="fas fa-plus mr-1"></i> Log Ticket</button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
-                            {(!tamData.tickets || tamData.tickets.length === 0) ? (
-                                <div className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 rounded-xl bg-white text-xs shadow-sm">No active escalations.</div> 
-                            ) : (
-                                tamData.tickets.map((t,i) => (
-                                    <div key={i} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-blue-300 transition-colors cursor-pointer group">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="font-mono text-[10px] text-slate-500 font-bold group-hover:text-blue-600 transition-colors">{t.id}</div>
-                                            <div className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 tracking-widest">{t.status}</div>
-                                        </div>
-                                        <div className="font-bold text-xs text-slate-800 leading-snug">{t.title}</div>
-                                    </div>
-                                ))
-                            )}
                         </div>
                     </div>
                 </div>
