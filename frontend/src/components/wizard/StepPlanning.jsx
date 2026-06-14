@@ -45,7 +45,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
 
             {/* Sub-Components rendered based on state */}
             {subTab === 'physics' && <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'finops' && <FinOpsCalculator activeProject={project} onUpdateProject={onUpdateProject} />}
+            {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
             {subTab === 'tools' && <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />}
             
