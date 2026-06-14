@@ -1,321 +1,108 @@
-import React, { useContext, useState, useMemo } from 'react';
-import { ERPContext } from '../../context/ERPContext';
-import StepARB from './StepARB';
+import React, { useState, useEffect } from 'react';
 import StepArchitecture from './StepArchitecture';
+import TopologyMapperView from './TopologyMapperView';
 import StepPlanning from './StepPlanning';
 import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
 
-export default function ProjectWizard() {
-    const { projects, activeProjectId, handleUpdateProject, customers } = useContext(ERPContext);
-    const [editingProject, setEditingProject] = useState(null);
-    const [showMatrixHelp, setShowMatrixHelp] = useState(false);
-    const [showTheoryModal, setShowTheoryModal] = useState(false);
-    
-    // Dynamic SA and Partner memory cache for autocomplete
-    const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
-    const uniquePartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
-    
-    const project = projects.find(p => String(p.id) === String(activeProjectId));
+export default function ProjectWizard({ activeProject, onUpdateProject, onClose }) {
+    // Determine the Maximum Unlocked Phase based on Project Data
+    const getMaxUnlockedPhase = () => {
+        if (!activeProject) return 1;
+        
+        const hasDiscovery = activeProject.mgcData || activeProject.blueprintData;
+        const hasMappedNodes = activeProject.mapperNodes && activeProject.mapperNodes.length > 0;
+        const hasBudget = activeProject.budget || activeProject.financials;
+        const hasExecution = activeProject.execStatus;
+        const isCutoverReady = ['cutover_ready', 'completed'].includes(activeProject.execStatus);
 
-    if (!project) {
-        return <div className="p-12 text-center text-slate-500 font-bold bg-white rounded-2xl border border-slate-200 mt-8 shadow-sm">Please select a project from the Pipeline or Radar.</div>;
-    }
-
-    const isPoC = project.project_type === 'poc';
-
-    let stages = [
-        { id: '1_arb', name: '1. ARB Intake', icon: 'fa-door-open' },
-        { id: '2_architecture', name: '2. Architecture', icon: 'fa-project-diagram' },
-        { id: '3_planning', name: '3. Planning', icon: 'fa-tasks' },
-        { id: '4_execution', name: '4. Execution', icon: 'fa-rocket' },
-        { id: '5_postlive', name: '5. Post-Live', icon: 'fa-award' }
-    ];
-
-    if (isPoC) {
-        stages = stages.filter(s => s.id !== '5_postlive');
-    }
-
-    const handlePromote = () => {
-        const currentIndex = stages.findIndex(s => s.id === project.lifecycleState);
-        if (currentIndex >= 0 && currentIndex < stages.length - 1) {
-            const nextState = stages[currentIndex + 1].id;
-            handleUpdateProject(project.id, 'lifecycleState', nextState);
-            window.scrollTo({ top: 0, behavior: 'smooth' }); 
-        } else if (currentIndex === stages.length - 1) {
-            handleUpdateProject(project.id, 'lifecycleState', '6_completed');
-            alert("Project Closed Successfully!");
-        }
+        if (isCutoverReady) return 5;
+        if (hasBudget || hasExecution) return 4;
+        if (hasMappedNodes) return 3;
+        if (hasDiscovery) return 2;
+        return 1;
     };
 
-    const renderStage = () => {
-        switch(project.lifecycleState) {
-            case '1_arb': return <StepARB project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-            case '2_architecture': return <StepArchitecture project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-            case '3_planning': return <StepPlanning project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-            case '4_execution': return <StepExecution project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-            case '5_postlive': return <StepPostLive project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-            default: return <StepARB project={project} onUpdateProject={handleUpdateProject} onPromote={handlePromote} isCurrent={true} />;
-        }
+    const maxUnlocked = getMaxUnlockedPhase();
+    const [currentStep, setCurrentStep] = useState(1);
+
+    // If user opens a project that is already at execution, default them to the highest phase
+    useEffect(() => {
+        if (maxUnlocked > 1) setCurrentStep(maxUnlocked);
+    }, [activeProject?.id]);
+
+    const phases = [
+        { id: 1, label: "1. Discovery", full: "Discovery & Architecture" },
+        { id: 2, label: "2. Topology", full: "Topology Mapper" },
+        { id: 3, label: "3. Planning", full: "Strategy & Planning" },
+        { id: 4, label: "4. Execution", full: "Execution Control" },
+        { id: 5, label: "5. Post-Live", full: "Post-Live Governance" }
+    ];
+
+    const handlePhaseClick = (phaseId) => {
+        if (phaseId <= maxUnlocked) setCurrentStep(phaseId);
     };
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-6 pb-12 animate-fade-in relative">
-            
-            {isPoC && (
-                <div className="bg-amber-100 border border-amber-300 text-amber-800 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center shadow-sm animate-fade-in">
-                    <i className="fas fa-bolt mr-3 text-amber-600 text-lg"></i> 
-                    <div>
-                        <div>Fast-Track PoC Lifecycle Active</div>
-                        <div className="text-[10px] font-bold text-amber-700/70 lowercase tracking-normal mt-0.5">Post-Live governance constraints bypassed. Hard TTL enforced.</div>
-                    </div>
-                </div>
-            )}
-
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex justify-between items-center group">
-                <div>
-                    <h2 className="text-2xl font-black text-slate-800 flex items-center uppercase">
-                        {project.name}
-                        <button 
-                            onClick={() => setEditingProject({...project})} 
-                            className="ml-4 text-sm text-slate-400 hover:text-blue-600 transition-colors bg-slate-100 p-2 rounded-lg border border-slate-200" 
-                            title="Edit Core Project Context"
-                        >
-                            <i className="fas fa-cog mr-2"></i> Configure Context
-                        </button>
-                    </h2>
-                    <div className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-bold">SA: {project.sa || 'TBD'} | Country: {project.country || 'TBD'}</div>
-                </div>
-                <div className="font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-lg shadow-sm">${project.mrr || 0}</div>
-            </div>
-
-            <div className="flex gap-2 bg-slate-200 p-1.5 rounded-xl overflow-x-auto shadow-inner custom-scrollbar">
-                {stages.map(stg => (
-                    <button key={stg.id} onClick={() => handleUpdateProject(project.id, 'lifecycleState', stg.id)} className={`flex-1 min-w-[150px] py-3 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all ${project.lifecycleState === stg.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}`}>
-                        <i className={`fas ${stg.icon} mr-2`}></i> {stg.name}
+        <div className="bg-slate-50 min-h-screen flex flex-col font-sans relative">
+            {/* Header & CHEVRON TRACKER */}
+            <div className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm px-6 py-4 flex flex-col md:flex-row gap-4 justify-between items-center">
+                <div className="flex items-center gap-4 shrink-0">
+                    <button onClick={onClose} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition-colors">
+                        <i className="fas fa-arrow-left"></i>
                     </button>
-                ))}
+                    <div>
+                        <h2 className="font-black text-xl text-slate-800">{activeProject?.name || "New Project"}</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{activeProject?.customerName || "No Customer Linked"}</p>
+                    </div>
+                </div>
+
+                {/* The Chevron Progress Bar */}
+                <div className="flex-1 w-full max-w-4xl overflow-x-auto custom-scrollbar pb-2 md:pb-0">
+                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 min-w-[600px]">
+                        {phases.map((phase) => {
+                            const isCompleted = phase.id < maxUnlocked;
+                            const isCurrent = phase.id === currentStep;
+                            const isLocked = phase.id > maxUnlocked;
+
+                            let baseStyle = "flex-1 relative flex items-center justify-center py-2.5 px-4 text-xs font-black uppercase tracking-widest transition-all rounded-lg z-10 text-center cursor-pointer ";
+                            
+                            if (isLocked) baseStyle += "text-slate-400 bg-transparent cursor-not-allowed opacity-60";
+                            else if (isCurrent) baseStyle += "bg-white text-indigo-600 shadow-sm border border-slate-200 scale-[1.02] z-20";
+                            else if (isCompleted) baseStyle += "text-slate-600 hover:bg-slate-200/50 bg-transparent";
+
+                            return (
+                                <div key={phase.id} onClick={() => handlePhaseClick(phase.id)} className={baseStyle} title={isLocked ? "Complete previous phases to unlock" : phase.full}>
+                                    {isCompleted && !isCurrent ? <i className="fas fa-check text-emerald-500 mr-2"></i> : null}
+                                    {isLocked && <i className="fas fa-lock text-slate-300 mr-2"></i>}
+                                    <span className="truncate">{phase.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
 
-            {renderStage()}
+            {/* Smart Prompt Action Center */}
+            <div className="bg-indigo-50 border-b border-indigo-100 px-8 py-3 flex items-center justify-center text-indigo-800 text-xs shadow-inner">
+                <i className="fas fa-robot text-indigo-500 mr-3 text-lg"></i>
+                <span className="font-medium">
+                    {currentStep === 1 && "Welcome. To begin, upload the SOW Blueprint and MgC Discovery data to establish technical and financial baselines."}
+                    {currentStep === 2 && "Data ingested successfully. Drag and drop discovered servers to their quoted SOW lines to lock in the project scope."}
+                    {currentStep === 3 && "Scope locked. Calculate your FinOps overlap budget and schedule your Iterative Migration Waves."}
+                    {currentStep === 4 && "Strategy Approved. Run Pre-Flight OS Diagnostics before provisioning Landing Zones and Agents."}
+                    {currentStep === 5 && "Cutover Ready. Follow the Interactive Runbook to finalize DNS, power down sources, and attach CBR vaults."}
+                </span>
+            </div>
 
-            {editingProject && (
-                <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col border border-slate-700 animate-slide-up">
-                        
-                        <div className="bg-slate-900 px-6 py-4 sm:px-8 sm:py-5 rounded-t-2xl flex justify-between items-center text-white shrink-0">
-                            <h3 className="font-black text-lg sm:text-xl text-blue-400 flex items-center">
-                                <i className="fas fa-clipboard-list mr-3"></i> Pre-Sales Context / Core Settings
-                            </h3>
-                            <button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-white p-2"><i className="fas fa-times text-xl"></i></button>
-                        </div>
-                        
-                        <div className="p-4 sm:p-8 overflow-y-auto bg-slate-50 space-y-6 sm:space-y-8 flex-1 custom-scrollbar">
-                            
-                            <div className="bg-white p-5 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Project Foundation</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                                    <div className="md:col-span-2">
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account / Vault Link</label>
-                                        <select 
-                                            value={editingProject.customerName || ''} 
-                                            onChange={e => {
-                                                const selectedName = e.target.value.toUpperCase();
-                                                const matched = (customers || []).find(c => c.name.toUpperCase() === selectedName);
-                                                setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null });
-                                            }} 
-                                            className="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:border-blue-500 outline-none text-sm font-bold cursor-pointer uppercase"
-                                        >
-                                            <option value="">-- Select Customer Profile --</option>
-                                            {(customers || []).map(c => <option key={c.id} value={c.name.toUpperCase()}>{c.name.toUpperCase()}</option>)}
-                                        </select>
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug"><i className="fas fa-shield-alt text-slate-300 mr-1"></i>Links this project to secure Multi-Cloud and OS credentials located in the Customer Directory.</p>
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name</label>
-                                        <input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">The internal reference identifier for this specific SOW/migration scope.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label>
-                                        <input type="text" list="wizard-sa-list" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
-                                        <datalist id="wizard-sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Primary contact for technical escalation during delivery.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Delivery Partner</label>
-                                        <input type="text" list="wizard-partner-list" value={editingProject.partner || ''} onChange={e=>setEditingProject({...editingProject, partner: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold uppercase" />
-                                        <datalist id="wizard-partner-list">{uniquePartners.map(pt => <option key={pt} value={pt} />)}</datalist>
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Third-party or internal NOC responsible for execution tasks.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Country</label>
-                                        <input type="text" value={editingProject.country || ''} onChange={e=>setEditingProject({...editingProject, country: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold" />
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Used for Regional Map plotting and executive dashboard metrics.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Health</label>
-                                        <select value={editingProject.health || 'Green'} onChange={e=>setEditingProject({...editingProject, health: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
-                                            <option>Green</option><option>Yellow</option><option>Red</option>
-                                        </select>
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Override the auto-calculated health status for manual escalation.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-indigo-50 p-5 sm:p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600 rounded-bl-full opacity-5 -mr-10 -mt-10 pointer-events-none"></div>
-                                <h4 className="font-black text-sm text-indigo-900 uppercase mb-4 border-b border-indigo-200 pb-2 relative z-10"><i className="fas fa-shield-alt text-indigo-500 mr-2"></i> Execution & Governance Boundaries</h4>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 relative z-10">
-                                    <div className="md:col-span-3">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-widest">Source Authentication Level (Agent Strategy)</label>
-                                            
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setShowMatrixHelp(!showMatrixHelp)} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-100 px-3 py-1 rounded transition-colors flex items-center gap-2">
-                                                    <i className="fas fa-bolt"></i> Quick Overview
-                                                </button>
-                                                <button onClick={() => setShowTheoryModal(true)} className="text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded transition-colors flex items-center gap-2 shadow-sm">
-                                                    <i className="fas fa-graduation-cap"></i> Deep Dive Theory
-                                                </button>
-                                            </div>
-
-                                        </div>
-                                        <select value={editingProject.authLevel || 'Read-Only (Customer Managed)'} onChange={e=>setEditingProject({...editingProject, authLevel: e.target.value})} className="w-full p-3 border border-indigo-300 rounded-lg text-sm font-bold outline-none focus:border-indigo-600 bg-white cursor-pointer shadow-sm">
-                                            <option value="Cloud Admin API">Cloud Admin API (Automated Agentless Push)</option>
-                                            <option value="Active Directory Domain Admin">Active Directory Domain Admin (Automated GPO/WinRM Push)</option>
-                                            <option value="Local OS Admin">Local OS Admin / Root (Automated SSH Injection)</option>
-                                            <option value="Read-Only (Customer Managed)">Read-Only / No OS Access (Customer Managed Runbooks)</option>
-                                        </select>
-                                        
-                                        {showMatrixHelp ? (
-                                            <div className="mt-3 p-4 bg-white border border-indigo-200 rounded-xl text-xs text-slate-700 space-y-3 shadow-inner animate-fade-in">
-                                                <p className="font-bold text-indigo-800 border-b border-indigo-100 pb-2">Quick Overview: How Step 4 (Execution) will behave:</p>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-cloud text-blue-500 w-4"></i> Cloud Admin API:</span> Fast & automated. Connects natively to hyperscaler APIs to inject agents silently.</div>
-                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-network-wired text-indigo-500 w-4"></i> Domain Admin:</span> Centralized deployment. Drops MSI payloads via internal jump-box and Active Directory.</div>
-                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-terminal text-rose-500 w-4"></i> Local OS Admin:</span> Sequential deployment. Connects via SSH/WinRM host-by-host to install agents.</div>
-                                                    <div><span className="font-black text-slate-800 block"><i className="fas fa-user-shield text-slate-500 w-4"></i> Read-Only:</span> Zero Trust. ERP disables automated pushes and generates copy-paste runbooks for the customer instead.</div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-[9px] text-indigo-600/70 mt-1.5 font-medium leading-snug">Dictates how MgC/SMS migration agents will be pushed into the source environment during Step 4.</p>
-                                        )}
-                                    </div>
-
-                                    <div className="md:col-span-1.5">
-                                        <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1"><i className="fas fa-box text-amber-500 mr-1"></i> Sandbox EPS (Day-1)</label>
-                                        <input type="text" value={editingProject.sandboxEps || ''} onChange={e=>setEditingProject({...editingProject, sandboxEps: e.target.value})} placeholder="Leave blank for VPC Isolation" className="w-full p-3 border border-amber-300 rounded-lg text-sm font-mono outline-none focus:border-amber-600 bg-amber-50" />
-                                        <p className="text-[9px] text-indigo-600/70 mt-1.5 font-medium leading-snug">Huawei Enterprise Project ID. <strong className="text-amber-700">If blank, ERP defaults to Sandbox VPC Isolation.</strong></p>
-                                    </div>
-                                    <div className="md:col-span-1.5">
-                                        <label className="block text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1"><i className="fas fa-rocket text-emerald-500 mr-1"></i> Production EPS (Day-2)</label>
-                                        <input type="text" value={editingProject.prodEps || ''} onChange={e=>setEditingProject({...editingProject, prodEps: e.target.value})} placeholder="Leave blank for VPC Isolation" className="w-full p-3 border border-emerald-300 rounded-lg text-sm font-mono outline-none focus:border-emerald-600 bg-emerald-50" />
-                                        <p className="text-[9px] text-indigo-600/70 mt-1.5 font-medium leading-snug">Target boundary for Post-Live Cutover. <strong className="text-emerald-700">If blank, targets Production VPC.</strong></p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="bg-white p-5 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> Commercials & Timelines</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5 mb-5">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kickoff / Start Date</label>
-                                        <input type="date" value={editingProject.kickoff || ''} onChange={e=>setEditingProject({...editingProject, kickoff: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono cursor-pointer" />
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Tracks total migration duration.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Go-Live Date</label>
-                                        <input type="date" value={editingProject.date || ''} onChange={e=>setEditingProject({...editingProject, date: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg outline-none text-sm font-bold font-mono cursor-pointer" />
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Feeds the Global Dashboard countdown.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Complexity</label>
-                                        <select value={editingProject.complexity || 'Medium'} onChange={e=>setEditingProject({...editingProject, complexity: e.target.value})} className="w-full p-2.5 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
-                                            <option>Low</option><option>Medium</option><option>High</option><option>Ultra-High</option>
-                                        </select>
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Dictates baseline Physics SLA.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target MRR (USD)</label>
-                                        <input type="number" value={editingProject.mrr || ''} onChange={e=>setEditingProject({...editingProject, mrr: Number(e.target.value)})} className="w-full p-2.5 border border-emerald-300 rounded-lg bg-emerald-50 text-emerald-900 focus:border-emerald-500 outline-none text-sm font-black" />
-                                        <p className="text-[9px] text-slate-400 mt-1.5 font-medium leading-snug">Used for Scope Creep reconciliation.</p>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Scope / Discovery Notes</label>
-                                    <textarea rows="3" value={editingProject.scope || editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, scope: e.target.value, discoveryNotes: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg focus:border-blue-500 outline-none text-sm font-medium leading-relaxed"></textarea>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="px-6 py-4 sm:px-8 sm:py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
-                            <button onClick={()=>setEditingProject(null)} className="px-6 py-2.5 text-xs font-black text-slate-600 uppercase tracking-widest hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
-                            <button onClick={()=>{ handleUpdateProject(editingProject.id, editingProject); setEditingProject(null); }} className="px-8 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-colors"><i className="fas fa-save mr-2"></i> Save Context</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* THEORY MODAL (Same as before) */}
-            {showTheoryModal && (
-                <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                        <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center text-white shrink-0">
-                            <h3 className="font-black text-lg"><i className="fas fa-graduation-cap mr-2"></i> The Credential Decision Matrix</h3>
-                            <button onClick={()=>setShowTheoryModal(false)} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
-                        </div>
-                        <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar text-sm text-slate-700 space-y-6">
-                            
-                            <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl text-base font-medium leading-relaxed shadow-sm text-slate-800">
-                                The Credential Decision Matrix is essentially the "rules of engagement" engine for the execution phase of the migration. Its primary purpose is to dynamically determine how the ERP will deploy migration agents and orchestrate the actual data movement, based entirely on the depth of permissions (credentials) the customer is willing to provide.
-                            </div>
-                            
-                            <p className="leading-relaxed text-slate-600">
-                                Because customers have varying strictness regarding security and compliance, the ERP cannot use a "one-size-fits-all" approach to push migration agents to their servers. The matrix solves this by shifting the deployment runbook strategy across two vectors: the <strong className="text-indigo-600">Control Plane</strong> and the <strong className="text-indigo-600">Data Plane</strong>.
-                            </p>
-                            
-                            <h4 className="font-black text-slate-800 text-lg border-b border-slate-200 pb-2 mt-8">Execution Strategies based on provided credentials:</h4>
-                            
-                            <div className="space-y-5">
-                                <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl shadow-sm">
-                                    <h5 className="font-black text-blue-800 text-base mb-3"><i className="fas fa-cloud mr-2"></i>1. Cloud Admin API (The Control Plane)</h5>
-                                    <ul className="space-y-3 pl-2">
-                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer provides full API Administrative access to their source cloud (e.g., AWS Access Keys or Azure Service Principals).</li>
-                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP operates natively on the hyperscaler's Control Plane. It uses tools like AWS Systems Manager (SSM) Run-Command to push the agents to massive batches of servers simultaneously.</li>
-                                        <li><strong className="text-slate-900 bg-blue-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">Why it matters</strong> Zero OS-level passwords or SSH keys are ever handled by the ERP platform. It is the fastest, most scalable, and highly automated approach.</li>
-                                    </ul>
-                                </div>
-
-                                <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl shadow-sm">
-                                    <h5 className="font-black text-purple-800 text-base mb-3"><i className="fas fa-network-wired mr-2"></i>2. Active Directory Domain Admin (Centralized Data Plane)</h5>
-                                    <ul className="space-y-3 pl-2">
-                                        <li><strong className="text-slate-900 bg-purple-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer won't provide Cloud API access, but they will provide network-level Domain Admin credentials.</li>
-                                        <li><strong className="text-slate-900 bg-purple-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP logs into a single internal jump-box within the customer's network and uses PowerShell/GPO batch pushes to distribute the agent MSI packages across the entire fleet centrally.</li>
-                                    </ul>
-                                </div>
-
-                                <div className="bg-rose-50 border border-rose-200 p-5 rounded-xl shadow-sm">
-                                    <h5 className="font-black text-rose-800 text-base mb-3"><i className="fas fa-terminal mr-2"></i>3. Local OS Admin (Sequential Data Plane)</h5>
-                                    <ul className="space-y-3 pl-2">
-                                        <li><strong className="text-slate-900 bg-rose-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The customer only provides local root/admin access on a per-machine basis.</li>
-                                        <li><strong className="text-slate-900 bg-rose-100 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> The ERP steps down to a host-by-host execution loop. It opens an encrypted socket (SSH on Port 22 or WinRM on Port 5985) to each whitelisted IP, drops the binary, installs the agent silently, and moves to the next node.</li>
-                                    </ul>
-                                </div>
-
-                                <div className="bg-slate-100 border border-slate-300 p-5 rounded-xl shadow-sm">
-                                    <h5 className="font-black text-slate-800 text-base mb-3"><i className="fas fa-user-shield mr-2"></i>4. Read-Only / Customer Managed (Zero Trust)</h5>
-                                    <ul className="space-y-3 pl-2">
-                                        <li><strong className="text-slate-900 bg-slate-200 px-2 py-0.5 rounded text-xs mr-2 uppercase">What it is</strong> The strictest security posture. The customer refuses to provide any write-access credentials to the ERP.</li>
-                                        <li><strong className="text-slate-900 bg-slate-200 px-2 py-0.5 rounded text-xs mr-2 uppercase">The Strategy</strong> Zero automation access. The ERP recognizes this block and shifts to generating customized copy-paste runbook scripts. The delivery engineer hands these scripts to the customer's internal IT team, who manually deploys the agents themselves.</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Main Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-8">
+                {currentStep === 1 && <StepArchitecture project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(2)} />}
+                {currentStep === 2 && <TopologyMapperView activeProject={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(3)} />}
+                {currentStep === 3 && <StepPlanning project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(4)} />}
+                {currentStep === 4 && <StepExecution project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(5)} />}
+                {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
+            </div>
         </div>
     );
 }
