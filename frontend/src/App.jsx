@@ -16,6 +16,9 @@ import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
 
+// 🚨 ADDED THIS IMPORT:
+import GlobalGlossary from './components/utils/GlobalGlossary';
+
 function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loginEmail, setLoginEmail] = useState('');
@@ -144,6 +147,8 @@ function App() {
                         </div>
                     )}
                 </div>
+                
+                {/* 🚨 The Glossary Component is properly rendered here */}
                 <GlobalGlossary />
             </main>
         </div>
