@@ -84,7 +84,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         setPreflightStatus('scanning');
         const token = localStorage.getItem('erp_jwt_token');
         try {
-            const res = await fetch(`/api/projects/${project.id}/anticipate`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`/api/erp/projects/${project.id}/anticipate`, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             if (data.success) { setAnticipationInsights(data.insights); safePartialUpdate({ anticipationInsights: data.insights }); }
         } catch (e) { console.warn("Anticipation API failed.", e); }
@@ -107,7 +107,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const handleExecuteTerraform = async () => {
         const token = localStorage.getItem('erp_jwt_token');
         try {
-            const res = await fetch(`/api/projects/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`/api/erp/projects/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             if (data.success) { alert(`✅ ${data.message}`); advanceStatus('agents_deployed'); }
             else { alert(`❌ Execution Failed:\n\n${data.error}`); }
@@ -117,7 +117,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const handleDeployAgents = async () => {
         const token = localStorage.getItem('erp_jwt_token');
         try {
-            const res = await fetch(`/api/projects/${project.id}/deploy-agents`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ optIns: agentOptIns }) });
+            const res = await fetch(`/api/erp/projects/${project.id}/deploy-agents`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ optIns: agentOptIns }) });
             const data = await res.json();
             if (data.success) {
                 if (data.mode === 'manual') { setRunbookData(data.runbook); setShowRunbookModal(true); }
@@ -198,16 +198,16 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             </div>
 
                             <div className="p-8 lg:col-span-2 space-y-6">
-                                {/* PHASE 1 */}
+                                {/* PHASE 1 (RENAMED to Technical OS Pre-Flight Validation) */}
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'pending' || execStatus === 'preflight_complete' ? (iamStatus === 'active' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'border-slate-600 bg-slate-800/80') : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start mb-6">
                                         <div>
-                                            <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${iamStatus === 'active' ? 'text-blue-500' : 'text-slate-500'}`}>Phase 1</div>
-                                            <h4 className="text-lg font-black text-white mb-2">Scope Filter & Pre-Flight Diagnostics</h4>
+                                            <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${iamStatus === 'active' ? 'text-blue-500' : 'text-slate-500'}`}>Phase 4.1</div>
+                                            <h4 className="text-lg font-black text-white mb-2">Technical OS Pre-Flight Validation</h4>
                                         </div>
                                         {execStatus === 'pending' || preflightStatus === 'pending' ? (
                                             <button onClick={handleRunPreflight} disabled={iamStatus !== 'active' || preflightStatus === 'scanning'} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center">
-                                                {preflightStatus === 'scanning' ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</> : <><i className="fas fa-microscope mr-2"></i> Run Diagnostics</>}
+                                                {preflightStatus === 'scanning' ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</> : <><i className="fas fa-microscope mr-2"></i> Run OS Diagnostics</>}
                                             </button>
                                         ) : (
                                             <div className="flex items-center gap-4">
@@ -277,7 +277,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Phase 2</div>
+                                            <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Phase 4.2</div>
                                             <h4 className="text-lg font-black text-white mb-2">Build Landing Zone & Pre-Provision Targets</h4>
                                             <p className="text-xs text-slate-400">Compiles the blueprint into Terraform. Deploys network, empty CBR vaults, and factory worker.</p>
                                         </div>
@@ -293,7 +293,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="pr-6 w-full">
-                                            <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 3</div>
+                                            <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 4.3</div>
                                             <h4 className="text-lg font-black text-white mb-4 border-b border-slate-700 pb-2">Deploy Agents & Execute Syncs</h4>
                                             
                                             {execStatus === 'agents_deployed' && (
@@ -337,7 +337,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1 pr-6">
-                                            <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Phase 4</div>
+                                            <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Phase 4.4</div>
                                             <h4 className="text-lg font-black text-white mb-2">Continuous Sync & Drift Monitor</h4>
                                             {execStatus === 'syncing' && driftAlert && (
                                                 <div className="mt-5 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 animate-pulse">
