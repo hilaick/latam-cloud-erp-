@@ -24,8 +24,8 @@ export default function GlobalGlossary() {
     ];
 
     const filteredTerms = glossaryTerms.filter(t => 
-        t.term.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.term.toLowerCase().includes(searchTerm.toLowerCase()) ||  
+        t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
         t.desc.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -48,8 +48,7 @@ export default function GlobalGlossary() {
                         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-fade-in"
                         onClick={() => setIsOpen(false)}
                     ></div>
-
-                    {/* Panel */}
+{/* Panel */}
                     <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-slide-left border-l border-slate-200">
                         <div className="px-6 py-5 bg-indigo-600 text-white flex justify-between items-center shrink-0">
                             <div>
