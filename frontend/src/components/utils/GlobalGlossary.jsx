@@ -105,6 +105,6 @@ export default function GlobalGlossary() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
