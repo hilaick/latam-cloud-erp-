@@ -8,73 +8,90 @@ import CutoverRunbookView from './CutoverRunbookView';
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('physics');
 
+    const menuItems = [
+        { id: 'physics', num: '3.1', icon: 'fa-water', label: 'Wave Physics SLA' },
+        { id: 'finops', num: '3.2', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
+        { id: 'wbs', num: '3.3', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
+        { id: 'tools', num: '3.4', icon: 'fa-tools', label: 'Strategic Tooling Generation' },
+        { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
+    ];
+
     return (
-        <div className="space-y-6 animate-fade-in pb-12">
-            <div className="flex gap-2 border-b border-slate-200 pb-4 mb-6 flex-wrap">
-                <button 
-                    onClick={() => setSubTab('physics')} 
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'physics' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    1. Wave Physics SLA
-                </button>
-                <button 
-                    onClick={() => setSubTab('finops')} 
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'finops' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    2. FinOps Budget
-                </button>
-                <button 
-                    onClick={() => setSubTab('wbs')} 
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'wbs' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    3. WBS & RACI Matrix
-                </button>
-                <button 
-                    onClick={() => setSubTab('tools')} 
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'tools' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    4. Tool Recommendations
-                </button>
-                <button 
-                    onClick={() => setSubTab('runbook')} 
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${subTab === 'runbook' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                >
-                    5. Wave & Runbook Planning
-                </button>
+        <div className="animate-fade-in pb-12">
+            
+            <div className="bg-white border-b border-slate-200 px-8 py-6 mb-8 rounded-t-2xl flex justify-between items-center shadow-sm">
+                <div>
+                    <h3 className="font-black text-2xl text-slate-800"><i className="fas fa-map-marked-alt text-indigo-500 mr-3"></i> Migration Planning & Strategy</h3>
+                    <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">Translate the mapped Blueprint into an executable delivery plan.</p>
+                </div>
             </div>
 
-            {/* Sub-Components rendered based on state */}
-            {subTab === 'physics' && <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
-            {subTab === 'tools' && <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />}
-            
-            {subTab === 'runbook' && (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl flex items-start gap-3 text-purple-800">
-                        <i className="fas fa-info-circle mt-1"></i>
-                        <div className="text-sm">
-                            <strong>Iterative Wave Planning:</strong> Migrations are not linear. Use this tab to schedule individual servers into Cutover Waves based on customer downtime windows. You will execute these tasks in the Execution phase.
-                        </div>
+            {/* 🚨 PROGRESSIVE DISCLOSURE: Vertical Sidebar Layout */}
+            <div className="flex flex-col lg:flex-row gap-8 px-4 lg:px-8">
+                
+                {/* Left Navigation Sidebar */}
+                <div className="w-full lg:w-72 shrink-0 space-y-2">
+                    {menuItems.map((item) => (
+                        <button 
+                            key={item.id}
+                            onClick={() => setSubTab(item.id)}
+                            className={`w-full text-left px-5 py-4 rounded-xl transition-all duration-200 border-2 flex items-center justify-between group ${
+                                subTab === item.id 
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-[1.02]' 
+                                    : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                            }`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>
+                                    {item.num}
+                                </div>
+                                <span className="font-black text-xs uppercase tracking-wider">{item.label}</span>
+                            </div>
+                            <i className={`fas ${item.icon} ${subTab === item.id ? 'text-indigo-200' : 'text-slate-300 group-hover:text-indigo-400'}`}></i>
+                        </button>
+                    ))}
+                    
+                    <div className="pt-8">
+                        <button onClick={() => onPromote && onPromote('execution')} className="w-full px-6 py-4 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                            Go to Execution Phase <i className="fas fa-arrow-right"></i>
+                        </button>
                     </div>
-                    <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
                 </div>
-            )}
-            
-            {/* Execution Promotion Gate */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mt-12 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h3 className="text-lg font-bold text-slate-800">Ready to execute migration?</h3>
-                    <p className="text-slate-600 mt-1">
-                        Complete planning phase and transition the project to the Execution Control Plane.
-                    </p>
+
+                {/* Right Content Area */}
+                <div className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[600px] overflow-hidden">
+                    {subTab === 'physics' && <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
+                    
+                    {/* Updated Title for Tooling */}
+                    {subTab === 'tools' && (
+                        <div className="animate-fade-in h-full flex flex-col">
+                            <div className="bg-amber-50 border-b border-amber-200 p-6">
+                                <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling & WBS Generation</h4>
+                                <p className="text-xs text-amber-700/80 mt-1 font-medium">This phase generates theoretical recommendations based on the SOW metadata to build the Project Plan. (Physical OS validation occurs in Phase 4).</p>
+                            </div>
+                            <div className="flex-1 overflow-y-auto">
+                                <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
+                            </div>
+                        </div>
+                    )}
+                    
+                    {subTab === 'runbook' && (
+                        <div className="p-6 h-full flex flex-col animate-fade-in">
+                            <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl mb-6 flex items-start gap-4 text-purple-800 shadow-inner">
+                                <i className="fas fa-info-circle mt-0.5 text-xl"></i>
+                                <div className="text-xs leading-relaxed">
+                                    <strong className="block mb-1 text-sm uppercase tracking-widest">Iterative Wave Planning</strong>
+                                    Migrations are executed in waves, not linearly. Use this interface to group the mapped Blueprint servers into scheduled Cutover Waves based on the customer's accepted downtime SLA.
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <button
-                    onClick={() => onPromote && onPromote('execution')}
-                    className="px-8 py-3 bg-indigo-600 text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-indigo-700 transition-colors shadow-md flex items-center"
-                >
-                    Promote to Execution Phase <i className="fas fa-arrow-right ml-3"></i>
-                </button>
             </div>
         </div>
     );
