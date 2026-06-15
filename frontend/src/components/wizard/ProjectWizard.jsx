@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { ERPContext } from '../../context/ERPContext';
 import StepARB from './StepARB';
 import StepArchitecture from './StepArchitecture';
 import StepPlanning from './StepPlanning';
@@ -8,8 +9,11 @@ import StepPostLive from './StepPostLive';
 export default function ProjectWizard({ activeProject, onUpdateProject, onClose }) {
     const [showConfig, setShowConfig] = useState(false);
     const [currentStep, setCurrentStep] = useState(1);
+    
+    // 🚨 Fetch customers from context to populate the dropdown
+    const { customers } = useContext(ERPContext);
 
-    // 🚨 SAFELY determine the Max Unlocked Phase using Optional Chaining (?.)
+    // Safely determine the Max Unlocked Phase using Optional Chaining (?.)
     const getMaxUnlockedPhase = () => {
         if (!activeProject) return 1;
         
@@ -45,8 +49,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         if (phaseId <= maxUnlocked) setCurrentStep(phaseId);
     };
 
-    // 🚨 ULTIMATE CRASH PREVENTION: If project isn't loaded yet, show a spinner. 
-    // This stops StepExecution from trying to read undefined data!
     if (!activeProject) {
         return (
             <div className="flex items-center justify-center h-full min-h-[600px] bg-slate-50 rounded-2xl border border-slate-200 shadow-xl">
@@ -78,7 +80,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                     </div>
                 </div>
 
-                {/* The Chevron Progress Bar */}
                 <div className="flex-1 w-full max-w-5xl overflow-x-auto custom-scrollbar pb-2 xl:pb-0">
                     <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 min-w-[700px]">
                         {phases.map((phase) => {
@@ -113,12 +114,12 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
             </div>
 
-            {/* Project Configuration Modal */}
+            {/* 🚨 FULLY INTERACTIVE CONFIGURATION MODAL */}
             {showConfig && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden animate-slide-up">
-                        <div className="px-8 py-5 bg-slate-900 text-white flex justify-between items-center">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                        <div className="px-8 py-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg flex items-center"><i className="fas fa-sliders-h text-indigo-400 mr-3"></i> Project Details</h3>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Core Identity & Configuration</p>
@@ -126,40 +127,98 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
                         </div>
                         
-                        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50">
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Project Name</label>
-                                <div className="font-bold text-sm text-slate-800">{activeProject.name || 'N/A'}</div>
+                        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 overflow-y-auto custom-scrollbar">
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Project Name</label>
+                                <input 
+                                    type="text" 
+                                    value={activeProject.name || ''} 
+                                    onChange={(e) => onUpdateProject(activeProject.id, 'name', e.target.value)}
+                                    className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500" 
+                                />
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Customer Account</label>
-                                <div className="font-bold text-sm text-slate-800">{activeProject.customerName || 'N/A'}</div>
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Customer Account</label>
+                                <select 
+                                    value={activeProject.customerId || ''} 
+                                    onChange={(e) => {
+                                        const cust = (customers || []).find(c => String(c.id) === String(e.target.value));
+                                        if (cust) {
+                                            onUpdateProject(activeProject.id, 'customerId', cust.id);
+                                            onUpdateProject(activeProject.id, 'customerName', cust.name);
+                                        }
+                                    }}
+                                    className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 cursor-pointer"
+                                >
+                                    <option value="" disabled>-- Select Customer --</option>
+                                    {(customers || []).map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">System Project ID</label>
-                                <div className="font-mono text-xs text-slate-500 font-bold">{activeProject.id || 'N/A'}</div>
+                            
+                            <div className="bg-slate-100 p-5 rounded-xl border border-slate-200 shadow-inner opacity-70 cursor-not-allowed">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">System Project ID</label>
+                                <div className="font-mono text-xs text-slate-500 font-bold border-b border-transparent pb-1">{activeProject.id || 'N/A'}</div>
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Sales Architect</label>
-                                <div className="font-bold text-sm text-indigo-600">{activeProject.sa || 'Unassigned'}</div>
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Sales Architect</label>
+                                <input 
+                                    type="text" 
+                                    value={activeProject.sa || ''} 
+                                    onChange={(e) => onUpdateProject(activeProject.id, 'sa', e.target.value)}
+                                    placeholder="Unassigned"
+                                    className="w-full font-bold text-sm text-indigo-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500" 
+                                />
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Target MRR</label>
-                                <div className="font-black text-base text-emerald-600">${activeProject.mrr || 0}</div>
-                            </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Deployment Country</label>
-                                <div className="font-bold text-sm text-slate-800 uppercase flex items-center gap-2">
-                                    <i className="fas fa-globe-americas text-slate-400"></i> {activeProject.country || 'Not Defined'}
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Target MRR ($)</label>
+                                <div className="relative">
+                                    <span className="absolute left-0 top-0 font-black text-base text-emerald-600">$</span>
+                                    <input 
+                                        type="number" 
+                                        value={activeProject.mrr || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'mrr', Number(e.target.value))}
+                                        className="w-full font-black text-base text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 pl-4 focus:border-emerald-500" 
+                                    />
                                 </div>
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Start Date</label>
-                                <div className="font-mono font-bold text-sm text-slate-700">{activeProject.kickoff || activeProject.kickoffDate || activeProject.startDate || 'TBD'}</div>
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Deployment Country</label>
+                                <div className="relative">
+                                    <i className="fas fa-globe-americas absolute left-0 top-1 text-slate-400"></i>
+                                    <input 
+                                        type="text" 
+                                        value={activeProject.country || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'country', e.target.value)}
+                                        placeholder="e.g. Mexico, Brazil"
+                                        className="w-full font-bold text-sm text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-indigo-500" 
+                                    />
+                                </div>
                             </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Go-Live Cutover</label>
-                                <div className="font-mono font-black text-sm text-emerald-600">{activeProject.date || activeProject.targetDate || activeProject.goLiveDate || 'TBD'}</div>
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Start Date (Kickoff)</label>
+                                <input 
+                                    type="date" 
+                                    value={activeProject.kickoff || activeProject.kickoffDate || activeProject.startDate || ''} 
+                                    onChange={(e) => onUpdateProject(activeProject.id, 'kickoff', e.target.value)}
+                                    className="w-full font-mono font-bold text-sm text-slate-700 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 cursor-pointer" 
+                                />
+                            </div>
+                            
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
+                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Go-Live Cutover (Target Date)</label>
+                                <input 
+                                    type="date" 
+                                    value={activeProject.date || activeProject.targetDate || activeProject.goLiveDate || ''} 
+                                    onChange={(e) => onUpdateProject(activeProject.id, 'date', e.target.value)}
+                                    className="w-full font-mono font-black text-sm text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-emerald-500 cursor-pointer" 
+                                />
                             </div>
                         </div>
                     </div>
