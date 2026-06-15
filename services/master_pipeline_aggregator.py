@@ -59,8 +59,11 @@ class MasterPipelineAggregator:
     def _enrich_project_data(self, project_id: str, base_data: Optional[Dict] = None) -> Dict:
         """Enrich project data with information from all sources"""
         base_data = base_data or {}
-        # Start with base project data
-        enriched = {
+        # Start with ALL base project data
+        enriched = {**base_data}
+        
+        # Override or add specific enriched fields
+        enriched.update({
             'id': project_id,
             'name': base_data.get('name', 'Unnamed Project'),
             'customerName': base_data.get('customerName', 'Unknown Customer'),
@@ -96,7 +99,7 @@ class MasterPipelineAggregator:
             '_source': 'aggregated',
             '_lastSync': datetime.now().isoformat(),
             '_editHistory': base_data.get('_editHistory', [])
-        }
+        })
         
         return enriched
     
