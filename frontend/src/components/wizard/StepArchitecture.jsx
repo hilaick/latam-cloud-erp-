@@ -8,7 +8,6 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
     const [subTab, setSubTab] = useState('summary');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     
-    // 🚨 SAFE OPTIONAL CHAINING
     const nodes = project?.mapperNodes || [];
     const rawInv = project?.mgcData?.raw_inventory || {};
     
@@ -56,12 +55,13 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
+                    {/* 🚨 UI UPGRADE: Replaced Burger icon with semantic Chevron Toggles */}
                     <button 
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors"
                         title={sidebarOpen ? "Collapse Menu" : "Expand Menu"}
                     >
-                        <i className={`fas fa-bars ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
+                        <i className={`fas fa-chevron-${sidebarOpen ? 'left' : 'right'} ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
                     </button>
                     <div>
                         <h3 className="font-black text-xl text-slate-800">Architecture & Discovery</h3>
@@ -72,7 +72,6 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
 
             <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
                 
-                {/* Collapsible Sidebar */}
                 <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
                     {menuItems.map((item) => (
                         <button 
@@ -107,7 +106,6 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
                     </div>
                 </div>
 
-                {/* Right Content Area */}
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     
                     {subTab === 'summary' && (
@@ -144,7 +142,6 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
                         </div>
                     )}
                     
-                    {/* The Full-Width Components */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 h-full overflow-hidden">
                         {subTab === 'mgc' && <MgCReconciliationView activeProject={project} onUpdateProject={onUpdateProject} />}
                         {subTab === 'ora' && <AssessmentView activeProject={project} onUpdateProject={onUpdateProject} />}
