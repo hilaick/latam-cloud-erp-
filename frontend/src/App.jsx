@@ -15,8 +15,6 @@ import GlobalSchedule from './components/views/GlobalSchedule';
 import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
-
-// 🚨 ADDED THIS IMPORT:
 import GlobalGlossary from './components/utils/GlobalGlossary';
 
 function App() {
@@ -25,7 +23,16 @@ function App() {
     const [loginPassword, setLoginPassword] = useState('');
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
-    const { activePhase, refreshData } = useContext(ERPContext);
+    
+    // 🚨 FIX: We must pull all these from context so we can pass them to ProjectWizard
+    const { 
+        projects, 
+        activePhase, 
+        activeProjectId, 
+        setActivePhase, 
+        handleUpdateProject, 
+        refreshData 
+    } = useContext(ERPContext);
 
     // Check for existing token on mount
     useEffect(() => {
@@ -52,7 +59,6 @@ function App() {
                 localStorage.setItem('erp_jwt_token', data.token);
                 localStorage.setItem('erp_user', JSON.stringify(data.user));
                 setIsAuthenticated(true);
-                // Refresh data after successful login
                 if (refreshData) {
                     refreshData();
                 }
@@ -74,6 +80,9 @@ function App() {
     };
 
     const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users'];
+
+    // 🚨 FIX: Find the currently active project safely
+    const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     if (!isAuthenticated) {
         return (
@@ -117,10 +126,8 @@ function App() {
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-800 selection:bg-blue-200">
-            {/* 🚨 Sidebar now handles its own responsive Desktop/BottomNav behavior */}
             <Sidebar />
             
-            {/* 🚨 Added padding-bottom on mobile (pb-24) to prevent content hiding behind bottom nav */}
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col pb-24 lg:pb-0">
                 <TopBar onLogout={handleLogout} />
 
@@ -135,7 +142,16 @@ function App() {
                     {activePhase === 'crm' && <CustomerDirectory />}
                     {activePhase === 'migration_monitor' && <LiveCloudNOC />}
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
-                    {activePhase === 'wizard' && <ProjectWizard />}
+                    
+                    {/* 🚨 FIX: We now correctly pass activeProject and handlers down to the Wizard! */}
+                    {activePhase === 'wizard' && (
+                        <ProjectWizard 
+                            activeProject={activeProject} 
+                            onUpdateProject={handleUpdateProject} 
+                            onClose={() => setActivePhase('home')} 
+                        />
+                    )}
+                    
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     {activePhase === 'playbooks' && <PlaybookStudio />}
                     {activePhase === 'users' && <UserManagement />}
@@ -148,7 +164,6 @@ function App() {
                     )}
                 </div>
                 
-                {/* 🚨 The Glossary Component is properly rendered here */}
                 <GlobalGlossary />
             </main>
         </div>
