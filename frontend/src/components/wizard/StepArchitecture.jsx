@@ -7,38 +7,42 @@ import GovernanceAndCRView from './GovernanceAndCRView';
 export default function StepArchitecture({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('summary');
     
-    const nodes = project.mapperNodes || [];
-    const rawInv = project.mgcData?.raw_inventory || {};
+    // 🚨 FIX: Added optional chaining here to prevent undefined crashes
+    const nodes = project?.mapperNodes || [];
+    const rawInv = project?.mgcData?.raw_inventory || {};
     
     const totalMgcNodes = Object.keys(rawInv).filter(k => k !== 'diagnostics' && k !== 'summary').reduce((acc, curr) => acc + (Array.isArray(rawInv[curr]) ? rawInv[curr].length : 0), 0);
-    const hasScanned = !!project.mgcData;
-    const isLocked = project.status === 'Approved' || project.status === 'Locked';
+    const hasScanned = !!project?.mgcData;
+    const isLocked = project?.status === 'Approved' || project?.status === 'Locked';
 
-    // 🚨 FIX: Upsell logic strictly counts BILLABLE resources.
     const { targetCount, upsellCount } = useMemo(() => {
         if (nodes.length === 0) {
-            const compute = project.blueprintData?.topology?.compute?.length || 0;
-            const dbs = project.blueprintData?.topology?.database?.length || 0;
+            const compute = project?.blueprintData?.topology?.compute?.length || 0;
+            const dbs = project?.blueprintData?.topology?.database?.length || 0;
             return { targetCount: compute + dbs, upsellCount: 0 };
         }
         
         const billableTypes = ['ECS', 'RDS', 'NAT', 'VPN', 'CGW', 'OBS', 'CBR', 'ELB', 'CCE'];
         const target = nodes.filter(n => n.status !== 'Live Only' && billableTypes.includes(String(n.type).toUpperCase())).length;
         
-        // Scope Creep is only an opportunity if we can bill for it
         const upsell = nodes.filter(n => n.status === 'Live Only' && billableTypes.some(bt => String(n.type).toUpperCase().includes(bt))).length;
         
         return { targetCount: target, upsellCount: upsell };
-    }, [nodes, project.blueprintData]);
+    }, [nodes, project?.blueprintData]);
 
     let displayRisk = 'Pending';
     let riskColor = 'text-slate-500';
-    if (project.ora) {
+    if (project?.ora) {
         const o = project.ora;
         const score = Math.round((parseInt(o.infraControl||0) + parseInt(o.itSkills||0) + parseInt(o.partnerCapability||0) + parseInt(o.downtime||0) + parseInt(o.appArch||0) + parseInt(o.security||0)) / 6);
         if (score > 75) { displayRisk = 'Low Risk'; riskColor = 'text-emerald-600'; }
         else if (score > 40) { displayRisk = 'Medium Risk'; riskColor = 'text-amber-600'; }
         else { displayRisk = 'High Risk'; riskColor = 'text-rose-600'; }
+    }
+
+    // Safety fallback UI during load
+    if (!project) {
+        return <div className="p-12 text-center text-slate-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i> Loading Architecture...</div>;
     }
 
     return (
