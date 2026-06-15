@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
-export default function TopBar({ onLogout }) {
+export default function TopBar({ onLogout, onOpenGlossary }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
@@ -9,7 +9,6 @@ export default function TopBar({ onLogout }) {
     
     const userStr = localStorage.getItem('erp_user');
     const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
-    // 🚨 FIX 1: Safely handle user initials if name is missing
     const initials = (user?.name || "System User").split(' ').map(n => n[0] || '').join('').substring(0, 2).toUpperCase();
 
     return (
@@ -26,7 +25,6 @@ export default function TopBar({ onLogout }) {
                         className="bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none font-black text-xs md:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[250px] truncate"
                     >
                         <option value="none">-- Global View --</option>
-                        {/* 🚨 FIX 2: Bulletproof the split function against corrupted DB rows */}
                         {activeProjects.map(p => (
                             <option key={p.id} value={p.id}>
                                 {p.customerName || (p.name || '').split('-')[0] || 'No Account'} - {p.name || 'Unnamed Project'}
@@ -59,9 +57,16 @@ export default function TopBar({ onLogout }) {
                             <div className="p-2">
                                 <button 
                                     onClick={() => { setActiveProjectId('none'); setActivePhase('users'); setProfileMenuOpen(false); }}
-                                    className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center"
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center mb-1"
                                 >
                                     <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile
+                                </button>
+                                {/* 🚨 NEW GLOSSARY BUTTON */}
+                                <button 
+                                    onClick={() => { onOpenGlossary(); setProfileMenuOpen(false); }}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center"
+                                >
+                                    <i className="fas fa-book w-5 text-center mr-2"></i> Terminology Glossary
                                 </button>
                             </div>
                         </div>
