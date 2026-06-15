@@ -24,7 +24,7 @@ function App() {
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     
-    // 🚨 FIX: We must pull all these from context so we can pass them to ProjectWizard
+    // 🚨 SAFELY EXTRACT ALL REQUIRED CONTEXT
     const { 
         projects, 
         activePhase, 
@@ -81,7 +81,7 @@ function App() {
 
     const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users'];
 
-    // 🚨 FIX: Find the currently active project safely
+    // 🚨 PREVENT CRASHES: Safely identify the active project object before passing to Wizard
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     if (!isAuthenticated) {
@@ -143,7 +143,7 @@ function App() {
                     {activePhase === 'migration_monitor' && <LiveCloudNOC />}
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     
-                    {/* 🚨 FIX: We now correctly pass activeProject and handlers down to the Wizard! */}
+                    {/* 🚨 SAFELY RENDER WIZARD */}
                     {activePhase === 'wizard' && (
                         <ProjectWizard 
                             activeProject={activeProject} 
