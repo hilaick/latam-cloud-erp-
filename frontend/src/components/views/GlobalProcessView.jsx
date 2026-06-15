@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export default function GlobalProcessView() {
-    const [viewMode, setViewMode] = useState('high-level'); // 'high-level' or 'detailed'
+    const [viewMode, setViewMode] = useState('high-level');
 
     return (
         <div className="max-w-[1400px] mx-auto animate-fade-in pb-12">
@@ -17,14 +17,13 @@ export default function GlobalProcessView() {
             </div>
 
             {viewMode === 'high-level' ? (
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                    {/* Existing High Level View Content (Condensed for layout) */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 animate-fade-in">
                     {[
-                        { title: "1. Discovery & Architecture", icon: "fa-search", color: "blue", desc: "Ingest Sales SOW and MgC data. Define the target architecture." },
-                        { title: "2. Topology Mapper", icon: "fa-network-wired", color: "indigo", desc: "Bind source servers to quoted target resources. Enforce scope." },
-                        { title: "3. Planning & Strategy", icon: "fa-tasks", color: "purple", desc: "Calculate FinOps overlap buffers, define waves, and schedule cutovers." },
-                        { title: "4. Execution Control", icon: "fa-rocket", color: "rose", desc: "Run OS diagnostics, deploy Landing Zones, and sync data via SMS." },
-                        { title: "5. Post-Live Governance", icon: "fa-shield-alt", color: "emerald", desc: "Execute Cutover Runbooks, validate billing, and run WAR." }
+                        { title: "1. ARB Handover", icon: "fa-file-invoice-dollar", color: "blue", desc: "Ingest Sales SOW Quotation to establish the strict financial Bill of Materials (BOM)." },
+                        { title: "2. Architecture & Discovery", icon: "fa-network-wired", color: "indigo", desc: "Upload MgC data. Bind source servers to BOM targets via Topology Mapper. DTRB Approval." },
+                        { title: "3. Strategy & Planning", icon: "fa-tasks", color: "purple", desc: "Calculate FinOps overlap buffers, define migration waves, and build Runbook schedule." },
+                        { title: "4. Execution Control", icon: "fa-rocket", color: "rose", desc: "Run OS pre-flight checks, deploy Terraform Landing Zones, and start SMS Syncs." },
+                        { title: "5. Post-Live Governance", icon: "fa-shield-alt", color: "emerald", desc: "Execute Cutover Runbooks, validate live BSS billing, and run WAR evaluation." }
                     ].map((step, i) => (
                         <div key={i} className={`bg-white rounded-2xl shadow-sm border-t-4 border-${step.color}-500 p-6 flex flex-col items-center text-center border-x border-b border-slate-200`}>
                             <div className={`w-16 h-16 rounded-full bg-${step.color}-50 text-${step.color}-600 flex items-center justify-center text-2xl mb-4 shadow-inner`}>
@@ -36,29 +35,32 @@ export default function GlobalProcessView() {
                     ))}
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative animate-fade-in">
                     <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500 rounded-full blur-[120px] opacity-10 -mr-20 -mt-20 pointer-events-none"></div>
                     <div className="p-8 border-b border-slate-100 relative z-10">
                         <h3 className="font-black text-xl text-slate-800 mb-2">First-Time User Journey</h3>
                         <p className="text-sm text-slate-600">The step-by-step narrative for a Delivery Architect running a project in the ERP.</p>
                     </div>
                     <div className="p-8 space-y-8 relative z-10">
-                        {/* Detailed Journey Mapping */}
+                        
                         <div className="flex gap-6">
                             <div className="w-12 h-12 shrink-0 rounded-xl bg-blue-100 text-blue-600 font-black flex items-center justify-center text-xl shadow-sm border border-blue-200">1</div>
                             <div>
-                                <h4 className="font-black text-lg text-slate-800 mb-2">Pre-Sales Context & Discovery Ingestion (The Input)</h4>
-                                <p className="text-sm text-slate-600 mb-3"><strong className="text-slate-800">Action:</strong> I upload two things: The signed Huawei Cloud SOW Quotation (The Budget/BOM), and the MgC Discovery Excel (The Technical Reality).</p>
-                                <p className="text-sm text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-200 inline-block"><strong className="text-emerald-800">Goal:</strong> I need the ERP to know what we sold and what actually exists.</p>
+                                <h4 className="font-black text-lg text-slate-800 mb-2">ARB Handover & Baseline (The Input)</h4>
+                                <p className="text-sm text-slate-600 mb-3"><strong className="text-slate-800">Action:</strong> I upload the signed Huawei Cloud SOW Quotation Excel file.</p>
+                                <p className="text-sm text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-200 inline-block"><strong className="text-emerald-800">Goal:</strong> Establish the rigid Bill of Materials (BOM) so the ERP knows exactly what the customer paid for.</p>
                             </div>
                         </div>
 
                         <div className="flex gap-6">
                             <div className="w-12 h-12 shrink-0 rounded-xl bg-indigo-100 text-indigo-600 font-black flex items-center justify-center text-xl shadow-sm border border-indigo-200">2</div>
-                            <div>
-                                <h4 className="font-black text-lg text-slate-800 mb-2">The Topology Mapper (The Financial Firewall)</h4>
-                                <p className="text-sm text-slate-600 mb-3"><strong className="text-slate-800">Action:</strong> I see a list of discovered servers on the left, and quoted servers on the right. I drag and drop to connect them. Unquoted servers are left unconnected.</p>
-                                <p className="text-sm text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-200 inline-block"><strong className="text-emerald-800">Goal:</strong> The ERP restricts my execution payload to ONLY the approved servers, preventing scope creep and protecting profitability.</p>
+                            <div className="w-full">
+                                <h4 className="font-black text-lg text-slate-800 mb-2">Architecture & Discovery (The Financial Firewall)</h4>
+                                <div className="space-y-3">
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><strong className="text-slate-800">2.1 MgC Discovery:</strong> Upload technical raw inventory from source environment.</div>
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><strong className="text-slate-800">2.2 Topology Mapper:</strong> Drag-and-drop discovered servers onto quoted SOW BOM lines. Unquoted servers are excluded.</div>
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><strong className="text-slate-800">2.3 DTRB Governance:</strong> Lock the scope to protect profitability and prevent scope creep.</div>
+                                </div>
                             </div>
                         </div>
 
@@ -78,7 +80,7 @@ export default function GlobalProcessView() {
                         <div className="flex gap-6">
                             <div className="w-12 h-12 shrink-0 rounded-xl bg-rose-100 text-rose-600 font-black flex items-center justify-center text-xl shadow-sm border border-rose-200">4</div>
                             <div className="w-full">
-                                <h4 className="font-black text-lg text-slate-800 mb-2">Execution Orchestrator (The Control & Data Plane)</h4>
+                                <h4 className="font-black text-lg text-slate-800 mb-2">Execution Orchestrator (The Control Plane)</h4>
                                 <div className="space-y-3">
                                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><strong className="text-slate-800">4.1 Pre-Flight Diagnostics:</strong> ERP tests actual source OS, flagging UEFI/Legacy issues and assigns strict Execution Vectors.</div>
                                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><strong className="text-slate-800">4.2 Landing Zone Build:</strong> Terraform deploys network, empty CBR vaults, and pre-builds edge-case targets.</div>
