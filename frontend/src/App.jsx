@@ -24,7 +24,9 @@ function App() {
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     
-    // 🚨 SAFELY EXTRACT ALL REQUIRED CONTEXT
+    // 🚨 GLOSSARY MODAL STATE
+    const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+
     const { 
         projects, 
         activePhase, 
@@ -34,7 +36,6 @@ function App() {
         refreshData 
     } = useContext(ERPContext);
 
-    // Check for existing token on mount
     useEffect(() => {
         const token = localStorage.getItem('erp_jwt_token');
         if (token) {
@@ -80,8 +81,6 @@ function App() {
     };
 
     const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users'];
-
-    // 🚨 PREVENT CRASHES: Safely identify the active project object before passing to Wizard
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     if (!isAuthenticated) {
@@ -129,7 +128,11 @@ function App() {
             <Sidebar />
             
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col pb-24 lg:pb-0">
-                <TopBar onLogout={handleLogout} />
+                {/* 🚨 Pass the Glossary trigger down to TopBar */}
+                <TopBar 
+                    onLogout={handleLogout} 
+                    onOpenGlossary={() => setIsGlossaryOpen(true)} 
+                />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
                     {activePhase === 'home' && <GlobalDashboard />}
@@ -143,7 +146,6 @@ function App() {
                     {activePhase === 'migration_monitor' && <LiveCloudNOC />}
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     
-                    {/* 🚨 SAFELY RENDER WIZARD */}
                     {activePhase === 'wizard' && (
                         <ProjectWizard 
                             activeProject={activeProject} 
@@ -164,7 +166,11 @@ function App() {
                     )}
                 </div>
                 
-                <GlobalGlossary />
+                {/* 🚨 Bind the controlled Glossary component */}
+                <GlobalGlossary 
+                    isOpen={isGlossaryOpen} 
+                    onClose={() => setIsGlossaryOpen(false)} 
+                />
             </main>
         </div>
     );
