@@ -107,14 +107,17 @@ class MasterPipelineAggregator:
         """Calculate progress percentage from execution board tasks"""
         # Check if progress is manually overridden
         if 'progress' in project_data and project_data['progress'] is not None:
-            return project_data['progress']
+            try:
+                return int(project_data['progress'])
+            except (ValueError, TypeError):
+                pass
         
         # Default: calculate from phases
         phases = ['intake', 'wbs', 'architecture', 'execution', 'validation', 'live']
         current_phase = project_data.get('currentPhase', 'intake')
         
         try:
-            phase_index = phases.index(current_phase.lower())
+            phase_index = phases.index(str(current_phase).lower())
             # Each phase is worth 100/len(phases) %
             return min(100, int((phase_index / len(phases)) * 100))
         except (ValueError, AttributeError):
