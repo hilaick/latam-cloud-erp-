@@ -3,18 +3,20 @@ import { formatShortDate } from '../../utils/helpers';
 
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
-    const [sidebarOpen, setSidebarOpen] = useState(true); 
+    const [sidebarOpen, setSidebarOpen] = useState(true);
     
-    // 🚨 FIXED: Added Optional Chaining (?.) to prevent undefined crashes
+    // 🚨 ALL STATE INITIALIZATION NOW STRICTLY USES OPTIONAL CHAINING
     const [anticipationInsights, setAnticipationInsights] = useState(project?.anticipationInsights || null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
     const [runbookData, setRunbookData] = useState(null);
     const [runbookTab, setRunbookTab] = useState('linux');
     const [agentOptIns, setAgentOptIns] = useState({
-        uniAgent: true, hss: project?.blueprintData?.topology?.security?.some(s => s.type === 'HSS') || false, lts: false
+        uniAgent: true, 
+        hss: project?.blueprintData?.topology?.security?.some(s => s.type === 'HSS') || false, 
+        lts: false
     });
-    const [driftAlert, setDriftAlert] = useState(true);
     
+    const [driftAlert, setDriftAlert] = useState(true);
     const execStatus = project?.execStatus || 'pending'; 
     const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
     const hasPassedPreflight = ['preflight_complete', 'sandbox_built', 'agents_deployed', 'syncing', 'cutover_ready', 'completed'].includes(execStatus);
@@ -36,20 +38,26 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         return { icon: 'fa-user-shield', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', text: 'Zero Trust. Generating custom SCCM/Ansible Runbooks.' };
     };
     const strategy = getStrategyDetails();
-    
+
+    // 🚨 USEMEMO HOOKS BULLETPROOFED
     const discoveryComputeCount = useMemo(() => (project?.mgcData?.raw_inventory?.compute || project?.mgcData?.raw_inventory?.servers || []).length, [project?.mgcData]);
-    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase()) && n.status !== 'Quoted Only'), [project?.mapperNodes]);
+    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n?.type || '').toUpperCase()) && n?.status !== 'Quoted Only'), [project?.mapperNodes]);
 
     const safePartialUpdate = async (updates) => {
         if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
         try {
-            await fetch(`/api/erp/projects/${project.id}/partial`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(updates) });
+            await fetch(`/api/erp/projects/${project.id}/partial`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(updates)
+            });
             Object.keys(updates).forEach(k => onUpdateProject(project.id, k, updates[k]));
         } catch (e) { console.error("Failed partial update:", e); }
     };
 
-    const advanceStatus = (newStatus) => { safePartialUpdate({ execStatus: newStatus }); if (newStatus === 'syncing') setDriftAlert(true); };
+    const advanceStatus = (newStatus) => {
+        safePartialUpdate({ execStatus: newStatus });
+        if (newStatus === 'syncing') setDriftAlert(true);
+    };
 
     const handleProvisionIAM = async () => {
         if (!project?.id) return;
@@ -131,8 +139,16 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         { id: 'tam', num: '4.3', icon: 'fa-headset', label: 'TAM Service Governance' }
     ];
 
+    // If project data hasn't loaded yet, show a safe fallback.
     if (!project) {
-        return <div className="p-8 text-center text-slate-400"><i className="fas fa-spinner fa-spin text-2xl mb-4"></i><p>Loading Execution Environment...</p></div>;
+        return (
+            <div className="flex items-center justify-center h-96 animate-fade-in text-slate-400">
+                <div className="text-center">
+                    <i className="fas fa-circle-notch fa-spin text-3xl mb-4 text-indigo-500"></i>
+                    <p className="font-bold uppercase tracking-widest text-xs">Loading Execution Engine...</p>
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -415,7 +431,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// 🚨 FINOPS HUB
+// 🚨 FINOPS HUB (With Optional Chaining enforced)
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project?.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project?.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
