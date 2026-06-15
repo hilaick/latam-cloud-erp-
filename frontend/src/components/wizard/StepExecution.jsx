@@ -36,8 +36,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
     const strategy = getStrategyDetails();
     
-    const discoveryComputeCount = useMemo(() => (project?.mgcData?.raw_inventory?.compute || project?.mgcData?.raw_inventory?.servers || []).length, [project?.mgcData]);
-    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => ['ECS', 'VM'].includes(String(n?.type || '').toUpperCase()) && n?.status !== 'Quoted Only'), [project?.mapperNodes]);
+    // 🚨 FIXED: Broadened the filter so the table ALWAYS shows all discovered/mapped nodes
+    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [project?.mapperNodes]);
 
     const safePartialUpdate = async (updates) => {
         if (!project?.id) return;
@@ -75,17 +75,27 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
-    // 🚨 FIXED URL PATHS BELOW (/api/projects/... instead of /api/erp/projects/...)
+    // 🚨 FIXED: Correct URL paths (/api/projects/) and added res.ok safety check so the timeout/table ALWAYS renders
     const handleRunPreflight = async () => {
         if (!project?.id) return;
         setPreflightStatus('scanning');
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch(`/api/projects/${project.id}/anticipate`, { headers: { 'Authorization': `Bearer ${token}` } });
-            const data = await res.json();
-            if (data.success) { setAnticipationInsights(data.insights); safePartialUpdate({ anticipationInsights: data.insights }); }
-        } catch (e) { console.warn("Anticipation API failed.", e); }
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) { 
+                    setAnticipationInsights(data.insights); 
+                    safePartialUpdate({ anticipationInsights: data.insights }); 
+                }
+            } else {
+                console.warn(`Anticipation API returned HTTP ${res.status}`);
+            }
+        } catch (e) { 
+            console.warn("Anticipation API network failed.", e); 
+        }
 
+        // This setTimeout is now guaranteed to run and populate the table
         setTimeout(() => {
             const assignments = {};
             inScopeNodes.forEach((n, idx) => {
@@ -96,7 +106,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     else assignments[n.id] = { status: 'OS Healthy', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
                 }
             });
-            setVectorAssignments(assignments); setPreflightStatus('done');
+            setVectorAssignments(assignments); 
+            setPreflightStatus('done');
             safePartialUpdate({ vectorAssignments: assignments, execStatus: 'preflight_complete' });
         }, 2000);
     };
@@ -106,9 +117,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch(`/api/projects/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } });
-            const data = await res.json();
-            if (data.success) { alert(`✅ ${data.message}`); advanceStatus('agents_deployed'); }
-            else { alert(`❌ Execution Failed:\n\n${data.error}`); }
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) { alert(`✅ ${data.message}`); advanceStatus('agents_deployed'); }
+                else { alert(`❌ Execution Failed:\n\n${data.error}`); }
+            } else {
+                alert(`❌ Server Error ${res.status}`);
+            }
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
@@ -117,11 +132,15 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         const token = localStorage.getItem('erp_jwt_token');
         try {
             const res = await fetch(`/api/projects/${project.id}/deploy-agents`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ optIns: agentOptIns }) });
-            const data = await res.json();
-            if (data.success) {
-                if (data.mode === 'manual') { setRunbookData(data.runbook); setShowRunbookModal(true); }
-                else { alert(`✅ ${data.message}`); advanceStatus('syncing'); }
-            } else { alert(`❌ Deployment Failed:\n\n${data.error}`); }
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    if (data.mode === 'manual') { setRunbookData(data.runbook); setShowRunbookModal(true); }
+                    else { alert(`✅ ${data.message}`); advanceStatus('syncing'); }
+                } else { alert(`❌ Deployment Failed:\n\n${data.error}`); }
+            } else {
+                alert(`❌ Server Error ${res.status}`);
+            }
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
@@ -255,6 +274,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 )}
                                             </div>
 
+                                            {/* 🚨 COGNITIVE ALERTS INTEGRATED PROPERLY */}
                                             {anticipationInsights && (
                                                 <div className="mb-6 space-y-3 animate-fade-in">
                                                     {anticipationInsights.quota_warnings?.map((warn, i) => (
@@ -269,8 +289,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 </div>
                                             )}
 
+                                            {/* 🚨 THE RESOURCE TABLE IS BACK AND GUARANTEED TO RENDER */}
                                             {preflightStatus === 'done' && (
-                                                <div className="mt-6 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-inner">
+                                                <div className="mt-6 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-inner animate-fade-in">
                                                     <div className="overflow-y-auto max-h-[300px] custom-scrollbar">
                                                         <table className="w-full text-left text-xs">
                                                             <thead className="bg-slate-800/80 text-[9px] uppercase tracking-widest text-slate-400 sticky top-0 z-10">
@@ -281,7 +302,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                     const data = vectorAssignments[n.id] || { status: 'Pending', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-circle-notch', color: 'text-slate-500' };
                                                                     return (
                                                                         <tr key={n.id} className="hover:bg-slate-800 transition-colors">
-                                                                            <td className="p-3 font-bold text-white"><i className="fas fa-server text-blue-400 mr-2"></i>{n.name}</td>
+                                                                            <td className="p-3 font-bold text-white"><i className="fas fa-server text-blue-400 mr-2"></i>{n.name || n.hostname || 'Unknown Node'}</td>
                                                                             <td className="p-3"><span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color} flex w-max items-center`}><i className={`fas ${data.icon} mr-1.5`}></i> {data.status}</span></td>
                                                                             <td className="p-3">
                                                                                 <select value={data.vector} onChange={(e) => handleVectorChange(n.id, e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none font-bold text-[10px] uppercase">
