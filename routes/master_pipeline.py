@@ -383,3 +383,132 @@ def get_editable_fields():
         'fields': editable_fields,
         'count': len(editable_fields)
     })
+
+@master_pipeline_bp.route('/capacity-planning', methods=['GET'])
+@jwt_required()
+def capacity_planning():
+    """Get capacity planning data for all phases"""
+    try:
+        # Get all projects
+        projects = ProjectData.query.all()
+        
+        # Count active vs pre-sales projects
+        active_projects = [p for p in projects if not p.isWaiting]
+        pipeline_projects = [p for p in projects if p.isWaiting]
+        
+        # Team capacity configuration
+        team_capacity = {
+            'total_engineers': 8,
+            'engineers_per_phase': {
+                '1_arb': 2,
+                '2_architecture': 3,
+                '3_planning': 2,
+                '4_execution': 6,
+                '5_postlive': 2
+            },
+            'max_projects_per_phase': {
+                '1_arb': 3,
+                '2_architecture': 4,
+                '3_planning': 3,
+                '4_execution': 8,
+                '5_postlive': 4
+            }
+        }
+        
+        # Calculate phase capacity
+        phase_capacity = {}
+        phases = ['1_arb', '2_architecture', '3_planning', '4_execution', '5_postlive']
+        
+        for phase in phases:
+            # Count active projects in this phase
+            active_in_phase = len([p for p in active_projects if p.lifecycleState == phase])
+            max_concurrent = team_capacity['max_projects_per_phase'][phase]
+            
+            # Calculate available slots
+            available_slots = max(0, max_concurrent - active_in_phase)
+            
+            # Calculate utilization percentage
+            utilization_percentage = (active_in_phase / max_concurrent * 100) if max_concurrent > 0 else 0
+            
+            # Determine status
+            if available_slots >= 2:
+                status = 'available'
+            elif available_slots == 1:
+                status = 'limited'
+            else:
+                status = 'waiting'
+            
+            # Calculate queue length (pre-sales projects targeting this phase)
+            queue_length = len([p for p in pipeline_projects if p.waitingStage == phase])
+            
+            # Calculate next available date (simplified - 2 weeks per project in queue)
+            next_available_date = None
+            if queue_length > 0:
+                from datetime import datetime, timedelta
+                weeks_per_project = 2
+                weeks_to_wait = queue_length * weeks_per_project
+                next_available_date = (datetime.now() + timedelta(weeks=weeks_to_wait)).isoformat()
+            
+            phase_capacity[phase] = {
+                'active_projects': active_in_phase,
+                'max_concurrent': max_concurrent,
+                'available_slots': available_slots,
+                'utilization_percentage': round(utilization_percentage, 1),
+                'status': status,
+                'queue_length': queue_length,
+                'next_available_date': next_available_date
+            }
+        
+        # Generate recommendations
+        recommendations = []
+        
+        # Check for bottlenecks
+        for phase, data in phase_capacity.items():
+            if data['status'] == 'waiting':
+                recommendations.append({
+                    'priority': 'high',
+                    'title': f'{phase.replace("_", " ").title()} Bottleneck',
+                    'description': f'{data["active_projects"]}/{data["max_concurrent"]} slots filled. Queue: {data["queue_length"]} projects waiting.',
+                    'action': 'Review Queue'
+                })
+            elif data['status'] == 'limited':
+                recommendations.append({
+                    'priority': 'medium',
+                    'title': f'{phase.replace("_", " ").title()} Capacity Limited',
+                    'description': f'Only {data["available_slots"]} slot(s) available. Next opening: {data["next_available_date"][:10] if data["next_available_date"] else "Immediate"}',
+                    'action': 'Schedule Now'
+                })
+        
+        # Add general recommendations
+        if len(pipeline_projects) > len(active_projects) * 0.5:
+            recommendations.append({
+                'priority': 'medium',
+                'title': 'High Pipeline Volume',
+                'description': f'Pipeline ({len(pipeline_projects)}) exceeds 50% of active projects ({len(active_projects)}). Consider accelerating conversions.',
+                'action': 'Review Pipeline'
+            })
+        
+        # Check for underutilized phases
+        underutilized = [phase for phase, data in phase_capacity.items() if data['utilization_percentage'] < 30]
+        if underutilized:
+            recommendations.append({
+                'priority': 'low',
+                'title': 'Underutilized Capacity',
+                'description': f'Phases {", ".join([p.replace("_", " ").title() for p in underutilized])} have <30% utilization.',
+                'action': 'Reallocate Resources'
+            })
+        
+        return jsonify({
+            'success': True,
+            'team_capacity': team_capacity,
+            'active_projects': len(active_projects),
+            'pipeline_projects': len(pipeline_projects),
+            'phase_capacity': phase_capacity,
+            'recommendations': recommendations[:5]  # Limit to top 5
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
