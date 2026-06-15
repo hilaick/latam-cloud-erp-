@@ -79,7 +79,8 @@ export default function MasterPipeline() {
         { id: '6_completed', name: 'Completed', color: 'bg-emerald-100 text-emerald-800' }
     ];
 
-    const filtered = (projects || []).filter(p => p && !p.isWaiting && p.name.toUpperCase().includes(searchTerm.toUpperCase()));
+    // 🚨 FIX: Wrapped p.name in String(...) and used fallback to prevent undefined.toUpperCase() crash
+    const filtered = (projects || []).filter(p => p && !p.isWaiting && String(p.name || '').toUpperCase().includes(searchTerm.toUpperCase()));
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto pb-12">
@@ -117,7 +118,7 @@ export default function MasterPipeline() {
                                 return (
                                     <tr key={p.id} className="hover:bg-indigo-50/30 transition-colors group">
                                         <td className="p-4 align-top cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => openProject(p.id)} title="Click to Open Project Context">
-                                            <div className="font-black text-sm text-indigo-700 w-full uppercase truncate">{p.name}</div>
+                                            <div className="font-black text-sm text-indigo-700 w-full uppercase truncate">{p.name || 'UNNAMED PROJECT'}</div>
                                             <div className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 w-max mt-2 uppercase">
                                                 {p.customerName || (p.name || '').split('-')[0] || 'UNLINKED'}
                                             </div>
