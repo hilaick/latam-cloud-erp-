@@ -5,7 +5,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [sidebarOpen, setSidebarOpen] = useState(true); 
     
-    // 🚨 FIXED: Optional Chaining re-applied
     const [anticipationInsights, setAnticipationInsights] = useState(project?.anticipationInsights || null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
     const [runbookData, setRunbookData] = useState(null);
@@ -37,7 +36,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
     const strategy = getStrategyDetails();
     
-    // 🚨 FIXED: Broadened the filter so the table ALWAYS shows mapped nodes
     const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [project?.mapperNodes]);
 
     const safePartialUpdate = async (updates) => {
@@ -76,7 +74,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
-    // 🚨 FIXED: Correct URL paths (/api/projects/) and restored the SetTimeout logic
     const handleRunPreflight = async () => {
         if (!project?.id) return;
         setPreflightStatus('scanning');
@@ -142,17 +139,22 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         { id: 'tam', num: '4.3', icon: 'fa-headset', label: 'TAM Service Governance' }
     ];
 
+    if (!project) {
+        return <div className="p-12 text-center text-slate-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i> Loading Execution Environment...</div>;
+    }
+
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
+                    {/* 🚨 UI UPGRADE: Replaced Burger icon with semantic Chevron Toggles */}
                     <button 
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors"
                         title={sidebarOpen ? "Collapse Menu" : "Expand Menu"}
                     >
-                        <i className={`fas fa-bars ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
+                        <i className={`fas fa-chevron-${sidebarOpen ? 'left' : 'right'} ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
                     </button>
                     <div>
                         <h3 className="font-black text-xl text-slate-800">Execution Control Plane</h3>
@@ -244,7 +246,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                     </div>
 
                                     <div className="p-8 lg:col-span-2 space-y-6 bg-slate-900">
-                                        {/* PHASE 4.1 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'pending' || execStatus === 'preflight_complete' ? (iamStatus === 'active' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'border-slate-600 bg-slate-800/80') : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start mb-6">
                                                 <div>
@@ -263,7 +264,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 )}
                                             </div>
 
-                                            {/* 🚨 COGNITIVE ALERTS INTEGRATED */}
                                             {anticipationInsights && (
                                                 <div className="mb-6 space-y-3 animate-fade-in">
                                                     {anticipationInsights.quota_warnings?.map((warn, i) => (
@@ -278,7 +278,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 </div>
                                             )}
 
-                                            {/* 🚨 TABLE RENDERS PROPERLY AFTER TIMEOUT */}
                                             {preflightStatus === 'done' && (
                                                 <div className="mt-6 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-inner animate-fade-in">
                                                     <div className="overflow-y-auto max-h-[300px] custom-scrollbar">
@@ -314,7 +313,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             )}
                                         </div>
 
-                                        {/* PHASE 4.2 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'sandbox_built' ? 'border-amber-500 bg-slate-800 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div>
@@ -330,7 +328,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             </div>
                                         </div>
 
-                                        {/* PHASE 4.3 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'agents_deployed' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div className="pr-6 w-full">
@@ -363,7 +360,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                             </div>
                                         </div>
 
-                                        {/* PHASE 4.4 */}
                                         <div className={`p-6 rounded-xl border-2 transition-all ${execStatus === 'syncing' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'border-slate-700 bg-slate-900/50 opacity-60'}`}>
                                             <div className="flex justify-between items-start">
                                                 <div className="flex-1 pr-6">
@@ -428,7 +424,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// 🚨 FINOPS HUB (With Optional Chaining enforced)
+// 🚨 FINOPS HUB
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project?.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project?.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
