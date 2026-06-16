@@ -1,26 +1,27 @@
 import React, { useState } from 'react';
+import ToolRecommendationView from './ToolRecommendationView';
 import PhysicsEngine from './PhysicsEngine';
 import FinOpsCalculator from './FinOpsCalculator';
 import DedicatedMigrationPlan from './DedicatedMigrationPlan';
-import ToolRecommendationView from './ToolRecommendationView';
 import CutoverRunbookView from './CutoverRunbookView';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
-    const [subTab, setSubTab] = useState('physics');
-    const [sidebarOpen, setSidebarOpen] = useState(true); // 🚨 NEW COLLAPSE STATE
+    // 🚨 REORDERED: Default tab is now 'tools' (3.1)
+    const [subTab, setSubTab] = useState('tools');
+    const [sidebarOpen, setSidebarOpen] = useState(true);
 
+    // 🚨 REORDERED: Menu Items logical flow
     const menuItems = [
-        { id: 'physics', num: '3.1', icon: 'fa-water', label: 'Wave Physics SLA' },
-        { id: 'finops', num: '3.2', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
-        { id: 'wbs', num: '3.3', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
-        { id: 'tools', num: '3.4', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'tools', num: '3.1', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'physics', num: '3.2', icon: 'fa-water', label: 'Delivery Physics Engine' },
+        { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
+        { id: 'wbs', num: '3.4', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
         { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
 
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             
-            {/* Header Area */}
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
                     <button 
@@ -28,7 +29,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                         className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors"
                         title={sidebarOpen ? "Collapse Menu" : "Expand Menu"}
                     >
-                        <i className={`fas fa-bars ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
+                        <i className={`fas fa-chevron-${sidebarOpen ? 'left' : 'right'} ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
                     </button>
                     <div>
                         <h3 className="font-black text-xl text-slate-800">Migration Planning & Strategy</h3>
@@ -37,10 +38,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                 </div>
             </div>
 
-            {/* Layout Container */}
             <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
                 
-                {/* Collapsible Left Navigation Sidebar */}
                 <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
                     {menuItems.map((item) => (
                         <button 
@@ -68,23 +67,28 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     </div>
                 </div>
 
-                {/* Right Content Area (Expands to 100% when sidebar collapses) */}
                 <div className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[700px] overflow-hidden transition-all duration-300">
-                    {subTab === 'physics' && <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />}
-                    {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
-                    {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
                     
                     {subTab === 'tools' && (
                         <div className="animate-fade-in h-full flex flex-col">
                             <div className="bg-amber-50 border-b border-amber-200 p-6 shrink-0">
-                                <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling Generation</h4>
-                                <p className="text-xs text-amber-700/80 mt-1 font-medium">This phase generates theoretical recommendations based on SOW metadata to build the Project Plan. (Physical OS validation occurs in Phase 4).</p>
+                                <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling Allocation</h4>
+                                <p className="text-xs text-amber-700/80 mt-1 font-medium">Determine exactly WHICH tools will migrate WHICH workloads before calculating transfer physics.</p>
                             </div>
-                            <div className="flex-1 overflow-y-auto">
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
                             </div>
                         </div>
                     )}
+
+                    {subTab === 'physics' && (
+                        <div className="h-full overflow-y-auto custom-scrollbar">
+                            <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />
+                        </div>
+                    )}
+                    
+                    {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
                     
                     {subTab === 'runbook' && (
                         <div className="p-6 h-full flex flex-col animate-fade-in">
