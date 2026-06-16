@@ -6,16 +6,16 @@ import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import CutoverRunbookView from './CutoverRunbookView';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
-    // 🚨 REORDERED: Default tab is now 'tools' (3.1)
-    const [subTab, setSubTab] = useState('tools');
+    // 🚨 REORDERED: Default tab is now 'wbs' (3.1)
+    const [subTab, setSubTab] = useState('wbs');
     const [sidebarOpen, setSidebarOpen] = useState(true);
 
     // 🚨 REORDERED: Menu Items logical flow
     const menuItems = [
-        { id: 'tools', num: '3.1', icon: 'fa-tools', label: 'Strategic Tooling' },
-        { id: 'physics', num: '3.2', icon: 'fa-water', label: 'Delivery Physics Engine' },
-        { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
-        { id: 'wbs', num: '3.4', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
+        { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
+        { id: 'tools', num: '3.2', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'physics', num: '3.3', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
+        { id: 'finops', num: '3.4', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
         { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
 
@@ -69,6 +69,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[700px] overflow-hidden transition-all duration-300">
                     
+                    {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
+
                     {subTab === 'tools' && (
                         <div className="animate-fade-in h-full flex flex-col">
                             <div className="bg-amber-50 border-b border-amber-200 p-6 shrink-0">
@@ -88,7 +90,6 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     )}
                     
                     {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
-                    {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
                     
                     {subTab === 'runbook' && (
                         <div className="p-6 h-full flex flex-col animate-fade-in">
