@@ -26,6 +26,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // ⚙️ MANUAL / GRANULAR MODE STATE
     // ==========================================
     // Pillar 1: Compute
+    const [manualComputeNodes, setManualComputeNodes] = useState(1);
     const [computeCPU, setComputeCPU] = useState(60); 
     const [computeRAM, setComputeRAM] = useState(60);
     const [computeOS, setComputeOS] = useState('Linux');
@@ -45,6 +46,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [omsBackbone, setOmsBackbone] = useState(16); 
 
     // Pillar 3: Databases
+    const [manualDbNodes, setManualDbNodes] = useState(1);
     const [excludeDb, setExcludeDb] = useState(true); 
     const [dbStorageSize, setDbStorageSize] = useState(4.0);
     const [dbType, setDbType] = useState('PostgreSQL'); 
@@ -59,6 +61,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // DATA MAPPING
     // ==========================================
     const nodes = useMemo(() => (activeProject?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [activeProject?.mapperNodes]);
+    const totalCompute = useMemo(() => nodes.filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase())).length, [nodes]);
+    const totalDbs = useMemo(() => nodes.filter(n => ['RDS', 'GAUSSDB', 'DB'].includes(String(n.type).toUpperCase())).length, [nodes]);
 
     useEffect(() => {
         if (activeProject?.physics) {
@@ -70,6 +74,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             setConcurrency(p.concurrency||5); setUsedStoragePct(p.usedStoragePct||50); setAppChurnPct(p.appChurnPct||2); setDbChurnPct(p.dbChurnPct||8);
             
             // Manual
+            setManualComputeNodes(p.manualComputeNodes || totalCompute || 1);
+            setManualDbNodes(p.manualDbNodes || totalDbs || 1);
             setComputeCPU(p.computeCPU||60); setComputeRAM(p.computeRAM||60); setComputeOS(p.computeOS||'Linux'); setSourceEncrypted(p.sourceEncrypted||false);
             setStorageMode(p.storageMode||'Block'); setDiskType(p.diskType||'SSD'); setTargetKMS(p.targetKMS||false);
             setStorageSize(p.storageSize||5.0); setStorageUnit(p.storageUnit||'TB');
@@ -78,11 +84,14 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             setDbType(p.dbType||'PostgreSQL'); setDbRowsM(p.dbRowsM||250); setDbRps(p.dbRps||8000);
             setOmsTasks(p.omsTasks||5); setOmsObjPerSec(p.omsObjPerSec||120); setOmsBackbone(p.omsBackbone||16);
             setDrBackupHrs(p.drBackupHrs||4); setDrStability(p.drStability||'High'); 
+        } else {
+            if (totalCompute > 0) setManualComputeNodes(totalCompute);
+            if (totalDbs > 0) setManualDbNodes(totalDbs);
         }
-    }, [activeProject]);
+    }, [activeProject, totalCompute, totalDbs]);
 
     const saveContext = () => { 
-        const data = { engineMode, netSource, transitType, netTunnel, netTarget, downtimeWindow, concurrency, usedStoragePct, appChurnPct, dbChurnPct, computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, diskType, targetKMS, storageSize, storageUnit, totalFiles, smallFiles, syncMethod, excludeDb, dbStorageSize, dbType, dbRowsM, dbRps, omsTasks, omsObjPerSec, omsBackbone, drBackupHrs, drStability };
+        const data = { engineMode, netSource, transitType, netTunnel, netTarget, downtimeWindow, concurrency, usedStoragePct, appChurnPct, dbChurnPct, manualComputeNodes, manualDbNodes, computeCPU, computeRAM, computeOS, sourceEncrypted, storageMode, diskType, targetKMS, storageSize, storageUnit, totalFiles, smallFiles, syncMethod, excludeDb, dbStorageSize, dbType, dbRowsM, dbRps, omsTasks, omsObjPerSec, omsBackbone, drBackupHrs, drStability };
         onUpdateProject(activeProject.id, 'physics', data); 
         alert("Physics Engine parameters saved to project context."); 
     };
@@ -179,8 +188,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             netWarn = "INFO: Serverless OMS active. Transit routes (VPN/DC) bypassed.";
         } else {
             // PILLAR: NETWORKING & COMPUTE (BLOCK/FILE AGENTS)
-            const bottleneckMbps = Math.min(Number(netSource) || Infinity, Number(netTunnel) || Infinity, Number(netTarget) || Infinity);
-            finalBottleneck = bottleneckMbps === Infinity ? 1000 : bottleneckMbps;
+            const pipeMbps = Math.min(Number(netSource) || Infinity, Number(netTunnel) || Infinity, Number(netTarget) || Infinity);
+            finalBottleneck = pipeMbps === Infinity ? 1000 : pipeMbps;
 
             if (transitType === 'IPsec VPN') { speedMultiplier *= 0.85; netWarn = "IPsec Encryption Tax (15%). "; }
             else if (transitType === 'Public Internet') { speedMultiplier *= 0.75; netWarn = "Internet TCP Retransmit/Latency Tax (25%). "; }
@@ -192,13 +201,12 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             else if (highestComputeLoad >= 75) { speedMultiplier *= 0.7; cpuWarn = "WARN Compute: Source node >75% saturation. Minor throttling applied."; }
 
             let diskLimitMbps = 1000; if(diskType === 'SSD') diskLimitMbps = 4000; if(diskType === 'NVMe') diskLimitMbps = 24000;
-            finalBottleneck = Math.min(finalBottleneck, diskLimitMbps);
-
+            
             if (targetKMS) { speedMultiplier *= 0.95; ioWarn += "Target Block KMS Encryption Tax (5%). "; }
 
             if (syncMethod === 'Block') {
                 speedMultiplier *= 1.35; 
-                ioWarn += "INFO: Block-Level selected. Data compressed transit (+35% virtual speed). Ignores small files.";
+                ioWarn += "INFO: Block-Level selected. Data compressed transit (+35% virtual speed). Ignores small files. ";
             } else if (syncMethod === 'File' && validSmallFiles > 100000) { 
                 let volumePenalty = validSmallFiles / 2000000;
                 let filePenalty = Math.max(0.20, 1 - (volumePenalty * (0.5 + (smallFileRatio * 0.5)))); 
@@ -206,17 +214,47 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 ioWarn += `CRIT I/O: File-Level sync of ${validSmallFiles.toLocaleString()} small files (${Math.round(smallFileRatio*100)}% of payload) destroys inode lookups. Network underutilized. `; 
             }
 
-            actualTransferMbps = finalBottleneck * speedMultiplier;
+            // 🚨 THE NEW PER-SERVER WATER-PIPE MATH 🚨
+            const validComputeNodes = Math.max(Number(manualComputeNodes) || 1, 1);
+            const activeServers = Math.min(validComputeNodes, Number(concurrency) || 1);
+            
+            // Calculate limits
+            const effectivePipe = finalBottleneck * (transitType === 'IPsec VPN' ? 0.85 : transitType === 'Public Internet' ? 0.75 : 0.95);
+            const pipePerServer = effectivePipe / activeServers;
+            const agentMaxSpeed = diskLimitMbps * speedMultiplier; // CPU & Disk limit of a single VM
+            
+            // Actual speed per active server is the lesser of the pipe share OR the agent's absolute limit
+            const actualBandwidthPerServer = Math.min(pipePerServer, agentMaxSpeed);
+            const aggregateComputeBandwidth = actualBandwidthPerServer * activeServers;
+            actualTransferMbps = aggregateComputeBandwidth;
+
+            if (actualBandwidthPerServer === agentMaxSpeed && agentMaxSpeed < pipePerServer) {
+                netWarn += `Pipe is underutilized. Single agents are capped by CPU/Disk at ${Math.round(agentMaxSpeed)} Mbps. `;
+            }
+
             osPayloadTB = excludeDb ? Math.max(0, normalizedStorageTB - normalizedDbTB) : normalizedStorageTB;
-            osSyncHours = (((osPayloadTB * 1024 * 1024 * 8) / (actualTransferMbps || 1)) / 3600); 
+            
+            // Calculate time based on batches
+            const payloadPerServerTB = osPayloadTB / validComputeNodes;
+            const timePerServerHrs = ((payloadPerServerTB * 1024 * 1024 * 8) / (actualBandwidthPerServer || 1)) / 3600;
+            const serverBatches = Math.ceil(validComputeNodes / (Number(concurrency) || 1));
+            
+            osSyncHours = timePerServerHrs * serverBatches;
         }
 
         // PILLAR: DATABASES (LOGICAL SYNC)
         const actualTransferMBps = actualTransferMbps / 8;
+        const validDbNodes = Math.max(Number(manualDbNodes) || 1, 1);
         const dbTotalRows = Number(dbRowsM) * 1000000;
+        const rowsPerDb = dbTotalRows / validDbNodes;
+        
         let effectiveRps = Number(dbRps) || 1;
         if(dbType === 'Oracle' || dbType === 'HANA') effectiveRps *= 0.8; 
-        const dbSyncHours = (excludeDb && storageMode !== 'Object') ? (dbTotalRows / effectiveRps) / 3600 : 0;
+        
+        const timePerDbHrs = (rowsPerDb / effectiveRps) / 3600;
+        const dbBatches = Math.ceil(validDbNodes / (Number(concurrency) || 1));
+        
+        const dbSyncHours = (excludeDb && storageMode !== 'Object') ? (timePerDbHrs * dbBatches) : 0;
 
         let controllingPath = storageMode === 'Object' ? "API Object Transfer (OMS)" : "OS/Disk Network Transfer";
         if (excludeDb && storageMode !== 'Object' && dbSyncHours > osSyncHours) {
@@ -240,7 +278,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             bottleneckMbps: finalBottleneck, cpuWarn, ioWarn, dbWarn, netWarn, riskWarn, controllingPath,
             isFeasible: totalHours <= (Number(downtimeWindow) || 0), smallFilePct: Math.round(smallFileRatio * 100)
         };
-    }, [storageUnit, storageSize, dbStorageSize, totalFiles, smallFiles, storageMode, omsTasks, omsObjPerSec, omsBackbone, excludeDb, targetKMS, netSource, netTunnel, netTarget, transitType, computeCPU, sourceEncrypted, computeRAM, diskType, syncMethod, dbRowsM, dbRps, dbType, drStability, drBackupHrs, downtimeWindow]);
+    }, [storageUnit, storageSize, dbStorageSize, totalFiles, smallFiles, storageMode, omsTasks, omsObjPerSec, omsBackbone, excludeDb, targetKMS, netSource, netTunnel, netTarget, transitType, computeCPU, sourceEncrypted, computeRAM, diskType, syncMethod, dbRowsM, dbRps, dbType, drStability, drBackupHrs, downtimeWindow, manualComputeNodes, manualDbNodes, concurrency]);
 
     return (
         <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6">
@@ -323,11 +361,21 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={sourceEncrypted} onChange={e=>setSourceEncrypted(e.target.checked)} className="w-4 h-4 accent-blue-600"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Disk Encrypted</span></label>
                             </div>
                             <div className="space-y-5">
-                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>CPU Saturation (Throttles Agent)</span><span className="text-blue-700">{computeCPU}%</span></label><input type="range" min="10" max="99" value={computeCPU} onChange={e=>setComputeCPU(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
-                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>RAM Saturation</span><span className="text-blue-700">{computeRAM}%</span></label><input type="range" min="10" max="99" value={computeRAM} onChange={e=>setComputeRAM(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
                                 <div className="flex gap-4">
-                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">OS Platform</label><select value={computeOS} onChange={e=>setComputeOS(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option value="Linux">Linux</option><option value="Windows">Windows</option></select></div>
+                                    <div className="w-1/2">
+                                        <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Resource Count (VMs)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="number" value={manualComputeNodes} onChange={e=>setManualComputeNodes(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50" />
+                                            {totalCompute > 0 && <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">of {totalCompute} mapped</span>}
+                                        </div>
+                                    </div>
+                                    <div className="w-1/2">
+                                        <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">OS Platform</label>
+                                        <select value={computeOS} onChange={e=>setComputeOS(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option value="Linux">Linux</option><option value="Windows">Windows</option></select>
+                                    </div>
                                 </div>
+                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>Avg. CPU Saturation (Throttles Agent)</span><span className="text-blue-700">{computeCPU}%</span></label><input type="range" min="10" max="99" value={computeCPU} onChange={e=>setComputeCPU(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
+                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>Avg. RAM Saturation</span><span className="text-blue-700">{computeRAM}%</span></label><input type="range" min="10" max="99" value={computeRAM} onChange={e=>setComputeRAM(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
                             </div>
                         </div>
 
@@ -340,7 +388,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                             <div className="space-y-4">
                                 <div className="flex gap-4">
                                     <div className="w-1/2 flex gap-2">
-                                        <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Payload Size</label><input type="number" value={storageSize} onChange={e=>setStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-amber-500 bg-slate-50"/></div>
+                                        <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Total Payload Size</label><input type="number" value={storageSize} onChange={e=>setStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-amber-500 bg-slate-50"/></div>
                                         <div className="w-16"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Unit</label><select value={storageUnit} onChange={e=>setStorageUnit(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>TB</option><option>GB</option></select></div>
                                     </div>
                                     <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-amber-700">Target Protocol</label><select value={storageMode} onChange={e=>setStorageMode(e.target.value)} className="w-full p-3 border-2 border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-xs font-black outline-none"><option value="Block">Block/File (SMS)</option><option value="Object">Object (OMS)</option></select></div>
@@ -373,7 +421,22 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                             {excludeDb && storageMode !== 'Object' ? (
                                 <div className="space-y-4 animate-fade-in">
                                     <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-[10px] text-rose-800 font-bold leading-relaxed">Excludes DB from block payload. Calculates PaaS/DRS Logical Replication via Rows/sec.</div>
-                                    <div className="flex gap-3"><div className="w-1/3"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">DB Size ({storageUnit})</label><input type="number" value={dbStorageSize} onChange={e=>setDbStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Engine Type</label><select value={dbType} onChange={e=>setDbType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-rose-500 bg-white"><option>HANA</option><option>Oracle</option><option>PostgreSQL / MySQL</option><option>SQL Server</option></select></div></div>
+                                    <div className="flex gap-3">
+                                        <div className="w-1/3">
+                                            <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">DB Instances</label>
+                                            <div className="flex items-center gap-2">
+                                                <input type="number" value={manualDbNodes} onChange={e=>setManualDbNodes(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/>
+                                            </div>
+                                        </div>
+                                        <div className="w-1/3">
+                                            <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Total DB Size ({storageUnit})</label>
+                                            <input type="number" value={dbStorageSize} onChange={e=>setDbStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Engine Type</label>
+                                            <select value={dbType} onChange={e=>setDbType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-rose-500 bg-white"><option>HANA</option><option>Oracle</option><option>PostgreSQL / MySQL</option><option>SQL Server</option></select>
+                                        </div>
+                                    </div>
                                     <div className="flex gap-3"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Est. Rows (M)</label><input type="number" value={dbRowsM} onChange={e=>setDbRowsM(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Logical Sync (Rows/s)</label><input type="number" value={dbRps} onChange={e=>setDbRps(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div></div>
                                 </div>
                             ) : <div className="flex-1 flex items-center justify-center p-6 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 opacity-60"><p className="text-xs font-bold text-slate-500 text-center">Logical PaaS Sync Disabled.<br/>All data treated as raw block transfer.</p></div>}
@@ -382,7 +445,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                         {/* PILLAR 4: SLA & OPS */}
                         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                             <h4 className="font-black text-sm mb-5 flex items-center gap-2 text-slate-800"><i className="fas fa-shield-alt text-emerald-500"></i> Limits & Cutover SLA</h4>
-                            <div className="flex gap-3 mb-6"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Cold Backup (Hrs)</label><input type="number" value={drBackupHrs} onChange={e=>setDrBackupHrs(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Link Stability Buffer</label><select value={drStability} onChange={e=>setDrStability(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"><option value="High">High</option><option value="Medium">Medium (+30%)</option><option value="Low">Low (+60%)</option></select></div></div>
+                            <div className="flex gap-3 mb-4">
+                                <div className="flex-1 w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Cold Backup (Hrs)</label><input type="number" value={drBackupHrs} onChange={e=>setDrBackupHrs(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div>
+                                <div className="flex-1 w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Link Stability Buffer</label><select value={drStability} onChange={e=>setDrStability(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"><option value="High">High</option><option value="Medium">Medium (+30%)</option><option value="Low">Low (+60%)</option></select></div>
+                                <div className="flex-1 w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Sync Concurrency Limit</label><input type="number" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="w-full p-3 border-2 border-emerald-200 rounded-xl text-sm font-bold outline-none bg-emerald-50 text-emerald-900" title="Max number of servers or DBs syncing at the same time" /></div>
+                            </div>
                             <div className="w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Target SLA Window (Hrs)</label><input type="number" value={downtimeWindow} onChange={e=>setDowntimeWindow(e.target.value)} className="w-full p-4 border-2 border-emerald-300 rounded-xl bg-emerald-50 font-black text-base text-emerald-900 outline-none text-center shadow-inner"/></div>
                         </div>
 
