@@ -7,6 +7,32 @@ export const HUAWEI_REGIONS = [
     { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] }
 ];
 
+// 🚨 SEMANTIC PARSER: Converts messy Quotation Descriptions into exact Dropdown Types
+const normalizeHuaweiType = (rawType, defaultCategory) => {
+    const t = String(rawType || '').toLowerCase();
+    if (t.includes('elastic cloud server') || t.includes('ecs')) return 'ECS';
+    if (t.includes('relational database') || t.includes('rds')) return 'RDS';
+    if (t.includes('object storage') || t.includes('obs')) return 'OBS';
+    if (t.includes('virtual private cloud') || t.includes('vpc')) return 'VPC';
+    if (t.includes('bare metal') || t.includes('bms')) return 'BMS';
+    if (t.includes('redis') || t.includes('dcs')) return 'DCS';
+    if (t.includes('gauss')) return 'GaussDB';
+    if (t.includes('file service') || t.includes('sfs') || t.includes('turbo')) return 'SFS';
+    if (t.includes('backup') || t.includes('cbr')) return 'CBR';
+    if (t.includes('elastic volume') || t.includes('evs') || t.includes('disk')) return 'EVS';
+    if (t.includes('load balance') || t.includes('elb')) return 'ELB';
+    if (t.includes('security group') || t.includes('sg')) return 'SG';
+    if (t.includes('firewall') || t.includes('waf')) return 'WAF';
+    if (t.includes('host security') || t.includes('hss')) return 'HSS';
+    if (t.includes('nat')) return 'NAT';
+    if (t.includes('eip') || t.includes('elastic ip')) return 'EIP';
+    if (t.includes('customer gateway') || t.includes('cgw')) return 'CGW';
+    if (t.includes('vpn')) return 'VPN';
+    if (t.includes('cce') || t.includes('kubernetes')) return 'CCE';
+    if (t.includes('cdn') || t.includes('content delivery')) return 'CDN';
+    return defaultCategory; 
+};
+
 export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const { customers } = useContext(ERPContext); 
 
@@ -42,10 +68,16 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return result;
     }, [localNodes, statusFilter, typeFilter, sortConfig]);
 
-    // 🚨 FIXED: Now explicitly saves ALL nodes to the database, ignoring UI filters.
     const saveArchitecture = () => {
         onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
         alert(`Target Architecture Saved!\n\nAll ${localNodes.length} nodes have been permanently saved to the Project Context.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
+    };
+
+    const resyncFromSOW = () => {
+        if (window.confirm("This will clear your current reconciliation status and pull fresh data from the Active SOW Blueprint Snapshot. Continue?")) {
+            setLocalNodes([]);
+            alert("Context cleared. Please click 'Merge & Review Target' to regenerate the architecture.");
+        }
     };
 
     const toggleFullScreen = (elementId) => {
@@ -69,25 +101,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    const getShortNetType = (type) => {
-        const t = String(type || 'VPC');
-        if (t.includes('Security') || t === 'SG') return 'SG';
-        if (t.includes('NAT')) return 'NAT';
-        if (t.includes('Customer Gateway')) return 'CGW';
-        if (t.includes('Connection')) return 'VPN-Conn';
-        if (t.includes('VPN')) return 'VPN';
-        if (t.includes('EIP')) return 'EIP';
-        if (t.includes('Subnet')) return 'Subnet';
-        return 'VPC';
-    };
-
+    // 🚨 QUOTATION INGESTOR: Applies semantic parsing to assign exact Dropdown Types
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
-        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: 'ECS', location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: 'RDS', location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: getShortNetType(n.type), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: s.type || 'OBS', location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: normalizeHuaweiType(s.type, 'ECS'), storage: s.storage, os: s.os, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: normalizeHuaweiType(d.type, 'RDS'), storage: d.storage, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: normalizeHuaweiType(n.type, 'VPC'), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: normalizeHuaweiType(s.type, 'OBS'), storage: s.storage, location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
@@ -95,8 +116,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         const raw = activeProject?.mgcData?.raw_inventory || {};
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const mNodes = [];
-        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `${getShortNetType(net.type)}-${i}`, type: getShortNetType(net.type), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: fallbackRegion, status: 'Live Only' }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `${st.type||'OBS'}-${i}`, type: st.type||'OBS', ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
+        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `NET-${i}`, type: normalizeHuaweiType(net.type, 'VPC'), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: fallbackRegion, status: 'Live Only' }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `ST-${i}`, type: normalizeHuaweiType(st.type, 'OBS'), ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
         (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: fallbackRegion, status: 'Live Only' }));
         (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: fallbackRegion, status: 'Live Only' }));
         return mNodes;
@@ -122,7 +143,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                 }
             }
             if (matchIdx !== -1) { 
-                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, status: 'Matched', config: {} }); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, type: tempQuoted[matchIdx].type, storage: tempQuoted[matchIdx].storage, status: 'Matched', config: {} }); 
                 tempQuoted.splice(matchIdx, 1); 
             } else { 
                 merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only', config: {} }); 
@@ -142,12 +163,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     const getIcon = (type) => {
         const t = String(type || "").toLowerCase();
         if (t.includes('ecs') || t.includes('vm') || t.includes('bms')) return 'fa-server text-blue-600'; 
-        if (t.includes('rds') || t.includes('db') || t.includes('dcs')) return 'fa-database text-rose-600';
+        if (t.includes('rds') || t.includes('db') || t.includes('dcs') || t.includes('gauss')) return 'fa-database text-rose-600';
         if (t.includes('subnet') || t.includes('vpc')) return 'fa-network-wired text-indigo-400';
         if (t.includes('sg') || t.includes('security') || t.includes('waf') || t.includes('hss')) return 'fa-shield-alt text-amber-500';
         if (t.includes('nat') || t.includes('eip') || t.includes('vpn') || t.includes('cgw')) return 'fa-route text-indigo-600';
         if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
-        if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('evs')) return 'fa-hdd text-emerald-600';
+        if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('evs') || t.includes('sfs')) return 'fa-hdd text-emerald-600';
         if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
         if (t.includes('codearts') || t.includes('function')) return 'fa-code text-purple-500';
         return 'fa-microchip text-slate-500';
@@ -203,6 +224,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                 <p className="text-xs text-slate-500 mt-1">Review the SOW Quoted Scope alongside the Live Discovery.</p>
                             </div>
                             <div className="flex gap-4 items-center w-full md:w-auto flex-wrap">
+                                <button onClick={resyncFromSOW} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-colors shadow-sm"><i className="fas fa-sync-alt mr-2"></i> Resync from SOW</button>
                                 <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm shrink-0">
                                     <button onClick={()=>setReconcileView('table')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'table' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-list mr-1"></i> List</button>
                                     <button onClick={()=>setReconcileView('canvas')} className={`px-4 py-1.5 text-[10px] uppercase font-black tracking-widest rounded transition-colors ${reconcileView === 'canvas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-1"></i> Diagram</button>
@@ -218,8 +240,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                                         {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
                                         {quotedNodes.map((n, i) => (
-                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type}</div></div></div>
+                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between hover:border-indigo-300 transition-colors">
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} {n.storage ? `| ${n.storage}` : ''}</div></div></div>
                                             </div>
                                         ))}
                                     </div>
@@ -230,8 +252,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                                         {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
                                         {liveNodes.map((n, i) => (
-                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} | {n.ip}</div></div></div>
+                                            <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between hover:border-indigo-300 transition-colors">
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} | {n.ip}</div></div></div>
                                             </div>
                                         ))}
                                     </div>
