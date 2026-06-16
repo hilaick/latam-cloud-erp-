@@ -101,14 +101,22 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    // 🚨 QUOTATION INGESTOR: Applies semantic parsing to assign exact Dropdown Types
+    // 🚨 QUOTATION INGESTOR: Resilient to Plurals & Metadata Drildown
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
-        (activeProject?.blueprintData?.topology?.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name, type: normalizeHuaweiType(s.type, 'ECS'), storage: s.storage, os: s.os, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.database || []).forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name, type: normalizeHuaweiType(d.type, 'RDS'), storage: d.storage, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name, type: normalizeHuaweiType(n.type, 'VPC'), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (activeProject?.blueprintData?.topology?.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name, type: normalizeHuaweiType(s.type, 'OBS'), storage: s.storage, location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        const bp = activeProject?.blueprintData?.topology || {};
+
+        (bp.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name || s.flavor || `Compute-${i}`, type: normalizeHuaweiType(s.type || s.flavor, 'ECS'), storage: s.storage || s.metadata?.storage_gb, os: s.os || s.metadata?.os_type, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        
+        // Handle database / databases schema ambiguity
+        const dbs = bp.databases || bp.database || [];
+        dbs.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name || d.engine || `DB-${i}`, type: normalizeHuaweiType(d.engine || d.type, 'RDS'), storage: d.storage || d.metadata?.storage_gb, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        
+        (bp.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name || `Network-${i}`, type: normalizeHuaweiType(n.type, 'VPC'), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (bp.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name || `Storage-${i}`, type: normalizeHuaweiType(s.type, 'OBS'), storage: s.storage || s.metadata?.storage_gb, location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (bp.security || []).forEach((sec, i) => qNodes.push({ id: `q-sec-${i}`, name: sec.name || `Security-${i}`, type: normalizeHuaweiType(sec.type, 'SG'), location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
@@ -143,7 +151,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                 }
             }
             if (matchIdx !== -1) { 
-                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, type: tempQuoted[matchIdx].type, storage: tempQuoted[matchIdx].storage, status: 'Matched', config: {} }); 
+                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, type: tempQuoted[matchIdx].type, storage: tempQuoted[matchIdx].storage, os: tempQuoted[matchIdx].os, status: 'Matched', config: {} }); 
                 tempQuoted.splice(matchIdx, 1); 
             } else { 
                 merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only', config: {} }); 
@@ -241,7 +249,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                         {quotedNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No SOW data imported.</div>}
                                         {quotedNodes.map((n, i) => (
                                             <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between hover:border-indigo-300 transition-colors">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} {n.storage ? `| ${n.storage}` : ''}</div></div></div>
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} {n.storage ? `| ${n.storage}GB` : ''} {n.os ? `| ${n.os}` : ''}</div></div></div>
                                             </div>
                                         ))}
                                     </div>
@@ -350,7 +358,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                                             </td>
                                                             <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
                                                             
-                                                            {/* 🚨 THE FULL RESOURCE CATALOG DROPDOWN */}
                                                             <td className="p-4 font-bold text-indigo-700">
                                                                 <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer">
                                                                     <optgroup label="Compute & Containers">
