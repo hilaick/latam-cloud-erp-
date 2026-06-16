@@ -42,14 +42,12 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return result;
     }, [localNodes, statusFilter, typeFilter, sortConfig]);
 
-    // 🚨 SCOPE FILTER FIX: Save Architecture strictly saves the FILTERED list. 
+    // 🚨 FIXED: Now explicitly saves ALL nodes to the database, ignoring UI filters.
     const saveArchitecture = () => {
-        onUpdateProject(activeProject.id, 'mapperNodes', filteredAndSortedNodes);
-        setLocalNodes(filteredAndSortedNodes);
-        alert(`Target Architecture Saved!\n\n${filteredAndSortedNodes.length} filtered nodes have been locked as the official execution baseline.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
+        onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
+        alert(`Target Architecture Saved!\n\nAll ${localNodes.length} nodes have been permanently saved to the Project Context.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
     };
 
-    // Kept ONLY for the Target List View. Canvas handles its own fullscreen now.
     const toggleFullScreen = (elementId) => {
         const el = document.getElementById(elementId);
         if (!el) return;
@@ -143,14 +141,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
     const getIcon = (type) => {
         const t = String(type || "").toLowerCase();
-        if (t.includes('ecs') || t.includes('vm')) return 'fa-server text-blue-600'; 
-        if (t.includes('rds') || t.includes('db')) return 'fa-database text-rose-600';
-        if (t.includes('subnet')) return 'fa-network-wired text-indigo-400';
-        if (t.includes('sg') || t.includes('security')) return 'fa-shield-alt text-amber-500';
+        if (t.includes('ecs') || t.includes('vm') || t.includes('bms')) return 'fa-server text-blue-600'; 
+        if (t.includes('rds') || t.includes('db') || t.includes('dcs')) return 'fa-database text-rose-600';
+        if (t.includes('subnet') || t.includes('vpc')) return 'fa-network-wired text-indigo-400';
+        if (t.includes('sg') || t.includes('security') || t.includes('waf') || t.includes('hss')) return 'fa-shield-alt text-amber-500';
         if (t.includes('nat') || t.includes('eip') || t.includes('vpn') || t.includes('cgw')) return 'fa-route text-indigo-600';
         if (t.includes('elb') || t.includes('loadbalancer')) return 'fa-sitemap text-blue-500';
-        if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('backup')) return 'fa-hdd text-emerald-600';
+        if (t.includes('obs') || t.includes('storage') || t.includes('cbr') || t.includes('evs')) return 'fa-hdd text-emerald-600';
         if (t.includes('cce') || t.includes('k8s')) return 'fa-cubes text-blue-500';
+        if (t.includes('codearts') || t.includes('function')) return 'fa-code text-purple-500';
         return 'fa-microchip text-slate-500';
     };
 
@@ -302,7 +301,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                             <tr>
                                                 <th className="p-4 w-72 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>Target Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>Target Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>Resource Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-48 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>Resource Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>Target IP / CIDR {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-40 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('location')}>Target Subnet / Zone {sortConfig.key==='location' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-24 text-center font-black">Action</th>
@@ -328,13 +327,49 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                                                 </div>
                                                             </td>
                                                             <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
+                                                            
+                                                            {/* 🚨 THE FULL RESOURCE CATALOG DROPDOWN */}
                                                             <td className="p-4 font-bold text-indigo-700">
                                                                 <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer">
-                                                                    <option value="ECS">ECS (Compute)</option><option value="RDS">RDS (Database)</option><option value="VPC">VPC</option>
-                                                                    <option value="Subnet">Subnet</option><option value="SG">Security Group</option><option value="NAT">NAT Gateway</option>
-                                                                    <option value="EIP">Elastic IP</option><option value="VPN">VPN Gateway</option><option value="CGW">Customer Gateway</option>
-                                                                    <option value="VPN-Conn">VPN Connection</option><option value="OBS">OBS (Storage)</option><option value="CBR">CBR (Backup)</option>
-                                                                    <option value="ELB">ELB</option><option value="CCE">CCE (K8s)</option>
+                                                                    <optgroup label="Compute & Containers">
+                                                                        <option value="ECS">ECS (Compute VM)</option>
+                                                                        <option value="BMS">BMS (Bare Metal)</option>
+                                                                        <option value="CCE">CCE (Kubernetes)</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Databases & Caching">
+                                                                        <option value="RDS">RDS (Database)</option>
+                                                                        <option value="GaussDB">GaussDB</option>
+                                                                        <option value="DCS">DCS (Redis)</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Storage & Backup">
+                                                                        <option value="EVS">EVS (Block Disk)</option>
+                                                                        <option value="OBS">OBS (Object Storage)</option>
+                                                                        <option value="SFS">SFS (File Share)</option>
+                                                                        <option value="CBR">CBR (Backup Vault)</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Networking">
+                                                                        <option value="VPC">VPC</option>
+                                                                        <option value="Subnet">Subnet</option>
+                                                                        <option value="EIP">Elastic IP</option>
+                                                                        <option value="NAT">NAT Gateway</option>
+                                                                        <option value="VPN">VPN Gateway</option>
+                                                                        <option value="CGW">Customer Gateway</option>
+                                                                        <option value="VPN-Conn">VPN Connection</option>
+                                                                        <option value="ELB">Elastic Load Balance</option>
+                                                                        <option value="CDN">Content Delivery Network</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Security">
+                                                                        <option value="SG">Security Group</option>
+                                                                        <option value="WAF">Web App Firewall</option>
+                                                                        <option value="HSS">Host Security Service</option>
+                                                                        <option value="Anti-DDoS">Anti-DDoS</option>
+                                                                    </optgroup>
+                                                                    <optgroup label="Management & App Services">
+                                                                        <option value="FunctionGraph">FunctionGraph</option>
+                                                                        <option value="CodeArts">CodeArts</option>
+                                                                        <option value="Support Plan">Support Plan</option>
+                                                                        <option value="Other">Other / Misc</option>
+                                                                    </optgroup>
                                                                 </select>
                                                             </td>
                                                             <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
