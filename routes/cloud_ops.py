@@ -365,31 +365,25 @@ def get_migration_tools():
     }
     return jsonify({"success": True, "tools": tools})
 
-@@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
+@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
 @jwt_required()
 def get_migration_recommendations():
-    """Get intelligent tool recommendations based on the Target Architecture"""
+    """Get intelligent tool recommendations based on target architecture"""
     try:
         data = request.json
-        
-        # 🚨 UPDATED: Now expects the reconciled Target Architecture array from the frontend
         target_architecture = data.get('target_architecture', [])
         
         if not target_architecture:
-            return jsonify({"success": False, "error": "No target architecture data provided. Please save your topology first."}), 400
+            return jsonify({"success": False, "error": "No target architecture data provided"}), 400
         
-        # 🚨 UPDATED: Calls the new target architecture parser we built in ToolRecommender
         recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
         
-        # Generate WBS tasks if requested
-        wbs_type = data.get('wbs_type', 'execution')  # 'execution' or 'proposal'
+        wbs_type = data.get('wbs_type', 'execution')
         if data.get('generate_wbs', False):
             wbs_tasks = ToolRecommender.generate_wbs_tasks(recommendations, wbs_type)
             recommendations['wbs_tasks'] = wbs_tasks
         
         return jsonify({"success": True, "recommendations": recommendations})
         
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
