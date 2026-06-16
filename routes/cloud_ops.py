@@ -365,22 +365,21 @@ def get_migration_tools():
     }
     return jsonify({"success": True, "tools": tools})
 
-@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
+@@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
 @jwt_required()
 def get_migration_recommendations():
-    """Get intelligent tool recommendations based on discovery data"""
+    """Get intelligent tool recommendations based on the Target Architecture"""
     try:
         data = request.json
-        discovery_data = data.get('discovery_data', {})
-        source_type = data.get('source_type', 'discovery')
         
-        if not discovery_data:
-            return jsonify({"success": False, "error": "No discovery data provided"}), 400
+        # 🚨 UPDATED: Now expects the reconciled Target Architecture array from the frontend
+        target_architecture = data.get('target_architecture', [])
         
-        recommendations = ToolRecommender.analyze_discovery_data(
-            discovery_data, 
-            is_blueprint=(source_type == 'blueprint')
-        )
+        if not target_architecture:
+            return jsonify({"success": False, "error": "No target architecture data provided. Please save your topology first."}), 400
+        
+        # 🚨 UPDATED: Calls the new target architecture parser we built in ToolRecommender
+        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
         
         # Generate WBS tasks if requested
         wbs_type = data.get('wbs_type', 'execution')  # 'execution' or 'proposal'
@@ -390,5 +389,7 @@ def get_migration_recommendations():
         
         return jsonify({"success": True, "recommendations": recommendations})
         
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
