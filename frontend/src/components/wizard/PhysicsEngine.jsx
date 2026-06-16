@@ -9,14 +9,14 @@ const PROFILES = {
     'obs_standard': { name: 'OBS Bucket (API Sync)', isStorage: true, sync: 'API', totalFiles: 1000000, smallFiles: 0 }
 };
 
-// 🚨 IDENTIFY VALID PHYSICS TARGETS (Ignores WAF, Support Plans, etc.)
+// 🚨 IDENTIFY VALID PHYSICS TARGETS
 const computeTypes = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'];
 const dbTypes = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'];
 const storageTypes = ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'];
 
 export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // Shared Global State
-    const [engineMode, setEngineMode] = useState('manual'); 
+    const [engineMode, setEngineMode] = useState('cognitive'); // Defaulting to Cognitive for PMO view
     const [showFaq, setShowFaq] = useState(false);
     
     // Shared Network State
@@ -26,50 +26,50 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [downtimeWindow, setDowntimeWindow] = useState(48); 
     const [concurrency, setConcurrency] = useState(5); 
 
-    // Cognitive State
+    // Cognitive State (Predictive PMO Baselines)
     const [usedStoragePct, setUsedStoragePct] = useState(50); 
     const [appChurnPct, setAppChurnPct] = useState(2); 
     const [dbChurnPct, setDbChurnPct] = useState(8); 
 
-    // 🚨 MANUAL MODE: TOGGLEABLE PILLARS
+    // Manual Mode State
     const [useCompute, setUseCompute] = useState(true);
     const [useDatabase, setUseDatabase] = useState(true);
     const [useStorage, setUseStorage] = useState(false);
-
-    // 🚨 MANUAL MODE: INLINE SERVER STATE
     const [nodeConfigs, setNodeConfigs] = useState({});
-    const [selectedNodes, setSelectedNodes] = useState([]); // Used STRICTLY for Bulk Editing
+    const [selectedNodes, setSelectedNodes] = useState([]); 
     const [bulkProfile, setBulkProfile] = useState('linux_block');
-
+    const [standaloneStorageSize, setStandaloneStorageSize] = useState(10);
+    const [standaloneUnit, setStandaloneUnit] = useState('TB');
+    const [storageMode, setStorageMode] = useState('Object'); 
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    // 🚨 CLEANSED INVENTORY: Only imports valid Compute, DB, and Storage targets from Blueprint
+    // Cleaned Inventory
     const nodes = useMemo(() => {
         return (activeProject?.mapperNodes || []).filter(n => {
-            if (n?.status === 'Quoted Only' && !n.type) return true; // Keep vague quoted items
+            if (n?.status === 'Quoted Only' && !n.type) return true; 
             const t = String(n.type || '').toUpperCase();
             return computeTypes.some(c => t.includes(c)) || dbTypes.some(d => t.includes(d)) || storageTypes.some(s => t.includes(s));
         });
     }, [activeProject?.mapperNodes]);
 
-    // Initialize Node Configs from Blueprint/Quotation
     useEffect(() => {
         if (!activeProject) return;
 
         if (activeProject.physics) {
             const p = activeProject.physics;
-            setEngineMode(p.engineMode || 'manual');
+            setEngineMode(p.engineMode || 'cognitive');
             setNetSource(p.netSource||1000); setTransitType(p.transitType||'IPsec VPN'); setNetTunnel(p.netTunnel||300); setDowntimeWindow(p.downtimeWindow||48);
             setConcurrency(p.concurrency||5);
+            setUsedStoragePct(p.usedStoragePct||50); setAppChurnPct(p.appChurnPct||2); setDbChurnPct(p.dbChurnPct||8);
             setUseCompute(p.useCompute !== undefined ? p.useCompute : true);
             setUseDatabase(p.useDatabase !== undefined ? p.useDatabase : true);
             setUseStorage(p.useStorage || false);
             setOmsTasks(p.omsTasks || 5); setOmsObjPerSec(p.omsObjPerSec || 120);
         } else {
-            setEngineMode('manual');
+            setEngineMode('cognitive');
             setNetSource(1000); setTransitType('IPsec VPN'); setNetTunnel(300); setDowntimeWindow(48);
-            setConcurrency(5);
+            setConcurrency(5); setUsedStoragePct(50); setAppChurnPct(2); setDbChurnPct(8);
             setUseCompute(true); setUseDatabase(true); setUseStorage(false);
         }
 
@@ -96,17 +96,15 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             }
         });
 
-        if (needsUpdate || !activeProject.physics) {
-            setNodeConfigs(mergedConfigs);
-        } else {
-            setNodeConfigs(pConfigs);
-        }
+        if (needsUpdate || !activeProject.physics) setNodeConfigs(mergedConfigs);
+        else setNodeConfigs(pConfigs);
 
     }, [activeProject?.physics, nodes]);
 
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'physics', { 
             engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency, 
+            usedStoragePct, appChurnPct, dbChurnPct,
             useCompute, useDatabase, useStorage, nodeConfigs, omsTasks, omsObjPerSec 
         }); 
         alert("Physics parameters saved."); 
@@ -140,28 +138,87 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     };
 
     // ==========================================
-    // 🧠 MATH: COGNITIVE (Fast PMO Approximations)
+    // 🧠 MATH: COGNITIVE (Automated PMO Simulation)
     // ==========================================
     const cogResult = useMemo(() => {
-        const rawBottleneckMbps = Math.min(Number(netSource) || 1000, Number(netTunnel) || 300);
+        const pipeMbps = Math.min(Number(netSource) || 1000, Number(netTunnel) || 300);
         let cryptoTax = transitType === 'IPsec VPN' ? 0.85 : transitType === 'Public Internet' ? 0.75 : 0.95; 
-        const effectiveGBps = ((rawBottleneckMbps * cryptoTax) / 8) / 1024;
+        const effectivePipeMbps = pipeMbps * cryptoTax;
+        const validConcurrency = Math.max(Number(concurrency) || 1, 1);
+        const pipePerServer = effectivePipeMbps / validConcurrency;
+
+        let computeInitSum = 0; let computeCutoverSum = 0;
+        let dbCutoverSum = 0;
+        let storageInitSum = 0; let storageCutoverSum = 0;
 
         let totalUsedGB = 0; let totalChurnGB = 0;
-        const analyzedNodes = nodes.filter(n => !nodeConfigs[n.id]?.isStorage).map(n => {
-            const isDB = nodeConfigs[n.id]?.isDb;
+
+        const computeNodes = nodes.filter(n => computeTypes.some(c => String(n.type).toUpperCase().includes(c)));
+        const dbNodes = nodes.filter(n => dbTypes.some(d => String(n.type).toUpperCase().includes(d)));
+        const storageNodes = nodes.filter(n => storageTypes.some(s => String(n.type).toUpperCase().includes(s)));
+
+        // 1. Cognitive Compute Math
+        computeNodes.forEach(n => {
             const usedGB = (Number(n.storage) || 200) * (usedStoragePct / 100);
-            const churnGB = usedGB * ((isDB ? dbChurnPct : appChurnPct) / 100);
+            const churnGB = usedGB * (appChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
-            return { ...n, isDB, usedGB, churnGB, cutoverHrs: (churnGB / effectiveGBps / 3600) + 0.5 };
-        }).sort((a,b) => b.cutoverHrs - a.cutoverHrs);
 
-        const totalCutoverHrs = analyzedNodes.length > 0 ? (totalChurnGB / effectiveGBps / 3600) / Number(concurrency) + 1.5 : 0;
-        const criticalNode = analyzedNodes.length > 0 ? analyzedNodes[0] : null;
-        const realisticCutoverHrs = Math.max(totalCutoverHrs, criticalNode?.cutoverHrs || 0);
+            const speed = Math.min(pipePerServer, 3000); // Cognitive assumes fast SSD agents
+            computeInitSum += ((usedGB * 1024 * 8) / speed) / 3600;
+            computeCutoverSum += ((churnGB * 1024 * 8) / speed) / 3600;
+        });
 
-        return { effectiveMbps: Math.round(rawBottleneckMbps * cryptoTax), totalUsedTB: (totalUsedGB / 1024).toFixed(1), totalChurnGB: Math.round(totalChurnGB), cutoverHrs: realisticCutoverHrs.toFixed(1), isFeasible: realisticCutoverHrs <= Number(downtimeWindow) };
-    }, [nodes, nodeConfigs, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
+        // 2. Cognitive Database Math
+        dbNodes.forEach(n => {
+            const usedGB = (Number(n.storage) || 500) * (usedStoragePct / 100);
+            const churnGB = usedGB * (dbChurnPct / 100);
+            totalUsedGB += usedGB; totalChurnGB += churnGB;
+
+            const rowsM = usedGB * 2.5; // Heuristic: 2.5M rows per GB
+            dbCutoverSum += ((rowsM * 1000000) / 5000) / 3600; // Heuristic: 5000 RPS
+        });
+
+        // 3. Cognitive Storage Math
+        const omsSpeedMbps = 5 * 120 * 1.5; // Default cognitive API limits
+        const stSpeed = Math.min(effectivePipeMbps, omsSpeedMbps);
+        storageNodes.forEach(n => {
+            const usedGB = (Number(n.storage) || 1000) * (usedStoragePct / 100);
+            const churnGB = usedGB * (appChurnPct / 100);
+            totalUsedGB += usedGB; totalChurnGB += churnGB;
+
+            storageInitSum += ((usedGB * 1024 * 8) / stSpeed) / 3600;
+            storageCutoverSum += ((churnGB * 1024 * 8) / stSpeed) / 3600;
+        });
+
+        // Calculate parallel batches
+        const computeInitHrs = computeNodes.length > 0 ? computeInitSum / validConcurrency : 0;
+        const computeCutoverHrs = computeNodes.length > 0 ? computeCutoverSum / validConcurrency : 0;
+        const dbCutoverHrs = dbNodes.length > 0 ? dbCutoverSum / validConcurrency : 0;
+        const storageInitHrs = storageNodes.length > 0 ? storageInitSum / validConcurrency : 0;
+        const storageCutoverHrs = storageNodes.length > 0 ? storageCutoverSum / validConcurrency : 0;
+
+        // Phasing
+        const phase1Hrs = Math.max(computeInitHrs, storageInitHrs);
+        const phase2Hrs = Math.max(computeCutoverHrs, dbCutoverHrs, storageCutoverHrs) + 1.5; // +1.5h buffer
+
+        let bottleneck = 'Compute Delta Transfer';
+        if (dbCutoverHrs > computeCutoverHrs && dbCutoverHrs > storageCutoverHrs) bottleneck = 'Database Logical Sync';
+        if (storageCutoverHrs > computeCutoverHrs && storageCutoverHrs > dbCutoverHrs) bottleneck = 'Storage Delta Sync';
+
+        return {
+            effectiveMbps: Math.round(effectivePipeMbps),
+            computeCount: computeNodes.length, dbCount: dbNodes.length, storageCount: storageNodes.length,
+            computeInitHrs: computeInitHrs.toFixed(1), computeCutoverHrs: computeCutoverHrs.toFixed(1),
+            dbCutoverHrs: dbCutoverHrs.toFixed(1),
+            storageInitHrs: storageInitHrs.toFixed(1), storageCutoverHrs: storageCutoverHrs.toFixed(1),
+            phase1Days: (phase1Hrs / 24).toFixed(1),
+            phase2Hrs: phase2Hrs.toFixed(1),
+            totalUsedTB: (totalUsedGB / 1024).toFixed(1),
+            totalChurnGB: Math.round(totalChurnGB),
+            bottleneck,
+            isFeasible: phase2Hrs <= Number(downtimeWindow)
+        };
+    }, [nodes, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
 
     // ==========================================
     // ⚙️ MATH: GRANULAR (Perfect Per-Server Simulation)
@@ -171,17 +228,12 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let cryptoTax = transitType === 'IPsec VPN' ? 0.85 : transitType === 'Public Internet' ? 0.75 : 0.95; 
         const effectivePipeMbps = pipeMbps * cryptoTax;
         
-        let totalComputeHrs = 0;
-        let totalDbHrs = 0;
-        let totalStorageHrs = 0;
+        let totalComputeHrs = 0; let totalDbHrs = 0; let totalStorageHrs = 0;
         let criticalBottleneck = "Network Pipe";
 
         const validConcurrency = Math.max(Number(concurrency) || 1, 1);
-        
-        // 🚨 ONLY CALCULATE NODES THAT ARE EXPLICITLY "INCLUDED IN MATH"
         const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
 
-        // 1. COMPUTE PILLAR (VMs)
         if (useCompute) {
             const computeNodes = activeNodes.filter(n => nodeConfigs[n.id] && !nodeConfigs[n.id].isDb && !nodeConfigs[n.id].isStorage);
             const pipePerServer = effectivePipeMbps / Math.min(computeNodes.length || 1, validConcurrency);
@@ -190,50 +242,37 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             computeNodes.forEach(n => {
                 const conf = nodeConfigs[n.id];
                 const payloadGB = conf.customSizeGB || Number(n.storage) || 200;
-                
                 let speedMultiplier = 1.0;
                 if (conf.sync === 'File' && conf.smallFiles > 100000) {
                     const ratio = conf.smallFiles / Math.max(conf.totalFiles, 1);
                     speedMultiplier = Math.max(0.15, 1 - ( (conf.smallFiles / 2000000) * ratio ));
-                } else if (conf.sync === 'Block') {
-                    speedMultiplier = 1.35; 
-                }
+                } else if (conf.sync === 'Block') speedMultiplier = 1.35; 
                 
-                const agentMaxSpeed = 4000 * speedMultiplier; 
-                const actualServerSpeed = Math.min(pipePerServer, agentMaxSpeed);
-                const hrs = ((payloadGB * 1024 * 8) / actualServerSpeed) / 3600;
-                batchTimeSum += hrs;
+                const actualServerSpeed = Math.min(pipePerServer, 4000 * speedMultiplier);
+                batchTimeSum += ((payloadGB * 1024 * 8) / actualServerSpeed) / 3600;
             });
             totalComputeHrs = computeNodes.length > 0 ? batchTimeSum / validConcurrency : 0;
         }
 
-        // 2. DATABASE PILLAR (Logical)
         if (useDatabase) {
             const dbNodes = activeNodes.filter(n => nodeConfigs[n.id] && nodeConfigs[n.id].isDb);
             let dbTimeSum = 0;
             dbNodes.forEach(n => {
                 const conf = nodeConfigs[n.id];
-                const rows = (conf.rowsM || 1) * 1000000;
-                const rps = conf.rps || 5000;
-                dbTimeSum += (rows / rps) / 3600;
+                dbTimeSum += (((conf.rowsM || 1) * 1000000) / (conf.rps || 5000)) / 3600;
             });
             totalDbHrs = dbNodes.length > 0 ? dbTimeSum / validConcurrency : 0;
         }
 
-        // 3. STORAGE PILLAR (OBS/SFS)
         if (useStorage) {
             const storageNodes = activeNodes.filter(n => nodeConfigs[n.id] && nodeConfigs[n.id].isStorage);
-            const apiSpeedMbps = (omsTasks * omsObjPerSec * 1.5); 
-            const actualSpeed = Math.min(effectivePipeMbps, apiSpeedMbps);
-            
+            const actualSpeed = Math.min(effectivePipeMbps, (omsTasks * omsObjPerSec * 1.5)); 
             let stTimeSum = 0;
             storageNodes.forEach(n => {
-                const conf = nodeConfigs[n.id];
-                const payloadGB = conf.customSizeGB || Number(n.storage) || 1000;
-                stTimeSum += ((payloadGB * 1024 * 8) / actualSpeed) / 3600;
+                stTimeSum += (((nodeConfigs[n.id].customSizeGB || Number(n.storage) || 1000) * 1024 * 8) / actualSpeed) / 3600;
             });
             totalStorageHrs = storageNodes.length > 0 ? stTimeSum / validConcurrency : 0;
-            if(apiSpeedMbps < effectivePipeMbps && storageNodes.length > 0) criticalBottleneck = "Storage API Rate Limit";
+            if((omsTasks * omsObjPerSec * 1.5) < effectivePipeMbps && storageNodes.length > 0) criticalBottleneck = "Storage API Rate Limit";
         }
 
         const totalExecutionHrs = Math.max(totalComputeHrs, totalDbHrs, totalStorageHrs);
@@ -243,11 +282,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         return { 
             totalExecutionHrs: totalExecutionHrs.toFixed(1),
             daysStr: days > 0 ? `${days}d ${remainingHours}h` : `${totalExecutionHrs.toFixed(1)}h`,
-            computeHrs: totalComputeHrs.toFixed(1),
-            dbHrs: totalDbHrs.toFixed(1),
-            storageHrs: totalStorageHrs.toFixed(1),
-            effectivePipeMbps: Math.round(effectivePipeMbps),
-            criticalBottleneck,
+            computeHrs: totalComputeHrs.toFixed(1), dbHrs: totalDbHrs.toFixed(1), storageHrs: totalStorageHrs.toFixed(1),
+            effectivePipeMbps: Math.round(effectivePipeMbps), criticalBottleneck,
             isFeasible: totalExecutionHrs <= Number(downtimeWindow)
         };
     }, [nodes, nodeConfigs, useCompute, useDatabase, useStorage, netSource, netTunnel, transitType, concurrency, omsTasks, omsObjPerSec, downtimeWindow]);
@@ -264,10 +300,9 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 
                 <div className="flex items-center gap-4 flex-wrap">
                     <div className="bg-slate-100 p-1.5 rounded-xl flex gap-1 border border-slate-200 shadow-inner">
-                        <button onClick={() => setEngineMode('manual')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'manual' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-sliders-h mr-2"></i> Granular (Per Server)</button>
                         <button onClick={() => setEngineMode('cognitive')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'cognitive' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-brain mr-2"></i> Cognitive (Auto PMO)</button>
+                        <button onClick={() => setEngineMode('manual')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'manual' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-sliders-h mr-2"></i> Granular (Per Server)</button>
                     </div>
-                    {/* 🚨 RESET BUTTON */}
                     <button onClick={resetContext} className="px-6 py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200 rounded-xl shadow-sm font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-undo mr-2"></i> Reset</button>
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
@@ -295,6 +330,129 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             </div>
 
             {/* ========================================================== */}
+            {/* 🤖 RENDER COGNITIVE MODE (AUTO-CALCULATOR) */}
+            {/* ========================================================== */}
+            {engineMode === 'cognitive' && (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
+                    <div className="xl:col-span-4 space-y-6">
+                        <div className="bg-slate-800 p-6 rounded-2xl shadow-md text-white">
+                            <h4 className="font-black text-sm flex items-center gap-2 mb-4 text-indigo-300"><i className="fas fa-robot"></i> Automated PMO Engine</h4>
+                            <p className="text-xs font-medium leading-relaxed text-slate-300 mb-6">
+                                The Cognitive Engine reads all <b>{nodes.length} mapped resources</b>, splits them into functional pillars, and applies your heuristic baselines to auto-generate a comprehensive migration timeline.
+                            </p>
+                            
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>Est. Used Storage %</span><span className="text-indigo-400">{usedStoragePct}%</span></label>
+                                    <input type="range" min="10" max="100" step="5" value={usedStoragePct} onChange={e=>setUsedStoragePct(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-indigo-500 cursor-pointer"/>
+                                </div>
+                                <div className="border-t border-slate-700 pt-4">
+                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>App Server Daily Churn</span><span className="text-indigo-400">{appChurnPct}%</span></label>
+                                    <input type="range" min="0.1" max="10" step="0.1" value={appChurnPct} onChange={e=>setAppChurnPct(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-indigo-500 cursor-pointer"/>
+                                </div>
+                                <div className="border-t border-slate-700 pt-4">
+                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>DB Server Daily Churn</span><span className="text-rose-400">{dbChurnPct}%</span></label>
+                                    <input type="range" min="1" max="25" step="1" value={dbChurnPct} onChange={e=>setDbChurnPct(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-rose-500 cursor-pointer"/>
+                                </div>
+                                <div className="border-t border-slate-700 pt-4">
+                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>Agent Concurrency</span><span className="text-emerald-400">{concurrency} Nodes</span></label>
+                                    <input type="range" min="1" max="50" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-emerald-500 cursor-pointer"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center text-center">
+                            <div className="text-[10px] font-black tracking-widest uppercase mb-1 text-slate-500">Calculated Pipe Capacity</div>
+                            <div className="text-3xl font-black text-indigo-600">{cogResult.effectiveMbps} Mbps</div>
+                            <div className="text-[10px] text-slate-400 font-bold mt-1 uppercase">After TCP/Crypto Tax</div>
+                        </div>
+                    </div>
+
+                    <div className="xl:col-span-8 space-y-6">
+                        
+                        {/* 🚨 THE INTERACTIVE TIMELINE VIEW */}
+                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                            <div className="p-6 bg-slate-50 border-b border-slate-200">
+                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest"><i className="fas fa-stream text-indigo-500 mr-2"></i> Simulated Migration Execution</h3>
+                                <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-widest">Auto-packed execution waves based on inventory parameters</p>
+                            </div>
+                            
+                            <div className="p-6 space-y-8">
+                                {/* PHASE 1: BACKGROUND SYNC */}
+                                <div className="relative pl-8 border-l-4 border-blue-500">
+                                    <div className="absolute w-4 h-4 bg-blue-500 rounded-full -left-[10px] top-0 shadow border-4 border-white"></div>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h4 className="font-black text-slate-800 uppercase text-sm">Phase 1: Background Initial Sync</h4>
+                                            <p className="text-xs font-medium text-slate-500 mt-1">Transfers <b>{cogResult.totalUsedTB} TB</b> of payload data while source remains live.</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-2xl font-black text-blue-600">{cogResult.phase1Days} <span className="text-sm">Days</span></div>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Zero Downtime</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg flex justify-between items-center">
+                                            <div><i className="fas fa-server text-blue-500 mr-2"></i><span className="text-xs font-bold text-slate-700">Compute ({cogResult.computeCount})</span></div>
+                                            <div className="text-xs font-black font-mono">{cogResult.computeInitHrs} hrs</div>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg flex justify-between items-center">
+                                            <div><i className="fas fa-hdd text-amber-500 mr-2"></i><span className="text-xs font-bold text-slate-700">Storage ({cogResult.storageCount})</span></div>
+                                            <div className="text-xs font-black font-mono">{cogResult.storageInitHrs} hrs</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* PHASE 2: CUTOVER WINDOW */}
+                                <div className="relative pl-8 border-l-4 border-emerald-500">
+                                    <div className={`absolute w-4 h-4 rounded-full -left-[10px] top-0 shadow border-4 border-white ${cogResult.isFeasible ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h4 className="font-black text-slate-800 uppercase text-sm">Phase 2: Cutover & Validation</h4>
+                                            <p className="text-xs font-medium text-slate-500 mt-1">Flush <b>{cogResult.totalChurnGB} GB</b> of daily deltas + Logical DB Sync.</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={`text-4xl font-black tracking-tighter ${cogResult.isFeasible ? 'text-emerald-600' : 'text-rose-600'}`}>{cogResult.phase2Hrs} <span className="text-xl">Hrs</span></div>
+                                            <div className={`text-[9px] font-black uppercase tracking-widest mt-1 px-2 py-0.5 inline-block rounded ${cogResult.isFeasible ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                                {cogResult.isFeasible ? 'SLA Approved' : 'SLA Violation'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                        <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg flex flex-col justify-center">
+                                            <div className="text-[10px] font-bold text-slate-500 uppercase mb-1"><i className="fas fa-server text-blue-500 mr-1"></i> Compute Delta</div>
+                                            <div className="text-sm font-black font-mono">{cogResult.computeCutoverHrs} hrs</div>
+                                        </div>
+                                        <div className="bg-rose-50 border border-rose-100 p-3 rounded-lg flex flex-col justify-center">
+                                            <div className="text-[10px] font-bold text-rose-700 uppercase mb-1"><i className="fas fa-database text-rose-500 mr-1"></i> Database Logical</div>
+                                            <div className="text-sm font-black text-rose-900 font-mono">{cogResult.dbCutoverHrs} hrs</div>
+                                        </div>
+                                        <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg flex flex-col justify-center">
+                                            <div className="text-[10px] font-bold text-amber-700 uppercase mb-1"><i className="fas fa-hdd text-amber-500 mr-1"></i> Storage Delta</div>
+                                            <div className="text-sm font-black text-amber-900 font-mono">{cogResult.storageCutoverHrs} hrs</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 text-xs flex justify-between items-center font-bold text-slate-700">
+                                        <span><i className="fas fa-info-circle text-blue-500 mr-2"></i> Includes 1.5 hrs for shutdown, boot, & global validation.</span>
+                                        <span>Critical Bottleneck: <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{cogResult.bottleneck}</span></span>
+                                    </div>
+                                    
+                                    {!cogResult.isFeasible && (
+                                        <div className="mt-3 text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-200 p-3 rounded-xl shadow-sm">
+                                            <i className="fas fa-exclamation-circle mr-1"></i> The {cogResult.bottleneck} exceeds the accepted {downtimeWindow} hour downtime window. Recommend increasing Pipeline Bandwidth or reducing Agent Concurrency.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================== */}
             {/* ⚙️ RENDER MANUAL MODE (PER SERVER GRANULARITY) */}
             {/* ========================================================== */}
             {engineMode === 'manual' && (
@@ -309,10 +467,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <input type="checkbox" checked={useCompute} onChange={e=>setUseCompute(e.target.checked)} className="hidden"/> <i className="fas fa-server"></i> Compute Nodes
                             </label>
                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useDatabase ? 'bg-rose-500/20 border-rose-400 text-rose-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Databases
+                                <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Logical Databases
                             </label>
                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useStorage ? 'bg-amber-500/20 border-amber-400 text-amber-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Storage
+                                <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Standalone Storage
                             </label>
                         </div>
 
@@ -453,64 +611,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <div className="font-black text-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-200">{concurrency} Nodes</div>
                             </div>
                             <div className="text-[9px] text-slate-400 mt-2 font-bold leading-relaxed">Max nodes syncing simultaneously. The engine routes the available network pipe exclusively to these active nodes.</div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ========================================================== */}
-            {/* 🤖 RENDER COGNITIVE MODE (AUTO-CALCULATOR) */}
-            {/* ========================================================== */}
-            {engineMode === 'cognitive' && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
-                    <div className="xl:col-span-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-brain text-purple-500"></i> Predictive Baselines</h4>
-                            </div>
-                            <div className="space-y-5">
-                                <div>
-                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>Est. Used Storage %</span><span className="text-purple-700">{usedStoragePct}%</span></label>
-                                    <input type="range" min="10" max="100" step="5" value={usedStoragePct} onChange={e=>setUsedStoragePct(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-purple-600 cursor-pointer"/>
-                                </div>
-                                <div className="border-t border-slate-100 pt-4">
-                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>App Server Daily Churn</span><span className="text-purple-700">{appChurnPct}%</span></label>
-                                    <input type="range" min="0.1" max="10" step="0.1" value={appChurnPct} onChange={e=>setAppChurnPct(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-purple-600 cursor-pointer"/>
-                                </div>
-                                <div>
-                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>DB Server Daily Churn</span><span className="text-purple-700">{dbChurnPct}%</span></label>
-                                    <input type="range" min="1" max="25" step="1" value={dbChurnPct} onChange={e=>setDbChurnPct(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-purple-600 cursor-pointer"/>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-shield-alt text-emerald-500"></i> Limits & Cutover SLA</h4>
-                            </div>
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Agent Concurrency Limit</label>
-                                    <div className="flex items-center gap-4">
-                                        <input type="range" min="1" max="20" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none accent-emerald-600 cursor-pointer"/>
-                                        <div className="font-black text-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-200">{concurrency} Nodes</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div className="xl:col-span-4 space-y-6">
-                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[300px] shadow-sm relative overflow-hidden transition-colors ${cogResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
-                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-white/50 to-transparent"></div>
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Phase 2: Cutover Downtime</div>
-                            <div className={`text-6xl font-black tracking-tighter ${cogResult.isFeasible ? 'text-emerald-700' : 'text-rose-700'}`}>{cogResult.cutoverHrs} <span className="text-2xl">Hrs</span></div>
-                            <div className="mt-4 pt-4 border-t-2 border-slate-200/60 text-xs font-medium space-y-3">
-                                <div className="flex justify-between items-center text-slate-600"><span>Target SLA Allowed:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{downtimeWindow} Hrs</span></div>
-                                <div className="flex justify-between items-center text-slate-600"><span>Total Delta Data:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{cogResult.totalChurnGB} GB</span></div>
-                            </div>
                         </div>
                     </div>
                 </div>
