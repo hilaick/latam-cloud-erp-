@@ -8,7 +8,6 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
     const [showUploader, setShowUploader] = useState(false);
     
     const blueprintData = project.blueprintData;
-    const hasWbs = project.migrationPlan && project.migrationPlan.length > 0;
     
     const [artefacts, setArtefacts] = useState(project.artefacts || { hld: false, targetArch: false, sow: !!blueprintData });
 
@@ -32,7 +31,6 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                 {subTab === 'intake' && (
                     <div className="space-y-6 animate-fade-in">
                         
-                        {/* 🚨 THE PRE-SALES HANDOVER DOSSIER */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                             <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                                 <h4 className="font-black text-xl text-slate-800"><i className="fas fa-briefcase text-blue-500 mr-2"></i> Pre-Sales Handover Context</h4>
@@ -95,13 +93,15 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                             </div>
 
                             {blueprintData ? (
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                                    <h4 className="font-black text-lg text-slate-800 mb-4 text-center border-b pb-4">Extracted Target Blueprint</h4>
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                    <h4 className="font-black text-lg text-slate-800 mb-1 text-center">Active SOW Blueprint Snapshot</h4>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center mb-6 border-b pb-4">Parsed Quotation Data feeding Topology & Physics</p>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Customer</div><div className="font-bold text-sm truncate">{blueprintData.customer}</div></div>
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Total Servers</div><div className="font-bold text-sm text-blue-600">{blueprintData.topology?.compute?.length || 0}</div></div>
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Total Databases</div><div className="font-bold text-sm text-emerald-600">{blueprintData.topology?.database?.length || 0}</div></div>
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Est. Cloud Spend</div><div className="font-bold text-sm text-purple-600">${blueprintData.metadata?.estimated_monthly_cost || 0} /mo</div></div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Total Compute (VMs)</div><div className="font-bold text-sm text-blue-600">{blueprintData.topology?.compute?.length || 0}</div></div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Total PaaS Databases</div><div className="font-bold text-sm text-rose-600">{blueprintData.topology?.database?.length || 0}</div></div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Storage & Network</div><div className="font-bold text-sm text-amber-600">{(blueprintData.topology?.storage?.length || 0) + (blueprintData.topology?.network?.length || 0)} resources</div></div>
                                     </div>
                                 </div>
                             ) : (
@@ -122,7 +122,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                                 projectId={project.id}
                                 onRevert={(blueprint) => {
                                     onUpdateProject(project.id, 'blueprintData', blueprint);
-                                    alert('Blueprint reverted to selected quotation version!');
+                                    alert('Blueprint reverted to selected quotation version! Ensure you resync the Topology Mapper.');
                                 }}
                             />
                         </div>
