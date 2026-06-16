@@ -18,11 +18,13 @@ export default function GlobalSchedule() {
             const isWaiting = p.isWaiting === true || (p.data && p.data.isWaiting === true);
             
             // Filter by phase if not "All"
-            if (phaseFilter !== 'All' && phaseFilter !== 'pre_sales') {
-                if (p.lifecycleState !== phaseFilter && !isWaiting) return;
+            if (phaseFilter !== 'All') {
+                if (phaseFilter === 'pre_sales') {
+                    if (!isWaiting) return;
+                } else {
+                    if (isWaiting || p.lifecycleState !== phaseFilter) return;
+                }
             }
-            // If filter is 'pre_sales', only show pre-sales projects
-            if (phaseFilter === 'pre_sales' && !isWaiting) return;
             
             // 🚨 FOR ACTIVE PROJECTS (isWaiting = false)
             if (!isWaiting) {
@@ -55,7 +57,7 @@ export default function GlobalSchedule() {
                 let endDate = null;
                 
                 const waitingStage = p.waitingStage || (p.data && p.data.waitingStage);
-                const estimatedStartDate = p.estimatedStartDate || (p.data && p.data.estimatedStartDate);
+                const estimatedStartDate = p.expectedCloseDate || p.estimatedStartDate || (p.data && p.data.estimatedStartDate);
                 const estimatedDurationWeeks = p.estimatedDurationWeeks || (p.data && p.data.estimatedDurationWeeks) || '4';
                 
                 if (estimatedStartDate) {
@@ -80,7 +82,7 @@ export default function GlobalSchedule() {
                     ...p,
                     startObj: startDate,
                     endObj: endDate,
-                    targetNodes: 0,
+                    targetNodes: p.estimatedWorkloads || 0,
                     kickoffStr: estimatedStartDate || 'TBD',
                     targetStr: 'TBD',
                     isPreSales: true,
@@ -164,7 +166,7 @@ export default function GlobalSchedule() {
                                             <div className="font-black text-sm text-slate-800 truncate group-hover:text-emerald-600 transition-colors">{p.name}</div>
                                             <div className="flex gap-2 items-center mt-1">
                                                 <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{p.sa || 'Unassigned SA'}</div>
-                                                <div className="text-[9px] font-black bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">{p.targetNodes} Target Nodes</div>
+                                                <div className="text-[9px] font-black bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">{p.targetNodes || 0} Target Nodes</div>
                                             </div>
                                         </div>
                                         
@@ -213,7 +215,7 @@ export default function GlobalSchedule() {
                                     
                                     <div className="flex gap-2 mb-4">
                                         <span className={`${p.isPreSales ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-slate-100 border-slate-200 text-slate-600'} px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border`}><i className="fas fa-user-tie mr-1"></i> {p.sa || 'TBD'}</span>
-                                        <span className={`${p.isPreSales ? 'bg-indigo-100 border-indigo-200 text-indigo-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'} px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border`}><i className="fas fa-server mr-1"></i> {p.targetNodes} Nodes</span>
+                                        <span className={`${p.isPreSales ? 'bg-indigo-100 border-indigo-200 text-indigo-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'} px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border`}><i className="fas fa-server mr-1"></i> {p.targetNodes || 0} Nodes</span>
                                         {p.isPreSales && <span className="bg-purple-100 border-purple-200 text-purple-700 px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border"><i className="fas fa-hourglass-half mr-1"></i>{p.waitingStage || 'unknown'}</span>}
                                     </div>
                                     
