@@ -9,15 +9,109 @@ const PROFILES = {
     'obs_standard': { name: 'OBS Bucket (API Sync)', isStorage: true, sync: 'API', totalFiles: 1000000, smallFiles: 0 }
 };
 
-// 🚨 IDENTIFY VALID PHYSICS TARGETS (Removed CBR & EVS to prevent double-counting)
 const computeTypes = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'];
 const dbTypes = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'];
 const storageTypes = ['OBS', 'SFS', 'STORAGE']; 
 
+// 🚨 THE NEW GUIDE & LEGEND CAROUSEL COMPONENT
+const PhysicsGuideModal = ({ onClose }) => {
+    const [slide, setSlide] = useState(1);
+    const totalSlides = 3;
+
+    return (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={onClose}></div>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                <div className="px-6 py-4 bg-indigo-600 text-white flex justify-between items-center shrink-0">
+                    <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Delivery Physics Engine: User Guide & Legend</h3>
+                    <button onClick={onClose} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                </div>
+                
+                <div className="p-8 overflow-y-auto bg-slate-50 flex-1">
+                    {slide === 1 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">1. The "Water Pipe Fallacy"</h4>
+                            <p className="text-slate-600 text-sm leading-relaxed">
+                                A common mistake in cloud migrations is calculating downtime by simply dividing total storage by network bandwidth (e.g., 5TB / 1Gbps). This is the <b>Water Pipe Fallacy</b>. 
+                                In reality, network transfers are bottlenecked by several invisible taxes and agent limitations.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-amber-600 mb-1"><i className="fas fa-copy mr-1"></i> Small Files Penalty</div>
+                                    <p className="text-xs text-slate-500">1TB of 5KB text files will transfer significantly slower than a 1TB video file because the OS must perform an inode lookup for every file. The engine heavily penalizes <b>File-Level Syncs</b> with high small-file counts.</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-blue-600 mb-1"><i className="fas fa-route mr-1"></i> The Transit Tax</div>
+                                    <p className="text-xs text-slate-500">TCP connections lose ~5% to header overhead. IPsec VPNs add an extra ~15% tax due to packet encryption. Public Internet routing loses ~25% to latency and drops.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {slide === 2 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">2. The Migration Pillars</h4>
+                            <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                                The engine completely decouples your infrastructure into 3 distinct functional pillars, because Huawei Cloud migrates them using entirely different toolsets and algorithms.
+                            </p>
+                            <ul className="space-y-3">
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <i className="fas fa-server text-blue-500 text-xl mt-1"></i>
+                                    <div><strong className="text-sm text-slate-800">Compute (SMS)</strong><p className="text-xs text-slate-500">Servers are constrained by the available VPN bandwidth and the Agent's Disk IOPS. High CPU saturation on the source node will aggressively throttle the sync.</p></div>
+                                </li>
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <i className="fas fa-database text-rose-500 text-xl mt-1"></i>
+                                    <div><strong className="text-sm text-slate-800">Logical Databases (DRS)</strong><p className="text-xs text-slate-500">PaaS databases cannot be block-migrated. The engine calculates DRS sync times based purely on Logical Rows-per-Second (RPS) engine limits.</p></div>
+                                </li>
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <i className="fas fa-hdd text-amber-500 text-xl mt-1"></i>
+                                    <div><strong className="text-sm text-slate-800">Standalone Storage (OMS)</strong><p className="text-xs text-slate-500">Object buckets bypass your VPN and are synced via the Cloud Backbone. Constrained exclusively by API Objects/sec rate limits.</p></div>
+                                </li>
+                            </ul>
+                        </div>
+                    )}
+
+                    {slide === 3 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">3. Icon & Terminology Legend</h4>
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                                <div><div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Engine Modes</div>
+                                    <ul className="text-xs space-y-2 text-slate-600">
+                                        <li><i className="fas fa-brain text-indigo-500 w-5"></i> <b>Cognitive (Auto PMO):</b> Simulates timelines automatically using PMO heuristics (2% daily churn).</li>
+                                        <li><i className="fas fa-sliders-h text-rose-500 w-5"></i> <b>Granular (Manual):</b> Gives the Delivery Engineer per-server control over OS and file counts.</li>
+                                    </ul>
+                                </div>
+                                <div><div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Abbreviations</div>
+                                    <ul className="text-xs space-y-2 text-slate-600">
+                                        <li><b>SMS:</b> Server Migration Service (Block/File level)</li>
+                                        <li><b>DRS:</b> Data Replication Service (Logical DB Sync)</li>
+                                        <li><b>OMS:</b> Object Migration Service (Bucket API Sync)</li>
+                                        <li><b>SLA Window:</b> Customer's accepted Cutover downtime.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-between items-center shrink-0">
+                    <button onClick={() => setSlide(slide > 1 ? slide - 1 : 1)} disabled={slide === 1} className="px-4 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-800 disabled:opacity-30"><i className="fas fa-arrow-left mr-1"></i> Previous</button>
+                    <div className="flex gap-2">{[1, 2, 3].map(i => <div key={i} className={`w-2 h-2 rounded-full ${slide === i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>)}</div>
+                    {slide < totalSlides ? (
+                        <button onClick={() => setSlide(slide + 1)} className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-black uppercase transition-colors">Next <i className="fas fa-arrow-right ml-1"></i></button>
+                    ) : (
+                        <button onClick={onClose} className="px-6 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-black uppercase shadow-md transition-colors">Get Started</button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // Shared Global State
     const [engineMode, setEngineMode] = useState('cognitive'); 
-    const [showFaq, setShowFaq] = useState(false);
+    const [showGuide, setShowGuide] = useState(false);
     
     // Shared Network State
     const [netSource, setNetSource] = useState(1000); 
@@ -43,7 +137,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    // 🚨 CLEANED INVENTORY: Automatically strips out CBR, VPC, EIPs, etc.
     const nodes = useMemo(() => {
         return (activeProject?.mapperNodes || []).filter(n => {
             if (n?.status === 'Quoted Only' && !n.type) return true; 
@@ -151,7 +244,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let storageInitSum = 0; let storageCutoverSum = 0;
         let totalUsedGB = 0; let totalChurnGB = 0;
 
-        // 🚨 RESPECTS THE 'INCLUDED IN MATH' TOGGLE FROM THE TABLE
         const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
         const computeNodes = useCompute ? activeNodes.filter(n => computeTypes.some(c => String(n.type).toUpperCase().includes(c))) : [];
         const dbNodes = useDatabase ? activeNodes.filter(n => dbTypes.some(d => String(n.type).toUpperCase().includes(d))) : [];
@@ -227,8 +319,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let criticalBottleneck = "Network Pipe";
 
         const validConcurrency = Math.max(Number(concurrency) || 1, 1);
-        
-        // 🚨 RESPECTS THE 'INCLUDED IN MATH' TOGGLE FROM THE TABLE
         const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
 
         if (useCompute) {
@@ -288,11 +378,16 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     return (
         <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6 pb-12">
             
+            {showGuide && <PhysicsGuideModal onClose={() => setShowGuide(false)} />}
+
             {/* 🎛️ HEADER & TOGGLES */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                 <div>
                     <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-microscope text-indigo-500"></i> Delivery Physics Engine</h3>
-                    <p className="text-xs text-slate-500 mt-1 font-bold">Calculate true SLA timelines using Network, Crypto, and Tooling constraints.</p>
+                    <div className="flex items-center gap-3 mt-1">
+                        <p className="text-xs text-slate-500 font-bold">Calculate true SLA timelines using Network, Crypto, and Tooling constraints.</p>
+                        <button onClick={() => setShowGuide(true)} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"><i className="fas fa-book-open mr-1"></i> View Guide & Legend</button>
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-4 flex-wrap">
