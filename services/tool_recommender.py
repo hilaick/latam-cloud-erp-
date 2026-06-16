@@ -1,6 +1,6 @@
 """
 Intelligent Migration Tool Recommendation Engine
-Analyzes discovered infrastructure and recommends optimal Huawei Cloud migration tools
+Analyzes Target Architecture (mapperNodes) and recommends optimal Huawei Cloud migration tools
 """
 
 from typing import Dict, List, Any
@@ -8,41 +8,39 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Identifiers matching the frontend Dropdown options
+COMPUTE_TYPES = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER']
+DB_TYPES = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS']
+STORAGE_TYPES = ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE']
+NETWORK_TYPES = ['VPC', 'SUBNET', 'EIP', 'NAT', 'VPN', 'CGW', 'VPN-CONN', 'ELB', 'CDN']
+SECURITY_TYPES = ['SG', 'WAF', 'HSS', 'ANTI-DDOS']
+
 class ToolRecommender:
-    """Recommends migration tools based on discovered infrastructure"""
+    """Recommends migration tools based on finalized Target Architecture"""
     
     @staticmethod
-    def analyze_discovery_data(discovery_data: Dict, is_blueprint: bool = False) -> Dict:
-        """Analyze discovered infrastructure and return tool recommendations"""
+    def analyze_target_architecture(target_architecture: List[Dict]) -> Dict:
+        """Analyze the array of reconciled nodes from Topology Mapper"""
         recommendations = []
         
-        # Analyze compute resources
-        for server in discovery_data.get("compute", []):
-            rec = ToolRecommender._recommend_for_server(server)
+        for node in target_architecture:
+            node_type = str(node.get("type", "")).upper()
+            
+            if any(c in node_type for c in COMPUTE_TYPES):
+                rec = ToolRecommender._recommend_for_server(node)
+            elif any(d in node_type for d in DB_TYPES):
+                rec = ToolRecommender._recommend_for_database(node)
+            elif any(s in node_type for s in STORAGE_TYPES):
+                rec = ToolRecommender._recommend_for_storage(node)
+            elif any(n in node_type for n in NETWORK_TYPES) or any(sec in node_type for sec in SECURITY_TYPES):
+                rec = ToolRecommender._recommend_for_network_security(node)
+            else:
+                rec = ToolRecommender._recommend_for_generic(node)
+            
             if rec:
                 recommendations.append(rec)
         
-        # Analyze database resources
-        for db in discovery_data.get("databases", []):
-            rec = ToolRecommender._recommend_for_database(db)
-            if rec:
-                recommendations.append(rec)
-        
-        # Analyze storage resources
-        for storage in discovery_data.get("storage", []):
-            rec = ToolRecommender._recommend_for_storage(storage)
-            if rec:
-                recommendations.append(rec)
-        
-        # Analyze network resources
-        for network in discovery_data.get("network", []):
-            rec = ToolRecommender._recommend_for_network(network)
-            if rec:
-                recommendations.append(rec)
-        
-        summary = ToolRecommender._generate_summary(recommendations, discovery_data)
-        summary["source_type"] = "blueprint" if is_blueprint else "discovery"
-        summary["is_blueprint"] = is_blueprint
+        summary = ToolRecommender._generate_summary(recommendations, len(target_architecture))
         
         return {
             "recommendations": recommendations,
@@ -52,313 +50,190 @@ class ToolRecommender:
     @staticmethod
     def _recommend_for_server(server: Dict) -> Dict:
         """Recommend migration tool for a compute server"""
-        os_type = server.get("os", "").lower()
-        hypervisor = server.get("hypervisor", "").lower()
-        source = server.get("source", "").lower()
+        os_type = str(server.get("os", "")).lower()
+        name = server.get("name", "Unknown Compute Node")
         
-        # Huawei Cloud Best Practices
-        if "windows" in os_type:
+        if "win" in os_type:
             return {
-                "resource_type": "compute",
-                "resource_name": server.get("name", "unknown"),
+                "resource_type": server.get("type", "Compute"),
+                "resource_name": name,
                 "primary_tool": "sms",
-                "primary_reason": "Windows OS requires SMS for consistent state migration",
+                "primary_reason": "Windows OS strictly requires SMS Block-Level agent for VSS/Registry state consistency.",
                 "fallback_tool": "ssh_disk_copy",
-                "fallback_reason": "If SMS agent fails, use SSH disk copy with Volume Shadow Copy",
-                "confidence": 0.9,
+                "fallback_reason": "If SMS network check fails, use manual VHD export to OBS.",
+                "confidence": 0.95,
                 "estimated_duration": "4-8 hours",
-                "prerequisites": ["SMS agent installation", "TCP ports 8900, 8935 open"]
-            }
-        elif "vmware" in hypervisor or "esxi" in hypervisor:
-            return {
-                "resource_type": "compute",
-                "resource_name": server.get("name", "unknown"),
-                "primary_tool": "mgc",
-                "primary_reason": "VMware environment - MgC for agentless migration at scale",
-                "fallback_tool": "sms",
-                "fallback_reason": "If vCenter access restricted, use SMS per-VM",
-                "confidence": 0.85,
-                "estimated_duration": "2-6 hours",
-                "prerequisites": ["vCenter credentials", "Network connectivity to vCenter"]
-            }
-        elif "aws" in source or "ec2" in source:
-            return {
-                "resource_type": "compute",
-                "resource_name": server.get("name", "unknown"),
-                "primary_tool": "sms",
-                "primary_reason": "AWS EC2 - SMS supports cross-cloud migration with AMI conversion",
-                "fallback_tool": "ssh_disk_copy",
-                "fallback_reason": "If SMS incompatible, use SSH with EBS snapshot export",
-                "confidence": 0.8,
-                "estimated_duration": "3-6 hours",
-                "prerequisites": ["AWS credentials", "SMS agent installation"]
-            }
-        elif "azure" in source:
-            return {
-                "resource_type": "compute",
-                "resource_name": server.get("name", "unknown"),
-                "primary_tool": "sms",
-                "primary_reason": "Azure VM - SMS supports Azure to Huawei Cloud with VHD conversion",
-                "fallback_tool": "ssh_disk_copy",
-                "fallback_reason": "If SMS fails, use SSH with Azure Disk export",
-                "confidence": 0.8,
-                "estimated_duration": "3-6 hours",
-                "prerequisites": ["Azure credentials", "SMS agent installation"]
+                "prerequisites": ["SMS agent installation", "TCP port 8900 open outbound"]
             }
         else:
-            # Generic Linux/Unix - Huawei best practice: SMS first, SSH fallback
             return {
-                "resource_type": "compute",
-                "resource_name": server.get("name", "unknown"),
+                "resource_type": server.get("type", "Compute"),
+                "resource_name": name,
                 "primary_tool": "sms",
-                "primary_reason": "Huawei SMS preferred for Linux (block-level replication)",
-                "fallback_tool": "ssh_disk_copy",
-                "fallback_reason": "SSH disk copy if SMS agent installation fails",
-                "confidence": 0.7,
+                "primary_reason": "Huawei SMS preferred for Linux block-level replication and automated driver injection.",
+                "fallback_tool": "manual",
+                "fallback_reason": "If SMS is incompatible, deploy blank ECS and perform File-level Rsync.",
+                "confidence": 0.85,
                 "estimated_duration": "2-4 hours",
-                "prerequisites": ["Root/Administrator access", "Network connectivity"]
+                "prerequisites": ["Root access", "Network connectivity to Huawei Cloud"]
             }
     
     @staticmethod
     def _recommend_for_database(db: Dict) -> Dict:
-        """Recommend migration tool for a database - Huawei best practices"""
-        db_engine = db.get("engine", "").lower()
-        db_type = db.get("type", "").lower()
+        """Recommend migration tool for a database"""
+        name = db.get("name", "Unknown Database")
+        db_type = str(db.get("type", "")).upper()
         
-        # Huawei Cloud database migration best practices
-        if "oracle" in db_engine or "oracle" in db_type:
+        if "GAUSS" in db_type:
             return {
-                "resource_type": "database",
-                "resource_name": db.get("name", "unknown"),
+                "resource_type": db.get("type", "Database"),
+                "resource_name": name,
                 "primary_tool": "ugo",
-                "primary_reason": "Oracle → GaussDB requires UGO for schema conversion",
+                "primary_reason": "Targeting GaussDB requires UGO for syntax translation and DRS for payload sync.",
                 "fallback_tool": "drs",
-                "fallback_reason": "DRS for data replication after schema conversion",
+                "fallback_reason": "DRS alone if migrating between identical engine versions.",
                 "confidence": 0.95,
                 "estimated_duration": "1-3 days",
-                "prerequisites": ["Database credentials", "Network connectivity", "Schema assessment"]
+                "prerequisites": ["UGO Assessment Report", "Network connectivity"]
             }
-        elif any(x in db_engine for x in ["mysql", "mariadb"]):
+        elif "DCS" in db_type:
             return {
-                "resource_type": "database",
-                "resource_name": db.get("name", "unknown"),
+                "resource_type": db.get("type", "Cache"),
+                "resource_name": name,
                 "primary_tool": "drs",
-                "primary_reason": "MySQL/MariaDB → RDS MySQL online migration",
+                "primary_reason": "DCS (Redis/Memcached) utilizes native DRS synchronization.",
                 "fallback_tool": "manual",
-                "fallback_reason": "mysqldump if DRS not available",
-                "confidence": 0.9,
-                "estimated_duration": "4-8 hours",
-                "prerequisites": ["Binary logging enabled", "Network connectivity"]
-            }
-        elif "postgres" in db_engine:
-            return {
-                "resource_type": "database",
-                "resource_name": db.get("name", "unknown"),
-                "primary_tool": "drs",
-                "primary_reason": "PostgreSQL → RDS PostgreSQL online migration",
-                "fallback_tool": "pg_dump",
-                "fallback_reason": "pg_dump/pg_restore if DRS unavailable",
-                "confidence": 0.9,
-                "estimated_duration": "4-8 hours",
-                "prerequisites": ["WAL archiving enabled", "Network connectivity"]
-            }
-        elif "sqlserver" in db_engine or "mssql" in db_engine:
-            return {
-                "resource_type": "database",
-                "resource_name": db.get("name", "unknown"),
-                "primary_tool": "drs",
-                "primary_reason": "SQL Server → RDS SQL Server online migration",
-                "fallback_tool": "backup_restore",
-                "fallback_reason": "Backup/restore if DRS unavailable",
-                "confidence": 0.85,
-                "estimated_duration": "6-12 hours",
-                "prerequisites": ["Backup permissions", "Network connectivity"]
+                "fallback_reason": "Manual RDB dump and restore.",
+                "confidence": 0.90,
+                "estimated_duration": "1-3 hours",
+                "prerequisites": []
             }
         else:
             return {
-                "resource_type": "database",
-                "resource_name": db.get("name", "unknown"),
+                "resource_type": db.get("type", "Database"),
+                "resource_name": name,
                 "primary_tool": "drs",
-                "primary_reason": "Generic database - DRS recommended",
+                "primary_reason": "RDS databases require logical Data Replication Service (DRS) to ensure Zero-Downtime cutover.",
                 "fallback_tool": "manual",
-                "fallback_reason": "Manual export/import",
-                "confidence": 0.7,
-                "estimated_duration": "6-24 hours",
-                "prerequisites": ["Database assessment required"]
+                "fallback_reason": "Native DB dump (e.g. pg_dump / mysqldump) via OBS.",
+                "confidence": 0.95,
+                "estimated_duration": "4-12 hours",
+                "prerequisites": ["Enable Logical Decoding / BinLogs"]
             }
     
     @staticmethod
     def _recommend_for_storage(storage: Dict) -> Dict:
         """Recommend migration tool for storage resources"""
-        storage_type = storage.get("type", "").lower()
-        size_gb = storage.get("size_gb", 0)
+        name = storage.get("name", "Unknown Storage")
+        storage_type = str(storage.get("type", "")).upper()
         
-        # Huawei storage migration best practices
-        if any(x in storage_type for x in ["s3", "oss", "blob", "object"]):
+        if "OBS" in storage_type:
             return {
-                "resource_type": "storage",
-                "resource_name": storage.get("name", "unknown"),
+                "resource_type": storage.get("type", "Storage"),
+                "resource_name": name,
                 "primary_tool": "oms",
-                "primary_reason": "Object storage cross-cloud migration",
-                "fallback_tool": "rclone",
-                "fallback_reason": "rclone for smaller datasets",
-                "confidence": 0.9,
-                "estimated_duration": "Varies by data volume",
-                "prerequisites": ["Source cloud credentials", "OBS bucket created"]
-            }
-        elif any(x in storage_type for x in ["hadoop", "hdfs", "datawarehouse"]):
-            return {
-                "resource_type": "storage",
-                "resource_name": storage.get("name", "unknown"),
-                "primary_tool": "cdm",
-                "primary_reason": "Big data batch migration",
-                "fallback_tool": "distcp",
-                "fallback_reason": "Hadoop distcp for HDFS migration",
-                "confidence": 0.85,
-                "estimated_duration": "Varies by data volume",
-                "prerequisites": ["Cluster credentials", "Network assessment"]
-            }
-        elif size_gb > 100000:  # > 100TB
-            return {
-                "resource_type": "storage",
-                "resource_name": storage.get("name", "unknown"),
-                "primary_tool": "des",
-                "primary_reason": "Petabyte-scale data requires physical transfer",
+                "primary_reason": "Object Migration Service (OMS) provides high-speed API replication for S3/Blob to OBS.",
                 "fallback_tool": "cdm",
-                "fallback_reason": "CDM for online migration if timeline allows",
+                "fallback_reason": "Use CDM for highly complex data transformations.",
                 "confidence": 0.95,
-                "estimated_duration": "Weeks (physical shipping)",
-                "prerequisites": ["Data assessment", "Shipping logistics"]
+                "estimated_duration": "Depends on network limits",
+                "prerequisites": ["Source API Keys (AK/SK)"]
             }
-        
-        # Default for other storage types
-        return {
-            "resource_type": "storage",
-            "resource_name": storage.get("name", "unknown"),
-            "primary_tool": "manual",
-            "primary_reason": "Standard storage migration",
-            "fallback_tool": "rsync",
-            "fallback_reason": "rsync for file-level copy",
-            "confidence": 0.7,
-            "estimated_duration": "Varies by data volume",
-            "prerequisites": ["Storage assessment"]
-        }
+        else:
+            return {
+                "resource_type": storage.get("type", "Storage"),
+                "resource_name": name,
+                "primary_tool": "manual",
+                "primary_reason": "File Shares (SFS) or Block Volumes (EVS) require OS-level sync (rsync) or physical disk import.",
+                "fallback_tool": "des",
+                "fallback_reason": "Data Express Service (DES) for petabyte-scale physical transfer.",
+                "confidence": 0.80,
+                "estimated_duration": "Depends on network limits",
+                "prerequisites": ["Mount points accessible"]
+            }
     
     @staticmethod
-    def _recommend_for_network(network: Dict) -> Dict:
-        """Network resources - Huawei Cloud networking best practices"""
+    def _recommend_for_network_security(network: Dict) -> Dict:
+        """Network and Security resources"""
         return {
-            "resource_type": "network",
-            "resource_name": network.get("name", "unknown"),
+            "resource_type": network.get("type", "Network/Security"),
+            "resource_name": network.get("name", "Unknown Resource"),
             "primary_tool": "manual",
-            "primary_reason": "VPC/Subnet/Security Group manual configuration",
-            "fallback_tool": "terraform",
-            "fallback_reason": "Terraform for infrastructure-as-code",
+            "primary_reason": "Infrastructure configuration to be provisioned via IaC (Terraform) or console.",
+            "fallback_tool": "manual",
+            "fallback_reason": "",
             "confidence": 1.0,
-            "estimated_duration": "1-2 hours",
-            "prerequisites": ["Network design document", "IP addressing plan"]
+            "estimated_duration": "1 hour",
+            "prerequisites": ["Landing Zone deployment"]
+        }
+
+    @staticmethod
+    def _recommend_for_generic(resource: Dict) -> Dict:
+        """Catch-all for support plans, functions, etc."""
+        return {
+            "resource_type": resource.get("type", "Other"),
+            "resource_name": resource.get("name", "Unknown Resource"),
+            "primary_tool": "manual",
+            "primary_reason": "Platform-specific resource requiring manual configuration or recreation.",
+            "fallback_tool": "manual",
+            "fallback_reason": "",
+            "confidence": 1.0,
+            "estimated_duration": "TBD",
+            "prerequisites": []
         }
     
     @staticmethod
-    def _generate_summary(recommendations: List[Dict], discovery_data: Dict) -> Dict:
+    def _generate_summary(recommendations: List[Dict], total_resources: int) -> Dict:
         """Generate summary with Huawei Cloud migration insights"""
         tool_counts = {}
         for rec in recommendations:
             primary = rec.get("primary_tool")
             tool_counts[primary] = tool_counts.get(primary, 0) + 1
         
-        total_resources = sum(len(discovery_data.get(category, [])) 
-                            for category in ["compute", "databases", "storage", "network"])
-        
-        # Huawei migration complexity assessment
         complexity_factors = {
-            "ugo": 3,  # High complexity (schema conversion)
-            "des": 3,  # High complexity (physical shipping)
-            "cdm": 2,  # Medium complexity (big data)
-            "drs": 2,  # Medium complexity (database)
-            "sms": 1,  # Low complexity
-            "mgc": 1,  # Low complexity
-            "oms": 1,  # Low complexity
-            "manual": 1,  # Low complexity
-            "ssh_disk_copy": 2  # Medium complexity (manual intervention)
+            "ugo": 3, "des": 3, "cdm": 2, "drs": 2, "ssh_disk_copy": 2,
+            "sms": 1, "mgc": 1, "oms": 1, "manual": 1
         }
         
-        complexity_score = sum(complexity_factors.get(rec.get("primary_tool", ""), 1) 
-                            for rec in recommendations)
+        complexity_score = sum(complexity_factors.get(rec.get("primary_tool", ""), 1) for rec in recommendations)
         avg_complexity = complexity_score / len(recommendations) if recommendations else 0
         
-        # Determine complexity and risk levels
-        if avg_complexity >= 2.5:
+        if avg_complexity >= 2.0:
             complexity = "High"
             risk = "Medium-High"
-        elif avg_complexity >= 1.5:
+        elif avg_complexity >= 1.3:
             complexity = "Medium"
             risk = "Medium"
         else:
             complexity = "Low"
             risk = "Low"
         
-        # Find primary tool (most frequent)
-        primary_tool = "unknown"
+        primary_tool = "manual"
         if tool_counts:
             primary_tool = max(tool_counts.items(), key=lambda x: x[1])[0]
         
         return {
             "total_resources": total_resources,
             "recommended_tools": tool_counts,
-            "estimated_timeline": ToolRecommender._estimate_timeline(recommendations),
+            "estimated_timeline": "1 - 3 Weeks", 
             "risk_assessment": risk,
             "migration_complexity": complexity,
             "primary_tool": primary_tool,
             "huawei_best_practices": [
-                "Start with non-production workloads",
-                "Perform pilot migration first",
-                "Validate network connectivity before migration",
-                "Schedule maintenance windows for database migration",
-                "Use SMS for OS consistency, DRS for database zero-downtime"
+                "Deploy network and security Landing Zone BEFORE initiating sync.",
+                "Use SMS for OS consistency, DRS for database zero-downtime.",
+                "Utilize OMS for serverless object transfer to bypass VPN limits."
             ]
         }
     
     @staticmethod
-    def _estimate_timeline(recommendations: List[Dict]) -> str:
-        """Huawei Cloud migration timeline estimation"""
-        if not recommendations:
-            return "Unknown"
-        
-        resource_count = len(recommendations)
-        has_database = any(r["resource_type"] == "database" for r in recommendations)
-        has_large_storage = any(r["resource_type"] == "storage" and "des" in r.get("primary_tool", "") 
-                              for r in recommendations)
-        
-        if has_large_storage:
-            return "4-8 weeks (DES physical shipping)"
-        elif has_database:
-            if resource_count <= 10:
-                return "1-2 weeks"
-            elif resource_count <= 30:
-                return "2-4 weeks"
-            else:
-                return "4-6 weeks"
-        else:  # Compute-only migration
-            if resource_count <= 20:
-                return "3-5 days"
-            elif resource_count <= 50:
-                return "1-2 weeks"
-            else:
-                return "2-3 weeks"
-    
-    @staticmethod
     def generate_wbs_tasks(recommendations: Dict, project_type: str = "execution") -> List[Dict]:
-        """
-        Generate WBS tasks from recommendations
-        project_type: "execution" (engineering) or "proposal" (high-level)
-        """
+        """Generate WBS tasks from recommendations"""
         wbs_tasks = []
         rec_list = recommendations.get("recommendations", [])
         tool_summary = recommendations.get("summary", {}).get("recommended_tools", {})
         
         if project_type == "proposal":
-            # High-level WBS for ARB Intake (separate from execution WBS)
             task_id = 1
             for tool_id, count in tool_summary.items():
                 wbs_tasks.append({
@@ -369,45 +244,16 @@ class ToolRecommender:
                     "start": "",
                     "end": "",
                     "isParent": False,
-                    "notes": f"Tool: {tool_id}, Count: {count}"
+                    "notes": f"Tooling: {tool_id.upper()}"
                 })
                 task_id += 1
             
-            # Add planning tasks
             wbs_tasks.extend([
-                {
-                    "id": "PLAN",
-                    "name": "Migration Planning & Design",
-                    "prog": "0%",
-                    "resp": "Solution Architect",
-                    "start": "",
-                    "end": "",
-                    "isParent": True,
-                    "notes": "High-level design and planning"
-                },
-                {
-                    "id": "EXEC",
-                    "name": "Migration Execution",
-                    "prog": "0%",
-                    "resp": "Migration Team",
-                    "start": "",
-                    "end": "",
-                    "isParent": True,
-                    "notes": "Technical implementation"
-                },
-                {
-                    "id": "VALID",
-                    "name": "Validation & Cutover",
-                    "prog": "0%",
-                    "resp": "QA Team",
-                    "start": "",
-                    "end": "",
-                    "isParent": True,
-                    "notes": "Testing and go-live"
-                }
+                {"id": "PLAN", "name": "Migration Planning & Design", "prog": "0%", "resp": "Solution Architect", "start": "", "end": "", "isParent": True, "notes": "High-level design and planning"},
+                {"id": "EXEC", "name": "Migration Execution", "prog": "0%", "resp": "Migration Team", "start": "", "end": "", "isParent": True, "notes": "Technical implementation"},
+                {"id": "VALID", "name": "Validation & Cutover", "prog": "0%", "resp": "QA Team", "start": "", "end": "", "isParent": True, "notes": "Testing and go-live"}
             ])
         else:
-            # Execution WBS for migration planning (detailed tasks)
             task_counter = 1
             for rec in rec_list:
                 wbs_tasks.append({
