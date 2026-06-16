@@ -9,14 +9,14 @@ const PROFILES = {
     'obs_standard': { name: 'OBS Bucket (API Sync)', isStorage: true, sync: 'API', totalFiles: 1000000, smallFiles: 0 }
 };
 
-// 🚨 IDENTIFY VALID PHYSICS TARGETS
+// 🚨 IDENTIFY VALID PHYSICS TARGETS (Removed CBR & EVS to prevent double-counting)
 const computeTypes = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'];
 const dbTypes = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'];
-const storageTypes = ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'];
+const storageTypes = ['OBS', 'SFS', 'STORAGE']; 
 
 export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // Shared Global State
-    const [engineMode, setEngineMode] = useState('cognitive'); // Defaulting to Cognitive for PMO view
+    const [engineMode, setEngineMode] = useState('cognitive'); 
     const [showFaq, setShowFaq] = useState(false);
     
     // Shared Network State
@@ -26,25 +26,24 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [downtimeWindow, setDowntimeWindow] = useState(48); 
     const [concurrency, setConcurrency] = useState(5); 
 
-    // Cognitive State (Predictive PMO Baselines)
+    // Cognitive State
     const [usedStoragePct, setUsedStoragePct] = useState(50); 
     const [appChurnPct, setAppChurnPct] = useState(2); 
     const [dbChurnPct, setDbChurnPct] = useState(8); 
 
-    // Manual Mode State
+    // Shared Pillars & Table State
     const [useCompute, setUseCompute] = useState(true);
     const [useDatabase, setUseDatabase] = useState(true);
     const [useStorage, setUseStorage] = useState(false);
     const [nodeConfigs, setNodeConfigs] = useState({});
     const [selectedNodes, setSelectedNodes] = useState([]); 
     const [bulkProfile, setBulkProfile] = useState('linux_block');
-    const [standaloneStorageSize, setStandaloneStorageSize] = useState(10);
-    const [standaloneUnit, setStandaloneUnit] = useState('TB');
-    const [storageMode, setStorageMode] = useState('Object'); 
+    
+    // Manual State
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    // Cleaned Inventory
+    // 🚨 CLEANED INVENTORY: Automatically strips out CBR, VPC, EIPs, etc.
     const nodes = useMemo(() => {
         return (activeProject?.mapperNodes || []).filter(n => {
             if (n?.status === 'Quoted Only' && !n.type) return true; 
@@ -150,39 +149,37 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let computeInitSum = 0; let computeCutoverSum = 0;
         let dbCutoverSum = 0;
         let storageInitSum = 0; let storageCutoverSum = 0;
-
         let totalUsedGB = 0; let totalChurnGB = 0;
 
-        const computeNodes = nodes.filter(n => computeTypes.some(c => String(n.type).toUpperCase().includes(c)));
-        const dbNodes = nodes.filter(n => dbTypes.some(d => String(n.type).toUpperCase().includes(d)));
-        const storageNodes = nodes.filter(n => storageTypes.some(s => String(n.type).toUpperCase().includes(s)));
+        // 🚨 RESPECTS THE 'INCLUDED IN MATH' TOGGLE FROM THE TABLE
+        const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
+        const computeNodes = useCompute ? activeNodes.filter(n => computeTypes.some(c => String(n.type).toUpperCase().includes(c))) : [];
+        const dbNodes = useDatabase ? activeNodes.filter(n => dbTypes.some(d => String(n.type).toUpperCase().includes(d))) : [];
+        const storageNodes = useStorage ? activeNodes.filter(n => storageTypes.some(s => String(n.type).toUpperCase().includes(s))) : [];
 
-        // 1. Cognitive Compute Math
         computeNodes.forEach(n => {
-            const usedGB = (Number(n.storage) || 200) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100);
             const churnGB = usedGB * (appChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
-            const speed = Math.min(pipePerServer, 3000); // Cognitive assumes fast SSD agents
+            const speed = Math.min(pipePerServer, 3000); 
             computeInitSum += ((usedGB * 1024 * 8) / speed) / 3600;
             computeCutoverSum += ((churnGB * 1024 * 8) / speed) / 3600;
         });
 
-        // 2. Cognitive Database Math
         dbNodes.forEach(n => {
-            const usedGB = (Number(n.storage) || 500) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 500) * (usedStoragePct / 100);
             const churnGB = usedGB * (dbChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
-            const rowsM = usedGB * 2.5; // Heuristic: 2.5M rows per GB
-            dbCutoverSum += ((rowsM * 1000000) / 5000) / 3600; // Heuristic: 5000 RPS
+            const rowsM = usedGB * 2.5; 
+            dbCutoverSum += ((rowsM * 1000000) / 5000) / 3600; 
         });
 
-        // 3. Cognitive Storage Math
-        const omsSpeedMbps = 5 * 120 * 1.5; // Default cognitive API limits
+        const omsSpeedMbps = 5 * 120 * 1.5; 
         const stSpeed = Math.min(effectivePipeMbps, omsSpeedMbps);
         storageNodes.forEach(n => {
-            const usedGB = (Number(n.storage) || 1000) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 1000) * (usedStoragePct / 100);
             const churnGB = usedGB * (appChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
@@ -190,20 +187,18 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             storageCutoverSum += ((churnGB * 1024 * 8) / stSpeed) / 3600;
         });
 
-        // Calculate parallel batches
         const computeInitHrs = computeNodes.length > 0 ? computeInitSum / validConcurrency : 0;
         const computeCutoverHrs = computeNodes.length > 0 ? computeCutoverSum / validConcurrency : 0;
         const dbCutoverHrs = dbNodes.length > 0 ? dbCutoverSum / validConcurrency : 0;
         const storageInitHrs = storageNodes.length > 0 ? storageInitSum / validConcurrency : 0;
         const storageCutoverHrs = storageNodes.length > 0 ? storageCutoverSum / validConcurrency : 0;
 
-        // Phasing
         const phase1Hrs = Math.max(computeInitHrs, storageInitHrs);
-        const phase2Hrs = Math.max(computeCutoverHrs, dbCutoverHrs, storageCutoverHrs) + 1.5; // +1.5h buffer
+        const phase2Hrs = Math.max(computeCutoverHrs, dbCutoverHrs, storageCutoverHrs) + 1.5; 
 
         let bottleneck = 'Compute Delta Transfer';
-        if (dbCutoverHrs > computeCutoverHrs && dbCutoverHrs > storageCutoverHrs) bottleneck = 'Database Logical Sync';
-        if (storageCutoverHrs > computeCutoverHrs && storageCutoverHrs > dbCutoverHrs) bottleneck = 'Storage Delta Sync';
+        if (dbCutoverHrs > computeCutoverHrs && dbCutoverHrs > storageCutoverHrs) bottleneck = 'Database Logical Sync (DRS)';
+        if (storageCutoverHrs > computeCutoverHrs && storageCutoverHrs > dbCutoverHrs) bottleneck = 'Storage Delta Sync (OMS)';
 
         return {
             effectiveMbps: Math.round(effectivePipeMbps),
@@ -218,7 +213,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             bottleneck,
             isFeasible: phase2Hrs <= Number(downtimeWindow)
         };
-    }, [nodes, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
+    }, [nodes, nodeConfigs, useCompute, useDatabase, useStorage, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
 
     // ==========================================
     // ⚙️ MATH: GRANULAR (Perfect Per-Server Simulation)
@@ -232,6 +227,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let criticalBottleneck = "Network Pipe";
 
         const validConcurrency = Math.max(Number(concurrency) || 1, 1);
+        
+        // 🚨 RESPECTS THE 'INCLUDED IN MATH' TOGGLE FROM THE TABLE
         const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
 
         if (useCompute) {
@@ -308,29 +305,146 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 </div>
             </div>
 
-            {/* 🌐 SHARED PIPELINE SETTINGS */}
+            {/* 🌐 SHARED GLOBAL PIPELINE */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-4">
-                    <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-network-wired text-indigo-500"></i> Global End-to-End Pipeline</h4>
+                    <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-network-wired text-indigo-500"></i> Global End-to-End Pipeline & Limits</h4>
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                    <div className="flex-1 w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Source Outbound (Mbps)</label><input type="number" value={netSource} onChange={e=>setNetSource(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 bg-slate-50"/></div>
-                    <i className="fas fa-arrow-right text-slate-300 text-xl hidden md:block mt-8"></i>
-                    <div className="flex-1 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 items-start">
+                    <div className="w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Source Outbound (Mbps)</label><input type="number" value={netSource} onChange={e=>setNetSource(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 bg-slate-50"/></div>
+                    <div className="w-full">
                         <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-blue-500">Transit Route / Encryption</label>
                         <select value={transitType} onChange={e=>setTransitType(e.target.value)} className="w-full p-3 border-2 border-blue-200 rounded-xl text-xs font-black outline-none focus:border-blue-500 bg-blue-50 text-blue-900 shadow-sm mb-3 cursor-pointer"><option value="DirectConnect">DirectConnect / ExpressRoute</option><option value="IPsec VPN">IPsec VPN Tunnel</option><option value="Public Internet">Public Internet / EIP</option></select>
                         <div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400">Tunnel Limit:</span><input type="number" value={netTunnel} onChange={e=>setNetTunnel(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-xs font-bold outline-none focus:border-blue-500 bg-white"/></div>
                     </div>
-                    <i className="fas fa-arrow-right text-slate-300 text-xl hidden md:block mt-8"></i>
-                    <div className="flex-1 w-full">
+                    <div className="w-full">
+                        <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Agent Concurrency Limit</label>
+                        <div className="flex items-center gap-4">
+                            <input type="range" min="1" max="50" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none accent-emerald-600 cursor-pointer"/>
+                            <div className="font-black text-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-200">{concurrency} Nodes</div>
+                        </div>
+                        <div className="text-[9px] text-slate-400 mt-2 font-bold leading-relaxed">Max nodes syncing simultaneously over the pipeline.</div>
+                    </div>
+                    <div className="w-full">
                         <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Downtime SLA Window (Hrs)</label>
                         <input type="number" value={downtimeWindow} onChange={e=>setDowntimeWindow(e.target.value)} className="w-full p-4 border-2 border-emerald-300 rounded-xl bg-emerald-50 font-black text-xl text-emerald-900 outline-none text-center shadow-inner"/>
                     </div>
                 </div>
             </div>
 
+            {/* 🚨 SHARED SCOPE REVIEW & INVENTORY TABLE */}
+            <div className="space-y-6">
+                <div className="bg-slate-800 p-4 rounded-2xl shadow-md flex flex-wrap gap-4 items-center">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Migration Scope Pillars:</span>
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useCompute ? 'bg-blue-500/20 border-blue-400 text-blue-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
+                        <input type="checkbox" checked={useCompute} onChange={e=>setUseCompute(e.target.checked)} className="hidden"/> <i className="fas fa-server"></i> Compute Nodes
+                    </label>
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useDatabase ? 'bg-rose-500/20 border-rose-400 text-rose-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
+                        <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Logical Databases
+                    </label>
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useStorage ? 'bg-amber-500/20 border-amber-400 text-amber-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
+                        <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Standalone Storage
+                    </label>
+                </div>
+
+                {(useCompute || useDatabase || useStorage) && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Scope Inclusion & Inventory Review</h4>
+                                <p className="text-[10px] font-bold text-slate-500 mt-1">Reviewing {nodes.length} Migratable Resources from the Target Architecture. Use the toggles to exclude specific nodes from the SLA timeline.</p>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                                <select value={bulkProfile} onChange={e=>setBulkProfile(e.target.value)} className="p-2 border border-slate-300 rounded text-xs font-bold bg-white">
+                                    {Object.entries(PROFILES).map(([k,v]) => <option key={k} value={k}>{v.name}</option>)}
+                                </select>
+                                <button onClick={applyBulkProfile} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Apply Profile to Selected</button>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left text-xs whitespace-nowrap">
+                                <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
+                                    <tr>
+                                        <th className="p-3 w-10 text-center" title="Select for Bulk Edit"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
+                                        <th className="p-3">Resource Name</th>
+                                        <th className="p-3">Type & Profile</th>
+                                        <th className="p-3 text-right">Payload Size</th>
+                                        <th className="p-3">Sync Details (Manual Overrides)</th>
+                                        <th className="p-3 text-center">Include in Math</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {nodes.filter(n => {
+                                        const c = nodeConfigs[n.id] || {};
+                                        if (c.isDb && !useDatabase) return false;
+                                        if (c.isStorage && !useStorage) return false;
+                                        if (!c.isDb && !c.isStorage && !useCompute) return false;
+                                        return true;
+                                    }).map(n => {
+                                        const conf = nodeConfigs[n.id] || {};
+                                        const isActive = conf.includedInMath !== false;
+                                        
+                                        return (
+                                            <tr key={n.id} className={`transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : isActive ? 'hover:bg-slate-50' : 'bg-slate-50/50 opacity-50'}`}>
+                                                <td className="p-3 text-center"><input type="checkbox" checked={selectedNodes.includes(n.id)} onChange={() => toggleNode(n.id)} className="w-4 h-4 accent-indigo-600"/></td>
+                                                <td className="p-3 font-bold text-slate-800 flex items-center">
+                                                    <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : conf.isStorage ? 'fa-hdd text-amber-500' : 'fa-server text-blue-500'} mr-2`}></i>
+                                                    {n.name || n.hostname || n.description || 'Placeholder Resource'}
+                                                    {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.isStorage ? 'Storage' : conf.os || 'VM'}</div>
+                                                    <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">{conf.profileName || 'Custom'}</div>
+                                                </td>
+                                                <td className="p-3 text-right">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3">
+                                                    {conf.isDb ? (
+                                                        <div className="flex gap-2 items-center">
+                                                            <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-rose-200">Logical (DRS)</span>
+                                                            <input type="number" title="Millions of Rows" value={conf.rowsM || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, rowsM: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded font-mono text-[10px] focus:border-rose-500 outline-none" /> <span className="text-[9px] text-slate-400">M Rows</span>
+                                                        </div>
+                                                    ) : conf.isStorage ? (
+                                                        <div className="flex gap-2 items-center">
+                                                            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-amber-200">API Sync (OMS)</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex gap-2 items-center">
+                                                            <select value={conf.sync || 'Block'} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, sync: e.target.value}})} className="p-1 border border-slate-200 rounded text-[10px] font-black text-blue-800 bg-blue-50 cursor-pointer focus:border-blue-500 outline-none">
+                                                                <option value="Block">Block (SMS)</option><option value="File">File (Rsync)</option>
+                                                            </select>
+                                                            {conf.sync === 'File' && (
+                                                                <><input type="number" title="Small Files" value={conf.smallFiles || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, smallFiles: Number(e.target.value)}})} className="w-20 p-1 border border-amber-200 bg-amber-50 rounded font-mono text-[10px] focus:border-amber-500 outline-none" /> <span className="text-[9px] text-amber-600 font-bold">Sm. Files</span></>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="p-3 text-center">
+                                                    <label className="flex items-center justify-center cursor-pointer">
+                                                        <div className="relative">
+                                                            <input type="checkbox" className="sr-only" checked={isActive} onChange={(e) => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, includedInMath: e.target.checked}})} />
+                                                            <div className={`block w-10 h-6 rounded-full transition-colors ${isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                                                            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isActive ? 'transform translate-x-4' : ''}`}></div>
+                                                        </div>
+                                                    </label>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {nodes.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid resources imported from Blueprint or Quote.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             {/* ========================================================== */}
-            {/* 🤖 RENDER COGNITIVE MODE (AUTO-CALCULATOR) */}
+            {/* ⚙️ ENGINE MODE SPECIFIC SETTINGS & RESULTS */}
             {/* ========================================================== */}
             {engineMode === 'cognitive' && (
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
@@ -338,7 +452,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                         <div className="bg-slate-800 p-6 rounded-2xl shadow-md text-white">
                             <h4 className="font-black text-sm flex items-center gap-2 mb-4 text-indigo-300"><i className="fas fa-robot"></i> Automated PMO Engine</h4>
                             <p className="text-xs font-medium leading-relaxed text-slate-300 mb-6">
-                                The Cognitive Engine reads all <b>{nodes.length} mapped resources</b>, splits them into functional pillars, and applies your heuristic baselines to auto-generate a comprehensive migration timeline.
+                                The Cognitive Engine auto-generates a comprehensive execution timeline based on predictive churn heuristics and payload capacity.
                             </p>
                             
                             <div className="space-y-5">
@@ -354,10 +468,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                     <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>DB Server Daily Churn</span><span className="text-rose-400">{dbChurnPct}%</span></label>
                                     <input type="range" min="1" max="25" step="1" value={dbChurnPct} onChange={e=>setDbChurnPct(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-rose-500 cursor-pointer"/>
                                 </div>
-                                <div className="border-t border-slate-700 pt-4">
-                                    <label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-400"><span>Agent Concurrency</span><span className="text-emerald-400">{concurrency} Nodes</span></label>
-                                    <input type="range" min="1" max="50" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="w-full h-2 bg-slate-600 rounded-lg appearance-none accent-emerald-500 cursor-pointer"/>
-                                </div>
                             </div>
                         </div>
 
@@ -369,8 +479,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     </div>
 
                     <div className="xl:col-span-8 space-y-6">
-                        
-                        {/* 🚨 THE INTERACTIVE TIMELINE VIEW */}
                         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                             <div className="p-6 bg-slate-50 border-b border-slate-200">
                                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest"><i className="fas fa-stream text-indigo-500 mr-2"></i> Simulated Migration Execution</h3>
@@ -378,7 +486,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                             </div>
                             
                             <div className="p-6 space-y-8">
-                                {/* PHASE 1: BACKGROUND SYNC */}
                                 <div className="relative pl-8 border-l-4 border-blue-500">
                                     <div className="absolute w-4 h-4 bg-blue-500 rounded-full -left-[10px] top-0 shadow border-4 border-white"></div>
                                     <div className="flex justify-between items-start mb-4">
@@ -404,7 +511,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                     </div>
                                 </div>
 
-                                {/* PHASE 2: CUTOVER WINDOW */}
                                 <div className="relative pl-8 border-l-4 border-emerald-500">
                                     <div className={`absolute w-4 h-4 rounded-full -left-[10px] top-0 shadow border-4 border-white ${cogResult.isFeasible ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                                     <div className="flex justify-between items-start mb-4">
@@ -452,142 +558,25 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 </div>
             )}
 
-            {/* ========================================================== */}
-            {/* ⚙️ RENDER MANUAL MODE (PER SERVER GRANULARITY) */}
-            {/* ========================================================== */}
             {engineMode === 'manual' && (
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
-                    
-                    <div className="xl:col-span-8 space-y-6">
-                        
-                        {/* THE MODULAR TOGGLES */}
-                        <div className="bg-slate-800 p-4 rounded-2xl shadow-md flex flex-wrap gap-4 items-center">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Enable Pillars:</span>
-                            <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useCompute ? 'bg-blue-500/20 border-blue-400 text-blue-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useCompute} onChange={e=>setUseCompute(e.target.checked)} className="hidden"/> <i className="fas fa-server"></i> Compute Nodes
-                            </label>
-                            <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useDatabase ? 'bg-rose-500/20 border-rose-400 text-rose-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Logical Databases
-                            </label>
-                            <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useStorage ? 'bg-amber-500/20 border-amber-400 text-amber-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Standalone Storage
-                            </label>
-                        </div>
-
-                        {/* PILLARS 1, 2, 3: THE UNIFIED INLINE TABLE */}
-                        {(useCompute || useDatabase || useStorage) && (
-                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
-                                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                                    <div>
-                                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Unified Resource Physics</h4>
-                                        <p className="text-[10px] font-bold text-slate-500 mt-1">All {nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false).length} active nodes below contribute to the SLA calculation.</p>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-3">
-                                        <select value={bulkProfile} onChange={e=>setBulkProfile(e.target.value)} className="p-2 border border-slate-300 rounded text-xs font-bold bg-white">
-                                            {Object.entries(PROFILES).map(([k,v]) => <option key={k} value={k}>{v.name}</option>)}
-                                        </select>
-                                        <button onClick={applyBulkProfile} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Apply Profile to Selected</button>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto custom-scrollbar">
-                                    <table className="w-full text-left text-xs whitespace-nowrap">
-                                        <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
-                                            <tr>
-                                                <th className="p-3 w-10 text-center" title="Select for Bulk Edit"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
-                                                <th className="p-3">Resource Name</th>
-                                                <th className="p-3">Type & Profile</th>
-                                                <th className="p-3 text-right">Payload Size</th>
-                                                <th className="p-3">Sync Method / Details</th>
-                                                <th className="p-3 text-center">Include in Math</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {nodes.filter(n => {
-                                                const c = nodeConfigs[n.id] || {};
-                                                if (c.isDb && !useDatabase) return false;
-                                                if (c.isStorage && !useStorage) return false;
-                                                if (!c.isDb && !c.isStorage && !useCompute) return false;
-                                                return true;
-                                            }).map(n => {
-                                                const conf = nodeConfigs[n.id] || {};
-                                                const isActive = conf.includedInMath !== false;
-                                                
-                                                return (
-                                                    <tr key={n.id} className={`transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : isActive ? 'hover:bg-slate-50' : 'bg-slate-50/50 opacity-50'}`}>
-                                                        <td className="p-3 text-center"><input type="checkbox" checked={selectedNodes.includes(n.id)} onChange={() => toggleNode(n.id)} className="w-4 h-4 accent-indigo-600"/></td>
-                                                        <td className="p-3 font-bold text-slate-800 flex items-center">
-                                                            <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : conf.isStorage ? 'fa-hdd text-amber-500' : 'fa-server text-blue-500'} mr-2`}></i>
-                                                            {n.name || n.hostname || n.description || 'Placeholder Resource'}
-                                                            {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
-                                                        </td>
-                                                        <td className="p-3">
-                                                            <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.isStorage ? 'Storage' : conf.os || 'VM'}</div>
-                                                            <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">{conf.profileName || 'Custom'}</div>
-                                                        </td>
-                                                        <td className="p-3 text-right">
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="p-3">
-                                                            {conf.isDb ? (
-                                                                <div className="flex gap-2 items-center">
-                                                                    <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-rose-200">Logical (DRS)</span>
-                                                                    <input type="number" title="Millions of Rows" value={conf.rowsM || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, rowsM: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded font-mono text-[10px] focus:border-rose-500 outline-none" /> <span className="text-[9px] text-slate-400">M Rows</span>
-                                                                </div>
-                                                            ) : conf.isStorage ? (
-                                                                <div className="flex gap-2 items-center">
-                                                                    <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-amber-200">API Sync (OMS)</span>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="flex gap-2 items-center">
-                                                                    <select value={conf.sync || 'Block'} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, sync: e.target.value}})} className="p-1 border border-slate-200 rounded text-[10px] font-black text-blue-800 bg-blue-50 cursor-pointer focus:border-blue-500 outline-none">
-                                                                        <option value="Block">Block (SMS)</option><option value="File">File (Rsync)</option>
-                                                                    </select>
-                                                                    {conf.sync === 'File' && (
-                                                                        <><input type="number" title="Small Files" value={conf.smallFiles || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, smallFiles: Number(e.target.value)}})} className="w-20 p-1 border border-amber-200 bg-amber-50 rounded font-mono text-[10px] focus:border-amber-500 outline-none" /> <span className="text-[9px] text-amber-600 font-bold">Sm. Files</span></>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="p-3 text-center">
-                                                            <label className="flex items-center justify-center cursor-pointer">
-                                                                <div className="relative">
-                                                                    <input type="checkbox" className="sr-only" checked={isActive} onChange={(e) => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, includedInMath: e.target.checked}})} />
-                                                                    <div className={`block w-10 h-6 rounded-full transition-colors ${isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                                                                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isActive ? 'transform translate-x-4' : ''}`}></div>
-                                                                </div>
-                                                            </label>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                            {nodes.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid resources imported from Blueprint or Quote.</td></tr>}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-                        
-                        {/* OMS GLOBAL LIMITS */}
+                    <div className="xl:col-span-4 space-y-6">
                         {useStorage && nodes.filter(n => nodeConfigs[n.id]?.isStorage).length > 0 && (
                             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
                                 <h4 className="font-black text-sm flex items-center gap-2 text-slate-800 mb-4"><i className="fas fa-cogs text-amber-500"></i> Global OMS API Limits (Storage Pillar)</h4>
-                                <div className="flex gap-4">
-                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Concurrent OMS Tasks</label><input type="number" value={omsTasks} onChange={e=>setOmsTasks(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
-                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">API Objects / Sec Limit</label><input type="number" value={omsObjPerSec} onChange={e=>setOmsObjPerSec(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
+                                <div className="space-y-4">
+                                    <div><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Concurrent OMS Tasks</label><input type="number" value={omsTasks} onChange={e=>setOmsTasks(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
+                                    <div><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">API Objects / Sec Limit</label><input type="number" value={omsObjPerSec} onChange={e=>setOmsObjPerSec(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* MANUAL RESULT COLUMN */}
-                    <div className="xl:col-span-4 space-y-6">
-                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[450px] shadow-sm relative overflow-hidden transition-colors ${manResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
+                    <div className="xl:col-span-8 space-y-6">
+                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[300px] shadow-sm relative overflow-hidden transition-colors ${manResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
                             <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Total Combined SLA Time</div>
                             <div className={`text-5xl font-black tracking-tighter ${manResult.isFeasible ? 'text-emerald-700' : 'text-rose-700'}`}>{manResult.daysStr}</div>
-                            <div className="text-xs font-bold text-slate-500 mt-2">Maximum parallel execution time.</div>
+                            <div className="text-xs font-bold text-slate-500 mt-2">Maximum parallel execution time based on manual overrides.</div>
                             
                             <div className="mt-6 pt-6 border-t-2 border-slate-200/60 text-xs font-medium space-y-3">
                                 <div className="flex justify-between items-center text-slate-600 border-b border-slate-100 pb-2"><span>Effective Network Pipe:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{manResult.effectivePipeMbps} Mbps</span></div>
@@ -601,16 +590,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                     <span className="font-black text-sm">{manResult.criticalBottleneck}</span>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Global Concurrency Modifier */}
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                            <label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Global Concurrency Limit</label>
-                            <div className="flex items-center gap-4">
-                                <input type="range" min="1" max="50" value={concurrency} onChange={e=>setConcurrency(e.target.value)} className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none accent-emerald-600 cursor-pointer"/>
-                                <div className="font-black text-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-200">{concurrency} Nodes</div>
-                            </div>
-                            <div className="text-[9px] text-slate-400 mt-2 font-bold leading-relaxed">Max nodes syncing simultaneously. The engine routes the available network pipe exclusively to these active nodes.</div>
                         </div>
                     </div>
                 </div>
