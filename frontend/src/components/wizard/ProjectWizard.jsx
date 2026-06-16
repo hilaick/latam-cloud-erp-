@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import StepARB from './StepARB';
 import StepArchitecture from './StepArchitecture';
@@ -10,8 +10,26 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
     const [showConfig, setShowConfig] = useState(false);
     const [currentStep, setCurrentStep] = useState(1);
     
-    // 🚨 Fetch customers from context to populate the dropdown
-    const { customers } = useContext(ERPContext);
+    // Fetch context and generate dynamic dropdown lists
+    const { customers, projects } = useContext(ERPContext);
+
+    const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
+    const uniquePartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
+
+    const targetCountries = [
+        "Mexico", "Guatemala", "Belize", "El Salvador", "Honduras", "Nicaragua", "Costa Rica", "Panama",
+        "Colombia", "Venezuela", "Ecuador", "Peru", "Bolivia", "Chile", "Argentina", "Uruguay", "Paraguay", "Brazil",
+        "Dominican Republic", "Haiti", "Cuba", "Jamaica", "Puerto Rico", "Trinidad and Tobago", "Bahamas", "Barbados", 
+        "Dominica", "Grenada", "Saint Lucia", "Saint Vincent and the Grenadines", "Antigua and Barbuda", "Saint Kitts and Nevis",
+        "Guyana", "Suriname", "French Guiana", "Guadeloupe", "Martinique", "Curaçao", "Aruba", "Bonaire", "Sint Maarten",
+        "Saba", "Sint Eustatius", "Cayman Islands", "Turks and Caicos Islands", "British Virgin Islands", "US Virgin Islands",
+        "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
+    ];
+
+    const sourceEnvironments = [
+        "AWS", "Azure", "GCP", "On-Premise (VMware)", "On-Premise (Hyper-V)", 
+        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other"
+    ];
 
     // Safely determine the Max Unlocked Phase using Optional Chaining (?.)
     const getMaxUnlockedPhase = () => {
@@ -114,11 +132,11 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
             </div>
 
-            {/* 🚨 FULLY INTERACTIVE CONFIGURATION MODAL */}
+            {/* FULLY INTERACTIVE CONFIGURATION MODAL */}
             {showConfig && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
                         <div className="px-8 py-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg flex items-center"><i className="fas fa-sliders-h text-indigo-400 mr-3"></i> Project Details</h3>
@@ -127,98 +145,172 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
                         </div>
                         
-                        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 overflow-y-auto custom-scrollbar">
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Project Name</label>
-                                <input 
-                                    type="text" 
-                                    value={activeProject.name || ''} 
-                                    onChange={(e) => onUpdateProject(activeProject.id, 'name', e.target.value)}
-                                    className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500" 
-                                />
-                            </div>
+                        <div className="p-8 overflow-y-auto bg-slate-50 custom-scrollbar">
                             
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Customer Account</label>
-                                <select 
-                                    value={activeProject.customerId || ''} 
-                                    onChange={(e) => {
-                                        const cust = (customers || []).find(c => String(c.id) === String(e.target.value));
-                                        if (cust) {
-                                            onUpdateProject(activeProject.id, 'customerId', cust.id);
-                                            onUpdateProject(activeProject.id, 'customerName', cust.name);
-                                        }
-                                    }}
-                                    className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 cursor-pointer"
-                                >
-                                    <option value="" disabled>-- Select Customer --</option>
-                                    {(customers || []).map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            <div className="bg-slate-100 p-5 rounded-xl border border-slate-200 shadow-inner opacity-70 cursor-not-allowed">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">System Project ID</label>
-                                <div className="font-mono text-xs text-slate-500 font-bold border-b border-transparent pb-1">{activeProject.id || 'N/A'}</div>
-                            </div>
-                            
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Sales Architect</label>
-                                <input 
-                                    type="text" 
-                                    value={activeProject.sa || ''} 
-                                    onChange={(e) => onUpdateProject(activeProject.id, 'sa', e.target.value)}
-                                    placeholder="Unassigned"
-                                    className="w-full font-bold text-sm text-indigo-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500" 
-                                />
-                            </div>
-                            
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Target MRR ($)</label>
-                                <div className="relative">
-                                    <span className="absolute left-0 top-0 font-black text-base text-emerald-600">$</span>
-                                    <input 
-                                        type="number" 
-                                        value={activeProject.mrr || ''} 
-                                        onChange={(e) => onUpdateProject(activeProject.id, 'mrr', Number(e.target.value))}
-                                        className="w-full font-black text-base text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 pl-4 focus:border-emerald-500" 
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Deployment Country</label>
-                                <div className="relative">
-                                    <i className="fas fa-globe-americas absolute left-0 top-1 text-slate-400"></i>
+                            {/* SECTION 1: Basic Identity */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Project Name (Scope)</label>
                                     <input 
                                         type="text" 
-                                        value={activeProject.country || ''} 
-                                        onChange={(e) => onUpdateProject(activeProject.id, 'country', e.target.value)}
-                                        placeholder="e.g. Mexico, Brazil"
-                                        className="w-full font-bold text-sm text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-indigo-500" 
+                                        value={activeProject.name || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'name', e.target.value.toUpperCase())}
+                                        className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 uppercase" 
+                                    />
+                                </div>
+                                
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Customer Account</label>
+                                    <input 
+                                        type="text" 
+                                        list="config-customers"
+                                        value={activeProject.customerName || ''} 
+                                        onChange={(e) => {
+                                            const val = e.target.value.toUpperCase();
+                                            onUpdateProject(activeProject.id, 'customerName', val);
+                                            const matched = (customers || []).find(c => c.name.toUpperCase() === val);
+                                            if (matched) onUpdateProject(activeProject.id, 'customerId', matched.id);
+                                        }}
+                                        className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 uppercase" 
+                                    />
+                                    <datalist id="config-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
+                                </div>
+                                
+                                <div className="bg-slate-100 p-5 rounded-xl border border-slate-200 shadow-inner opacity-70 cursor-not-allowed">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">System Project ID</label>
+                                    <div className="font-mono text-xs text-slate-500 font-bold border-b border-transparent pb-1">{activeProject.id || 'N/A'}</div>
+                                </div>
+                                
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Sales Architect</label>
+                                    <input 
+                                        type="text" 
+                                        list="config-sa"
+                                        value={activeProject.sa || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'sa', e.target.value.toUpperCase())}
+                                        placeholder="Unassigned"
+                                        className="w-full font-bold text-sm text-indigo-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 uppercase" 
+                                    />
+                                    <datalist id="config-sa">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
+                                </div>
+
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Delivery Partner</label>
+                                    <input 
+                                        type="text" 
+                                        list="config-partner"
+                                        value={activeProject.partner || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'partner', e.target.value.toUpperCase())}
+                                        placeholder="TBD"
+                                        className="w-full font-bold text-sm text-slate-700 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 uppercase" 
+                                    />
+                                    <datalist id="config-partner">{uniquePartners.map(pt => <option key={pt} value={pt} />)}</datalist>
+                                </div>
+                                
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Deployment Country</label>
+                                    <div className="relative">
+                                        <i className="fas fa-globe-americas absolute left-0 top-1 text-slate-400"></i>
+                                        <select 
+                                            value={activeProject.country || ''} 
+                                            onChange={(e) => onUpdateProject(activeProject.id, 'country', e.target.value)}
+                                            className="w-full font-bold text-sm text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-indigo-500 cursor-pointer"
+                                        >
+                                            <option value="" disabled>-- Select Country --</option>
+                                            {targetCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Target MRR ($)</label>
+                                    <div className="relative">
+                                        <span className="absolute left-0 top-0 font-black text-base text-emerald-600">$</span>
+                                        <input 
+                                            type="number" 
+                                            value={activeProject.mrr === undefined || activeProject.mrr === null ? '' : activeProject.mrr} 
+                                            onChange={(e) => onUpdateProject(activeProject.id, 'mrr', e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full font-black text-base text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 pl-4 focus:border-emerald-500" 
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Start Date (Kickoff)</label>
+                                    <input 
+                                        type="date" 
+                                        value={activeProject.kickoff || activeProject.kickoffDate || activeProject.startDate || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'kickoff', e.target.value)}
+                                        className="w-full font-mono font-bold text-sm text-slate-700 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 cursor-pointer" 
+                                    />
+                                </div>
+                                
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
+                                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Go-Live Cutover (Target Date)</label>
+                                    <input 
+                                        type="date" 
+                                        value={activeProject.date || activeProject.targetDate || activeProject.goLiveDate || ''} 
+                                        onChange={(e) => onUpdateProject(activeProject.id, 'date', e.target.value)}
+                                        className="w-full font-mono font-black text-sm text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-emerald-500 cursor-pointer" 
                                     />
                                 </div>
                             </div>
-                            
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Start Date (Kickoff)</label>
-                                <input 
-                                    type="date" 
-                                    value={activeProject.kickoff || activeProject.kickoffDate || activeProject.startDate || ''} 
-                                    onChange={(e) => onUpdateProject(activeProject.id, 'kickoff', e.target.value)}
-                                    className="w-full font-mono font-bold text-sm text-slate-700 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-indigo-500 cursor-pointer" 
-                                />
-                            </div>
-                            
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-300 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
-                                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Go-Live Cutover (Target Date)</label>
-                                <input 
-                                    type="date" 
-                                    value={activeProject.date || activeProject.targetDate || activeProject.goLiveDate || ''} 
-                                    onChange={(e) => onUpdateProject(activeProject.id, 'date', e.target.value)}
-                                    className="w-full font-mono font-black text-sm text-emerald-600 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-emerald-500 cursor-pointer" 
-                                />
+
+                            {/* 🚨 SECTION 2: Technical Sizing & Risks (Synced with Pre-Sales Radar) */}
+                            <div className="pt-6 border-t border-slate-200">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Source Env</label>
+                                        <div className="relative">
+                                            <i className="fas fa-server absolute left-0 top-1 text-slate-400"></i>
+                                            <select 
+                                                value={activeProject.sourceEnvironment || 'Unknown'} 
+                                                onChange={(e) => onUpdateProject(activeProject.id, 'sourceEnvironment', e.target.value)}
+                                                className="w-full font-bold text-sm text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-purple-500 cursor-pointer"
+                                            >
+                                                <option value="Unknown">Unknown</option>
+                                                {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Workloads (VMs)</label>
+                                        <input 
+                                            type="number" 
+                                            value={activeProject.estimatedWorkloads === undefined || activeProject.estimatedWorkloads === null ? '' : activeProject.estimatedWorkloads} 
+                                            onChange={(e) => onUpdateProject(activeProject.id, 'estimatedWorkloads', e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-purple-500" 
+                                        />
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Est. Labor (hrs)</label>
+                                        <input 
+                                            type="number" 
+                                            value={activeProject.estimatedMigrationHours === undefined || activeProject.estimatedMigrationHours === null ? '' : activeProject.estimatedMigrationHours} 
+                                            onChange={(e) => onUpdateProject(activeProject.id, 'estimatedMigrationHours', e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full font-bold text-sm text-slate-800 bg-transparent border-b border-slate-200 outline-none pb-1 focus:border-purple-500" 
+                                        />
+                                    </div>
+
+                                    <div className="bg-purple-50 p-5 rounded-xl border border-purple-200 shadow-sm hover:border-purple-400 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-200">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-purple-600 mb-2">Complexity</label>
+                                        <select 
+                                            value={activeProject.complexityLevel || 'Medium'} 
+                                            onChange={(e) => onUpdateProject(activeProject.id, 'complexityLevel', e.target.value)}
+                                            className="w-full font-black text-sm text-purple-900 bg-transparent border-b border-purple-300 outline-none pb-1 focus:border-purple-600 cursor-pointer"
+                                        >
+                                            <option value="Low">Low</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="High">High</option>
+                                            <option value="Ultra-High">Ultra-High</option>
+                                        </select>
+                                    </div>
+
+                                </div>
                             </div>
                         </div>
                     </div>
