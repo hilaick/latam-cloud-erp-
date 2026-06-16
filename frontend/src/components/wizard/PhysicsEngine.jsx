@@ -2,11 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 
 // Pre-defined Physics Profiles
 const PROFILES = {
-    'linux_block': { name: 'Linux VM (Standard Block)', os: 'Linux', sync: 'Block', totalFiles: 500000, smallFiles: 50000 },
-    'linux_file_heavy': { name: 'Linux App (Heavy File Sync)', os: 'Linux', sync: 'File', totalFiles: 50000000, smallFiles: 45000000 },
+    'linux_block': { name: 'Linux VM (Block)', os: 'Linux', sync: 'Block', totalFiles: 500000, smallFiles: 50000 },
+    'linux_file_heavy': { name: 'Linux App (File-Heavy)', os: 'Linux', sync: 'File', totalFiles: 50000000, smallFiles: 45000000 },
     'windows_std': { name: 'Windows Server (Block)', os: 'Windows', sync: 'Block', totalFiles: 300000, smallFiles: 20000 },
     'db_paas': { name: 'Database (PaaS Logical)', isDb: true, engine: 'PostgreSQL', rowsM: 250, rps: 8000 }
 };
+
+// 🚨 IDENTIFY VALID PHYSICS TARGETS (Ignores WAF, Support Plans, etc.)
+const computeTypes = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'];
+const dbTypes = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'];
 
 export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // Shared Global State
@@ -33,18 +37,24 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
     // 🚨 MANUAL MODE: INLINE SERVER STATE
     const [nodeConfigs, setNodeConfigs] = useState({});
-    const [selectedNodes, setSelectedNodes] = useState([]);
+    const [selectedNodes, setSelectedNodes] = useState([]); // Used STRICTLY for Bulk Editing
     const [bulkProfile, setBulkProfile] = useState('linux_block');
 
     // Pillar 3: Standalone Storage State (For Buckets/Shares without VMs)
     const [standaloneStorageSize, setStandaloneStorageSize] = useState(10);
     const [standaloneUnit, setStandaloneUnit] = useState('TB');
-    const [storageMode, setStorageMode] = useState('Object'); // Object vs FileShare
+    const [storageMode, setStorageMode] = useState('Object'); 
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    // 🚨 REMOVED FILTER: Now ingests Quoted-Only servers for "Blind Migrations"
-    const nodes = useMemo(() => (activeProject?.mapperNodes || []), [activeProject?.mapperNodes]);
+    // 🚨 CLEANSED INVENTORY: Only imports valid Compute/DB targets from Blueprint
+    const nodes = useMemo(() => {
+        return (activeProject?.mapperNodes || []).filter(n => {
+            if (n?.status === 'Quoted Only' && !n.type) return true; // Keep vague quoted items
+            const t = String(n.type || '').toUpperCase();
+            return computeTypes.some(c => t.includes(c)) || dbTypes.some(d => t.includes(d));
+        });
+    }, [activeProject?.mapperNodes]);
 
     // Initialize Node Configs from Blueprint/Quotation
     useEffect(() => {
@@ -78,10 +88,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             if (!mergedConfigs[n.id]) {
                 const isDb = String(n.type || '').toUpperCase().includes('DB') || String(n.type || '').toUpperCase().includes('RDS');
                 if (isDb) {
-                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], customSizeGB: Number(n.storage) || 500 };
+                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], profileName: PROFILES['db_paas'].name, customSizeGB: Number(n.storage) || 500, includedInMath: true };
                 } else {
                     const isWin = String(n.os || '').toUpperCase().includes('WIN');
-                    mergedConfigs[n.id] = { ...(isWin ? PROFILES['windows_std'] : PROFILES['linux_block']), customSizeGB: Number(n.storage) || 200 };
+                    const prof = isWin ? PROFILES['windows_std'] : PROFILES['linux_block'];
+                    mergedConfigs[n.id] = { ...prof, profileName: prof.name, customSizeGB: Number(n.storage) || 200, includedInMath: true };
                 }
                 needsUpdate = true;
             }
@@ -114,13 +125,13 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
     // Bulk Apply Profile
     const applyBulkProfile = () => {
-        if(selectedNodes.length === 0) return alert("Select at least one node.");
+        if(selectedNodes.length === 0) return alert("Select at least one node using the checkboxes on the left.");
         const newConfigs = { ...nodeConfigs };
         selectedNodes.forEach(id => {
-            newConfigs[id] = { ...newConfigs[id], ...PROFILES[bulkProfile] };
+            newConfigs[id] = { ...newConfigs[id], ...PROFILES[bulkProfile], profileName: PROFILES[bulkProfile].name };
         });
         setNodeConfigs(newConfigs);
-        setSelectedNodes([]);
+        setSelectedNodes([]); // Clear selection after applying
     };
 
     const toggleNode = (id) => {
@@ -171,10 +182,13 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let criticalBottleneck = "Network Pipe";
 
         const validConcurrency = Math.max(Number(concurrency) || 1, 1);
+        
+        // 🚨 ONLY CALCULATE NODES THAT ARE EXPLICITLY "INCLUDED IN MATH"
+        const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
 
         // 1. COMPUTE PILLAR (VMs)
         if (useCompute) {
-            const computeNodes = nodes.filter(n => nodeConfigs[n.id] && !nodeConfigs[n.id].isDb);
+            const computeNodes = activeNodes.filter(n => nodeConfigs[n.id] && !nodeConfigs[n.id].isDb);
             const pipePerServer = effectivePipeMbps / Math.min(computeNodes.length || 1, validConcurrency);
             
             let batchTimeSum = 0;
@@ -187,10 +201,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     const ratio = conf.smallFiles / Math.max(conf.totalFiles, 1);
                     speedMultiplier = Math.max(0.15, 1 - ( (conf.smallFiles / 2000000) * ratio ));
                 } else if (conf.sync === 'Block') {
-                    speedMultiplier = 1.35; // Compression boost
+                    speedMultiplier = 1.35; 
                 }
                 
-                const agentMaxSpeed = 4000 * speedMultiplier; // SSD baseline
+                const agentMaxSpeed = 4000 * speedMultiplier; 
                 const actualServerSpeed = Math.min(pipePerServer, agentMaxSpeed);
                 const hrs = ((payloadGB * 1024 * 8) / actualServerSpeed) / 3600;
                 batchTimeSum += hrs;
@@ -201,7 +215,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
         // 2. DATABASE PILLAR (Logical)
         if (useDatabase) {
-            const dbNodes = nodes.filter(n => nodeConfigs[n.id] && nodeConfigs[n.id].isDb);
+            const dbNodes = activeNodes.filter(n => nodeConfigs[n.id] && nodeConfigs[n.id].isDb);
             let dbTimeSum = 0;
             dbNodes.forEach(n => {
                 const conf = nodeConfigs[n.id];
@@ -256,7 +270,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                         <button onClick={() => setEngineMode('manual')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'manual' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-sliders-h mr-2"></i> Granular (Per Server)</button>
                         <button onClick={() => setEngineMode('cognitive')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'cognitive' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-brain mr-2"></i> Cognitive (Auto PMO)</button>
                     </div>
-                    {/* 🚨 THE NEW RESET BUTTON */}
+                    {/* 🚨 RESET BUTTON */}
                     <button onClick={resetContext} className="px-6 py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200 rounded-xl shadow-sm font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-undo mr-2"></i> Reset</button>
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
@@ -339,7 +353,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                         {(useCompute || useDatabase) && (
                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
                                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                                    <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Per-Server Physics Configurations</h4>
+                                    <div>
+                                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Per-Server Physics Configurations</h4>
+                                        <p className="text-[10px] font-bold text-slate-500 mt-1">All {nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false).length} active nodes below contribute to the SLA calculation.</p>
+                                    </div>
                                     
                                     <div className="flex items-center gap-3">
                                         <select value={bulkProfile} onChange={e=>setBulkProfile(e.target.value)} className="p-2 border border-slate-300 rounded text-xs font-bold bg-white">
@@ -352,31 +369,36 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                     <table className="w-full text-left text-xs whitespace-nowrap">
                                         <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
                                             <tr>
-                                                <th className="p-3 w-10 text-center"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
+                                                <th className="p-3 w-10 text-center" title="Select for Bulk Edit"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
                                                 <th className="p-3">Node Name</th>
-                                                <th className="p-3">Type</th>
+                                                <th className="p-3">Type & Profile</th>
                                                 <th className="p-3 text-right">Payload Size</th>
                                                 <th className="p-3">Sync Method / Details</th>
+                                                <th className="p-3 text-center">Include in SLA Math</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {nodes.filter(n => {
-                                                const isDb = String(n.type||'').toUpperCase().includes('DB');
+                                                const isDb = String(n.type||'').toUpperCase().includes('DB') || String(n.type||'').toUpperCase().includes('RDS');
                                                 if (isDb && !useDatabase) return false;
                                                 if (!isDb && !useCompute) return false;
                                                 return true;
                                             }).map(n => {
                                                 const conf = nodeConfigs[n.id] || {};
+                                                const isActive = conf.includedInMath !== false;
+                                                
                                                 return (
-                                                    <tr key={n.id} className={`hover:bg-indigo-50/50 transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : ''}`}>
+                                                    <tr key={n.id} className={`transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : isActive ? 'hover:bg-slate-50' : 'bg-slate-50/50 opacity-50'}`}>
                                                         <td className="p-3 text-center"><input type="checkbox" checked={selectedNodes.includes(n.id)} onChange={() => toggleNode(n.id)} className="w-4 h-4 accent-indigo-600"/></td>
                                                         <td className="p-3 font-bold text-slate-800 flex items-center">
                                                             <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>
-                                                            {/* 🚨 BLIND MIGRATION FALLBACK: Uses description if unmapped */}
                                                             {n.name || n.hostname || n.description || 'Placeholder Server'}
                                                             {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
                                                         </td>
-                                                        <td className="p-3 text-[10px] font-black uppercase text-slate-500">{conf.isDb ? 'Database' : conf.os || 'VM'}</td>
+                                                        <td className="p-3">
+                                                            <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.os || 'VM'}</div>
+                                                            <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">{conf.profileName || 'Custom'}</div>
+                                                        </td>
                                                         <td className="p-3 text-right">
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
@@ -399,10 +421,20 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                                 </div>
                                                             )}
                                                         </td>
+                                                        {/* 🚨 NEW: Include in SLA Math Toggle */}
+                                                        <td className="p-3 text-center">
+                                                            <label className="flex items-center justify-center cursor-pointer">
+                                                                <div className="relative">
+                                                                    <input type="checkbox" className="sr-only" checked={isActive} onChange={(e) => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, includedInMath: e.target.checked}})} />
+                                                                    <div className={`block w-10 h-6 rounded-full transition-colors ${isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                                                                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isActive ? 'transform translate-x-4' : ''}`}></div>
+                                                                </div>
+                                                            </label>
+                                                        </td>
                                                     </tr>
                                                 );
                                             })}
-                                            {nodes.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid nodes imported from Blueprint or Quote.</td></tr>}
+                                            {nodes.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid nodes imported from Blueprint or Quote.</td></tr>}
                                         </tbody>
                                     </table>
                                 </div>
