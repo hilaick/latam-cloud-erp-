@@ -664,4 +664,58 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
                         <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Persistent Bridge Link (Teams/Zoom/Meet)</label><input type="text" value={comms.bridge} onChange={e=>setComms({...comms, bridge: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white" placeholder="https://teams.microsoft.com/..." /></div>
                         <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Group Chat / WhatsApp Link</label><input type="text" value={comms.chat} onChange={e=>setComms({...comms, chat: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white" placeholder="https://chat.whatsapp.com/..." /></div>
                     </div>
-                    <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label><textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border
+                    <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label><textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:border-blue-500 bg-white custom-scrollbar resize-none" placeholder="PM Name: Maria..."></textarea></div>
+                </div>
+            </div>
+            <SingleProjectGantt project={project} />
+        </div>
+    )
+}
+
+function SingleProjectGantt({ project }) {
+    const timelineData = useMemo(() => {
+        const kickoffStr = project?.kickoff || project?.kickoffDate || project?.startDate; 
+        const targetStr = project?.date || project?.targetDate || project?.goLiveDate;
+        if(!kickoffStr || !targetStr || kickoffStr==='Pending' || targetStr==='TBD') return null;
+        const start = new Date(kickoffStr); const end = new Date(targetStr);
+        if(isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+        const pad = 10 * 24 * 60 * 60 * 1000; const min = start.getTime() - pad; const max = end.getTime() + pad; const total = max - min;
+        const pStart = ((start.getTime() - min) / total) * 100; const pWidth = ((end.getTime() - start.getTime()) / total) * 100;
+        return { pStart, pWidth, startStr: formatShortDate(kickoffStr), endStr: formatShortDate(targetStr) };
+    }, [project]);
+
+    return (
+        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8">
+            <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center uppercase tracking-widest"><i className="fas fa-stream text-amber-500 mr-3"></i> Project Timeline Baseline</h3>
+            {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-300 rounded-xl bg-white text-xs">Valid Kickoff and Go-Live dates required.</div> : (
+                <div className="overflow-x-auto w-full"><div className="min-w-[800px] relative h-[120px]"><div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div><div className="relative z-10 pt-8"><div className="h-12 relative bg-white border-y border-transparent rounded-xl shadow-sm"><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div><div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project?.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project?.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}><span className="text-xs font-black truncate">{project?.progress || '0%'} Complete</span></div><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div></div></div></div></div>
+            )}
+        </div>
+    )
+}
+
+function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
+    const safeTamData = project?.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] };
+    const [tamData, setTamData] = useState(safeTamData);
+    useEffect(() => { setTamData(project?.tamData || safeTamData); }, [project]);
+    const handleSave = () => { if (safePartialUpdate) safePartialUpdate({ tamData }); else onUpdateProject(project?.id, 'tamData', tamData); alert("TAM Operations Data Saved."); };
+    
+    return (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+                <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-headset text-blue-500 mr-2"></i> TAM Service Governance</h3>
+                <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md">Save Operations Data</button>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Contracted Support Plan</label>
+                    <select value={tamData.supportPlan} onChange={e=>setTamData({...tamData, supportPlan: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option>Developer</option><option>Business</option><option>Enterprise</option><option>Premier</option></select>
+                </div>
+                <div className="space-y-4">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Internal WeLink Group (NOC)</label>
+                    <input type="text" value={tamData.welinkGroup} onChange={e=>setTamData({...tamData, welinkGroup: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50" placeholder="welink://group/12345" />
+                </div>
+            </div>
+        </div>
+    );
+}
