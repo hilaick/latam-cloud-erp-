@@ -5,12 +5,14 @@ const PROFILES = {
     'linux_block': { name: 'Linux VM (Block)', os: 'Linux', sync: 'Block', totalFiles: 500000, smallFiles: 50000 },
     'linux_file_heavy': { name: 'Linux App (File-Heavy)', os: 'Linux', sync: 'File', totalFiles: 50000000, smallFiles: 45000000 },
     'windows_std': { name: 'Windows Server (Block)', os: 'Windows', sync: 'Block', totalFiles: 300000, smallFiles: 20000 },
-    'db_paas': { name: 'Database (PaaS Logical)', isDb: true, engine: 'PostgreSQL', rowsM: 250, rps: 8000 }
+    'db_paas': { name: 'Database (PaaS Logical)', isDb: true, engine: 'PostgreSQL', rowsM: 250, rps: 8000 },
+    'obs_standard': { name: 'OBS Bucket (API Sync)', isStorage: true, sync: 'API', totalFiles: 1000000, smallFiles: 0 }
 };
 
 // 🚨 IDENTIFY VALID PHYSICS TARGETS (Ignores WAF, Support Plans, etc.)
 const computeTypes = ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'];
 const dbTypes = ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'];
+const storageTypes = ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'];
 
 export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // Shared Global State
@@ -21,7 +23,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [netSource, setNetSource] = useState(1000); 
     const [transitType, setTransitType] = useState('IPsec VPN'); 
     const [netTunnel, setNetTunnel] = useState(300); 
-    const [netTarget, setNetTarget] = useState(1000);
     const [downtimeWindow, setDowntimeWindow] = useState(48); 
     const [concurrency, setConcurrency] = useState(5); 
 
@@ -40,19 +41,15 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [selectedNodes, setSelectedNodes] = useState([]); // Used STRICTLY for Bulk Editing
     const [bulkProfile, setBulkProfile] = useState('linux_block');
 
-    // Pillar 3: Standalone Storage State (For Buckets/Shares without VMs)
-    const [standaloneStorageSize, setStandaloneStorageSize] = useState(10);
-    const [standaloneUnit, setStandaloneUnit] = useState('TB');
-    const [storageMode, setStorageMode] = useState('Object'); 
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    // 🚨 CLEANSED INVENTORY: Only imports valid Compute/DB targets from Blueprint
+    // 🚨 CLEANSED INVENTORY: Only imports valid Compute, DB, and Storage targets from Blueprint
     const nodes = useMemo(() => {
         return (activeProject?.mapperNodes || []).filter(n => {
             if (n?.status === 'Quoted Only' && !n.type) return true; // Keep vague quoted items
             const t = String(n.type || '').toUpperCase();
-            return computeTypes.some(c => t.includes(c)) || dbTypes.some(d => t.includes(d));
+            return computeTypes.some(c => t.includes(c)) || dbTypes.some(d => t.includes(d)) || storageTypes.some(s => t.includes(s));
         });
     }, [activeProject?.mapperNodes]);
 
@@ -60,7 +57,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     useEffect(() => {
         if (!activeProject) return;
 
-        // Load Global Variables
         if (activeProject.physics) {
             const p = activeProject.physics;
             setEngineMode(p.engineMode || 'manual');
@@ -69,15 +65,12 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             setUseCompute(p.useCompute !== undefined ? p.useCompute : true);
             setUseDatabase(p.useDatabase !== undefined ? p.useDatabase : true);
             setUseStorage(p.useStorage || false);
-            setStandaloneStorageSize(p.standaloneStorageSize || 10);
-            setStorageMode(p.storageMode || 'Object');
+            setOmsTasks(p.omsTasks || 5); setOmsObjPerSec(p.omsObjPerSec || 120);
         } else {
-            // Reset to defaults if activeProject.physics is wiped
             setEngineMode('manual');
             setNetSource(1000); setTransitType('IPsec VPN'); setNetTunnel(300); setDowntimeWindow(48);
             setConcurrency(5);
             setUseCompute(true); setUseDatabase(true); setUseStorage(false);
-            setStandaloneStorageSize(10); setStorageMode('Object');
         }
 
         let pConfigs = activeProject.physics?.nodeConfigs || {};
@@ -86,19 +79,23 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
         nodes.forEach(n => {
             if (!mergedConfigs[n.id]) {
-                const isDb = String(n.type || '').toUpperCase().includes('DB') || String(n.type || '').toUpperCase().includes('RDS');
+                const t = String(n.type || '').toUpperCase();
+                const isDb = dbTypes.some(d => t.includes(d));
+                const isStorage = storageTypes.some(s => t.includes(s));
+
                 if (isDb) {
-                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], profileName: PROFILES['db_paas'].name, customSizeGB: Number(n.storage) || 500, includedInMath: true };
+                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], profileName: PROFILES['db_paas'].name, customSizeGB: Number(n.storage) || 500, includedInMath: true, isDb: true, isStorage: false };
+                } else if (isStorage) {
+                    mergedConfigs[n.id] = { ...PROFILES['obs_standard'], profileName: PROFILES['obs_standard'].name, customSizeGB: Number(n.storage) || 1000, includedInMath: true, isDb: false, isStorage: true };
                 } else {
                     const isWin = String(n.os || '').toUpperCase().includes('WIN');
                     const prof = isWin ? PROFILES['windows_std'] : PROFILES['linux_block'];
-                    mergedConfigs[n.id] = { ...prof, profileName: prof.name, customSizeGB: Number(n.storage) || 200, includedInMath: true };
+                    mergedConfigs[n.id] = { ...prof, profileName: prof.name, customSizeGB: Number(n.storage) || 200, includedInMath: true, isDb: false, isStorage: false };
                 }
                 needsUpdate = true;
             }
         });
 
-        // Push to state if new servers were added or physics was reset
         if (needsUpdate || !activeProject.physics) {
             setNodeConfigs(mergedConfigs);
         } else {
@@ -107,11 +104,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
     }, [activeProject?.physics, nodes]);
 
-    // 🚨 SAVE & RESET CONTEXT
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'physics', { 
             engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency, 
-            useCompute, useDatabase, useStorage, nodeConfigs, standaloneStorageSize, storageMode 
+            useCompute, useDatabase, useStorage, nodeConfigs, omsTasks, omsObjPerSec 
         }); 
         alert("Physics parameters saved."); 
     };
@@ -123,7 +119,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         }
     };
 
-    // Bulk Apply Profile
     const applyBulkProfile = () => {
         if(selectedNodes.length === 0) return alert("Select at least one node using the checkboxes on the left.");
         const newConfigs = { ...nodeConfigs };
@@ -131,7 +126,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             newConfigs[id] = { ...newConfigs[id], ...PROFILES[bulkProfile], profileName: PROFILES[bulkProfile].name };
         });
         setNodeConfigs(newConfigs);
-        setSelectedNodes([]); // Clear selection after applying
+        setSelectedNodes([]); 
     };
 
     const toggleNode = (id) => {
@@ -153,20 +148,20 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         const effectiveGBps = ((rawBottleneckMbps * cryptoTax) / 8) / 1024;
 
         let totalUsedGB = 0; let totalChurnGB = 0;
-        const analyzedNodes = nodes.map(n => {
-            const isDB = String(n.type || '').toUpperCase().includes('DB');
+        const analyzedNodes = nodes.filter(n => !nodeConfigs[n.id]?.isStorage).map(n => {
+            const isDB = nodeConfigs[n.id]?.isDb;
             const usedGB = (Number(n.storage) || 200) * (usedStoragePct / 100);
             const churnGB = usedGB * ((isDB ? dbChurnPct : appChurnPct) / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
             return { ...n, isDB, usedGB, churnGB, cutoverHrs: (churnGB / effectiveGBps / 3600) + 0.5 };
         }).sort((a,b) => b.cutoverHrs - a.cutoverHrs);
 
-        const totalCutoverHrs = nodes.length > 0 ? (totalChurnGB / effectiveGBps / 3600) / Number(concurrency) + 1.5 : 0;
+        const totalCutoverHrs = analyzedNodes.length > 0 ? (totalChurnGB / effectiveGBps / 3600) / Number(concurrency) + 1.5 : 0;
         const criticalNode = analyzedNodes.length > 0 ? analyzedNodes[0] : null;
         const realisticCutoverHrs = Math.max(totalCutoverHrs, criticalNode?.cutoverHrs || 0);
 
         return { effectiveMbps: Math.round(rawBottleneckMbps * cryptoTax), totalUsedTB: (totalUsedGB / 1024).toFixed(1), totalChurnGB: Math.round(totalChurnGB), cutoverHrs: realisticCutoverHrs.toFixed(1), isFeasible: realisticCutoverHrs <= Number(downtimeWindow) };
-    }, [nodes, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
+    }, [nodes, nodeConfigs, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
 
     // ==========================================
     // ⚙️ MATH: GRANULAR (Perfect Per-Server Simulation)
@@ -188,7 +183,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
         // 1. COMPUTE PILLAR (VMs)
         if (useCompute) {
-            const computeNodes = activeNodes.filter(n => nodeConfigs[n.id] && !nodeConfigs[n.id].isDb);
+            const computeNodes = activeNodes.filter(n => nodeConfigs[n.id] && !nodeConfigs[n.id].isDb && !nodeConfigs[n.id].isStorage);
             const pipePerServer = effectivePipeMbps / Math.min(computeNodes.length || 1, validConcurrency);
             
             let batchTimeSum = 0;
@@ -209,7 +204,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 const hrs = ((payloadGB * 1024 * 8) / actualServerSpeed) / 3600;
                 batchTimeSum += hrs;
             });
-            
             totalComputeHrs = computeNodes.length > 0 ? batchTimeSum / validConcurrency : 0;
         }
 
@@ -226,17 +220,20 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             totalDbHrs = dbNodes.length > 0 ? dbTimeSum / validConcurrency : 0;
         }
 
-        // 3. STANDALONE STORAGE PILLAR
+        // 3. STORAGE PILLAR (OBS/SFS)
         if (useStorage) {
-            const payloadTB = Number(standaloneStorageSize) * (standaloneUnit === 'TB' ? 1 : 1/1024);
-            if (storageMode === 'Object') {
-                const apiSpeedMbps = (omsTasks * omsObjPerSec * 1.5); 
-                const actualSpeed = Math.min(effectivePipeMbps, apiSpeedMbps);
-                totalStorageHrs = ((payloadTB * 1024 * 1024 * 8) / actualSpeed) / 3600;
-                if(apiSpeedMbps < effectivePipeMbps) criticalBottleneck = "Storage API Rate Limit";
-            } else {
-                totalStorageHrs = ((payloadTB * 1024 * 1024 * 8) / effectivePipeMbps) / 3600;
-            }
+            const storageNodes = activeNodes.filter(n => nodeConfigs[n.id] && nodeConfigs[n.id].isStorage);
+            const apiSpeedMbps = (omsTasks * omsObjPerSec * 1.5); 
+            const actualSpeed = Math.min(effectivePipeMbps, apiSpeedMbps);
+            
+            let stTimeSum = 0;
+            storageNodes.forEach(n => {
+                const conf = nodeConfigs[n.id];
+                const payloadGB = conf.customSizeGB || Number(n.storage) || 1000;
+                stTimeSum += ((payloadGB * 1024 * 8) / actualSpeed) / 3600;
+            });
+            totalStorageHrs = storageNodes.length > 0 ? stTimeSum / validConcurrency : 0;
+            if(apiSpeedMbps < effectivePipeMbps && storageNodes.length > 0) criticalBottleneck = "Storage API Rate Limit";
         }
 
         const totalExecutionHrs = Math.max(totalComputeHrs, totalDbHrs, totalStorageHrs);
@@ -253,7 +250,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             criticalBottleneck,
             isFeasible: totalExecutionHrs <= Number(downtimeWindow)
         };
-    }, [nodes, nodeConfigs, useCompute, useDatabase, useStorage, netSource, netTunnel, transitType, concurrency, standaloneStorageSize, standaloneUnit, storageMode, omsTasks, omsObjPerSec, downtimeWindow]);
+    }, [nodes, nodeConfigs, useCompute, useDatabase, useStorage, netSource, netTunnel, transitType, concurrency, omsTasks, omsObjPerSec, downtimeWindow]);
 
     return (
         <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6 pb-12">
@@ -274,36 +271,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     <button onClick={resetContext} className="px-6 py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200 rounded-xl shadow-sm font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-undo mr-2"></i> Reset</button>
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
-            </div>
-
-            {/* 📚 FAQ ACCORDION */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <button onClick={() => setShowFaq(!showFaq)} className="w-full px-6 py-4 flex justify-between items-center text-slate-700 font-black text-sm hover:bg-slate-100 transition-colors">
-                    <span className="flex items-center gap-2"><i className="fas fa-graduation-cap text-indigo-500 text-lg mr-2"></i> The Reality of Bandwidth: Why Migrations Miss SLAs</span>
-                    <i className={`fas fa-chevron-${showFaq ? 'up' : 'down'}`}></i>
-                </button>
-                {showFaq && (
-                    <div className="p-6 pt-0 text-xs text-slate-600 space-y-4 animate-fade-in border-t border-slate-200 mt-2 pt-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                            <div>
-                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-route text-blue-500 mr-1"></i> The Transit Tax</h5>
-                                <p className="leading-relaxed font-medium">You never get 100% of the pipe. Standard TCP routing takes ~5%. <b>IPsec VPNs</b> require heavy packet encryption (~15% tax). <b>Public Internet</b> routing suffers from packet drops and latency (~25% tax).</p>
-                            </div>
-                            <div>
-                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-copy text-amber-500 mr-1"></i> The Small Files Nightmare</h5>
-                                <p className="leading-relaxed font-medium">A 1 TB video file syncs instantly. 1 TB of 5KB text files will crawl. For every small file, the OS must do an inode lookup (or an HTTP PUT for Object Storage), plummeting network utilization.</p>
-                            </div>
-                            <div>
-                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-lock text-purple-500 mr-1"></i> The Crypto Penalty</h5>
-                                <p className="leading-relaxed font-medium">Decrypting a source OS drive (BitLocker/LUKS) spikes CPU on read. Hitting a Cloud <b>KMS API</b> on the destination adds an API authentication latency tax to every block/file written.</p>
-                            </div>
-                            <div>
-                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-database text-rose-500 mr-1"></i> Block vs Logical Sync</h5>
-                                <p className="leading-relaxed font-medium">Block replication (SMS) compresses data and ignores small files. However, <b>RDS/PaaS Databases</b> cannot be block-synced. They require Logical Sync (DRS), bounded strictly by Rows/second processing limits.</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* 🌐 SHARED PIPELINE SETTINGS */}
@@ -342,19 +309,19 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <input type="checkbox" checked={useCompute} onChange={e=>setUseCompute(e.target.checked)} className="hidden"/> <i className="fas fa-server"></i> Compute Nodes
                             </label>
                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useDatabase ? 'bg-rose-500/20 border-rose-400 text-rose-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Logical Databases
+                                <input type="checkbox" checked={useDatabase} onChange={e=>setUseDatabase(e.target.checked)} className="hidden"/> <i className="fas fa-database"></i> Databases
                             </label>
                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useStorage ? 'bg-amber-500/20 border-amber-400 text-amber-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                                <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Standalone Storage
+                                <input type="checkbox" checked={useStorage} onChange={e=>setUseStorage(e.target.checked)} className="hidden"/> <i className="fas fa-hdd"></i> Storage
                             </label>
                         </div>
 
-                        {/* PILLARS 1 & 2: INLINE SERVER TABLE */}
-                        {(useCompute || useDatabase) && (
+                        {/* PILLARS 1, 2, 3: THE UNIFIED INLINE TABLE */}
+                        {(useCompute || useDatabase || useStorage) && (
                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
                                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
                                     <div>
-                                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Per-Server Physics Configurations</h4>
+                                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest"><i className="fas fa-list text-indigo-500 mr-2"></i> Unified Resource Physics</h4>
                                         <p className="text-[10px] font-bold text-slate-500 mt-1">All {nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false).length} active nodes below contribute to the SLA calculation.</p>
                                     </div>
                                     
@@ -370,18 +337,19 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                         <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
                                             <tr>
                                                 <th className="p-3 w-10 text-center" title="Select for Bulk Edit"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
-                                                <th className="p-3">Node Name</th>
+                                                <th className="p-3">Resource Name</th>
                                                 <th className="p-3">Type & Profile</th>
                                                 <th className="p-3 text-right">Payload Size</th>
                                                 <th className="p-3">Sync Method / Details</th>
-                                                <th className="p-3 text-center">Include in SLA Math</th>
+                                                <th className="p-3 text-center">Include in Math</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {nodes.filter(n => {
-                                                const isDb = String(n.type||'').toUpperCase().includes('DB') || String(n.type||'').toUpperCase().includes('RDS');
-                                                if (isDb && !useDatabase) return false;
-                                                if (!isDb && !useCompute) return false;
+                                                const c = nodeConfigs[n.id] || {};
+                                                if (c.isDb && !useDatabase) return false;
+                                                if (c.isStorage && !useStorage) return false;
+                                                if (!c.isDb && !c.isStorage && !useCompute) return false;
                                                 return true;
                                             }).map(n => {
                                                 const conf = nodeConfigs[n.id] || {};
@@ -391,12 +359,12 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                     <tr key={n.id} className={`transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : isActive ? 'hover:bg-slate-50' : 'bg-slate-50/50 opacity-50'}`}>
                                                         <td className="p-3 text-center"><input type="checkbox" checked={selectedNodes.includes(n.id)} onChange={() => toggleNode(n.id)} className="w-4 h-4 accent-indigo-600"/></td>
                                                         <td className="p-3 font-bold text-slate-800 flex items-center">
-                                                            <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>
-                                                            {n.name || n.hostname || n.description || 'Placeholder Server'}
+                                                            <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : conf.isStorage ? 'fa-hdd text-amber-500' : 'fa-server text-blue-500'} mr-2`}></i>
+                                                            {n.name || n.hostname || n.description || 'Placeholder Resource'}
                                                             {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
                                                         </td>
                                                         <td className="p-3">
-                                                            <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.os || 'VM'}</div>
+                                                            <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.isStorage ? 'Storage' : conf.os || 'VM'}</div>
                                                             <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">{conf.profileName || 'Custom'}</div>
                                                         </td>
                                                         <td className="p-3 text-right">
@@ -410,6 +378,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                                     <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-rose-200">Logical (DRS)</span>
                                                                     <input type="number" title="Millions of Rows" value={conf.rowsM || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, rowsM: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded font-mono text-[10px] focus:border-rose-500 outline-none" /> <span className="text-[9px] text-slate-400">M Rows</span>
                                                                 </div>
+                                                            ) : conf.isStorage ? (
+                                                                <div className="flex gap-2 items-center">
+                                                                    <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-amber-200">API Sync (OMS)</span>
+                                                                </div>
                                                             ) : (
                                                                 <div className="flex gap-2 items-center">
                                                                     <select value={conf.sync || 'Block'} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, sync: e.target.value}})} className="p-1 border border-slate-200 rounded text-[10px] font-black text-blue-800 bg-blue-50 cursor-pointer focus:border-blue-500 outline-none">
@@ -421,7 +393,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                                 </div>
                                                             )}
                                                         </td>
-                                                        {/* 🚨 NEW: Include in SLA Math Toggle */}
                                                         <td className="p-3 text-center">
                                                             <label className="flex items-center justify-center cursor-pointer">
                                                                 <div className="relative">
@@ -434,31 +405,20 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                     </tr>
                                                 );
                                             })}
-                                            {nodes.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid nodes imported from Blueprint or Quote.</td></tr>}
+                                            {nodes.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid resources imported from Blueprint or Quote.</td></tr>}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
                         )}
-
-                        {/* PILLAR 3: STANDALONE STORAGE */}
-                        {useStorage && (
-                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow animate-fade-in">
-                                <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                    <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-hdd text-amber-500"></i> Pillar 3: Standalone Storage Migration</h4>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="flex gap-2">
-                                        <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Payload Size</label><input type="number" value={standaloneStorageSize} onChange={e=>setStandaloneStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-amber-500 bg-slate-50"/></div>
-                                        <div className="w-20"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Unit</label><select value={standaloneUnit} onChange={e=>setStandaloneUnit(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>TB</option><option>GB</option></select></div>
-                                    </div>
-                                    <div><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-amber-700">Target Type</label><select value={storageMode} onChange={e=>setStorageMode(e.target.value)} className="w-full p-3 border-2 border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-xs font-black outline-none"><option value="Object">Object (OBS / S3)</option><option value="File">File Share (SFS)</option></select></div>
-                                    {storageMode === 'Object' && (
-                                        <div className="flex gap-2">
-                                            <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">OMS Tasks</label><input type="number" value={omsTasks} onChange={e=>setOmsTasks(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
-                                            <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">API Obj/Sec</label><input type="number" value={omsObjPerSec} onChange={e=>setOmsObjPerSec(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
-                                        </div>
-                                    )}
+                        
+                        {/* OMS GLOBAL LIMITS */}
+                        {useStorage && nodes.filter(n => nodeConfigs[n.id]?.isStorage).length > 0 && (
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
+                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800 mb-4"><i className="fas fa-cogs text-amber-500"></i> Global OMS API Limits (Storage Pillar)</h4>
+                                <div className="flex gap-4">
+                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Concurrent OMS Tasks</label><input type="number" value={omsTasks} onChange={e=>setOmsTasks(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
+                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">API Objects / Sec Limit</label><input type="number" value={omsObjPerSec} onChange={e=>setOmsObjPerSec(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-slate-50"/></div>
                                 </div>
                             </div>
                         )}
