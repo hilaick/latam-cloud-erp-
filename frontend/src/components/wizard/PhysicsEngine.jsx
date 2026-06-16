@@ -4,7 +4,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // ==========================================
     // 🎛️ GLOBAL & SHARED STATE
     // ==========================================
-    const [engineMode, setEngineMode] = useState('cognitive'); // 'cognitive' or 'manual'
+    const [engineMode, setEngineMode] = useState('manual'); // 'cognitive' or 'manual'
     const [showFaq, setShowFaq] = useState(false);
 
     // Shared Network Constraints
@@ -25,26 +25,33 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // ==========================================
     // ⚙️ MANUAL / GRANULAR MODE STATE
     // ==========================================
+    // Pillar 1: Compute
     const [computeCPU, setComputeCPU] = useState(60); 
     const [computeRAM, setComputeRAM] = useState(60);
     const [computeOS, setComputeOS] = useState('Linux');
     const [sourceEncrypted, setSourceEncrypted] = useState(false);
+    const [diskType, setDiskType] = useState('SSD');
+    const [syncMethod, setSyncMethod] = useState('Block'); 
+    
+    // Pillar 2: Storage (Block vs Object)
+    const [storageMode, setStorageMode] = useState('Block'); 
+    const [targetKMS, setTargetKMS] = useState(false);
     const [storageSize, setStorageSize] = useState(5.0); 
     const [storageUnit, setStorageUnit] = useState('TB');
-    const [storageMode, setStorageMode] = useState('Block'); 
-    const [diskType, setDiskType] = useState('SSD');
-    const [targetKMS, setTargetKMS] = useState(false);
     const [totalFiles, setTotalFiles] = useState(103000000); 
     const [smallFiles, setSmallFiles] = useState(90000000); 
-    const [syncMethod, setSyncMethod] = useState('Block'); 
+    const [omsTasks, setOmsTasks] = useState(5);
+    const [omsObjPerSec, setOmsObjPerSec] = useState(120);
+    const [omsBackbone, setOmsBackbone] = useState(16); 
+
+    // Pillar 3: Databases
     const [excludeDb, setExcludeDb] = useState(true); 
     const [dbStorageSize, setDbStorageSize] = useState(4.0);
     const [dbType, setDbType] = useState('PostgreSQL'); 
     const [dbRowsM, setDbRowsM] = useState(250); 
     const [dbRps, setDbRps] = useState(8000);
-    const [omsTasks, setOmsTasks] = useState(5);
-    const [omsObjPerSec, setOmsObjPerSec] = useState(120);
-    const [omsBackbone, setOmsBackbone] = useState(16); 
+    
+    // Pillar 4: SLA / Ops
     const [drBackupHrs, setDrBackupHrs] = useState(4); 
     const [drStability, setDrStability] = useState('High'); 
 
@@ -52,13 +59,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     // DATA MAPPING
     // ==========================================
     const nodes = useMemo(() => (activeProject?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [activeProject?.mapperNodes]);
-    const totalCompute = nodes.filter(n => ['ECS', 'VM'].includes(String(n.type).toUpperCase())).length;
-    const totalDbs = nodes.filter(n => ['RDS', 'GAUSSDB', 'DB'].includes(String(n.type).toUpperCase())).length;
 
     useEffect(() => {
         if (activeProject?.physics) {
             const p = activeProject.physics;
-            setEngineMode(p.engineMode || 'cognitive');
+            setEngineMode(p.engineMode || 'manual');
             setNetSource(p.netSource||1000); setTransitType(p.transitType||'IPsec VPN'); setNetTunnel(p.netTunnel||300); setNetTarget(p.netTarget||1000); setDowntimeWindow(p.downtimeWindow||48);
             
             // Cognitive
@@ -129,13 +134,12 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             initialSyncDays: (totalInitialHrs / 24).toFixed(1),
             cutoverHrs: realisticCutoverHrs.toFixed(1),
             isFeasible: realisticCutoverHrs <= Number(downtimeWindow),
-            analyzedNodes,
-            criticalNode
+            analyzedNodes
         };
     }, [nodes, netSource, transitType, netTunnel, netTarget, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow]);
 
     // ==========================================
-    // ⚙️ MATH: MANUAL ENGINE
+    // ⚙️ MATH: MANUAL ENGINE (THE 4 PILLARS)
     // ==========================================
     const manResult = useMemo(() => {
         const unitMultiplier = storageUnit === 'TB' ? 1 : (storageUnit === 'GB' ? 1/1024 : 1/1048576);
@@ -151,6 +155,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let finalBottleneck = 1000; let actualTransferMbps = 0; let osSyncHours = 0; let osPayloadTB = 0;
 
         if (storageMode === 'Object') {
+            // PILLAR: STORAGE (OMS SERVERLESS)
             const tasks = Number(omsTasks) || 1; const ops = Number(omsObjPerSec) || 1;
             const backboneMbps = (Number(omsBackbone) || 16) * 1000; 
             finalBottleneck = backboneMbps;
@@ -173,6 +178,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             if (targetKMS) ioWarn += "KMS API Tax applied. ";
             netWarn = "INFO: Serverless OMS active. Transit routes (VPN/DC) bypassed.";
         } else {
+            // PILLAR: NETWORKING & COMPUTE (BLOCK/FILE AGENTS)
             const bottleneckMbps = Math.min(Number(netSource) || Infinity, Number(netTunnel) || Infinity, Number(netTarget) || Infinity);
             finalBottleneck = bottleneckMbps === Infinity ? 1000 : bottleneckMbps;
 
@@ -205,6 +211,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             osSyncHours = (((osPayloadTB * 1024 * 1024 * 8) / (actualTransferMbps || 1)) / 3600); 
         }
 
+        // PILLAR: DATABASES (LOGICAL SYNC)
         const actualTransferMBps = actualTransferMbps / 8;
         const dbTotalRows = Number(dbRowsM) * 1000000;
         let effectiveRps = Number(dbRps) || 1;
@@ -213,8 +220,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
         let controllingPath = storageMode === 'Object' ? "API Object Transfer (OMS)" : "OS/Disk Network Transfer";
         if (excludeDb && storageMode !== 'Object' && dbSyncHours > osSyncHours) {
-            controllingPath = "Database Native Replication";
-            dbWarn = `CRIT BOTTLENECK: DB Logical Sync (${dbSyncHours.toFixed(1)}h) is slower than the Payload Sync (${osSyncHours.toFixed(1)}h). Pipeline constrained by DB Rows/sec.`;
+            controllingPath = "Database Native Replication (DRS)";
+            dbWarn = `CRIT BOTTLENECK: DB Logical Sync (${dbSyncHours.toFixed(1)}h) is slower than the Block Payload Sync (${osSyncHours.toFixed(1)}h). Pipeline constrained by DB Rows/sec limit.`;
         }
 
         const rawExecutionHours = Math.max(osSyncHours, dbSyncHours);
@@ -236,28 +243,58 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     }, [storageUnit, storageSize, dbStorageSize, totalFiles, smallFiles, storageMode, omsTasks, omsObjPerSec, omsBackbone, excludeDb, targetKMS, netSource, netTunnel, netTarget, transitType, computeCPU, sourceEncrypted, computeRAM, diskType, syncMethod, dbRowsM, dbRps, dbType, drStability, drBackupHrs, downtimeWindow]);
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-4 pb-12 animate-fade-in">
+        <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6">
+            
             {/* 🎛️ HEADER & TOGGLE */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                 <div>
                     <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-microscope text-indigo-500"></i> Delivery Physics Engine</h3>
-                    <p className="text-xs text-slate-500 mt-1 font-bold">Calculate true SLA timelines using Network, Crypto, and File Count constraints.</p>
+                    <p className="text-xs text-slate-500 mt-1 font-bold">Calculate true SLA timelines using Network, Crypto, and Tooling constraints.</p>
                 </div>
                 
                 <div className="flex items-center gap-4 flex-wrap">
-                    {/* The Mode Toggle */}
                     <div className="bg-slate-100 p-1.5 rounded-xl flex gap-1 border border-slate-200 shadow-inner">
-                        <button onClick={() => setEngineMode('cognitive')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'cognitive' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-brain mr-2"></i> Cognitive (Auto)</button>
                         <button onClick={() => setEngineMode('manual')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'manual' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-sliders-h mr-2"></i> Granular (Manual)</button>
+                        <button onClick={() => setEngineMode('cognitive')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'cognitive' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-brain mr-2"></i> Cognitive (Auto)</button>
                     </div>
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
             </div>
 
-            {/* SHARED NETWORK OVERRIDES (Used by both modes) */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between mb-6">
-                <div className="flex justify-between items-center mb-5">
-                    <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-network-wired text-indigo-500"></i> Global End-to-End Network Constraints</h4>
+            {/* 📚 RESTORED FAQ ACCORDION */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <button onClick={() => setShowFaq(!showFaq)} className="w-full px-6 py-4 flex justify-between items-center text-slate-700 font-black text-sm hover:bg-slate-100 transition-colors">
+                    <span className="flex items-center gap-2"><i className="fas fa-graduation-cap text-indigo-500 text-lg mr-2"></i> The Reality of Bandwidth: Why Migrations Miss SLAs</span>
+                    <i className={`fas fa-chevron-${showFaq ? 'up' : 'down'}`}></i>
+                </button>
+                {showFaq && (
+                    <div className="p-6 pt-0 text-xs text-slate-600 space-y-4 animate-fade-in border-t border-slate-200 mt-2 pt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-route text-blue-500 mr-1"></i> The Transit Tax</h5>
+                                <p className="leading-relaxed font-medium">You never get 100% of the pipe. Standard TCP routing takes ~5%. <b>IPsec VPNs</b> require heavy packet encryption (~15% tax). <b>Public Internet</b> routing suffers from packet drops and latency (~25% tax).</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-copy text-amber-500 mr-1"></i> The Small Files Nightmare</h5>
+                                <p className="leading-relaxed font-medium">A 1 TB video file syncs instantly. 1 TB of 5KB text files will crawl. For every small file, the OS must do an inode lookup (or an HTTP PUT for Object Storage), plummeting network utilization.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-lock text-purple-500 mr-1"></i> The Crypto Penalty</h5>
+                                <p className="leading-relaxed font-medium">Decrypting a source OS drive (BitLocker/LUKS) spikes CPU on read. Hitting a Cloud <b>KMS API</b> on the destination adds an API authentication latency tax to every block/file written.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-database text-rose-500 mr-1"></i> Block vs Logical Sync</h5>
+                                <p className="leading-relaxed font-medium">Block replication (SMS) compresses data and ignores small files. However, <b>RDS/PaaS Databases</b> cannot be block-synced. They require Logical Sync (DRS), bounded strictly by Rows/second processing limits.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 🌐 SHARED NETWORK OVERRIDES */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-4">
+                    <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-network-wired text-indigo-500"></i> Pillar 4: End-to-End Network Constraints</h4>
                 </div>
                 <div className="flex flex-col md:flex-row gap-6 items-start">
                     <div className="flex-1 w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Source Outbound (Mbps)</label><input type="number" value={netSource} onChange={e=>setNetSource(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 bg-slate-50"/></div>
@@ -273,13 +310,121 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             </div>
 
             {/* ========================================================== */}
-            {/* 🤖 RENDER COGNITIVE MODE */}
+            {/* ⚙️ RENDER MANUAL MODE (THE 4 PILLARS) */}
+            {/* ========================================================== */}
+            {engineMode === 'manual' && (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
+                    <div className="xl:col-span-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        
+                        {/* PILLAR 1: COMPUTE */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between min-h-[250px] hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
+                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-server text-blue-500"></i> Pillar 1: Compute Node</h4>
+                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={sourceEncrypted} onChange={e=>setSourceEncrypted(e.target.checked)} className="w-4 h-4 accent-blue-600"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Disk Encrypted</span></label>
+                            </div>
+                            <div className="space-y-5">
+                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>CPU Saturation (Throttles Agent)</span><span className="text-blue-700">{computeCPU}%</span></label><input type="range" min="10" max="99" value={computeCPU} onChange={e=>setComputeCPU(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
+                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>RAM Saturation</span><span className="text-blue-700">{computeRAM}%</span></label><input type="range" min="10" max="99" value={computeRAM} onChange={e=>setComputeRAM(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
+                                <div className="flex gap-4">
+                                    <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">OS Platform</label><select value={computeOS} onChange={e=>setComputeOS(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option value="Linux">Linux</option><option value="Windows">Windows</option></select></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* PILLAR 2: STORAGE / PROTOCOL */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
+                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-hdd text-amber-500"></i> Pillar 2: Storage & Protocol</h4>
+                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={targetKMS} onChange={e=>setTargetKMS(e.target.checked)} className="w-4 h-4 accent-amber-500"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Target KMS API</span></label>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex gap-4">
+                                    <div className="w-1/2 flex gap-2">
+                                        <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Payload Size</label><input type="number" value={storageSize} onChange={e=>setStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-amber-500 bg-slate-50"/></div>
+                                        <div className="w-16"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Unit</label><select value={storageUnit} onChange={e=>setStorageUnit(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>TB</option><option>GB</option></select></div>
+                                    </div>
+                                    <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-amber-700">Target Protocol</label><select value={storageMode} onChange={e=>setStorageMode(e.target.value)} className="w-full p-3 border-2 border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-xs font-black outline-none"><option value="Block">Block/File (SMS)</option><option value="Object">Object (OMS)</option></select></div>
+                                </div>
+
+                                {/* Dynamic Fields based on Storage Protocol */}
+                                {storageMode === 'Block' ? (
+                                    <>
+                                        <div className="flex gap-4 items-end pt-3 border-t border-slate-100">
+                                            <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Total File Count</label><input type="number" value={totalFiles} onChange={e=>handleTotalFilesChange(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-amber-500 bg-slate-50"/></div>
+                                            <div className="w-1/2"><label className="flex justify-between items-center text-[10px] font-black tracking-widest uppercase mb-2 text-amber-700"><span title="Files < 64KB">Of which are Small</span><span className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 border border-amber-200">{manResult.smallFilePct}%</span></label><input type="number" value={smallFiles} onChange={e=>handleSmallFilesChange(e.target.value)} className="w-full p-3 border-2 border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-sm font-black outline-none shadow-inner"/></div>
+                                        </div>
+                                        <div className="flex gap-4 pt-1"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Source Disk IOPS</label><select value={diskType} onChange={e=>setDiskType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>HDD</option><option>SSD</option><option>NVMe</option></select></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-purple-700">Agent Mode</label><select value={syncMethod} onChange={e=>setSyncMethod(e.target.value)} className="w-full p-3 border-2 border-purple-300 bg-purple-50 text-purple-900 rounded-xl text-xs font-black outline-none"><option value="Block">Block-Level</option><option value="File">File-Level</option></select></div></div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col gap-3 pt-3 border-t border-slate-100">
+                                        <div className="flex gap-3"><div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-1 text-slate-500">OMS Tasks</label><input type="number" value={omsTasks} onChange={e=>setOmsTasks(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-sm font-bold bg-slate-50"/></div><div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-1 text-slate-500">API Obj/Sec</label><input type="number" value={omsObjPerSec} onChange={e=>setOmsObjPerSec(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-sm font-bold bg-slate-50"/></div></div>
+                                        <div><label className="block text-[10px] font-black tracking-widest uppercase mb-1 text-blue-600">Cloud Backbone Limit (Gbps)</label><input type="number" value={omsBackbone} onChange={e=>setOmsBackbone(e.target.value)} className="w-full p-2 border border-blue-200 rounded bg-blue-50 text-blue-900 font-bold"/></div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* PILLAR 3: DATABASES */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
+                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-database text-rose-500"></i> Pillar 3: Database Engine</h4>
+                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={excludeDb} onChange={e=>setExcludeDb(e.target.checked)} className="w-4 h-4 accent-rose-600" disabled={storageMode==='Object'}/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Split DB via DRS</span></label>
+                            </div>
+                            {excludeDb && storageMode !== 'Object' ? (
+                                <div className="space-y-4 animate-fade-in">
+                                    <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-[10px] text-rose-800 font-bold leading-relaxed">Excludes DB from block payload. Calculates PaaS/DRS Logical Replication via Rows/sec.</div>
+                                    <div className="flex gap-3"><div className="w-1/3"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">DB Size ({storageUnit})</label><input type="number" value={dbStorageSize} onChange={e=>setDbStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Engine Type</label><select value={dbType} onChange={e=>setDbType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-rose-500 bg-white"><option>HANA</option><option>Oracle</option><option>PostgreSQL / MySQL</option><option>SQL Server</option></select></div></div>
+                                    <div className="flex gap-3"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Est. Rows (M)</label><input type="number" value={dbRowsM} onChange={e=>setDbRowsM(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Logical Sync (Rows/s)</label><input type="number" value={dbRps} onChange={e=>setDbRps(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-rose-500 bg-white"/></div></div>
+                                </div>
+                            ) : <div className="flex-1 flex items-center justify-center p-6 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 opacity-60"><p className="text-xs font-bold text-slate-500 text-center">Logical PaaS Sync Disabled.<br/>All data treated as raw block transfer.</p></div>}
+                        </div>
+
+                        {/* PILLAR 4: SLA & OPS */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                            <h4 className="font-black text-sm mb-5 flex items-center gap-2 text-slate-800"><i className="fas fa-shield-alt text-emerald-500"></i> Limits & Cutover SLA</h4>
+                            <div className="flex gap-3 mb-6"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Cold Backup (Hrs)</label><input type="number" value={drBackupHrs} onChange={e=>setDrBackupHrs(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Link Stability Buffer</label><select value={drStability} onChange={e=>setDrStability(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"><option value="High">High</option><option value="Medium">Medium (+30%)</option><option value="Low">Low (+60%)</option></select></div></div>
+                            <div className="w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Target SLA Window (Hrs)</label><input type="number" value={downtimeWindow} onChange={e=>setDowntimeWindow(e.target.value)} className="w-full p-4 border-2 border-emerald-300 rounded-xl bg-emerald-50 font-black text-base text-emerald-900 outline-none text-center shadow-inner"/></div>
+                        </div>
+
+                    </div>
+
+                    {/* MANUAL RESULT COLUMN */}
+                    <div className="xl:col-span-4 space-y-6">
+                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[450px] shadow-sm relative overflow-hidden ${manResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
+                            <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Calculated End-to-End SLA</div>
+                            <div className={`text-6xl font-black tracking-tighter ${manResult.isFeasible ? 'text-emerald-700' : 'text-rose-700'}`}>{manResult.daysStr}</div>
+                            <div className="text-sm font-bold text-slate-600 mt-2">({manResult.totalHours} total execution hours)</div>
+                            
+                            <div className="mt-6 pt-6 border-t-2 border-slate-200/60 text-xs font-medium space-y-3">
+                                <div className="flex justify-between items-center text-slate-600"><span>Calculated Bottleneck:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{manResult.bottleneckMbps} Mbps</span></div>
+                                <div className="flex justify-between items-center text-slate-600"><span>Effective Transfer:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{manResult.actualMbps} Mbps</span></div>
+                                
+                                <div className="mt-4 pt-4 border-t border-slate-200/50">
+                                    <div className="flex justify-between items-center text-blue-700 font-bold mb-1"><span>{storageMode==='Object' ? 'OMS API Sync' : 'OS Payload Sync'}:</span> <span>{manResult.osSyncHours} hrs</span></div>
+                                    {excludeDb && storageMode !== 'Object' && <div className="flex justify-between items-center text-rose-700 font-bold"><span>Native DB Sync (DRS):</span> <span>{manResult.dbSyncHours} hrs</span></div>}
+                                </div>
+                                <div className="flex justify-between items-center mt-3 p-2 bg-white/50 rounded text-slate-800 font-black border border-slate-200 shadow-sm"><span>Controlling Path:</span> <span>{manResult.controllingPath}</span></div>
+                            </div>
+                            
+                            <div className="mt-5 space-y-2">
+                                {manResult.netWarn && <div className="text-[10px] font-black text-slate-800 bg-slate-100 border border-slate-300 p-3 rounded-xl shadow-sm"><i className="fas fa-route mr-1"></i> {manResult.netWarn}</div>}
+                                {manResult.dbWarn && <div className="text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-200 p-3 rounded-xl shadow-sm"><i className="fas fa-database mr-1"></i> {manResult.dbWarn}</div>}
+                                {manResult.ioWarn && <div className="text-[10px] font-black text-amber-800 bg-amber-100 border border-amber-200 p-3 rounded-xl shadow-sm"><i className="fas fa-exclamation-triangle mr-1"></i> {manResult.ioWarn}</div>}
+                                {manResult.cpuWarn && <div className="text-[10px] font-black text-purple-800 bg-purple-100 border border-purple-200 p-3 rounded-xl shadow-sm"><i className="fas fa-microchip mr-1"></i> {manResult.cpuWarn}</div>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================== */}
+            {/* 🤖 RENDER COGNITIVE MODE (AUTO-CALCULATOR) */}
             {/* ========================================================== */}
             {engineMode === 'cognitive' && (
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
                     <div className="xl:col-span-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
                         
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
                                 <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-brain text-purple-500"></i> Predictive Baselines</h4>
                             </div>
@@ -300,7 +445,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                             </div>
                         </div>
 
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
                                 <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-shield-alt text-emerald-500"></i> Limits & Cutover SLA</h4>
                             </div>
@@ -320,10 +465,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm lg:col-span-2 overflow-hidden">
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm lg:col-span-2 overflow-hidden hover:shadow-md transition-shadow">
                             <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                                 <h4 className="font-black text-xs uppercase tracking-widest text-slate-700"><i className="fas fa-exclamation-triangle text-amber-500 mr-2"></i> Critical Path Analysis</h4>
-                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Top Heaviest Nodes</div>
+                                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Top Heaviest Nodes mapped in <span className="bg-slate-200 text-slate-700 px-1 rounded ml-1">Step 2.4</span></div>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
@@ -333,17 +478,21 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                     <tbody className="divide-y divide-slate-100">
                                         {cogResult.analyzedNodes.slice(0, 5).map((n, i) => (
                                             <tr key={i} className={`hover:bg-slate-50 transition-colors ${i === 0 ? 'bg-amber-50/50' : ''}`}>
-                                                <td className="p-3 font-bold text-slate-800"><i className={`fas ${n.isDB ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>{n.name || n.hostname || 'Unknown Node'} {i === 0 && <span className="ml-2 bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest">Critical Path</span>}</td>
+                                                <td className="p-3 font-bold text-slate-800"><i className={`fas ${n.isDB ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>{n.name || n.hostname || 'Unknown Node'} {i === 0 && <span className="ml-2 bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest shadow-sm">Critical Path</span>}</td>
                                                 <td className="p-3 text-right font-mono text-slate-600">{(n.usedGB).toFixed(0)} GB</td><td className="p-3 text-right font-mono text-slate-600">{(n.churnGB).toFixed(0)} GB</td><td className="p-3 text-right font-mono text-slate-600">{(n.initialSyncHrs).toFixed(1)}h</td>
                                                 <td className={`p-3 text-right font-black ${n.cutoverSyncHrs > downtimeWindow ? 'text-rose-600' : 'text-slate-800'}`}>{(n.cutoverSyncHrs).toFixed(1)}h</td>
                                             </tr>
                                         ))}
+                                        {cogResult.analyzedNodes.length === 0 && (
+                                            <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl bg-slate-50">No valid nodes mapped in Target Topology yet. The cognitive engine cannot auto-pack waves until Step 2.4 is complete.</td></tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
 
+                    {/* COGNITIVE RESULT COLUMN */}
                     <div className="xl:col-span-4 space-y-6">
                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center text-center">
                             <div className="text-[10px] font-black tracking-widest uppercase mb-1 text-slate-500">Effective Bandwidth</div>
@@ -357,10 +506,10 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <div><div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Time to Complete</div><div className="text-3xl font-black text-blue-700">{cogResult.initialSyncDays} Days</div></div>
                                 <i className="fas fa-clock text-3xl text-slate-200"></i>
                             </div>
-                            <div className="text-[10px] font-bold text-slate-500 bg-slate-50 p-2 rounded border border-slate-100">Total payload is <b>{cogResult.totalUsedTB} TB</b>. Zero downtime impact.</div>
+                            <div className="text-[10px] font-bold text-slate-500 bg-slate-50 p-3 rounded border border-slate-100 shadow-inner">Total payload is <b>{cogResult.totalUsedTB} TB</b>. Zero downtime impact.</div>
                         </div>
 
-                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center shadow-sm relative overflow-hidden transition-colors ${cogResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
+                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[300px] shadow-sm relative overflow-hidden transition-colors ${cogResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
                             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-white/50 to-transparent"></div>
                             <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Phase 2: Cutover Downtime</div>
                             <div className={`text-6xl font-black tracking-tighter ${cogResult.isFeasible ? 'text-emerald-700' : 'text-rose-700'}`}>{cogResult.cutoverHrs} <span className="text-2xl">Hrs</span></div>
@@ -368,95 +517,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                 <div className="flex justify-between items-center text-slate-600"><span>Target SLA Allowed:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{downtimeWindow} Hrs</span></div>
                                 <div className="flex justify-between items-center text-slate-600"><span>Total Delta Data:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{cogResult.totalChurnGB} GB</span></div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ========================================================== */}
-            {/* ⚙️ RENDER MANUAL MODE */}
-            {/* ========================================================== */}
-            {engineMode === 'manual' && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in">
-                    <div className="xl:col-span-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between min-h-[200px]">
-                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-server text-blue-500"></i> 1. Compute Node</h4>
-                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={sourceEncrypted} onChange={e=>setSourceEncrypted(e.target.checked)} className="w-4 h-4 accent-blue-600"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Source Disk Encrypted</span></label>
-                            </div>
-                            <div className="space-y-5">
-                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>CPU Saturation</span><span className="text-blue-700">{computeCPU}%</span></label><input type="range" min="10" max="99" value={computeCPU} onChange={e=>setComputeCPU(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
-                                <div><label className="flex justify-between text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500"><span>RAM Saturation</span><span className="text-blue-700">{computeRAM}%</span></label><input type="range" min="10" max="99" value={computeRAM} onChange={e=>setComputeRAM(e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600 cursor-pointer"/></div>
-                                <div className="flex gap-4"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Operating System</label><select value={computeOS} onChange={e=>setComputeOS(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option value="Linux">Linux</option><option value="Windows">Windows</option></select></div></div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-hdd text-blue-500"></i> 2. Target Protocol & Payload</h4>
-                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={targetKMS} onChange={e=>setTargetKMS(e.target.checked)} className="w-4 h-4 accent-blue-600"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Target KMS Encryption</span></label>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex gap-4">
-                                    <div className="w-1/2 flex gap-2">
-                                        <div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Total Size</label><input type="number" value={storageSize} onChange={e=>setStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div>
-                                        <div className="w-16"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Unit</label><select value={storageUnit} onChange={e=>setStorageUnit(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>TB</option><option>GB</option><option>MB</option></select></div>
-                                    </div>
-                                    <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-rose-700">Target Protocol</label><select value={storageMode} onChange={e=>setStorageMode(e.target.value)} className="w-full p-3 border-2 border-rose-300 bg-rose-50 text-rose-900 rounded-xl text-xs font-black outline-none"><option value="Block">Block/File (Disk)</option><option value="Object">Object Storage</option></select></div>
+                            {!cogResult.isFeasible && (
+                                <div className="mt-4 text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-200 p-3 rounded-xl shadow-sm">
+                                    <i className="fas fa-exclamation-circle mr-1"></i> Critical path bottleneck detected. Increase bandwidth or extend SLA window.
                                 </div>
-                                <div className="flex gap-4 items-end pt-3">
-                                    <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Total File Count</label><input type="number" value={totalFiles} onChange={e=>handleTotalFilesChange(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div>
-                                    <div className="w-1/2"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-amber-700">Of which are Small</label><input type="number" value={smallFiles} onChange={e=>handleSmallFilesChange(e.target.value)} className="w-full p-3 border-2 border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-sm font-black outline-none shadow-inner"/></div>
-                                </div>
-                                {storageMode !== 'Object' && (
-                                    <div className="flex gap-4 pt-1"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Source Disk</label><select value={diskType} onChange={e=>setDiskType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50"><option>HDD</option><option>SSD</option><option>NVMe</option></select></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-purple-700">Agent Mode</label><select value={syncMethod} onChange={e=>setSyncMethod(e.target.value)} className="w-full p-3 border-2 border-purple-300 bg-purple-50 text-purple-900 rounded-xl text-xs font-black outline-none"><option value="Block">Block-Level</option><option value="File">File-Level (Linux)</option></select></div></div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-2">
-                                <h4 className="font-black text-sm flex items-center gap-2 text-slate-800"><i className="fas fa-database text-rose-500"></i> 3. Database Routing</h4>
-                                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={excludeDb} onChange={e=>setExcludeDb(e.target.checked)} className="w-4 h-4 accent-rose-600"/><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Split DB Payload</span></label>
-                            </div>
-                            {excludeDb ? (
-                                <div className="space-y-4">
-                                    <div className="flex gap-3"><div className="w-1/3"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">DB Size ({storageUnit})</label><input type="number" value={dbStorageSize} onChange={e=>setDbStorageSize(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Engine</label><select value={dbType} onChange={e=>setDbType(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-xs font-bold outline-none bg-white"><option>HANA</option><option>Oracle</option><option>PostgreSQL</option><option>SQL Server</option></select></div></div>
-                                    <div className="flex gap-3"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Est. Rows (M)</label><input type="number" value={dbRowsM} onChange={e=>setDbRowsM(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-white"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Sync (Rows/s)</label><input type="number" value={dbRps} onChange={e=>setDbRps(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-white"/></div></div>
-                                </div>
-                            ) : <div className="flex-1 flex items-center justify-center p-6 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 opacity-60"><p className="text-xs font-bold">Monolith Sync Active.</p></div>}
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                            <h4 className="font-black text-sm mb-5 flex items-center gap-2 text-slate-800"><i className="fas fa-shield-alt text-amber-500"></i> 4. Operations & DR SLA</h4>
-                            <div className="flex gap-3 mb-6"><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Cold Backup (Hrs)</label><input type="number" value={drBackupHrs} onChange={e=>setDrBackupHrs(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"/></div><div className="flex-1"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-slate-500">Link Stability</label><select value={drStability} onChange={e=>setDrStability(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none bg-slate-50"><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select></div></div>
-                            <div className="w-full"><label className="block text-[10px] font-black tracking-widest uppercase mb-2 text-emerald-700">Target SLA Window (Hrs)</label><input type="number" value={downtimeWindow} onChange={e=>setDowntimeWindow(e.target.value)} className="w-full p-4 border-2 border-emerald-300 rounded-xl bg-emerald-50 font-black text-base text-emerald-900 outline-none text-center shadow-inner"/></div>
-                        </div>
-
-                    </div>
-
-                    <div className="xl:col-span-4 space-y-6">
-                        <div className={`p-8 rounded-3xl border-4 flex flex-col justify-center min-h-[350px] shadow-sm relative overflow-hidden ${manResult.isFeasible ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'}`}>
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Calculated End-to-End SLA</div>
-                            <div className={`text-6xl font-black tracking-tighter ${manResult.isFeasible ? 'text-emerald-700' : 'text-rose-700'}`}>{manResult.daysStr}</div>
-                            <div className="text-sm font-bold text-slate-600 mt-2">({manResult.totalHours} total execution hours)</div>
-                            
-                            <div className="mt-6 pt-6 border-t-2 border-slate-200/60 text-xs font-medium space-y-3">
-                                <div className="flex justify-between items-center text-slate-600"><span>Calculated Bottleneck:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{manResult.bottleneckMbps} Mbps</span></div>
-                                <div className="flex justify-between items-center text-slate-600"><span>Effective Transfer:</span> <span className="font-black bg-white px-2 py-1 rounded shadow-sm">{manResult.actualMbps} Mbps</span></div>
-                                
-                                <div className="mt-4 pt-4 border-t border-slate-200/50">
-                                    <div className="flex justify-between items-center text-blue-700 font-bold mb-1"><span>Payload Sync:</span> <span>{manResult.osSyncHours} hrs</span></div>
-                                    {excludeDb && storageMode !== 'Object' && <div className="flex justify-between items-center text-rose-700 font-bold"><span>Native DB Sync:</span> <span>{manResult.dbSyncHours} hrs</span></div>}
-                                </div>
-                            </div>
-                            <div className="mt-5 space-y-2">
-                                {manResult.netWarn && <div className="text-[10px] font-black text-slate-800 bg-slate-100 border border-slate-300 p-3 rounded-xl shadow-sm"><i className="fas fa-route mr-1"></i> {manResult.netWarn}</div>}
-                                {manResult.dbWarn && <div className="text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-200 p-3 rounded-xl shadow-sm"><i className="fas fa-exclamation-circle mr-1"></i> {manResult.dbWarn}</div>}
-                                {manResult.ioWarn && <div className="text-[10px] font-black text-amber-800 bg-amber-100 border border-amber-200 p-3 rounded-xl shadow-sm"><i className="fas fa-exclamation-triangle mr-1"></i> {manResult.ioWarn}</div>}
-                                {manResult.cpuWarn && <div className="text-[10px] font-black text-purple-800 bg-purple-100 border border-purple-200 p-3 rounded-xl shadow-sm"><i className="fas fa-microchip mr-1"></i> {manResult.cpuWarn}</div>}
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>
