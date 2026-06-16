@@ -105,6 +105,19 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         }, 2000);
     };
 
+    // 🚨 ADDED MISSING FUNCTION: Handles Dropdown Changes for Execution Vectors
+    const handleVectorChange = (nodeId, newVector) => {
+        const updatedAssignments = {
+            ...vectorAssignments,
+            [nodeId]: {
+                ...vectorAssignments[nodeId],
+                vector: newVector
+            }
+        };
+        setVectorAssignments(updatedAssignments);
+        safePartialUpdate({ vectorAssignments: updatedAssignments });
+    };
+
     const handleExecuteTerraform = async () => {
         if (!project?.id) return;
         const token = localStorage.getItem('erp_jwt_token');
@@ -148,7 +161,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
-                    {/* 🚨 UI UPGRADE: Replaced Burger icon with semantic Chevron Toggles */}
                     <button 
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors"
@@ -294,8 +306,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                             <td className="p-3"><span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color} flex w-max items-center`}><i className={`fas ${data.icon} mr-1.5`}></i> {data.status}</span></td>
                                                                             <td className="p-3">
                                                                                 <select value={data.vector} onChange={(e) => handleVectorChange(n.id, e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none font-bold text-[10px] uppercase">
-                                                                                    <option>Vector 1: SMS Auto-Provision</option><option>Vector 2: Pre-Provisioned SMS Target</option>
-                                                                                    <option>Vector 3: OBS VHD Image Import</option><option>Vector 4: Direct OS-Level Rsync</option>
+                                                                                    <option value="Vector 1: SMS Auto-Provision">Vector 1: SMS Auto-Provision</option>
+                                                                                    <option value="Vector 2: Pre-Provisioned SMS Target">Vector 2: Pre-Provisioned SMS Target</option>
+                                                                                    <option value="Vector 3: OBS VHD Image Import">Vector 3: OBS VHD Image Import</option>
+                                                                                    <option value="Vector 4: Direct OS-Level Rsync">Vector 4: Direct OS-Level Rsync</option>
                                                                                 </select>
                                                                             </td>
                                                                         </tr>
