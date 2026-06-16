@@ -1,9 +1,147 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatShortDate } from '../../utils/helpers';
 
+// Identifiers to filter only Compute/DB nodes for the execution matrix
+const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
+
+// 🚨 THE NEW EXECUTION GUIDE & LEGEND CAROUSEL COMPONENT
+const ExecutionGuideModal = ({ onClose }) => {
+    const [slide, setSlide] = useState(1);
+    const totalSlides = 4;
+
+    return (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={onClose}></div>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                <div className="px-6 py-4 bg-indigo-600 text-white flex justify-between items-center shrink-0">
+                    <h3 className="font-black text-lg"><i className="fas fa-book-open mr-2"></i> Execution Orchestrator: Guide & Legend</h3>
+                    <button onClick={onClose} className="text-indigo-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                </div>
+                
+                <div className="p-8 overflow-y-auto bg-slate-50 flex-1">
+                    {slide === 1 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">1. The Orchestration Flow</h4>
+                            <p className="text-slate-600 text-sm leading-relaxed">
+                                The Execution Control Plane translates your planned architecture into actual cloud infrastructure through four automated phases:
+                            </p>
+                            <ul className="space-y-3 mt-4">
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <div className="bg-blue-100 text-blue-700 font-black px-2 py-1 rounded text-xs mt-0.5">4.1</div>
+                                    <div><strong className="text-sm text-slate-800">Pre-Flight Validation</strong><p className="text-xs text-slate-500">The ERP scans the SOW inventory, checks your IAM quotas, and assigns an Execution Vector (migration method) to each server.</p></div>
+                                </li>
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <div className="bg-amber-100 text-amber-700 font-black px-2 py-1 rounded text-xs mt-0.5">4.2</div>
+                                    <div><strong className="text-sm text-slate-800">Build Landing Zone</strong><p className="text-xs text-slate-500">Generates Terraform code and deploys target VPCs, empty databases, and network gateways via Huawei's RFS API.</p></div>
+                                </li>
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <div className="bg-purple-100 text-purple-700 font-black px-2 py-1 rounded text-xs mt-0.5">4.3</div>
+                                    <div><strong className="text-sm text-slate-800">Deploy Data Plane</strong><p className="text-xs text-slate-500">Pushes SMS/DRS agents to source servers to begin the byte-by-byte data sync.</p></div>
+                                </li>
+                                <li className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start gap-3">
+                                    <div className="bg-rose-100 text-rose-700 font-black px-2 py-1 rounded text-xs mt-0.5">4.4</div>
+                                    <div><strong className="text-sm text-slate-800">Sync & Drift Monitor</strong><p className="text-xs text-slate-500">Monitors transfer progress and watches for unauthorized modifications to the source environment.</p></div>
+                                </li>
+                            </ul>
+                        </div>
+                    )}
+
+                    {slide === 2 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">2. Execution Vectors & Authorization</h4>
+                            <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                                Depending on the <b>Authentication Level</b> provided by the customer, the ERP will either fully automate agent deployment or generate <b>Zero-Trust Runbooks</b> for the customer to execute manually. Every server is assigned an algorithmic Vector:
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-emerald-600 mb-1">Vector 1: SMS Auto-Provision</div>
+                                    <p className="text-xs text-slate-500">Standard block-level migration. Agent is pushed, and target ECS is automatically cloned from the source OS.</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-amber-600 mb-1">Vector 2: Pre-Provisioned Target</div>
+                                    <p className="text-xs text-slate-500">Used for UEFI/BIOS mismatches. A blank target ECS is pre-built, and data is synced via file-level replication.</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-rose-600 mb-1">Vector 3: Offline VHD Import</div>
+                                    <p className="text-xs text-slate-500">Used for legacy/incompatible OS kernels (e.g. Win 2008). Requires manual image export to OBS.</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="font-black text-sm text-indigo-600 mb-1">Vector 5: Database DRS Sync</div>
+                                    <p className="text-xs text-slate-500">Used strictly for PaaS databases. Logical rows/sec synchronization via Data Replication Service.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {slide === 3 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">3. Security, IAM & Drift Detection</h4>
+                            <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                                The ERP utilizes a strict Zero-Trust security model during execution to protect customer environments.
+                            </p>
+                            <ul className="space-y-4 text-sm text-slate-600">
+                                <li>
+                                    <strong className="text-slate-800 flex items-center gap-2"><i className="fas fa-key text-emerald-500"></i> Ephemeral STS Tokens</strong>
+                                    The ERP never stores long-term root API keys. Before executing Phase 4.2, it requests a temporary STS (Security Token Service) key that expires automatically.
+                                </li>
+                                <li>
+                                    <strong className="text-slate-800 flex items-center gap-2"><i className="fas fa-box text-blue-500"></i> EPS Isolation</strong>
+                                    All resources are deployed strictly into the customer's defined <b>Enterprise Project (EPS)</b> boundary. If EPS is missing, the ERP falls back to isolated Sandbox VPCs.
+                                </li>
+                                <li>
+                                    <strong className="text-slate-800 flex items-center gap-2"><i className="fas fa-radar text-rose-500"></i> Active Drift Monitoring</strong>
+                                    During Phase 4.4, if a customer spins up a new server in the source environment that is not in the approved Statement of Work (SOW), the ERP throws a Drift Alert to prevent scope creep.
+                                </li>
+                            </ul>
+                        </div>
+                    )}
+
+                    {slide === 4 && (
+                        <div className="animate-fade-in space-y-4">
+                            <h4 className="font-black text-xl text-slate-800 mb-2 border-b border-slate-200 pb-2">4. Legend & Terminology</h4>
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                                <div>
+                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Technical Terms</div>
+                                    <ul className="text-xs space-y-2 text-slate-600">
+                                        <li><b>RFS:</b> Resource Formation Service (Huawei's Terraform Engine)</li>
+                                        <li><b>STS:</b> Security Token Service (Ephemeral Keys)</li>
+                                        <li><b>EPS:</b> Enterprise Project Service (Resource grouping)</li>
+                                        <li><b>Drift:</b> Unauthorized changes to the source environment</li>
+                                        <li><b>Blind Migration:</b> Executing from a Quote without MgC Discovery</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Agent Opt-Ins</div>
+                                    <ul className="text-xs space-y-2 text-slate-600">
+                                        <li><b>UniAgent (CES):</b> Cloud Eye monitoring agent.</li>
+                                        <li><b>HSS:</b> Host Security Service (Anti-virus/Anti-ransomware).</li>
+                                        <li><b>LTS:</b> Log Tank Service (Log collection).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-between items-center shrink-0">
+                    <button onClick={() => setSlide(slide > 1 ? slide - 1 : 1)} disabled={slide === 1} className="px-4 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-800 disabled:opacity-30"><i className="fas fa-arrow-left mr-1"></i> Previous</button>
+                    <div className="flex gap-2">{[1, 2, 3, 4].map(i => <div key={i} className={`w-2 h-2 rounded-full ${slide === i ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>)}</div>
+                    {slide < totalSlides ? (
+                        <button onClick={() => setSlide(slide + 1)} className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-black uppercase transition-colors">Next <i className="fas fa-arrow-right ml-1"></i></button>
+                    ) : (
+                        <button onClick={onClose} className="px-6 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-black uppercase shadow-md transition-colors">Acknowledge</button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [sidebarOpen, setSidebarOpen] = useState(true); 
+    const [showGuide, setShowGuide] = useState(false); // 🚨 NEW GUIDE STATE
     
     const [anticipationInsights, setAnticipationInsights] = useState(project?.anticipationInsights || null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
@@ -36,7 +174,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
     const strategy = getStrategyDetails();
     
-    const inScopeNodes = useMemo(() => (project?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [project?.mapperNodes]);
+    const inScopeNodes = useMemo(() => {
+        return (project?.mapperNodes || []).filter(n => {
+            const t = String(n.type || '').toUpperCase();
+            return executableTypes.some(execType => t.includes(execType));
+        });
+    }, [project?.mapperNodes]);
+
+    const isBlindMigration = inScopeNodes.length > 0 && inScopeNodes.every(n => n.status === 'Quoted Only');
 
     const safePartialUpdate = async (updates) => {
         if (!project?.id) return;
@@ -78,21 +223,29 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         if (!project?.id) return;
         setPreflightStatus('scanning');
         const token = localStorage.getItem('erp_jwt_token');
-        try {
-            const res = await fetch(`/api/projects/${project.id}/anticipate`, { headers: { 'Authorization': `Bearer ${token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success) { 
-                    setAnticipationInsights(data.insights); 
-                    safePartialUpdate({ anticipationInsights: data.insights }); 
+        
+        if (!isBlindMigration) {
+            try {
+                const res = await fetch(`/api/projects/${project.id}/anticipate`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) { 
+                        setAnticipationInsights(data.insights); 
+                        safePartialUpdate({ anticipationInsights: data.insights }); 
+                    }
                 }
-            }
-        } catch (e) { console.warn("Anticipation API network failed.", e); }
+            } catch (e) { console.warn("Anticipation API network failed.", e); }
+        }
 
         setTimeout(() => {
             const assignments = {};
             inScopeNodes.forEach((n, idx) => {
-                if (n.status === 'Live Only' && !project?.crApproved) assignments[n.id] = { status: 'Scope Creep', vector: 'Blocked (Missing CR)', icon: 'fa-hand-paper', color: 'text-rose-500' };
+                if (n.status === 'Quoted Only') {
+                    assignments[n.id] = { status: 'Bypassed (Quote Only)', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-eye-slash', color: 'text-slate-400' };
+                }
+                else if (n.status === 'Live Only' && !project?.crApproved) {
+                    assignments[n.id] = { status: 'Scope Creep', vector: 'Blocked (Missing CR)', icon: 'fa-hand-paper', color: 'text-rose-500' };
+                }
                 else {
                     if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
                     else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
@@ -102,10 +255,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             setVectorAssignments(assignments); 
             setPreflightStatus('done');
             safePartialUpdate({ vectorAssignments: assignments, execStatus: 'preflight_complete' });
-        }, 2000);
+        }, 1500);
     };
 
-    // 🚨 ADDED MISSING FUNCTION: Handles Dropdown Changes for Execution Vectors
     const handleVectorChange = (nodeId, newVector) => {
         const updatedAssignments = {
             ...vectorAssignments,
@@ -159,6 +311,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             
+            {/* 🚨 GUIDE MODAL INTEGRATION */}
+            {showGuide && <ExecutionGuideModal onClose={() => setShowGuide(false)} />}
+
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
                     <button 
@@ -170,7 +325,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     </button>
                     <div>
                         <h3 className="font-black text-xl text-slate-800">Execution Control Plane</h3>
-                        <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">Provision Landing Zones & Deploy Data Planes.</p>
+                        <div className="flex items-center gap-3 mt-1">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Provision Landing Zones & Deploy Data Planes.</p>
+                            {/* 🚨 NEW GUIDE BUTTON */}
+                            <button onClick={() => setShowGuide(true)} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"><i className="fas fa-book-open mr-1"></i> View Guide & Legend</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -266,7 +425,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 </div>
                                                 {execStatus === 'pending' || preflightStatus === 'pending' ? (
                                                     <button onClick={handleRunPreflight} disabled={iamStatus !== 'active' || preflightStatus === 'scanning'} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center">
-                                                        {preflightStatus === 'scanning' ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</> : <><i className="fas fa-microscope mr-2"></i> Run OS Diagnostics</>}
+                                                        {preflightStatus === 'scanning' ? (
+                                                            <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</>
+                                                        ) : isBlindMigration ? (
+                                                            <><i className="fas fa-eye-slash mr-2"></i> Init Blind Matrix</>
+                                                        ) : (
+                                                            <><i className="fas fa-microscope mr-2"></i> Run OS Diagnostics</>
+                                                        )}
                                                     </button>
                                                 ) : (
                                                     <div className="flex items-center gap-4">
@@ -276,7 +441,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 )}
                                             </div>
 
-                                            {anticipationInsights && (
+                                            {anticipationInsights && !isBlindMigration && (
                                                 <div className="mb-6 space-y-3 animate-fade-in">
                                                     {anticipationInsights.quota_warnings?.map((warn, i) => (
                                                         <div key={`quota-${i}`} className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg flex gap-3 text-amber-200"><i className="fas fa-exclamation-triangle text-amber-500 mt-1"></i><div className="text-xs"><strong>EIP Quota:</strong> {warn}</div></div>
@@ -295,31 +460,48 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     <div className="overflow-y-auto max-h-[300px] custom-scrollbar">
                                                         <table className="w-full text-left text-xs">
                                                             <thead className="bg-slate-800/80 text-[9px] uppercase tracking-widest text-slate-400 sticky top-0 z-10">
-                                                                <tr><th className="p-3">Compute Node</th><th className="p-3">OS Diagnostic Status</th><th className="p-3">Assigned Execution Vector</th></tr>
+                                                                <tr><th className="p-3">Compute/DB Node</th><th className="p-3">Pre-Flight Status</th><th className="p-3">Assigned Execution Vector</th></tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-slate-700/50 text-slate-300">
                                                                 {inScopeNodes.map(n => {
                                                                     const data = vectorAssignments[n.id] || { status: 'Pending', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-circle-notch', color: 'text-slate-500' };
+                                                                    const isDb = String(n.type||'').toUpperCase().includes('DB') || String(n.type||'').toUpperCase().includes('RDS');
+                                                                    
                                                                     return (
                                                                         <tr key={n.id} className="hover:bg-slate-800 transition-colors">
-                                                                            <td className="p-3 font-bold text-white"><i className="fas fa-server text-blue-400 mr-2"></i>{n.name || n.hostname || 'Unknown Node'}</td>
+                                                                            <td className="p-3 font-bold text-white">
+                                                                                <i className={`fas ${isDb ? 'fa-database text-rose-500' : n.status === 'Quoted Only' ? 'fa-hdd text-amber-500' : 'fa-server text-blue-400'} mr-2`}></i>
+                                                                                {n.name || n.hostname || n.description || 'Placeholder Server'}
+                                                                            </td>
                                                                             <td className="p-3"><span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color} flex w-max items-center`}><i className={`fas ${data.icon} mr-1.5`}></i> {data.status}</span></td>
                                                                             <td className="p-3">
-                                                                                <select value={data.vector} onChange={(e) => handleVectorChange(n.id, e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none font-bold text-[10px] uppercase">
-                                                                                    <option value="Vector 1: SMS Auto-Provision">Vector 1: SMS Auto-Provision</option>
-                                                                                    <option value="Vector 2: Pre-Provisioned SMS Target">Vector 2: Pre-Provisioned SMS Target</option>
-                                                                                    <option value="Vector 3: OBS VHD Image Import">Vector 3: OBS VHD Image Import</option>
-                                                                                    <option value="Vector 4: Direct OS-Level Rsync">Vector 4: Direct OS-Level Rsync</option>
+                                                                                <select value={data.vector} onChange={(e) => handleVectorChange(n.id, e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-slate-300 px-2 py-1.5 rounded outline-none font-bold text-[10px] uppercase cursor-pointer hover:border-slate-500">
+                                                                                    {isDb ? (
+                                                                                        <>
+                                                                                            <option value="Vector 5: Database DRS Sync">Vector 5: Database DRS Sync</option>
+                                                                                            <option value="Vector 6: Manual DB Dump">Vector 6: Manual DB Dump</option>
+                                                                                        </>
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            <option value="Vector 1: SMS Auto-Provision">Vector 1: SMS Auto-Provision</option>
+                                                                                            <option value="Vector 2: Pre-Provisioned SMS Target">Vector 2: Pre-Provisioned SMS Target</option>
+                                                                                            <option value="Vector 3: OBS VHD Image Import">Vector 3: OBS VHD Image Import</option>
+                                                                                            <option value="Vector 4: Direct OS-Level Rsync">Vector 4: Direct OS-Level Rsync</option>
+                                                                                        </>
+                                                                                    )}
                                                                                 </select>
                                                                             </td>
                                                                         </tr>
                                                                     )
                                                                 })}
+                                                                {inScopeNodes.length === 0 && (
+                                                                    <tr><td colSpan="3" className="p-8 text-center text-slate-500 font-bold border border-dashed border-slate-700 m-2 rounded-xl">No executable nodes mapped. Ensure Step 2.4 is completed.</td></tr>
+                                                                )}
                                                             </tbody>
                                                         </table>
                                                     </div>
                                                     <div className="p-3 bg-slate-800/80 border-t border-slate-700 text-right">
-                                                        <button onClick={() => advanceStatus('sandbox_built')} disabled={!tokenValidated} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center shadow-md ml-auto">
+                                                        <button onClick={() => advanceStatus('sandbox_built')} disabled={!tokenValidated || inScopeNodes.length === 0} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center shadow-md ml-auto transition-colors">
                                                             <i className="fas fa-lock mr-2"></i> Approve Matrix & Proceed
                                                         </button>
                                                     </div>
@@ -379,7 +561,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                 <div className="flex-1 pr-6">
                                                     <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Phase 4.4</div>
                                                     <h4 className="text-lg font-black text-white mb-2">Continuous Sync & Drift Monitor</h4>
-                                                    {execStatus === 'syncing' && driftAlert && (
+                                                    {execStatus === 'syncing' && driftAlert && !isBlindMigration && (
                                                         <div className="mt-5 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 animate-pulse">
                                                             <div className="flex items-start gap-3">
                                                                 <i className="fas fa-radar text-rose-500 text-xl mt-0.5"></i>
@@ -392,6 +574,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                     </div>
                                                                 </div>
                                                             </div>
+                                                        </div>
+                                                    )}
+                                                    {execStatus === 'syncing' && isBlindMigration && (
+                                                        <div className="mt-5 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-blue-300 text-xs font-bold flex items-center">
+                                                            <i className="fas fa-info-circle mr-3 text-lg"></i>
+                                                            Blind Migration Active. Drift Monitor disabled. Engine waiting for explicit manual "Cutover Ready" signal from delivery team.
                                                         </div>
                                                     )}
                                                 </div>
@@ -476,58 +664,4 @@ function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
                         <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Persistent Bridge Link (Teams/Zoom/Meet)</label><input type="text" value={comms.bridge} onChange={e=>setComms({...comms, bridge: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white" placeholder="https://teams.microsoft.com/..." /></div>
                         <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Group Chat / WhatsApp Link</label><input type="text" value={comms.chat} onChange={e=>setComms({...comms, chat: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-white" placeholder="https://chat.whatsapp.com/..." /></div>
                     </div>
-                    <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label><textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:border-blue-500 bg-white custom-scrollbar resize-none" placeholder="PM Name: Maria..."></textarea></div>
-                </div>
-            </div>
-            <SingleProjectGantt project={project} />
-        </div>
-    )
-}
-
-function SingleProjectGantt({ project }) {
-    const timelineData = useMemo(() => {
-        const kickoffStr = project?.kickoff || project?.kickoffDate || project?.startDate; 
-        const targetStr = project?.date || project?.targetDate || project?.goLiveDate;
-        if(!kickoffStr || !targetStr || kickoffStr==='Pending' || targetStr==='TBD') return null;
-        const start = new Date(kickoffStr); const end = new Date(targetStr);
-        if(isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
-        const pad = 10 * 24 * 60 * 60 * 1000; const min = start.getTime() - pad; const max = end.getTime() + pad; const total = max - min;
-        const pStart = ((start.getTime() - min) / total) * 100; const pWidth = ((end.getTime() - start.getTime()) / total) * 100;
-        return { pStart, pWidth, startStr: formatShortDate(kickoffStr), endStr: formatShortDate(targetStr) };
-    }, [project]);
-
-    return (
-        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8">
-            <h3 className="font-black text-sm text-slate-800 mb-6 flex items-center uppercase tracking-widest"><i className="fas fa-stream text-amber-500 mr-3"></i> Project Timeline Baseline</h3>
-            {!timelineData ? <div className="p-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-300 rounded-xl bg-white text-xs">Valid Kickoff and Go-Live dates required.</div> : (
-                <div className="overflow-x-auto w-full"><div className="min-w-[800px] relative h-[120px]"><div className="absolute inset-0 flex justify-between opacity-20 pointer-events-none">{[...Array(6)].map((_, i) => <div key={i} className="h-full border-l-2 border-dashed border-slate-400"></div>)}</div><div className="relative z-10 pt-8"><div className="h-12 relative bg-white border-y border-transparent rounded-xl shadow-sm"><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-500 top-1/2 -translate-y-1/2 -translate-x-full pr-4" style={{ left: `${timelineData.pStart}%` }}>{timelineData.startStr}</div><div className={`absolute top-1 bottom-1 rounded-lg shadow-md border-2 flex flex-col justify-center px-4 overflow-hidden ${project?.health === 'Green' ? 'bg-emerald-500 border-emerald-600 text-white' : project?.health === 'Red' ? 'bg-rose-500 border-rose-600 text-white' : 'bg-amber-400 border-amber-500 text-slate-900'}`} style={{ left: `${timelineData.pStart}%`, width: `${timelineData.pWidth}%`, minWidth:'80px'}}><span className="text-xs font-black truncate">{project?.progress || '0%'} Complete</span></div><div className="absolute text-[10px] font-black uppercase tracking-widest text-slate-800 top-1/2 -translate-y-1/2 pl-4" style={{ left: `${timelineData.pStart + timelineData.pWidth}%` }}>{timelineData.endStr}</div></div></div></div></div>
-            )}
-        </div>
-    )
-}
-
-function TAMHubView({ project, onUpdateProject, safePartialUpdate }) {
-    const safeTamData = project?.tamData || { supportPlan: "Enterprise", welinkGroup: "", tickets: [], workshops: [{id: 1, name: "Cloud Console 101", done: false}, {id: 2, name: "IAM & Security Best Practices", done: false}] };
-    const [tamData, setTamData] = useState(safeTamData);
-    useEffect(() => { setTamData(project?.tamData || safeTamData); }, [project]);
-    const handleSave = () => { if (safePartialUpdate) safePartialUpdate({ tamData }); else onUpdateProject(project?.id, 'tamData', tamData); alert("TAM Operations Data Saved."); };
-    
-    return (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-4">
-                <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-headset text-blue-500 mr-2"></i> TAM Service Governance</h3>
-                <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md">Save Operations Data</button>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Contracted Support Plan</label>
-                    <select value={tamData.supportPlan} onChange={e=>setTamData({...tamData, supportPlan: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50"><option>Developer</option><option>Business</option><option>Enterprise</option><option>Premier</option></select>
-                </div>
-                <div className="space-y-4">
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Internal WeLink Group (NOC)</label>
-                    <input type="text" value={tamData.welinkGroup} onChange={e=>setTamData({...tamData, welinkGroup: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50" placeholder="welink://group/12345" />
-                </div>
-            </div>
-        </div>
-    );
-}
+                    <div><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Execution Notes / Escalation Path</label><textarea value={comms.notes} onChange={e=>setComms({...comms, notes: e.target.value})} className="w-full h-32 p-4 border
