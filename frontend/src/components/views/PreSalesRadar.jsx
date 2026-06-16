@@ -31,6 +31,11 @@ export default function PreSalesRadar() {
         "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
     ];
 
+    const sourceEnvironments = [
+        "AWS", "Azure", "GCP", "On-Premise (VMware)", "On-Premise (Hyper-V)", 
+        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other"
+    ];
+
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA || !newLeadCountry || !newLeadCustomer) return alert("Project Name, Customer Account, Target Country, and SA are required."); 
         
@@ -49,6 +54,9 @@ export default function PreSalesRadar() {
             country: newLeadCountry, 
             partner: "TBD", 
             techContact: "TBD", 
+            sourceEnvironment: "Unknown", 
+            estimatedWorkloads: 0,
+            estimatedMigrationHours: 0,
             blocker: "", 
             lifecycleState: '1_arb', 
             progress: '0%', 
@@ -77,7 +85,6 @@ export default function PreSalesRadar() {
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    {/* ENFORCED UPPERCASE */}
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account *</label>
                         <input 
@@ -131,12 +138,15 @@ export default function PreSalesRadar() {
                                                 <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-lg border border-rose-200"><i className="fas fa-trash-alt"></i></button>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-3 mb-4">
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate"><i className="fas fa-user-tie mr-2"></i> {p.sa}</div>
-                                            <div className="text-[10px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate"><i className="fas fa-globe-americas mr-2"></i> {p.country}</div>
+                                        
+                                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+                                            <div className="text-[9px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate" title="Sales Architect"><i className="fas fa-user-tie mr-1.5 text-slate-400"></i> {p.sa}</div>
+                                            <div className="text-[9px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate" title="Target Country"><i className="fas fa-globe-americas mr-1.5 text-slate-400"></i> {p.country}</div>
+                                            <div className="col-span-2 lg:col-span-1 text-[9px] font-bold text-slate-600 uppercase flex items-center bg-slate-50 p-1.5 rounded border border-slate-100 truncate" title="Source Environment"><i className="fas fa-server mr-1.5 text-slate-400"></i> {p.sourceEnvironment || 'TBD'}</div>
                                         </div>
+                                        
                                         {(col.id === 'sizing' || col.id === 'ready') && (
-                                            <div className="space-y-4">
+                                            <div className="space-y-4 border-t border-slate-100 pt-3 mt-3">
                                                 <div className="flex justify-between items-center"><div className="text-sm font-black bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg border border-emerald-200">${p.mrr || 0} /mo</div><div className="text-[10px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-1 rounded">Disc: {p.discoveryStatus || 'Pending'}</div></div>
                                             </div>
                                         )}
@@ -155,18 +165,25 @@ export default function PreSalesRadar() {
 
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 flex flex-col border border-slate-700 animate-slide-up">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-8 flex flex-col border border-slate-700 animate-slide-up">
                         <div className="bg-slate-900 px-8 py-5 rounded-t-2xl flex justify-between items-center text-white"><h3 className="font-black text-xl text-blue-400"><i className="fas fa-clipboard-list mr-3"></i> Pre-Sales Assessment</h3><button onClick={()=>setEditingProject(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times"></i></button></div>
                         <div className="p-8 overflow-y-auto bg-slate-50 space-y-8">
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Basic Information</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-info-circle text-blue-500 mr-2"></i> Basic Information</h4>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-5">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
                                         <input type="text" list="edit-customers" value={editingProject.customerName || ''} onChange={e => { const selectedName = e.target.value.toUpperCase(); const matched = (customers || []).find(c => c.name.toLowerCase() === selectedName.toLowerCase()); setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null }); }} className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold uppercase" />
                                         <datalist id="edit-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
                                     </div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label><input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" /></div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label>
+                                        <input type="text" value={editingProject.name || ''} onChange={e=>setEditingProject({...editingProject, name: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5 border-t border-slate-50 pt-5">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sales Architect</label>
                                         <input type="text" list="sa-list-edit" value={editingProject.sa || ''} onChange={e=>setEditingProject({...editingProject, sa: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold uppercase" />
@@ -179,15 +196,39 @@ export default function PreSalesRadar() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-white p-6 rounded-xl border border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> Discovery & Financials</h4>
+
+                            {/* 🚨 RESTORED: Technical Sizing & Risks Section */}
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Source Env</label>
+                                        <select value={editingProject.sourceEnvironment || 'Unknown'} onChange={e=>setEditingProject({...editingProject, sourceEnvironment: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
+                                            <option value="Unknown">Unknown</option>
+                                            {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Workloads (VMs)</label><input type="number" value={editingProject.estimatedWorkloads || ''} onChange={e=>setEditingProject({...editingProject, estimatedWorkloads: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Labor (hrs)</label><input type="number" value={editingProject.estimatedMigrationHours || ''} onChange={e=>setEditingProject({...editingProject, estimatedMigrationHours: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Complexity</label>
+                                        <select value={editingProject.complexityLevel || 'Medium'} onChange={e=>setEditingProject({...editingProject, complexityLevel: e.target.value})} className="w-full p-2 border border-purple-300 rounded focus:border-purple-500 outline-none text-sm font-bold bg-purple-50 text-purple-900 cursor-pointer">
+                                            <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Ultra-High">Ultra-High</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-search-dollar text-emerald-500 mr-2"></i> Discovery & Financials</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Status</label><select value={editingProject.discoveryStatus || 'Not Started'} onChange={e=>setEditingProject({...editingProject, discoveryStatus: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Expected Close Date</label><input type="date" value={editingProject.expectedCloseDate || ''} onChange={e=>setEditingProject({...editingProject, expectedCloseDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold font-mono" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Target MRR (USD)</label><input type="number" value={editingProject.mrr === undefined || editingProject.mrr === null ? '' : editingProject.mrr} onChange={e=>setEditingProject({...editingProject, mrr: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-slate-300 rounded bg-emerald-50 text-emerald-900 focus:border-blue-500 outline-none text-sm font-black" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Status</label><select value={editingProject.discoveryStatus || 'Not Started'} onChange={e=>setEditingProject({...editingProject, discoveryStatus: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Expected Close Date</label><input type="date" value={editingProject.expectedCloseDate || ''} onChange={e=>setEditingProject({...editingProject, expectedCloseDate: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold font-mono cursor-pointer" /></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Target MRR (USD)</label><input type="number" value={editingProject.mrr === undefined || editingProject.mrr === null ? '' : editingProject.mrr} onChange={e=>setEditingProject({...editingProject, mrr: e.target.value === '' ? '' : Number(e.target.value)})} className="w-full p-2 border border-emerald-300 rounded bg-emerald-50 text-emerald-900 focus:border-emerald-500 outline-none text-sm font-black" /></div>
                                 </div>
                                 <div className="space-y-4">
-                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Notes / Scope</label><textarea rows="2" value={editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, discoveryNotes: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-medium"></textarea></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Discovery Notes / Scope Requirements</label><textarea rows="3" value={editingProject.discoveryNotes || ''} onChange={e=>setEditingProject({...editingProject, discoveryNotes: e.target.value})} className="w-full p-3 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-medium custom-scrollbar bg-slate-50"></textarea></div>
+                                    <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Current Blockers</label><textarea rows="2" value={editingProject.blocker || ''} onChange={e=>setEditingProject({...editingProject, blocker: e.target.value})} className="w-full p-3 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-medium custom-scrollbar bg-slate-50"></textarea></div>
                                 </div>
                             </div>
                         </div>
