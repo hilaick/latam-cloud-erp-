@@ -43,33 +43,14 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
-    const nodes = useMemo(() => (activeProject?.mapperNodes || []).filter(n => n?.status !== 'Quoted Only'), [activeProject?.mapperNodes]);
+    // 🚨 REMOVED FILTER: Now ingests Quoted-Only servers for "Blind Migrations"
+    const nodes = useMemo(() => (activeProject?.mapperNodes || []), [activeProject?.mapperNodes]);
 
-    // Initialize Node Configs from Blueprint
+    // Initialize Node Configs from Blueprint/Quotation
     useEffect(() => {
         if (!activeProject) return;
-        
-        let initialConfigs = activeProject.physics?.nodeConfigs || {};
-        let configChanged = false;
 
-        nodes.forEach(n => {
-            if (!initialConfigs[n.id]) {
-                const isDb = String(n.type || '').toUpperCase().includes('DB') || String(n.type || '').toUpperCase().includes('RDS');
-                if (isDb) {
-                    initialConfigs[n.id] = { ...PROFILES['db_paas'], customSizeGB: Number(n.storage) || 500 };
-                } else {
-                    const isWin = String(n.os || '').toUpperCase().includes('WIN');
-                    initialConfigs[n.id] = { ...(isWin ? PROFILES['windows_std'] : PROFILES['linux_block']), customSizeGB: Number(n.storage) || 200 };
-                }
-                configChanged = true;
-            }
-        });
-
-        if (configChanged || Object.keys(nodeConfigs).length === 0) {
-            setNodeConfigs(initialConfigs);
-        }
-
-        // Load other physics context
+        // Load Global Variables
         if (activeProject.physics) {
             const p = activeProject.physics;
             setEngineMode(p.engineMode || 'manual');
@@ -80,15 +61,55 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             setUseStorage(p.useStorage || false);
             setStandaloneStorageSize(p.standaloneStorageSize || 10);
             setStorageMode(p.storageMode || 'Object');
+        } else {
+            // Reset to defaults if activeProject.physics is wiped
+            setEngineMode('manual');
+            setNetSource(1000); setTransitType('IPsec VPN'); setNetTunnel(300); setDowntimeWindow(48);
+            setConcurrency(5);
+            setUseCompute(true); setUseDatabase(true); setUseStorage(false);
+            setStandaloneStorageSize(10); setStorageMode('Object');
         }
-    }, [activeProject, nodes]);
 
+        let pConfigs = activeProject.physics?.nodeConfigs || {};
+        let mergedConfigs = { ...pConfigs };
+        let needsUpdate = false;
+
+        nodes.forEach(n => {
+            if (!mergedConfigs[n.id]) {
+                const isDb = String(n.type || '').toUpperCase().includes('DB') || String(n.type || '').toUpperCase().includes('RDS');
+                if (isDb) {
+                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], customSizeGB: Number(n.storage) || 500 };
+                } else {
+                    const isWin = String(n.os || '').toUpperCase().includes('WIN');
+                    mergedConfigs[n.id] = { ...(isWin ? PROFILES['windows_std'] : PROFILES['linux_block']), customSizeGB: Number(n.storage) || 200 };
+                }
+                needsUpdate = true;
+            }
+        });
+
+        // Push to state if new servers were added or physics was reset
+        if (needsUpdate || !activeProject.physics) {
+            setNodeConfigs(mergedConfigs);
+        } else {
+            setNodeConfigs(pConfigs);
+        }
+
+    }, [activeProject?.physics, nodes]);
+
+    // 🚨 SAVE & RESET CONTEXT
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'physics', { 
             engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency, 
             useCompute, useDatabase, useStorage, nodeConfigs, standaloneStorageSize, storageMode 
         }); 
         alert("Physics parameters saved."); 
+    };
+
+    const resetContext = () => {
+        if (window.confirm("Are you sure you want to reset all physics calculations? This will wipe all manual overrides and restore the baseline configuration from your Blueprint & Quotation.")) {
+            onUpdateProject(activeProject.id, 'physics', null);
+            setSelectedNodes([]);
+        }
     };
 
     // Bulk Apply Profile
@@ -102,11 +123,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         setSelectedNodes([]);
     };
 
-    // Toggle Node Selection
     const toggleNode = (id) => {
         if(selectedNodes.includes(id)) setSelectedNodes(selectedNodes.filter(n => n !== id));
         else setSelectedNodes([...selectedNodes, id]);
     };
+    
     const toggleAll = () => {
         if(selectedNodes.length === nodes.length) setSelectedNodes([]);
         else setSelectedNodes(nodes.map(n => n.id));
@@ -161,7 +182,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                 const conf = nodeConfigs[n.id];
                 const payloadGB = conf.customSizeGB || Number(n.storage) || 200;
                 
-                // Small File Penalty
                 let speedMultiplier = 1.0;
                 if (conf.sync === 'File' && conf.smallFiles > 100000) {
                     const ratio = conf.smallFiles / Math.max(conf.totalFiles, 1);
@@ -196,7 +216,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         if (useStorage) {
             const payloadTB = Number(standaloneStorageSize) * (standaloneUnit === 'TB' ? 1 : 1/1024);
             if (storageMode === 'Object') {
-                const apiSpeedMbps = (omsTasks * omsObjPerSec * 1.5); // Abstract Object API math
+                const apiSpeedMbps = (omsTasks * omsObjPerSec * 1.5); 
                 const actualSpeed = Math.min(effectivePipeMbps, apiSpeedMbps);
                 totalStorageHrs = ((payloadTB * 1024 * 1024 * 8) / actualSpeed) / 3600;
                 if(apiSpeedMbps < effectivePipeMbps) criticalBottleneck = "Storage API Rate Limit";
@@ -205,7 +225,6 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
             }
         }
 
-        // Total Time is the longest pillar (since they can run in parallel)
         const totalExecutionHrs = Math.max(totalComputeHrs, totalDbHrs, totalStorageHrs);
         const days = Math.floor(totalExecutionHrs / 24); 
         const remainingHours = (totalExecutionHrs % 24).toFixed(1);
@@ -225,7 +244,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     return (
         <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6 pb-12">
             
-            {/* 🎛️ HEADER & TOGGLE */}
+            {/* 🎛️ HEADER & TOGGLES */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                 <div>
                     <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-microscope text-indigo-500"></i> Delivery Physics Engine</h3>
@@ -237,8 +256,40 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                         <button onClick={() => setEngineMode('manual')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'manual' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-sliders-h mr-2"></i> Granular (Per Server)</button>
                         <button onClick={() => setEngineMode('cognitive')} className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${engineMode === 'cognitive' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-brain mr-2"></i> Cognitive (Auto PMO)</button>
                     </div>
+                    {/* 🚨 THE NEW RESET BUTTON */}
+                    <button onClick={resetContext} className="px-6 py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200 rounded-xl shadow-sm font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-undo mr-2"></i> Reset</button>
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
+            </div>
+
+            {/* 📚 FAQ ACCORDION */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <button onClick={() => setShowFaq(!showFaq)} className="w-full px-6 py-4 flex justify-between items-center text-slate-700 font-black text-sm hover:bg-slate-100 transition-colors">
+                    <span className="flex items-center gap-2"><i className="fas fa-graduation-cap text-indigo-500 text-lg mr-2"></i> The Reality of Bandwidth: Why Migrations Miss SLAs</span>
+                    <i className={`fas fa-chevron-${showFaq ? 'up' : 'down'}`}></i>
+                </button>
+                {showFaq && (
+                    <div className="p-6 pt-0 text-xs text-slate-600 space-y-4 animate-fade-in border-t border-slate-200 mt-2 pt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-route text-blue-500 mr-1"></i> The Transit Tax</h5>
+                                <p className="leading-relaxed font-medium">You never get 100% of the pipe. Standard TCP routing takes ~5%. <b>IPsec VPNs</b> require heavy packet encryption (~15% tax). <b>Public Internet</b> routing suffers from packet drops and latency (~25% tax).</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-copy text-amber-500 mr-1"></i> The Small Files Nightmare</h5>
+                                <p className="leading-relaxed font-medium">A 1 TB video file syncs instantly. 1 TB of 5KB text files will crawl. For every small file, the OS must do an inode lookup (or an HTTP PUT for Object Storage), plummeting network utilization.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-lock text-purple-500 mr-1"></i> The Crypto Penalty</h5>
+                                <p className="leading-relaxed font-medium">Decrypting a source OS drive (BitLocker/LUKS) spikes CPU on read. Hitting a Cloud <b>KMS API</b> on the destination adds an API authentication latency tax to every block/file written.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-black mb-2 uppercase tracking-widest text-[10px] text-slate-800"><i className="fas fa-database text-rose-500 mr-1"></i> Block vs Logical Sync</h5>
+                                <p className="leading-relaxed font-medium">Block replication (SMS) compresses data and ignores small files. However, <b>RDS/PaaS Databases</b> cannot be block-synced. They require Logical Sync (DRS), bounded strictly by Rows/second processing limits.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* 🌐 SHARED PIPELINE SETTINGS */}
@@ -270,7 +321,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     
                     <div className="xl:col-span-8 space-y-6">
                         
-                        {/* 🚨 THE MODULAR TOGGLES */}
+                        {/* THE MODULAR TOGGLES */}
                         <div className="bg-slate-800 p-4 rounded-2xl shadow-md flex flex-wrap gap-4 items-center">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Enable Pillars:</span>
                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border-2 transition-all ${useCompute ? 'bg-blue-500/20 border-blue-400 text-blue-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
@@ -319,26 +370,31 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                 return (
                                                     <tr key={n.id} className={`hover:bg-indigo-50/50 transition-colors ${selectedNodes.includes(n.id) ? 'bg-indigo-50' : ''}`}>
                                                         <td className="p-3 text-center"><input type="checkbox" checked={selectedNodes.includes(n.id)} onChange={() => toggleNode(n.id)} className="w-4 h-4 accent-indigo-600"/></td>
-                                                        <td className="p-3 font-bold text-slate-800"><i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>{n.name}</td>
+                                                        <td className="p-3 font-bold text-slate-800 flex items-center">
+                                                            <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : 'fa-server text-blue-500'} mr-2`}></i>
+                                                            {/* 🚨 BLIND MIGRATION FALLBACK: Uses description if unmapped */}
+                                                            {n.name || n.hostname || n.description || 'Placeholder Server'}
+                                                            {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
+                                                        </td>
                                                         <td className="p-3 text-[10px] font-black uppercase text-slate-500">{conf.isDb ? 'Database' : conf.os || 'VM'}</td>
                                                         <td className="p-3 text-right">
                                                             <div className="flex items-center justify-end gap-1">
-                                                                <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold" /> <span className="text-[10px] font-black text-slate-400">GB</span>
+                                                                <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
                                                             </div>
                                                         </td>
                                                         <td className="p-3">
                                                             {conf.isDb ? (
                                                                 <div className="flex gap-2 items-center">
                                                                     <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-black text-[9px] uppercase border border-rose-200">Logical (DRS)</span>
-                                                                    <input type="number" title="Millions of Rows" value={conf.rowsM || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, rowsM: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded font-mono text-[10px]" /> <span className="text-[9px] text-slate-400">M Rows</span>
+                                                                    <input type="number" title="Millions of Rows" value={conf.rowsM || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, rowsM: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded font-mono text-[10px] focus:border-rose-500 outline-none" /> <span className="text-[9px] text-slate-400">M Rows</span>
                                                                 </div>
                                                             ) : (
                                                                 <div className="flex gap-2 items-center">
-                                                                    <select value={conf.sync || 'Block'} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, sync: e.target.value}})} className="p-1 border border-slate-200 rounded text-[10px] font-black text-blue-800 bg-blue-50 cursor-pointer">
+                                                                    <select value={conf.sync || 'Block'} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, sync: e.target.value}})} className="p-1 border border-slate-200 rounded text-[10px] font-black text-blue-800 bg-blue-50 cursor-pointer focus:border-blue-500 outline-none">
                                                                         <option value="Block">Block (SMS)</option><option value="File">File (Rsync)</option>
                                                                     </select>
                                                                     {conf.sync === 'File' && (
-                                                                        <><input type="number" title="Small Files" value={conf.smallFiles || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, smallFiles: Number(e.target.value)}})} className="w-20 p-1 border border-amber-200 bg-amber-50 rounded font-mono text-[10px]" /> <span className="text-[9px] text-amber-600 font-bold">Sm. Files</span></>
+                                                                        <><input type="number" title="Small Files" value={conf.smallFiles || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, smallFiles: Number(e.target.value)}})} className="w-20 p-1 border border-amber-200 bg-amber-50 rounded font-mono text-[10px] focus:border-amber-500 outline-none" /> <span className="text-[9px] text-amber-600 font-bold">Sm. Files</span></>
                                                                     )}
                                                                 </div>
                                                             )}
@@ -346,7 +402,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                     </tr>
                                                 );
                                             })}
-                                            {nodes.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid nodes mapped in Target Topology.</td></tr>}
+                                            {nodes.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-bold border-2 border-dashed border-slate-200 m-4 rounded-xl">No valid nodes imported from Blueprint or Quote.</td></tr>}
                                         </tbody>
                                     </table>
                                 </div>
