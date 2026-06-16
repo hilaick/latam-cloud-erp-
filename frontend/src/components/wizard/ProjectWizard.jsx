@@ -28,7 +28,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
     const sourceEnvironments = [
         "AWS", "Azure", "GCP", "On-Premise (VMware)", "On-Premise (Hyper-V)", 
-        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other"
+        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other", "Unknown"
     ];
 
     // Safely determine the Max Unlocked Phase using Optional Chaining (?.)
@@ -81,7 +81,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
     return (
         <div className="bg-slate-50 min-h-[85vh] flex flex-col font-sans relative rounded-2xl shadow-xl overflow-hidden border border-slate-200">
             {/* Header & CHEVRON TRACKER */}
-            <div className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-4 flex flex-col xl:flex-row gap-4 justify-between items-center shadow-sm">
+            <div className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-4 flex flex-col xl:flex-row gap-4 justify-between items-center shadow-sm">
                 <div className="flex items-center gap-4 shrink-0">
                     <div>
                         <div className="flex items-center gap-3">
@@ -132,20 +132,28 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
             </div>
 
-            {/* FULLY INTERACTIVE CONFIGURATION MODAL */}
+            {/* 🚨 BULLETPROOF CONFIGURATION MODAL */}
             {showConfig && (
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
-                        <div className="px-8 py-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                <div className="fixed inset-0 flex items-center justify-center p-4 sm:p-8 animate-fade-in pointer-events-auto" style={{ zIndex: 99999 }}>
+                    {/* Dark Background Overlay */}
+                    <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
+                    
+                    {/* Modal Dialog Container */}
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl relative flex flex-col max-h-full overflow-hidden animate-slide-up border border-slate-700">
+                        
+                        {/* Header (Shrinks to fit) */}
+                        <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg flex items-center"><i className="fas fa-sliders-h text-indigo-400 mr-3"></i> Project Details</h3>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Core Identity & Configuration</p>
                             </div>
-                            <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                            <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-white transition-colors p-2 cursor-pointer">
+                                <i className="fas fa-times text-xl"></i>
+                            </button>
                         </div>
                         
-                        <div className="p-8 overflow-y-auto bg-slate-50 custom-scrollbar">
+                        {/* 🚨 Scrollable Body (flex-1 and min-h-0 are the magic fix) */}
+                        <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 bg-slate-50 custom-scrollbar">
                             
                             {/* SECTION 1: Basic Identity */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -256,7 +264,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 </div>
                             </div>
 
-                            {/* 🚨 SECTION 2: Technical Sizing & Risks (Synced with Pre-Sales Radar) */}
+                            {/* SECTION 2: Technical Sizing & Risks */}
                             <div className="pt-6 border-t border-slate-200">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -313,6 +321,14 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 </div>
                             </div>
                         </div>
+
+                        {/* Footer (Shrinks to fit, always visible at bottom) */}
+                        <div className="px-6 py-4 bg-white border-t border-slate-200 shrink-0 flex justify-end">
+                            <button onClick={() => setShowConfig(false)} className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-colors cursor-pointer">
+                                Save & Close
+                            </button>
+                        </div>
+
                     </div>
                 </div>
             )}
