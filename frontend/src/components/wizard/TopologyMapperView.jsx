@@ -74,7 +74,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     };
 
     const resyncFromSOW = () => {
-        if (window.confirm("This will clear your current reconciliation status and pull fresh data from the Active SOW Blueprint Snapshot. Continue?")) {
+        if (window.confirm("This will clear your current reconciliation status and pull fresh data from the Active SOW Blueprint Snapshot and Live Discovery. Continue?")) {
             setLocalNodes([]);
             alert("Context cleared. Please click 'Merge & Review Target' to regenerate the architecture.");
         }
@@ -101,7 +101,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    // 🚨 QUOTATION INGESTOR: Resilient to Plurals & Metadata Drildown
+    // QUOTATION INGESTOR
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
@@ -109,7 +109,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
 
         (bp.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name || s.flavor || `Compute-${i}`, type: normalizeHuaweiType(s.type || s.flavor, 'ECS'), storage: s.storage || s.metadata?.storage_gb, os: s.os || s.metadata?.os_type, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         
-        // Handle database / databases schema ambiguity
         const dbs = bp.databases || bp.database || [];
         dbs.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name || d.engine || `DB-${i}`, type: normalizeHuaweiType(d.engine || d.type, 'RDS'), storage: d.storage || d.metadata?.storage_gb, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         
@@ -120,17 +119,19 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
+    // 🚨 DISCOVERY INGESTOR: Explicitly parses real technical sizes to override Quoted values
     const liveNodes = useMemo(() => {
         const raw = activeProject?.mgcData?.raw_inventory || {};
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const mNodes = [];
         (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `NET-${i}`, type: normalizeHuaweiType(net.type, 'VPC'), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: fallbackRegion, status: 'Live Only' }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `ST-${i}`, type: normalizeHuaweiType(st.type, 'OBS'), ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: fallbackRegion, status: 'Live Only' }));
-        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: 'RDS', ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: fallbackRegion, status: 'Live Only' }));
+        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `ST-${i}`, type: normalizeHuaweiType(st.type, 'OBS'), storage: st.size_gb || st.specs?.size_gb || st.specs?.storage_gb, ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
+        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', storage: srv.specs?.storage_gb || srv.storage || srv.disk_size, os: srv.specs?.os_type || srv.os, ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: fallbackRegion, status: 'Live Only' }));
+        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: normalizeHuaweiType(db.engine || db.type, 'RDS'), storage: db.specs?.storage_gb || db.allocated_storage, ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: fallbackRegion, status: 'Live Only' }));
         return mNodes;
     }, [activeProject?.mgcData, activeProject?.region]);
 
+    // 🚨 RECONCILIATION ENGINE
     const finalizeReconciliation = () => {
         const merged = [];
         let tempQuoted = [...quotedNodes];
@@ -151,7 +152,17 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                 }
             }
             if (matchIdx !== -1) { 
-                merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, name: tempQuoted[matchIdx].name, type: tempQuoted[matchIdx].type, storage: tempQuoted[matchIdx].storage, os: tempQuoted[matchIdx].os, status: 'Matched', config: {} }); 
+                // 🚨 SUPREME TRUTH OVERRIDE: Prioritize Discovered Storage & OS over Quoted values
+                merged.push({ 
+                    id: `mgc-${Date.now()}-${index}`, 
+                    ...mNode, 
+                    name: tempQuoted[matchIdx].name, 
+                    type: tempQuoted[matchIdx].type, 
+                    storage: mNode.storage || tempQuoted[matchIdx].storage, 
+                    os: mNode.os || tempQuoted[matchIdx].os, 
+                    status: 'Matched', 
+                    config: {} 
+                }); 
                 tempQuoted.splice(matchIdx, 1); 
             } else { 
                 merged.push({ id: `mgc-${Date.now()}-${index}`, ...mNode, status: 'Live Only', config: {} }); 
@@ -261,7 +272,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                         {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
                                         {liveNodes.map((n, i) => (
                                             <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between hover:border-indigo-300 transition-colors">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} | {n.ip}</div></div></div>
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} {n.storage ? `| ${n.storage}GB` : ''} {n.os ? `| ${n.os}` : ''}</div></div></div>
                                             </div>
                                         ))}
                                     </div>
