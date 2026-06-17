@@ -206,7 +206,6 @@ export const ERPProvider = ({ children }) => {
             });
     };
 
-    // 🚨 FIX: Restored the missing handleAddCustomer function
     const handleAddCustomer = (newCustomer) => {
         setCustomers(prev => [...prev, newCustomer]);
         fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCustomer) })
@@ -270,9 +269,7 @@ export const ERPProvider = ({ children }) => {
             if (r.status === 401) handleAuthError();
             else if (!r.ok) throw new Error(`Failed to delete project: ${r.status} ${r.statusText}`);
             else {
-                // Remove from local state
                 setProjects(prev => prev.filter(p => String(p.id) !== String(id)));
-                // If this was the active project, clear it
                 if (String(activeProjectId) === String(id)) { 
                     setActiveProjectId('none'); 
                     setActivePhase('home'); 
@@ -283,6 +280,50 @@ export const ERPProvider = ({ children }) => {
             console.error('Error deleting project:', err);
             alert(`Failed to delete project: ${err.message}`);
         });
+    };
+
+    // ============================================================================
+    // 🚨 PROGRESS ENGINE: Automated Roll-up Logic for WBS Tagging
+    // ============================================================================
+    const syncExecutionProgress = (projectId, highLevelPlan, executionPlan) => {
+        if (!highLevelPlan || !executionPlan) return;
+
+        let updatedHighLevelPlan = [...highLevelPlan];
+
+        // 1. Calculate progress for each High-Level Task based on its Execution children
+        updatedHighLevelPlan = updatedHighLevelPlan.map(hlTask => {
+            if (hlTask.isParent) return hlTask; // Skip overarching waves
+
+            // Find all granular execution tasks tagged to this High-Level ID
+            const childTasks = executionPlan.filter(ex => String(ex.parentWbsId) === String(hlTask.id));
+            
+            if (childTasks.length === 0) return hlTask; // No execution tasks yet, keep existing
+
+            // Calculate average progress of children
+            let totalPercent = 0;
+            childTasks.forEach(child => {
+                const val = parseInt((child.prog || '0').replace('%', ''), 10);
+                totalPercent += isNaN(val) ? 0 : val;
+            });
+            
+            const avgProgress = Math.round(totalPercent / childTasks.length);
+            return { ...hlTask, prog: `${avgProgress}%` };
+        });
+
+        // 2. Roll up the total project progress for the PMO Master Pipeline
+        const validHlTasks = updatedHighLevelPlan.filter(t => !t.isParent);
+        let masterTotal = 0;
+        validHlTasks.forEach(t => {
+            const v = parseInt((t.prog || '0').replace('%', ''), 10);
+            masterTotal += isNaN(v) ? 0 : v;
+        });
+        const masterOverallProgress = validHlTasks.length > 0 ? Math.round(masterTotal / validHlTasks.length) + '%' : '0%';
+
+        // 3. Dispatch updates to the database/state with setTimeout to prevent React race conditions
+        handleUpdateProject(projectId, 'migrationPlan', updatedHighLevelPlan);
+        setTimeout(() => {
+            handleUpdateProject(projectId, 'progress', masterOverallProgress);
+        }, 50);
     };
 
     return (
@@ -297,10 +338,11 @@ export const ERPProvider = ({ children }) => {
             setCustomPlaybooks, 
             handleUpdateProject, 
             handleAddProject, 
-            handleAddCustomer, // 🚨 Added to Context Provider
+            handleAddCustomer, 
             handleUpdateCustomer, 
             handleDeleteCustomer, 
             handleDeleteProject,
+            syncExecutionProgress, // 🚨 Expose Progress Engine
             refreshData: fetchState
         }}>
             {children}
