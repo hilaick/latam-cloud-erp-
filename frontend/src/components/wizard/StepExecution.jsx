@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { formatShortDate } from '../../utils/helpers';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { formatShortDate, EditableCell } from '../../utils/helpers';
+import { ERPContext } from '../../context/ERPContext'; // 🚨 Imported Context for Progress Engine
 
-// Identifiers to filter only Compute/DB nodes for the execution matrix
 const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
 
-// 🚨 THE NEW EXECUTION GUIDE & LEGEND CAROUSEL COMPONENT
 const ExecutionGuideModal = ({ onClose }) => {
     const [slide, setSlide] = useState(1);
     const totalSlides = 4;
@@ -137,11 +136,10 @@ const ExecutionGuideModal = ({ onClose }) => {
     );
 };
 
-
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('orchestrator');
     const [sidebarOpen, setSidebarOpen] = useState(true); 
-    const [showGuide, setShowGuide] = useState(false); // 🚨 NEW GUIDE STATE
+    const [showGuide, setShowGuide] = useState(false);
     
     const [anticipationInsights, setAnticipationInsights] = useState(project?.anticipationInsights || null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
@@ -299,9 +297,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
 
     const menuItems = [
-        { id: 'orchestrator', num: '4.1', icon: 'fa-cogs', label: 'Execution Orchestrator' },
-        { id: 'hub', num: '4.2', icon: 'fa-stream', label: 'Delivery Command Center' },
-        { id: 'tam', num: '4.3', icon: 'fa-headset', label: 'TAM Service Governance' }
+        { id: 'orchestrator', num: '4.1-4', icon: 'fa-cogs', label: 'Execution Orchestrator' },
+        { id: 'workbench', num: '4.5', icon: 'fa-tools', label: 'Engineering Workbench' }, // 🚨 NEW TAB
+        { id: 'hub', num: '4.6', icon: 'fa-stream', label: 'Delivery Command Center' },
+        { id: 'tam', num: '4.7', icon: 'fa-headset', label: 'TAM Service Governance' }
     ];
 
     if (!project) {
@@ -311,7 +310,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             
-            {/* 🚨 GUIDE MODAL INTEGRATION */}
             {showGuide && <ExecutionGuideModal onClose={() => setShowGuide(false)} />}
 
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
@@ -327,7 +325,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         <h3 className="font-black text-xl text-slate-800">Execution Control Plane</h3>
                         <div className="flex items-center gap-3 mt-1">
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Provision Landing Zones & Deploy Data Planes.</p>
-                            {/* 🚨 NEW GUIDE BUTTON */}
                             <button onClick={() => setShowGuide(true)} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"><i className="fas fa-book-open mr-1"></i> View Guide & Legend</button>
                         </div>
                     </div>
@@ -596,12 +593,13 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         </div>
                     )}
 
+                    {/* 🚨 NEW ENGINEERING WORKBENCH SUB-TAB */}
+                    {subTab === 'workbench' && <EngineeringWorkbench project={project} onUpdateProject={onUpdateProject} />}
                     {subTab === 'hub' && <ExecutionHubView project={project} onUpdateProject={onUpdateProject} safePartialUpdate={safePartialUpdate} />}
                     {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} safePartialUpdate={safePartialUpdate} />}
                 </div>
             </div>
 
-            {/* CUSTOMER RUNBOOK MODAL */}
             {showRunbookModal && runbookData && (
                 <div className="fixed inset-0 z-[10000] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
@@ -626,7 +624,141 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// 🚨 FINOPS HUB
+// 🚨 ENGINEERING WORKBENCH: Granular child execution linking back to parent WBS tasks
+function EngineeringWorkbench({ project, onUpdateProject }) {
+    const { syncExecutionProgress } = useContext(ERPContext);
+    
+    // Fallback initialize if missing
+    const [execPlan, setExecPlan] = useState(project?.executionPlan || []);
+    
+    useEffect(() => {
+        setExecPlan(project?.executionPlan || []);
+    }, [project?.executionPlan]);
+
+    const handleUpdateTask = (id, field, value) => {
+        const newPlan = execPlan.map(t => t.id === id ? { ...t, [field]: value } : t);
+        setExecPlan(newPlan);
+        onUpdateProject(project.id, 'executionPlan', newPlan);
+        
+        // Trigger Engine if progress changes
+        if (field === 'prog') {
+            syncExecutionProgress(project.id, project.migrationPlan, newPlan);
+        }
+    };
+
+    const handleAddExecutionTask = () => {
+        const pWbs = window.prompt("Enter the exact Parent WBS ID from Phase 3.1 (e.g., 5.1):");
+        if (!pWbs) return;
+        const newTask = {
+            id: `exec-${Date.now()}`,
+            parentWbsId: pWbs,
+            name: "New Granular Engineering Task",
+            prog: "0%",
+            resp: "Cloud Engineer",
+            start: "",
+            end: "",
+            isParent: false
+        };
+        const newPlan = [...execPlan, newTask];
+        setExecPlan(newPlan);
+        onUpdateProject(project.id, 'executionPlan', newPlan);
+        syncExecutionProgress(project.id, project.migrationPlan, newPlan);
+    };
+
+    const handleDeleteTask = (id) => {
+        if (!window.confirm("Delete this execution task?")) return;
+        const newPlan = execPlan.filter(t => t.id !== id);
+        setExecPlan(newPlan);
+        onUpdateProject(project.id, 'executionPlan', newPlan);
+        syncExecutionProgress(project.id, project.migrationPlan, newPlan);
+    };
+
+    const getHighLevelName = (pId) => {
+        const hl = (project?.migrationPlan || []).find(t => t.id === pId);
+        return hl ? hl.name : "Unlinked / Orphan Task";
+    };
+
+    return (
+        <div className="animate-fade-in bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[600px]">
+            <div className="px-6 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h3 className="font-black text-lg tracking-wide"><i className="fas fa-tools text-amber-400 mr-2"></i> Engineering Execution Workbench</h3>
+                    <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Granular WBS tasks that automatically roll up progress to the PMO Master Pipeline.</p>
+                </div>
+                <button onClick={handleAddExecutionTask} className="px-6 py-2 border border-slate-600 hover:bg-slate-800 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm">
+                    <i className="fas fa-plus mr-2"></i> Add Granular Task
+                </button>
+            </div>
+            
+            <div className="flex-1 bg-slate-50 overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left min-w-[1000px]">
+                    <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 border-b-2 border-slate-300 tracking-wider">
+                        <tr>
+                            <th className="p-4 w-24 text-center font-black">Parent ID</th>
+                            <th className="p-4 font-black">Granular Execution Task</th>
+                            <th className="p-4 w-40 font-black">Manual Progress</th>
+                            <th className="p-4 w-40 font-black text-indigo-700 bg-indigo-100/50">Assignee</th>
+                            <th className="p-4 w-32 font-black">Target Dates</th>
+                            <th className="p-4 w-24 text-center font-black">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 text-xs bg-white">
+                        {execPlan.map(task => {
+                            const hlName = getHighLevelName(task.parentWbsId);
+                            const isOrphan = hlName === "Unlinked / Orphan Task";
+                            return (
+                                <tr key={task.id} className="hover:bg-slate-50 transition-colors group">
+                                    <td className="p-3 text-center">
+                                        <div className={`text-[10px] font-black uppercase tracking-widest border rounded px-1.5 py-0.5 inline-block ${isOrphan ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-100 text-slate-600 border-slate-300'}`} title={hlName}>
+                                            {task.parentWbsId}
+                                        </div>
+                                    </td>
+                                    <td className="p-3">
+                                        <div className="font-bold text-slate-800"><EditableCell value={task.name} onSave={v=>handleUpdateTask(task.id, 'name', v)} /></div>
+                                        <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest truncate max-w-sm">Rolls up to: {hlName}</div>
+                                    </td>
+                                    <td className="p-3">
+                                        <select 
+                                            value={task.prog} 
+                                            onChange={e => handleUpdateTask(task.id, 'prog', e.target.value)} 
+                                            className={`w-full border-2 rounded-lg px-2 py-1.5 text-[10px] font-black uppercase tracking-widest outline-none cursor-pointer transition-colors shadow-sm ${
+                                                task.prog === '100%' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 
+                                                task.prog === '0%' ? 'bg-slate-50 text-slate-600 border-slate-200' : 
+                                                'bg-blue-50 text-blue-800 border-blue-300'
+                                            }`}
+                                        >
+                                            {Array.from({ length: 21 }, (_, i) => i * 5).map(pct => (
+                                                <option key={pct} value={`${pct}%`}>[{pct}%] {pct===0?'Pending':pct===100?'Done':'In Progress'}</option>
+                                            ))}
+                                        </select>
+                                    </td>
+                                    <td className="p-3 text-indigo-800 font-bold bg-indigo-50/30">
+                                        <EditableCell type="select" placeholder="Select Role" value={task.resp} onSave={v=>handleUpdateTask(task.id, 'resp', v)} />
+                                    </td>
+                                    <td className="p-3">
+                                        <div className="flex flex-col gap-1 text-[10px] font-mono font-bold text-slate-500">
+                                            <div className="flex justify-between items-center"><span className="text-slate-400">S:</span> <EditableCell type="date" value={task.start} onSave={v=>handleUpdateTask(task.id, 'start', v)} /></div>
+                                            <div className="flex justify-between items-center"><span className="text-slate-400">E:</span> <EditableCell type="date" value={task.end} onSave={v=>handleUpdateTask(task.id, 'end', v)} /></div>
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <button onClick={() => handleDeleteTask(task.id)} className="text-slate-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100" title="Delete Engineering Task">
+                                            <i className="fas fa-trash-alt"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {execPlan.length === 0 && (
+                            <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">No granular execution tasks loaded. Add a task and link it to a Phase 3.1 Parent ID to begin.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
 function ExecutionHubView({ project, onUpdateProject, safePartialUpdate }) {
     const [comms, setComms] = useState(project?.comms || { bridge: "", chat: "", notes: "" });
     useEffect(() => { setComms(project?.comms || { bridge: "", chat: "", notes: "" }); }, [project]);
