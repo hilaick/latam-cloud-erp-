@@ -9,10 +9,8 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
         if(!activeProject) return;
         const newPlan = (activeProject.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
         
-        // 🚨 FIX: Corrected signature to save the Migration Plan
         onUpdateProject(activeProject.id, 'migrationPlan', newPlan);
         
-        // 🚨 FIX: Auto-calculate and bubble up the overall project progress
         if (field === 'prog') {
             const childTasks = newPlan.filter(t => !t.isParent);
             if (childTasks.length > 0) {
@@ -23,7 +21,11 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                     totalPercent += parseInt(val.replace('%', '') || '0');
                 });
                 const overallProg = Math.round(totalPercent / childTasks.length) + '%';
-                onUpdateProject(activeProject.id, 'progress', overallProg);
+                
+                // 🚨 FIX: Placed inside a setTimeout to prevent React context state overwriting between Plan Matrix and Progress state.
+                setTimeout(() => {
+                    onUpdateProject(activeProject.id, 'progress', overallProg);
+                }, 50);
             }
         }
     };
@@ -31,9 +33,12 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
     const injectPlaybook = (playbookKey) => {
         if(!playbookKey || !customPlaybooks[playbookKey]) return;
         if(window.confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
-            // 🚨 FIX: Corrected signature for playbook injection
             onUpdateProject(activeProject.id, 'migrationPlan', JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)));
-            onUpdateProject(activeProject.id, 'progress', '0%');
+            
+            // Forcing reset to 0 to prevent previous lingering data
+            setTimeout(() => {
+                onUpdateProject(activeProject.id, 'progress', '0%');
+            }, 50);
         }
     };
 
