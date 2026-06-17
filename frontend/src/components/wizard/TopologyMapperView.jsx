@@ -7,7 +7,6 @@ export const HUAWEI_REGIONS = [
     { group: "Latin America", options: [{ id: "na-mexico-1", name: "LA-Mexico City1" }, { id: "la-north-2", name: "LA-Mexico City2" }, { id: "sa-brazil-1", name: "LA-Sao Paulo1" }, { id: "la-south-2", name: "LA-Santiago" }, { id: "sa-argentina-1", name: "LA-Buenos Aires1" }] }
 ];
 
-// 🚨 SEMANTIC PARSER: Converts messy Quotation Descriptions into exact Dropdown Types
 const normalizeHuaweiType = (rawType, defaultCategory) => {
     const t = String(rawType || '').toLowerCase();
     if (t.includes('elastic cloud server') || t.includes('ecs')) return 'ECS';
@@ -53,7 +52,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     
     const filteredAndSortedNodes = useMemo(() => {
         let result = localNodes.filter(n => {
-            if (statusFilter !== 'All' && n.status !== statusFilter) return false;
+            // 🚨 NEW COMPOUND FILTERS
+            if (statusFilter === 'In SOW') {
+                if (n.status !== 'Matched' && n.status !== 'Quoted Only') return false;
+            } else if (statusFilter === 'In Discovery') {
+                if (n.status !== 'Matched' && n.status !== 'Live Only') return false;
+            } else if (statusFilter !== 'All' && n.status !== statusFilter) {
+                return false;
+            }
             if (typeFilter !== 'All' && n.type !== typeFilter) return false;
             return true;
         });
@@ -101,17 +107,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    // QUOTATION INGESTOR
     const quotedNodes = useMemo(() => {
         const fallbackRegion = activeProject?.region || 'la-south-2';
         const qNodes = [];
         const bp = activeProject?.blueprintData?.topology || {};
 
         (bp.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name || s.flavor || `Compute-${i}`, type: normalizeHuaweiType(s.type || s.flavor, 'ECS'), storage: s.storage || s.metadata?.storage_gb, os: s.os || s.metadata?.os_type, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        
         const dbs = bp.databases || bp.database || [];
         dbs.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name || d.engine || `DB-${i}`, type: normalizeHuaweiType(d.engine || d.type, 'RDS'), storage: d.storage || d.metadata?.storage_gb, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        
         (bp.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name || `Network-${i}`, type: normalizeHuaweiType(n.type, 'VPC'), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         (bp.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name || `Storage-${i}`, type: normalizeHuaweiType(s.type, 'OBS'), storage: s.storage || s.metadata?.storage_gb, location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
         (bp.security || []).forEach((sec, i) => qNodes.push({ id: `q-sec-${i}`, name: sec.name || `Security-${i}`, type: normalizeHuaweiType(sec.type, 'SG'), location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
@@ -119,7 +122,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
-    // 🚨 DISCOVERY INGESTOR: Explicitly parses real technical sizes to override Quoted values
     const liveNodes = useMemo(() => {
         const raw = activeProject?.mgcData?.raw_inventory || {};
         const fallbackRegion = activeProject?.region || 'la-south-2';
@@ -131,7 +133,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return mNodes;
     }, [activeProject?.mgcData, activeProject?.region]);
 
-    // 🚨 RECONCILIATION ENGINE
     const finalizeReconciliation = () => {
         const merged = [];
         let tempQuoted = [...quotedNodes];
@@ -152,7 +153,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                 }
             }
             if (matchIdx !== -1) { 
-                // 🚨 SUPREME TRUTH OVERRIDE: Prioritize Discovered Storage & OS over Quoted values
                 merged.push({ 
                     id: `mgc-${Date.now()}-${index}`, 
                     ...mNode, 
@@ -272,7 +272,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                         {liveNodes.length === 0 && <div className="text-center text-slate-400 text-xs py-8">No Live Discovery data found.</div>}
                                         {liveNodes.map((n, i) => (
                                             <div key={i} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between hover:border-indigo-300 transition-colors">
-                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} {n.storage ? `| ${n.storage}GB` : ''} {n.os ? `| ${n.os}` : ''}</div></div></div>
+                                                <div className="flex items-center gap-3"><i className={`fas ${getIcon(n.type)} text-lg opacity-80 w-6 text-center`}></i><div><div className="font-bold text-xs text-slate-800">{n.name}</div><div className="text-[10px] text-slate-500 uppercase">{n.type} | {n.ip}</div></div></div>
                                             </div>
                                         ))}
                                     </div>
@@ -322,6 +322,19 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                             <div className="flex flex-col flex-1 bg-slate-50 overflow-hidden">
                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none shadow-sm z-10 relative">
                                     <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter:</div>
+                                    
+                                    {/* 🚨 NEW: Filter for SOW Quotation (Matched + Quoted Only) */}
+                                    <div onClick={() => setStatusFilter(statusFilter === 'In SOW' ? 'All' : 'In SOW')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In SOW' ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources included in the Sales Quotation.">
+                                        <i className="fas fa-file-invoice text-indigo-500"></i> In SOW Quote
+                                    </div>
+                                    
+                                    {/* 🚨 NEW: Filter for Source Discovery (Matched + Live Only) */}
+                                    <div onClick={() => setStatusFilter(statusFilter === 'In Discovery' ? 'All' : 'In Discovery')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In Discovery' ? 'bg-teal-50 border-teal-300 text-teal-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources discovered in the source environment.">
+                                        <i className="fas fa-radar text-teal-500"></i> In Discovery
+                                    </div>
+                                    
+                                    <div className="w-px h-4 bg-slate-300 mx-1"></div>
+
                                     <div onClick={() => setStatusFilter(statusFilter === 'Matched' ? 'All' : 'Matched')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Matched' ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Resource exists in BOTH the signed Quotation (SOW) and the live Discovery data.">
                                         <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)]"></div> Matched
                                     </div>
