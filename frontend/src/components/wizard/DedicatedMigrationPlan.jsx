@@ -10,23 +10,6 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
         const newPlan = (activeProject.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
         
         onUpdateProject(activeProject.id, 'migrationPlan', newPlan);
-        
-        if (field === 'prog') {
-            const childTasks = newPlan.filter(t => !t.isParent);
-            if (childTasks.length > 0) {
-                let totalPercent = 0;
-                childTasks.forEach(t => {
-                    let val = t.prog || '0';
-                    if (val === 'Auto') val = '0'; // Auto assumes 0% until the API updates it
-                    totalPercent += parseInt(val.replace('%', '') || '0', 10);
-                });
-                const overallProg = Math.round(totalPercent / childTasks.length) + '%';
-                
-                setTimeout(() => {
-                    onUpdateProject(activeProject.id, 'progress', overallProg);
-                }, 50);
-            }
-        }
     };
 
     const injectPlaybook = (playbookKey) => {
@@ -82,10 +65,8 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs bg-white">
                             {(activeProject.migrationPlan || []).map(task => {
-                                // 🚨 FIX: Replaced strict ternary with simple fallback to allow all values
                                 const progVal = task.prog || '0%';
                                 
-                                // 🚨 FIX: Dynamic color coding based on the current value
                                 const isDone = progVal === '100%';
                                 const isPending = progVal === '0%' || progVal === 'Auto';
                                 const colorClass = isDone ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : isPending ? 'bg-slate-50 border-slate-300 text-slate-600' : 'bg-blue-50 border-blue-300 text-blue-800';
@@ -95,20 +76,21 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                                         <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
                                         <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
                                         <td className="p-3">
-                                            {!task.isParent && (
-                                                <div className={`px-2 py-1.5 rounded-lg border-2 w-full shadow-sm transition-colors ${colorClass}`}>
-                                                    <select 
-                                                        value={progVal} 
-                                                        onChange={e=>handlePlanUpdate(task.id, 'prog', e.target.value)} 
-                                                        className="w-full bg-transparent outline-none cursor-pointer text-center text-[10px] font-black uppercase tracking-widest"
-                                                    >
-                                                        <option value="Auto">[Auto] API Sync</option>
-                                                        {/* 🚨 FIX: Generate 5% increments from 0 to 100 */}
-                                                        {Array.from({ length: 21 }, (_, i) => i * 5).map(pct => {
-                                                            const label = pct === 0 ? 'Pending' : pct === 100 ? 'Waived / Done' : 'In Progress';
-                                                            return <option key={pct} value={`${pct}%`}>[{pct}%] {label}</option>;
-                                                        })}
-                                                    </select>
+                                            {!task.isParent ? (
+                                                <div 
+                                                    className={`px-3 py-1.5 rounded-lg border w-full shadow-sm transition-colors flex justify-between items-center ${colorClass}`}
+                                                    title="Progress is automatically calculated from Phase 4 Execution Orchestrator"
+                                                >
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">
+                                                        {isPending ? 'Pending' : isDone ? 'Complete' : 'In Progress'}
+                                                    </span>
+                                                    <span className="text-xs font-bold bg-white/50 px-1.5 py-0.5 rounded text-slate-800">
+                                                        {progVal}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-full">
+                                                    Wave Baseline
                                                 </div>
                                             )}
                                         </td>
