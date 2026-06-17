@@ -9,9 +9,10 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
         if(!activeProject) return;
         const newPlan = (activeProject.migrationPlan || []).map(t => String(t.id) === String(taskId) ? {...t, [field]: value} : t);
         
-        let updatePayload = { migrationPlan: newPlan };
+        // 🚨 FIX: Corrected signature to save the Migration Plan
+        onUpdateProject(activeProject.id, 'migrationPlan', newPlan);
         
-        // AUTO-CALCULATE OVERALL PROGRESS WHEN A TASK COMPLETES
+        // 🚨 FIX: Auto-calculate and bubble up the overall project progress
         if (field === 'prog') {
             const childTasks = newPlan.filter(t => !t.isParent);
             if (childTasks.length > 0) {
@@ -21,17 +22,18 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                     if (val === 'Auto') val = '0'; // Auto assumes 0% until the API updates it
                     totalPercent += parseInt(val.replace('%', '') || '0');
                 });
-                updatePayload.progress = Math.round(totalPercent / childTasks.length) + '%';
+                const overallProg = Math.round(totalPercent / childTasks.length) + '%';
+                onUpdateProject(activeProject.id, 'progress', overallProg);
             }
         }
-        
-        onUpdateProject(activeProject.id, updatePayload);
     };
 
     const injectPlaybook = (playbookKey) => {
         if(!playbookKey || !customPlaybooks[playbookKey]) return;
         if(window.confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
-            onUpdateProject(activeProject.id, { migrationPlan: JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)), progress: '0%' });
+            // 🚨 FIX: Corrected signature for playbook injection
+            onUpdateProject(activeProject.id, 'migrationPlan', JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)));
+            onUpdateProject(activeProject.id, 'progress', '0%');
         }
     };
 
@@ -83,7 +85,6 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                                         <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
                                         <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
                                         <td className="p-3">
-                                            {/* 🚨 STRICT DROPDOWN FOR PROGRESS INTEGRITY */}
                                             {!task.isParent && (
                                                 <div className={`px-2 py-1.5 rounded-lg border-2 w-full shadow-sm ${progVal==='100%'?'bg-emerald-50 border-emerald-300 text-emerald-800':progVal==='0%'?'bg-slate-50 border-slate-300 text-slate-600':'bg-blue-50 border-blue-300 text-blue-800'}`}>
                                                     <select 
