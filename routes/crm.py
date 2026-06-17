@@ -1,8 +1,10 @@
-from flask import Blueprint, request, jsonify
-from models import db, ProjectData, Customer, GlobalPlaybooks
+import os
 import json
 import uuid
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
+from models import db, ProjectData, Customer, QuotationVersion
+from services.credential_manager import get_credential_manager
 
 crm_bp = Blueprint('crm', __name__)
 
@@ -32,7 +34,7 @@ def get_state():
 @crm_bp.route('/api/erp/projects', methods=['POST'])
 @jwt_required()
 def update_project():
-    """Legacy Full-Update Endpoint (Still used for initial project creation)"""
+    """Legacy Full-Update Endpoint"""
     try:
         data = request.json
         project_id = str(data.get('id'))
@@ -51,10 +53,7 @@ def update_project():
 @crm_bp.route('/api/erp/projects/<project_id>/partial', methods=['PATCH'])
 @jwt_required()
 def partial_update_project(project_id):
-    """
-    Atomic Partial Update: Only updates the specific JSON keys passed in the request body.
-    Prevents Flask from crashing out of memory when updating massive projects.
-    """
+    """Atomic Partial Update"""
     try:
         data_updates = request.json
         project = ProjectData.query.get(project_id)
@@ -63,13 +62,11 @@ def partial_update_project(project_id):
             return jsonify({"success": False, "error": "Project not found"}), 404
             
         current_data = json.loads(project.data)
-        
         for key, value in data_updates.items():
             current_data[key] = value
             
         project.data = json.dumps(current_data, ensure_ascii=False)
         db.session.commit()
-        
         return jsonify({"success": True})
         
     except Exception as e:
@@ -82,29 +79,26 @@ def delete_project(project_id):
     """Delete a project permanently"""
     try:
         project = ProjectData.query.get(project_id)
-        
         if not project:
             return jsonify({"success": False, "error": "Project not found"}), 404
         
-        # First delete related quotation versions
-        from models import QuotationVersion
         QuotationVersion.query.filter_by(project_id=project_id).delete()
-            
-        # Then delete the project
         db.session.delete(project)
         db.session.commit()
-        
         return jsonify({"success": True, "message": f"Project {project_id} deleted"})
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
-# 🚨 RESTORED CUSTOMER DIRECTORY LOGIC
+# 🚨 SECURE CUSTOMER DIRECTORY LOGIC
 @crm_bp.route('/api/erp/customers', methods=['GET', 'POST'])
 @jwt_required()
 def manage_customers():
     try:
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
+
         if request.method == 'GET':
             customers = Customer.query.all()
             result = []
@@ -112,25 +106,38 @@ def manage_customers():
                 result.append({
                     "id": c.id, "name": c.name, "region": c.region,
                     "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect,
-                    "ak": c.ak, "sk": c.sk,
-                    "tier1_ak": c.tier1_ak, "tier1_sk": c.tier1_sk,
-                    "tier2_ak": c.tier2_ak, "tier2_sk": c.tier2_sk,
-                    "tier3_ak": c.tier3_ak, "tier3_sk": c.tier3_sk,
-                    "aws_ak": c.aws_ak, "aws_sk": c.aws_sk,
-                    "azure_tenant_id": c.azure_tenant_id, "azure_client_id": c.azure_client_id,
-                    "azure_client_secret": c.azure_client_secret, "azure_subscription_id": c.azure_subscription_id,
-                    "vcenter_host": c.vcenter_host,
-                    "os_domain": c.os_domain, "os_user": c.os_user, "os_password": c.os_password
+                    
+                    # We are intentionally NOT sending keys to the frontend.
+                    # We only send boolean indicators so the UI knows if a key exists.
+                    "ak": True if c.ak else False, 
+                    "awsAK": True if c.aws_ak else False,
+                    "azureTenant": True if c.azure_tenant_id else False,
+                    
+                    "os_domain": c.os_domain, 
+                    "os_user": c.os_user, 
+                    # 🚨 MASK THE PASSWORD - NEVER SEND IT TO FRONTEND IN PLAIN TEXT
+                    "os_password": "********" if c.os_password else ""
                 })
             return jsonify({"success": True, "customers": result})
         
         elif request.method == 'POST':
             data = request.json
             new_id = data.get('id', str(uuid.uuid4()))
+            
+            # 🚨 ENCRYPT THE OS PASSWORD BEFORE SAVING
+            os_pass_raw = data.get('os_password')
+            encrypted_os_pass = None
+            if os_pass_raw and os_pass_raw != "********":
+                # We package it as a dict to use your existing credential manager
+                enc_dict = cm.encrypt_credentials({"os_pass": os_pass_raw})
+                encrypted_os_pass = json.dumps(enc_dict)
+
             c = Customer(
                 id=new_id,
                 name=data.get('name'), region=data.get('region'), cio=data.get('cio'),
                 it_lead=data.get('it_lead'), architect=data.get('architect'),
+                
+                # Note: To fully secure your vault, the AK/SKs should also be encrypted via cm.encrypt_credentials
                 ak=data.get('ak'), sk=data.get('sk'),
                 tier1_ak=data.get('tier1_ak'), tier1_sk=data.get('tier1_sk'),
                 tier2_ak=data.get('tier2_ak'), tier2_sk=data.get('tier2_sk'),
@@ -139,11 +146,15 @@ def manage_customers():
                 azure_tenant_id=data.get('azure_tenant_id'), azure_client_id=data.get('azure_client_id'),
                 azure_client_secret=data.get('azure_client_secret'), azure_subscription_id=data.get('azure_subscription_id'),
                 vcenter_host=data.get('vcenter_host'),
-                os_domain=data.get('os_domain'), os_user=data.get('os_user'), os_password=data.get('os_password')
+                
+                os_domain=data.get('os_domain'), 
+                os_user=data.get('os_user'), 
+                os_password=encrypted_os_pass # 🚨 SECURE CIPHERTEXT SAVED
             )
             db.session.add(c)
             db.session.commit()
             return jsonify({"success": True, "customer": {"id": c.id, "name": c.name}})
+            
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -163,11 +174,25 @@ def update_delete_customer(c_id):
             
         if request.method == 'PUT':
             data = request.json
+            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+            cm = get_credential_manager(master_password)
+
+            # 🚨 INTERCEPT AND ENCRYPT OS PASSWORD IF IT WAS CHANGED
+            if 'os_password' in data:
+                if data['os_password'] and data['os_password'] != "********":
+                    enc_dict = cm.encrypt_credentials({"os_pass": data['os_password']})
+                    customer.os_password = json.dumps(enc_dict)
+                # Remove it from data so the generic loop doesn't overwrite it with plaintext
+                del data['os_password'] 
+
+            # Generic update for remaining fields
             for key in data:
                 if hasattr(customer, key):
                     setattr(customer, key, data[key])
+                    
             db.session.commit()
             return jsonify({"success": True})
+            
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
