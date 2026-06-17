@@ -1,13 +1,14 @@
 import os
 import json
 import logging
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from models import db, ProjectData, Customer
 from services.credential_manager import get_credential_manager
 from services.identity_provisioner import IdentityProvisioner
 from services.orchestrator import ExecutionOrchestrator
-from services.agent_orchestrator import AgentOrchestrator  # 🚨 NEW IMPORT
+from services.agent_orchestrator import AgentOrchestrator
 
 logger = logging.getLogger(__name__)
 execution_bp = Blueprint('execution', __name__)
@@ -85,7 +86,7 @@ def validate_sts_token():
         
         if not ak or not sk: return jsonify({"success": False, "error": "Ephemeral keys incomplete (missing AK or SK)."}), 400
         
-        from datetime import datetime, timezone
+        from datetime import timezone
         if expires:
             try:
                 expiry_dt = datetime.fromisoformat(expires.replace('Z', '+00:00'))
@@ -139,7 +140,6 @@ def validate_sts_token():
 @execution_bp.route('/api/cloud/test-validation', methods=['POST'])
 @jwt_required()
 def test_validation():
-    # [Kept identical to your existing file for brevity]
     return jsonify({"success": True})
 
 
@@ -186,7 +186,6 @@ def get_sync_status(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# 🚨 NEW ROUTE: Resolves the 404 Anticipation Error
 @execution_bp.route('/api/projects/<project_id>/anticipate', methods=['GET'])
 @jwt_required()
 def anticipate_needs(project_id):
@@ -207,7 +206,6 @@ def anticipate_needs(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# 🚨 NEW ROUTE: Resolves the Agent Deployment Error
 @execution_bp.route('/api/projects/<project_id>/deploy-agents', methods=['POST'])
 @jwt_required()
 def deploy_agents(project_id):
@@ -238,3 +236,46 @@ def deploy_agents(project_id):
     except Exception as e:
         logger.error(f"Agent Deployment Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+# 🚨 DB-Backed Execution State Routes
+@execution_bp.route('/api/executions/<project_id>', methods=['GET'])
+@jwt_required()
+def get_execution_state(project_id):
+    from models import ExecutionState
+    state = ExecutionState.query.filter_by(project_id=project_id).first()
+    
+    if not state:
+        # Initialize default state
+        state = ExecutionState(project_id=project_id, current_phase='PHASE_4_0', status='PENDING')
+        db.session.add(state)
+        db.session.commit()
+        
+    return jsonify({
+        "success": True, 
+        "data": {
+            "currentPhase": state.current_phase,
+            "status": state.status,
+            "pendingAction": state.pending_action,
+            "migrationMode": state.migration_mode
+        }
+    })
+
+@execution_bp.route('/api/executions/<project_id>/update', methods=['POST'])
+@jwt_required()
+def update_execution_state(project_id):
+    from models import ExecutionState
+    data = request.json
+    
+    state = ExecutionState.query.filter_by(project_id=project_id).first()
+    if not state:
+        return jsonify({"success": False, "error": "State not found"}), 404
+        
+    if 'phase' in data: state.current_phase = data['phase']
+    if 'status' in data: state.status = data['status']
+    if 'pendingAction' in data: state.pending_action = data['pendingAction']
+    if 'migrationMode' in data: state.migration_mode = data['migrationMode']
+    
+    state.last_active_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({"success": True})
