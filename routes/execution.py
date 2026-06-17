@@ -23,10 +23,9 @@ def ensure_valid_sts_token(project_record):
     
     needs_refresh = True
     
-    # 1. Check if token exists and is still valid (with a 5-minute safety buffer)
     if ephemeral_keys and 'expires' in ephemeral_keys:
         try:
-            # Parse ISO8601 format (e.g., "2026-06-07T12:00:00Z")
+            # Parse ISO8601 format
             expiry_dt = datetime.fromisoformat(ephemeral_keys['expires'].replace('Z', '+00:00'))
             if (expiry_dt - datetime.now(timezone.utc)).total_seconds() > 300:
                 needs_refresh = False
@@ -38,7 +37,6 @@ def ensure_valid_sts_token(project_record):
         
     logger.info(f"STS Token expired or missing for Project {project_record.id}. Auto-refreshing...")
     
-    # 2. Token is dead. Fetch Master Credentials from Secure Vault.
     customer_id = project_data.get('customerId')
     eps_id = project_data.get('sandboxEps', '').strip()
     
@@ -52,7 +50,6 @@ def ensure_valid_sts_token(project_record):
     ak_str = str(customer.ak).strip()
     sk_str = str(customer.sk).strip()
     
-    # Decrypt Master Keys
     master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
     cm = get_credential_manager(master_password)
     
@@ -63,13 +60,11 @@ def ensure_valid_sts_token(project_record):
         ak_data = json.loads(ak_str)
         ak, sk = cm.decrypt_credentials(ak_data)
         
-    # 3. Provision a fresh STS Token
     result = IdentityProvisioner.generate_ephemeral_token(ak=ak, sk=sk, eps_id=eps_id if eps_id else None)
     
     if not result.get("success"):
         raise Exception(f"Failed to auto-refresh STS token: {result.get('error')}")
         
-    # 4. Save the fresh token to the database silently
     new_keys = {
         "ak": result["ak"],
         "sk": result["sk"],
@@ -88,7 +83,6 @@ def ensure_valid_sts_token(project_record):
 @execution_bp.route('/api/cloud/sts-token', methods=['POST'])
 @jwt_required()
 def provision_sts_token():
-    """Securely requests an initial Ephemeral STS Token from Huawei Cloud."""
     try:
         data = request.get_json()
         project_id = data.get('projectId')
@@ -111,7 +105,6 @@ def provision_sts_token():
 @execution_bp.route('/api/cloud/validate-sts-token', methods=['POST'])
 @jwt_required()
 def validate_sts_token():
-    """Validate that the STS token works with Huawei Cloud API"""
     try:
         data = request.get_json()
         project_id = data.get('projectId')
@@ -193,32 +186,27 @@ def test_validation():
 @execution_bp.route('/api/projects/<project_id>/execute', methods=['POST'])
 @jwt_required()
 def execute_project(project_id):
-    """Phase 4.1 & 4.3 Trigger: Executes Terraform via Huawei RFS."""
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
         
-        # 🚨 Auto-Refresh the STS Token before executing Terraform
         try:
             ephemeral_keys = ensure_valid_sts_token(project_record)
         except Exception as auth_err:
             return jsonify({"success": False, "error": str(auth_err)}), 403
 
-        # (Project data must be reloaded in case the helper updated the token in DB)
         project_data = json.loads(project_record.data)
         mapper_nodes = project_data.get('mapperNodes', [])
         region = project_data.get('region', 'la-south-2')
         
-        # 🚨 Extract Interactive Network Config from Request
         request_data = request.get_json() or {}
         network_config = request_data.get('networkConfig', {})
 
-        # Note: You will need to update ExecutionOrchestrator.generate_terraform_payload 
-        # to accept and parse the network_config dictionary.
         tf_payload = ExecutionOrchestrator.generate_terraform_payload(
             mapper_nodes, 
             region, 
-            network_config=network_config # Passing new modal variables
+            require_factory=True,
+            network_config=network_config 
         )
         
         rfs_result = ExecutionOrchestrator.deploy_to_rfs(
@@ -251,7 +239,6 @@ def get_sync_status(project_id):
 @execution_bp.route('/api/projects/<project_id>/anticipate', methods=['GET'])
 @jwt_required()
 def anticipate_needs(project_id):
-    """Phase 1: Returns FinOps quotas and Upsell Anticipation Insights"""
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
@@ -271,7 +258,6 @@ def anticipate_needs(project_id):
 @execution_bp.route('/api/projects/<project_id>/deploy-agents', methods=['POST'])
 @jwt_required()
 def deploy_agents(project_id):
-    """Phase 4.4: Generates Agent Scripts based on SOW and Opt-Ins"""
     try:
         data = request.get_json() or {}
         opt_ins = data.get('optIns', {'uniAgent': True, 'hss': False, 'lts': False})
@@ -279,7 +265,6 @@ def deploy_agents(project_id):
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
         
-        # 🚨 Auto-Refresh the STS Token before communicating with agent APIs
         try:
             ephemeral_keys = ensure_valid_sts_token(project_record)
         except Exception as auth_err:
@@ -307,7 +292,6 @@ def deploy_agents(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# 🚨 DB-Backed Execution State Routes
 @execution_bp.route('/api/executions/<project_id>', methods=['GET'])
 @jwt_required()
 def get_execution_state(project_id):
