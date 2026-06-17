@@ -218,34 +218,37 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
     current_resource = None
 
     for index, row in df.iterrows():
-        # 🚨 FIX: Correctly mapping the Huawei Phase 2 columns
         svc_cat_raw = str(row.get('service', '')).strip()
         svc_name_raw = str(row.get('description', '')).strip()
         svc_specs_raw = str(row.get('specifications', '')).strip()
-        region_val = str(row.get('region', ''))
         
         if not svc_cat_raw or svc_cat_raw == 'nan':
             continue
         
-        is_main_resource = bool(region_val.strip() and region_val != 'nan')
+        svc_lower = svc_cat_raw.lower()
         
-        if not is_main_resource:
-            if current_resource and current_resource['category'] == 'compute':
-                current_resource['specs'] += f" | {svc_cat_raw}: {svc_name_raw}"
+        # 🚨 NEW LOGIC: Determines if this row is a sub-component (like Disk) of the previous Compute Node
+        is_sub_component = False
+        if current_resource and current_resource['category'] == 'compute':
+            if any(x in svc_lower for x in ['disk', 'volume', 'bandwidth', 'ip address']) and 'elastic ip' not in svc_lower:
+                is_sub_component = True
+                
+        if is_sub_component:
+            current_resource['specs'] += f" | {svc_cat_raw}: {svc_name_raw} - {svc_specs_raw}"
             continue
 
+        # If it's a new primary resource (Compute, DB, Storage, Security, etc), finalize the old one and start fresh.
         if current_resource:
             _finalize_resource(current_resource, blueprint)
         
         cat = 'unknown'
-        svc_lower = svc_cat_raw.lower()
         if any(x in svc_lower for x in ['elastic cloud server', 'bare metal', 'flexus x instance', 'ecs']):
             cat = 'compute'
-        elif any(x in svc_lower for x in ['relational database', 'gaussdb', 'document database', 'rds', 'redis']):
+        elif any(x in svc_lower for x in ['relational database', 'gaussdb', 'document database', 'rds', 'redis', 'dcs']):
             cat = 'database'
-        elif any(x in svc_lower for x in ['nat gateway', 'virtual private network', 'elastic ip', 'vpc', 'direct connect', 'bandwidth', 'content delivery network', 'whole site acceleration', 'cdn', 'edge']):
+        elif any(x in svc_lower for x in ['nat gateway', 'virtual private network', 'elastic ip', 'vpc', 'direct connect', 'content delivery network', 'whole site acceleration', 'cdn', 'edge']):
             cat = 'network'
-        elif any(x in svc_lower for x in ['cloud backup and recovery', 'object storage', 'sfs']):
+        elif any(x in svc_lower for x in ['cloud backup and recovery', 'object storage', 'sfs', 'evs']):
             cat = 'storage'
         elif any(x in svc_lower for x in ['host security', 'web application firewall', 'waf', 'anti-ddos', 'cloud bastion host']):
             cat = 'security'
@@ -254,10 +257,10 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
             cat = classify_unknown_service_with_ai(svc_cat_raw, svc_name_raw)
 
         current_resource = {
-            'name': svc_name_raw,      # e.g., ALUCEMOOD02
-            'type': svc_cat_raw,       # e.g., Elastic Cloud Server 1
+            'name': svc_name_raw,
+            'type': svc_cat_raw,
             'category': cat,
-            'specs': svc_specs_raw     # e.g., 2 vCPUs | 8GiB...
+            'specs': svc_specs_raw
         }
 
     if current_resource:
