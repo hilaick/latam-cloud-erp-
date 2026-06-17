@@ -3,7 +3,6 @@ import { EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function DedicatedMigrationPlan({ activeProject, onUpdateProject }) {
-    // 🚨 FIX: Fetch playbooks natively from Context so we don't rely on parent props
     const { customPlaybooks } = useContext(ERPContext);
 
     const handlePlanUpdate = (taskId, field, value) => {
@@ -17,7 +16,11 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
             const childTasks = newPlan.filter(t => !t.isParent);
             if (childTasks.length > 0) {
                 let totalPercent = 0;
-                childTasks.forEach(t => totalPercent += parseInt(t.prog || '0'));
+                childTasks.forEach(t => {
+                    let val = t.prog || '0';
+                    if (val === 'Auto') val = '0'; // Auto assumes 0% until the API updates it
+                    totalPercent += parseInt(val.replace('%', '') || '0');
+                });
                 updatePayload.progress = Math.round(totalPercent / childTasks.length) + '%';
             }
         }
@@ -39,7 +42,6 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
         onUpdateProject(activeProject.id, 'migrationPlan', [...(activeProject.migrationPlan || []), newTask]);
     };
 
-    // 🚨 FIX: Safety check to prevent crashes if activeProject is ever undefined
     if (!activeProject) return null;
 
     return (
@@ -67,32 +69,43 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                             <tr>
                                 <th className="p-4 w-16 text-center font-black">WBS ID</th>
                                 <th className="p-4 w-1/3 font-black">Task Name</th>
-                                <th className="p-4 w-32 font-black">Progress</th>
+                                <th className="p-4 w-48 font-black">Progress Status</th>
                                 <th className="p-4 w-48 font-black text-indigo-700 bg-indigo-100/50"><i className="fas fa-users mr-1"></i> RACI Owner</th>
                                 <th className="p-4 w-32 font-black">Start Date</th>
                                 <th className="p-4 w-32 font-black">End Date</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs bg-white">
-                            {/* 🚨 FIX: Changed project.migrationPlan to activeProject.migrationPlan */}
-                            {(activeProject.migrationPlan || []).map(task => (
-                                <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
-                                    <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
-                                    <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
-                                    <td className="p-3">
-                                        {!task.isParent && (
-                                            <div className={`px-3 py-1.5 rounded-lg border-2 inline-flex items-center w-full max-w-[80px] shadow-sm ${task.prog==='100%'?'bg-emerald-50 border-emerald-200 text-emerald-800 font-black':task.prog==='0%'?'bg-white border-slate-200 text-slate-500':'bg-blue-50 border-blue-200 text-blue-800 font-black'}`}>
-                                                <EditableCell type="select" placeholder="progress" value={task.prog} onSave={v=>handlePlanUpdate(task.id, 'prog', v)} className="w-full text-center" />
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="p-3 text-indigo-800 font-bold bg-indigo-50/30">
-                                        <EditableCell type="select" placeholder="Select Role" value={task.resp} onSave={v=>handlePlanUpdate(task.id, 'resp', v)} />
-                                    </td>
-                                    <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.start} onSave={v=>handlePlanUpdate(task.id, 'start', v)} /></td>
-                                    <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.end} onSave={v=>handlePlanUpdate(task.id, 'end', v)} /></td>
-                                </tr>
-                            ))}
+                            {(activeProject.migrationPlan || []).map(task => {
+                                const progVal = task.prog?.includes('100') ? '100%' : task.prog?.includes('0') ? '0%' : 'Auto';
+                                return (
+                                    <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
+                                        <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
+                                        <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
+                                        <td className="p-3">
+                                            {/* 🚨 STRICT DROPDOWN FOR PROGRESS INTEGRITY */}
+                                            {!task.isParent && (
+                                                <div className={`px-2 py-1.5 rounded-lg border-2 w-full shadow-sm ${progVal==='100%'?'bg-emerald-50 border-emerald-300 text-emerald-800':progVal==='0%'?'bg-slate-50 border-slate-300 text-slate-600':'bg-blue-50 border-blue-300 text-blue-800'}`}>
+                                                    <select 
+                                                        value={progVal} 
+                                                        onChange={e=>handlePlanUpdate(task.id, 'prog', e.target.value)} 
+                                                        className="w-full bg-transparent outline-none cursor-pointer text-center text-[10px] font-black uppercase tracking-widest"
+                                                    >
+                                                        <option value="Auto">[Auto] API Sync</option>
+                                                        <option value="0%">[0%] Pending</option>
+                                                        <option value="100%">[100%] Waived / Done</option>
+                                                    </select>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-3 text-indigo-800 font-bold bg-indigo-50/30">
+                                            <EditableCell type="select" placeholder="Select Role" value={task.resp} onSave={v=>handlePlanUpdate(task.id, 'resp', v)} />
+                                        </td>
+                                        <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.start} onSave={v=>handlePlanUpdate(task.id, 'start', v)} /></td>
+                                        <td className="p-3 font-mono font-bold text-slate-600"><EditableCell type="date" value={task.end} onSave={v=>handlePlanUpdate(task.id, 'end', v)} /></td>
+                                    </tr>
+                                );
+                            })}
                             {(!activeProject.migrationPlan || activeProject.migrationPlan.length === 0) && (
                                 <tr><td colSpan="6" className="p-12 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50">No WBS tasks defined. Load a playbook or generate from Topology Mapper.</td></tr>
                             )}
