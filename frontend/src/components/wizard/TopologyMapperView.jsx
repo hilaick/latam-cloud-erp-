@@ -32,7 +32,8 @@ const normalizeHuaweiType = (rawType, defaultCategory) => {
     return defaultCategory; 
 };
 
-export default function TopologyMapperView({ activeProject, onUpdateProject }) {
+// 🚨 FIX: Added `onPromote` to destructured props so the handoff works
+export default function TopologyMapperView({ activeProject, onUpdateProject, onPromote }) {
     const { customers } = useContext(ERPContext); 
 
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
@@ -52,7 +53,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
     
     const filteredAndSortedNodes = useMemo(() => {
         let result = localNodes.filter(n => {
-            // 🚨 NEW COMPOUND FILTERS
             if (statusFilter === 'In SOW') {
                 if (n.status !== 'Matched' && n.status !== 'Quoted Only') return false;
             } else if (statusFilter === 'In Discovery') {
@@ -74,9 +74,16 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
         return result;
     }, [localNodes, statusFilter, typeFilter, sortConfig]);
 
-    const saveArchitecture = () => {
+    // 🚨 FIX: Configured the save function to execute `onPromote` conditionally
+    const saveArchitecture = (shouldPromote = true) => {
         onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
-        alert(`Target Architecture Saved!\n\nAll ${localNodes.length} nodes have been permanently saved to the Project Context.\n\nPlease proceed to the '4. DTRB Governance' tab.`);
+        
+        if (shouldPromote && onPromote) {
+            onPromote(); // This fires setSubTab('gov') from StepArchitecture
+        } else if (!shouldPromote) {
+            // Optional: Just save quietly if editing a node sidebar
+            setSelectedNode(null); 
+        }
     };
 
     const resyncFromSOW = () => {
@@ -314,7 +321,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                             <div className="flex items-center gap-2">
                                 {targetView === 'list' && <button onClick={()=>toggleFullScreen('target-container')} className="py-2 px-4 bg-white text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-50 transition-colors border border-slate-300"><i className="fas fa-expand mr-1"></i> Full Screen</button>}
                                 {targetView === 'list' && <button onClick={handleAddNode} className="py-2 px-4 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Node</button>}
-                                <button onClick={saveArchitecture} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95"><i className="fas fa-shield-alt mr-2"></i> Save & Proceed to Governance</button>
+                                
+                                {/* 🚨 FIX: Explicitly passes true to saveArchitecture so it saves to DB AND advances tab */}
+                                <button onClick={() => saveArchitecture(true)} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95"><i className="fas fa-shield-alt mr-2"></i> Save & Proceed to Governance</button>
                             </div>
                         </div>
 
@@ -323,12 +332,10 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none shadow-sm z-10 relative">
                                     <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter:</div>
                                     
-                                    {/* 🚨 NEW: Filter for SOW Quotation (Matched + Quoted Only) */}
                                     <div onClick={() => setStatusFilter(statusFilter === 'In SOW' ? 'All' : 'In SOW')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In SOW' ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources included in the Sales Quotation.">
                                         <i className="fas fa-file-invoice text-indigo-500"></i> In SOW Quote
                                     </div>
                                     
-                                    {/* 🚨 NEW: Filter for Source Discovery (Matched + Live Only) */}
                                     <div onClick={() => setStatusFilter(statusFilter === 'In Discovery' ? 'All' : 'In Discovery')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In Discovery' ? 'bg-teal-50 border-teal-300 text-teal-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources discovered in the source environment.">
                                         <i className="fas fa-radar text-teal-500"></i> In Discovery
                                     </div>
@@ -488,7 +495,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject }) {
                         </div>
                         <div className="p-4 bg-white border-t border-slate-200 flex gap-2 shrink-0">
                             <button onClick={()=>setSelectedNode(null)} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Close</button>
-                            <button onClick={saveArchitecture} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save Blueprint</button>
+                            {/* 🚨 FIX: Explicitly passing false so it just saves and closes sidebar without switching tabs */}
+                            <button onClick={() => saveArchitecture(false)} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-colors">Save Blueprint</button>
                         </div>
                     </div>
                 )}
