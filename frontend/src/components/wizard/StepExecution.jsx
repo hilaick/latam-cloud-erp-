@@ -172,7 +172,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
     const strategy = getStrategyDetails();
     
-    // 🚨 FIX: Strictly pull from Target Architecture instead of raw Mapper Nodes
     const inScopeNodes = useMemo(() => {
         const computeNodes = project?.blueprintData?.topology?.compute || [];
         const dbNodes = project?.blueprintData?.topology?.database || [];
@@ -243,7 +242,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 if (isDb) {
                     assignments[n.id] = { status: 'PaaS DB Ready', vector: 'Vector 5: Database DRS Sync', icon: 'fa-database', color: 'text-purple-500' };
                 } else {
-                    // Simulated status responses against Target Nodes
                     if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
                     else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
                     else assignments[n.id] = { status: 'OS Healthy', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
@@ -420,7 +418,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     <h4 className="text-lg font-black text-white mb-2">Technical OS Pre-Flight Validation</h4>
                                                 </div>
                                                 {execStatus === 'pending' || preflightStatus === 'pending' ? (
-                                                    // 🚨 FIX: Button is strictly disabled unless token is validated
                                                     <button onClick={handleRunPreflight} disabled={!tokenValidated || preflightStatus === 'scanning'} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center">
                                                         {preflightStatus === 'scanning' ? (
                                                             <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target Arch</>
@@ -432,7 +429,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     </button>
                                                 ) : (
                                                     <div className="flex items-center gap-4">
-                                                        {/* 🚨 FIX: Re-Run forces STS validation state back to false */}
                                                         <button onClick={() => { 
                                                             setPreflightStatus('pending'); 
                                                             setTokenValidated(false); 
@@ -451,9 +447,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     {anticipationInsights.capacity_warnings?.map((warn, i) => (
                                                         <div key={`cap-${i}`} className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-lg flex gap-3 text-rose-200"><i className="fas fa-ban text-rose-500 mt-1"></i><div className="text-xs"><strong>Capacity Alert:</strong> {warn}</div></div>
                                                     ))}
-                                                    {anticipationInsights.upsell_opportunities?.map((upsell, i) => (
-                                                        <div key={`up-${i}`} className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-lg flex gap-3 text-indigo-200"><i className="fas fa-lightbulb text-indigo-400 mt-1"></i><div className="text-xs"><strong>Upsell Anticipated:</strong> {upsell}</div></div>
-                                                    ))}
+                                                    {/* 🚨 FIX: Upsell Opportunities strictly removed from Engineering view */}
                                                 </div>
                                             )}
 
