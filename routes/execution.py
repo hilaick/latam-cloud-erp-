@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from models import db, ProjectData, Customer
@@ -13,10 +13,82 @@ from services.agent_orchestrator import AgentOrchestrator
 logger = logging.getLogger(__name__)
 execution_bp = Blueprint('execution', __name__)
 
+def ensure_valid_sts_token(project_record):
+    """
+    Checks if the STS token is valid. If expired, automatically decrypts 
+    master credentials from the Vault, provisions a new STS token, and updates the DB.
+    """
+    project_data = json.loads(project_record.data)
+    ephemeral_keys = project_data.get('ephemeralKeys')
+    
+    needs_refresh = True
+    
+    # 1. Check if token exists and is still valid (with a 5-minute safety buffer)
+    if ephemeral_keys and 'expires' in ephemeral_keys:
+        try:
+            # Parse ISO8601 format (e.g., "2026-06-07T12:00:00Z")
+            expiry_dt = datetime.fromisoformat(ephemeral_keys['expires'].replace('Z', '+00:00'))
+            if (expiry_dt - datetime.now(timezone.utc)).total_seconds() > 300:
+                needs_refresh = False
+        except Exception as e:
+            logger.warning(f"Failed to parse STS expiry: {e}")
+            
+    if not needs_refresh:
+        return ephemeral_keys
+        
+    logger.info(f"STS Token expired or missing for Project {project_record.id}. Auto-refreshing...")
+    
+    # 2. Token is dead. Fetch Master Credentials from Secure Vault.
+    customer_id = project_data.get('customerId')
+    eps_id = project_data.get('sandboxEps', '').strip()
+    
+    if not customer_id: 
+        raise Exception("Cannot refresh STS: No Customer linked to this project.")
+        
+    customer = Customer.query.get(customer_id)
+    if not customer or not customer.ak or not customer.sk:
+        raise Exception("Cannot refresh STS: Customer Master AK/SK missing from Secure Vault.")
+        
+    ak_str = str(customer.ak).strip()
+    sk_str = str(customer.sk).strip()
+    
+    # Decrypt Master Keys
+    master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+    cm = get_credential_manager(master_password)
+    
+    if not ak_str.startswith('{') and len(ak_str) > 5:
+        ak = ak_str
+        sk = sk_str
+    else:
+        ak_data = json.loads(ak_str)
+        ak, sk = cm.decrypt_credentials(ak_data)
+        
+    # 3. Provision a fresh STS Token
+    result = IdentityProvisioner.generate_ephemeral_token(ak=ak, sk=sk, eps_id=eps_id if eps_id else None)
+    
+    if not result.get("success"):
+        raise Exception(f"Failed to auto-refresh STS token: {result.get('error')}")
+        
+    # 4. Save the fresh token to the database silently
+    new_keys = {
+        "ak": result["ak"],
+        "sk": result["sk"],
+        "security_token": result["security_token"],
+        "expires": result["expires_at"]
+    }
+    
+    project_data['ephemeralKeys'] = new_keys
+    project_record.data = json.dumps(project_data, ensure_ascii=False)
+    db.session.commit()
+    
+    logger.info(f"✅ STS Token successfully auto-refreshed for Project {project_record.id}")
+    return new_keys
+
+
 @execution_bp.route('/api/cloud/sts-token', methods=['POST'])
 @jwt_required()
 def provision_sts_token():
-    """Securely requests an Ephemeral STS Token from Huawei Cloud."""
+    """Securely requests an initial Ephemeral STS Token from Huawei Cloud."""
     try:
         data = request.get_json()
         project_id = data.get('projectId')
@@ -26,35 +98,11 @@ def provision_sts_token():
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found."}), 404
             
-        project_data = json.loads(project_record.data)
-        customer_id = project_data.get('customerId')
-        eps_id = project_data.get('sandboxEps', '').strip()
-        
-        if not customer_id: return jsonify({"success": False, "error": "No Customer linked to this project."}), 400
-
-        customer = Customer.query.get(customer_id)
-        if not customer or not customer.ak or not customer.sk:
-            return jsonify({"success": False, "error": "Customer Master AK/SK missing from Secure Vault."}), 400
-
-        ak_str = str(customer.ak).strip()
-        sk_str = str(customer.sk).strip()
-        
-        if not ak_str.startswith('{') and len(ak_str) > 5:
-            ak = ak_str
-            sk = sk_str
-        else:
-            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-            try:
-                ak_data = json.loads(ak_str)
-                ak, sk = get_credential_manager(master_password).decrypt_credentials(ak_data)
-            except Exception as e:
-                return jsonify({"success": False, "error": f"Failed to decrypt Vault Credentials: {str(e)}"}), 500
-
-        result = IdentityProvisioner.generate_ephemeral_token(
-            ak=ak, sk=sk, eps_id=eps_id if eps_id else None
-        )
-        
-        return jsonify(result), 200 if result.get("success") else 400
+        try:
+            new_keys = ensure_valid_sts_token(project_record)
+            return jsonify({"success": True, **new_keys}), 200
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -77,16 +125,15 @@ def validate_sts_token():
         ephemeral_keys = project_data.get('ephemeralKeys')
         
         if not ephemeral_keys:
-            return jsonify({"success": False, "error": "No ephemeral keys found for this project. Please provision STS token first."}), 400
+            return jsonify({"success": False, "error": "No ephemeral keys found. Please provision STS token first."}), 400
         
         ak = ephemeral_keys.get('ak')
         sk = ephemeral_keys.get('sk')
         security_token = ephemeral_keys.get('security_token', '')
         expires = ephemeral_keys.get('expires')
         
-        if not ak or not sk: return jsonify({"success": False, "error": "Ephemeral keys incomplete (missing AK or SK)."}), 400
+        if not ak or not sk: return jsonify({"success": False, "error": "Ephemeral keys incomplete."}), 400
         
-        from datetime import timezone
         if expires:
             try:
                 expiry_dt = datetime.fromisoformat(expires.replace('Z', '+00:00'))
@@ -95,7 +142,7 @@ def validate_sts_token():
             except: pass  
         
         if not ak.startswith('HST'):
-            return jsonify({"success": False, "valid": False, "error": "Invalid AK format: Temporary tokens should start with 'HST'"}), 400
+            return jsonify({"success": False, "valid": False, "error": "Invalid AK format for STS."}), 400
         
         try:
             import requests
@@ -104,7 +151,7 @@ def validate_sts_token():
             from huaweicloudsdkcore.signer.signer import Signer
             from huaweicloudsdkcore.signer.signer import SdkRequest
             
-            region = project_data.get('region', 'cn-north-4')
+            region = project_data.get('region', 'la-south-2')
             url = f"https://iam.{region}.myhuaweicloud.com/v3/regions"
             
             credentials = BasicCredentials(ak=ak, sk=sk)
@@ -122,9 +169,9 @@ def validate_sts_token():
             response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code in [200, 201, 202, 204]:
-                return jsonify({"success": True, "valid": True, "message": "STS token validated successfully with Huawei Cloud API", "status_code": response.status_code, "expires": expires})
+                return jsonify({"success": True, "valid": True, "message": "STS token validated successfully", "status_code": response.status_code, "expires": expires})
             elif response.status_code in [401, 403]:
-                return jsonify({"success": True, "valid": True, "message": "STS token authentication successful but lacks IAM permissions", "status_code": response.status_code, "expires": expires, "warning": "Temporary tokens often have restricted permissions."})
+                return jsonify({"success": True, "valid": True, "message": "STS token valid but lacks IAM permissions", "status_code": response.status_code, "expires": expires})
             else:
                 return jsonify({"success": False, "valid": False, "error": f"Huawei API test failed: {response.status_code}", "status_code": response.status_code}), 400
                 
@@ -146,22 +193,37 @@ def test_validation():
 @execution_bp.route('/api/projects/<project_id>/execute', methods=['POST'])
 @jwt_required()
 def execute_project(project_id):
-    """Phase 2 Trigger: Executes Terraform via Huawei RFS using the STS Token."""
+    """Phase 4.1 & 4.3 Trigger: Executes Terraform via Huawei RFS."""
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
-        project_data = json.loads(project_record.data)
         
-        ephemeral_keys = project_data.get('ephemeralKeys')
-        if not ephemeral_keys: return jsonify({"success": False, "error": "No Active STS Token found."}), 403
+        # 🚨 Auto-Refresh the STS Token before executing Terraform
+        try:
+            ephemeral_keys = ensure_valid_sts_token(project_record)
+        except Exception as auth_err:
+            return jsonify({"success": False, "error": str(auth_err)}), 403
 
+        # (Project data must be reloaded in case the helper updated the token in DB)
+        project_data = json.loads(project_record.data)
         mapper_nodes = project_data.get('mapperNodes', [])
         region = project_data.get('region', 'la-south-2')
+        
+        # 🚨 Extract Interactive Network Config from Request
+        request_data = request.get_json() or {}
+        network_config = request_data.get('networkConfig', {})
 
-        tf_payload = ExecutionOrchestrator.generate_terraform_payload(mapper_nodes, region)
+        # Note: You will need to update ExecutionOrchestrator.generate_terraform_payload 
+        # to accept and parse the network_config dictionary.
+        tf_payload = ExecutionOrchestrator.generate_terraform_payload(
+            mapper_nodes, 
+            region, 
+            network_config=network_config # Passing new modal variables
+        )
         
         rfs_result = ExecutionOrchestrator.deploy_to_rfs(
-            ak=ephemeral_keys.get('ak'), sk=ephemeral_keys.get('sk'),
+            ak=ephemeral_keys.get('ak'), 
+            sk=ephemeral_keys.get('sk'),
             security_token=ephemeral_keys.get('security_token'),
             region=region, project_id=project_id, tf_json=tf_payload
         )
@@ -209,19 +271,26 @@ def anticipate_needs(project_id):
 @execution_bp.route('/api/projects/<project_id>/deploy-agents', methods=['POST'])
 @jwt_required()
 def deploy_agents(project_id):
-    """Phase 3: Generates Agent Scripts based on SOW and Opt-Ins"""
+    """Phase 4.4: Generates Agent Scripts based on SOW and Opt-Ins"""
     try:
         data = request.get_json() or {}
         opt_ins = data.get('optIns', {'uniAgent': True, 'hss': False, 'lts': False})
         
         project_record = ProjectData.query.get(project_id)
         if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
-        project_data = json.loads(project_record.data)
         
-        ephemeral_keys = project_data.get('ephemeralKeys', {})
+        # 🚨 Auto-Refresh the STS Token before communicating with agent APIs
+        try:
+            ephemeral_keys = ensure_valid_sts_token(project_record)
+        except Exception as auth_err:
+            return jsonify({"success": False, "error": str(auth_err)}), 403
+            
+        project_data = json.loads(project_record.data)
         region = project_data.get('region', 'la-south-2')
-        ak = ephemeral_keys.get('ak', 'HW_AK_XXXXX')
-        sk = ephemeral_keys.get('sk', 'HW_SK_XXXXX')
+        
+        ak = ephemeral_keys.get('ak')
+        sk = ephemeral_keys.get('sk')
+        security_token = ephemeral_keys.get('security_token')
 
         linux_payload = AgentOrchestrator.generate_linux_payload(ak, sk, region, opt_ins)
         windows_payload = AgentOrchestrator.generate_windows_payload(ak, sk, region, opt_ins)
@@ -237,6 +306,7 @@ def deploy_agents(project_id):
         logger.error(f"Agent Deployment Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+
 # 🚨 DB-Backed Execution State Routes
 @execution_bp.route('/api/executions/<project_id>', methods=['GET'])
 @jwt_required()
@@ -245,7 +315,6 @@ def get_execution_state(project_id):
     state = ExecutionState.query.filter_by(project_id=project_id).first()
     
     if not state:
-        # Initialize default state
         state = ExecutionState(project_id=project_id, current_phase='PHASE_4_0', status='PENDING')
         db.session.add(state)
         db.session.commit()
