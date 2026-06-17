@@ -55,6 +55,7 @@ export default function PreSalesRadar() {
             partner: "TBD", 
             techContact: "TBD", 
             sourceEnvironment: "Unknown", 
+            authLevel: "Read-Only (Customer Managed)", // Added default auth level
             estimatedWorkloads: 0,
             estimatedMigrationHours: 0,
             blocker: "", 
@@ -197,15 +198,24 @@ export default function PreSalesRadar() {
                                 </div>
                             </div>
 
-                            {/* 🚨 RESTORED: Technical Sizing & Risks Section */}
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
+                                {/* 🚨 FIX: Updated grid-cols to 5 and injected Auth Level dropdown */}
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-5">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Source Env</label>
                                         <select value={editingProject.sourceEnvironment || 'Unknown'} onChange={e=>setEditingProject({...editingProject, sourceEnvironment: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
                                             <option value="Unknown">Unknown</option>
                                             {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Auth Level</label>
+                                        <select value={editingProject.authLevel || 'Read-Only (Customer Managed)'} onChange={e=>setEditingProject({...editingProject, authLevel: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-[11px] font-bold bg-white cursor-pointer">
+                                            <option value="Cloud Admin API">Cloud Admin API</option>
+                                            <option value="Active Directory">Active Directory</option>
+                                            <option value="Local OS Admin">Local OS Admin</option>
+                                            <option value="Read-Only (Customer Managed)">Read-Only (Zero Trust)</option>
                                         </select>
                                     </div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Workloads (VMs)</label><input type="number" value={editingProject.estimatedWorkloads || ''} onChange={e=>setEditingProject({...editingProject, estimatedWorkloads: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
