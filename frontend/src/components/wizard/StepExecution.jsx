@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { formatShortDate, EditableCell } from '../../utils/helpers';
-import { ERPContext } from '../../context/ERPContext'; // 🚨 Imported Context for Progress Engine
+import { ERPContext } from '../../context/ERPContext';
 
 const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
 
@@ -172,14 +172,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     };
     const strategy = getStrategyDetails();
     
+    // 🚨 FIX: Strictly pull from Target Architecture instead of raw Mapper Nodes
     const inScopeNodes = useMemo(() => {
-        return (project?.mapperNodes || []).filter(n => {
-            const t = String(n.type || '').toUpperCase();
-            return executableTypes.some(execType => t.includes(execType));
-        });
-    }, [project?.mapperNodes]);
+        const computeNodes = project?.blueprintData?.topology?.compute || [];
+        const dbNodes = project?.blueprintData?.topology?.database || [];
+        return [...computeNodes, ...dbNodes];
+    }, [project?.blueprintData?.topology]);
 
-    const isBlindMigration = inScopeNodes.length > 0 && inScopeNodes.every(n => n.status === 'Quoted Only');
+    const isBlindMigration = inScopeNodes.length === 0;
 
     const safePartialUpdate = async (updates) => {
         if (!project?.id) return;
@@ -238,13 +238,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         setTimeout(() => {
             const assignments = {};
             inScopeNodes.forEach((n, idx) => {
-                if (n.status === 'Quoted Only') {
-                    assignments[n.id] = { status: 'Bypassed (Quote Only)', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-eye-slash', color: 'text-slate-400' };
-                }
-                else if (n.status === 'Live Only' && !project?.crApproved) {
-                    assignments[n.id] = { status: 'Scope Creep', vector: 'Blocked (Missing CR)', icon: 'fa-hand-paper', color: 'text-rose-500' };
-                }
-                else {
+                const isDb = String(n.type||'').toUpperCase().includes('DB') || String(n.type||'').toUpperCase().includes('RDS');
+                
+                if (isDb) {
+                    assignments[n.id] = { status: 'PaaS DB Ready', vector: 'Vector 5: Database DRS Sync', icon: 'fa-database', color: 'text-purple-500' };
+                } else {
+                    // Simulated status responses against Target Nodes
                     if (idx % 4 === 0) assignments[n.id] = { status: 'UEFI Boot Mismatch', vector: 'Vector 2: Pre-Provisioned SMS Target', icon: 'fa-exclamation-triangle', color: 'text-amber-500' };
                     else if (idx % 5 === 0) assignments[n.id] = { status: 'Legacy Kernel (Win 2008)', vector: 'Vector 3: OBS VHD Image Import', icon: 'fa-times-circle', color: 'text-rose-500' };
                     else assignments[n.id] = { status: 'OS Healthy', vector: 'Vector 1: SMS Auto-Provision', icon: 'fa-check-circle', color: 'text-emerald-500' };
@@ -298,7 +297,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
     const menuItems = [
         { id: 'orchestrator', num: '4.1-4', icon: 'fa-cogs', label: 'Execution Orchestrator' },
-        { id: 'workbench', num: '4.5', icon: 'fa-tools', label: 'Engineering Workbench' }, // 🚨 NEW TAB
+        { id: 'workbench', num: '4.5', icon: 'fa-tools', label: 'Engineering Workbench' },
         { id: 'hub', num: '4.6', icon: 'fa-stream', label: 'Delivery Command Center' },
         { id: 'tam', num: '4.7', icon: 'fa-headset', label: 'TAM Service Governance' }
     ];
@@ -421,9 +420,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     <h4 className="text-lg font-black text-white mb-2">Technical OS Pre-Flight Validation</h4>
                                                 </div>
                                                 {execStatus === 'pending' || preflightStatus === 'pending' ? (
-                                                    <button onClick={handleRunPreflight} disabled={iamStatus !== 'active' || preflightStatus === 'scanning'} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center">
+                                                    // 🚨 FIX: Button is strictly disabled unless token is validated
+                                                    <button onClick={handleRunPreflight} disabled={!tokenValidated || preflightStatus === 'scanning'} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center">
                                                         {preflightStatus === 'scanning' ? (
-                                                            <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning OS</>
+                                                            <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target Arch</>
                                                         ) : isBlindMigration ? (
                                                             <><i className="fas fa-eye-slash mr-2"></i> Init Blind Matrix</>
                                                         ) : (
@@ -432,7 +432,12 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     </button>
                                                 ) : (
                                                     <div className="flex items-center gap-4">
-                                                        <button onClick={() => { setPreflightStatus('pending'); safePartialUpdate({ execStatus: 'pending' }); }} className="text-xs text-slate-400 hover:text-white underline">Re-Run</button>
+                                                        {/* 🚨 FIX: Re-Run forces STS validation state back to false */}
+                                                        <button onClick={() => { 
+                                                            setPreflightStatus('pending'); 
+                                                            setTokenValidated(false); 
+                                                            safePartialUpdate({ execStatus: 'pending' }); 
+                                                        }} className="text-xs text-slate-400 hover:text-white underline">Re-Run</button>
                                                         <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>
                                                     </div>
                                                 )}
@@ -457,7 +462,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     <div className="overflow-y-auto max-h-[300px] custom-scrollbar">
                                                         <table className="w-full text-left text-xs">
                                                             <thead className="bg-slate-800/80 text-[9px] uppercase tracking-widest text-slate-400 sticky top-0 z-10">
-                                                                <tr><th className="p-3">Compute/DB Node</th><th className="p-3">Pre-Flight Status</th><th className="p-3">Assigned Execution Vector</th></tr>
+                                                                <tr><th className="p-3">Target Node</th><th className="p-3">Pre-Flight Status</th><th className="p-3">Assigned Execution Vector</th></tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-slate-700/50 text-slate-300">
                                                                 {inScopeNodes.map(n => {
@@ -467,7 +472,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                     return (
                                                                         <tr key={n.id} className="hover:bg-slate-800 transition-colors">
                                                                             <td className="p-3 font-bold text-white">
-                                                                                <i className={`fas ${isDb ? 'fa-database text-rose-500' : n.status === 'Quoted Only' ? 'fa-hdd text-amber-500' : 'fa-server text-blue-400'} mr-2`}></i>
+                                                                                <i className={`fas ${isDb ? 'fa-database text-rose-500' : 'fa-server text-blue-400'} mr-2`}></i>
                                                                                 {n.name || n.hostname || n.description || 'Placeholder Server'}
                                                                             </td>
                                                                             <td className="p-3"><span className={`px-2 py-1 rounded bg-slate-950 border border-slate-700 font-bold ${data.color} flex w-max items-center`}><i className={`fas ${data.icon} mr-1.5`}></i> {data.status}</span></td>
@@ -492,7 +497,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                                     )
                                                                 })}
                                                                 {inScopeNodes.length === 0 && (
-                                                                    <tr><td colSpan="3" className="p-8 text-center text-slate-500 font-bold border border-dashed border-slate-700 m-2 rounded-xl">No executable nodes mapped. Ensure Step 2.4 is completed.</td></tr>
+                                                                    <tr><td colSpan="3" className="p-8 text-center text-slate-500 font-bold border border-dashed border-slate-700 m-2 rounded-xl">No executable nodes mapped in Target Architecture. Please ensure Step 3 Architecture Canvas is completed.</td></tr>
                                                                 )}
                                                             </tbody>
                                                         </table>
@@ -593,7 +598,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                         </div>
                     )}
 
-                    {/* 🚨 NEW ENGINEERING WORKBENCH SUB-TAB */}
                     {subTab === 'workbench' && <EngineeringWorkbench project={project} onUpdateProject={onUpdateProject} />}
                     {subTab === 'hub' && <ExecutionHubView project={project} onUpdateProject={onUpdateProject} safePartialUpdate={safePartialUpdate} />}
                     {subTab === 'tam' && <TAMHubView project={project} onUpdateProject={onUpdateProject} safePartialUpdate={safePartialUpdate} />}
@@ -624,11 +628,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
-// 🚨 ENGINEERING WORKBENCH: Granular child execution linking back to parent WBS tasks
 function EngineeringWorkbench({ project, onUpdateProject }) {
     const { syncExecutionProgress } = useContext(ERPContext);
     
-    // Fallback initialize if missing
     const [execPlan, setExecPlan] = useState(project?.executionPlan || []);
     
     useEffect(() => {
@@ -640,7 +642,6 @@ function EngineeringWorkbench({ project, onUpdateProject }) {
         setExecPlan(newPlan);
         onUpdateProject(project.id, 'executionPlan', newPlan);
         
-        // Trigger Engine if progress changes
         if (field === 'prog') {
             syncExecutionProgress(project.id, project.migrationPlan, newPlan);
         }
@@ -674,7 +675,7 @@ function EngineeringWorkbench({ project, onUpdateProject }) {
     };
 
     const getHighLevelName = (pId) => {
-        const hl = (project?.migrationPlan || []).find(t => t.id === pId);
+        const hl = (project?.migrationPlan || []).find(t => String(t.id) === String(pId));
         return hl ? hl.name : "Unlinked / Orphan Task";
     };
 
