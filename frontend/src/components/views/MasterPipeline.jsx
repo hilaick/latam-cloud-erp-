@@ -79,7 +79,6 @@ export default function MasterPipeline() {
         { id: '6_completed', name: 'Completed', color: 'bg-emerald-100 text-emerald-800' }
     ];
 
-    // 🚨 FIX: Wrapped p.name in String(...) and used fallback to prevent undefined.toUpperCase() crash
     const filtered = (projects || []).filter(p => p && !p.isWaiting && String(p.name || '').toUpperCase().includes(searchTerm.toUpperCase()));
 
     return (
@@ -101,14 +100,31 @@ export default function MasterPipeline() {
                     <table className="w-full text-left whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-72">Project & Identity</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-20 text-center">Country</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-40">Phase & Progress</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">MRR & Comp</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-48">Timelines (Edit)</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-32">SA / Partner</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Blockers / Notes (Edit)</th>
-                                <th className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 w-24 text-center">Actions</th>
+                                {/* 🚨 Changed standard <th> to wrapping divs with resize-x to enable horizontal resizing */}
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[200px] w-72 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Project & Identity</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[60px] w-20 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Country</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[150px] w-40 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Phase & Progress</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[100px] w-32 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">MRR & Comp</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[150px] w-48 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Timelines (Edit)</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[120px] w-32 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">SA / Partner</div>
+                                </th>
+                                <th className="p-0 border-r border-slate-200 align-top">
+                                    <div className="resize-x overflow-hidden min-w-[150px] w-auto p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Blockers / Notes (Edit)</div>
+                                </th>
+                                <th className="p-0 align-top">
+                                    <div className="min-w-[80px] w-24 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Actions</div>
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
