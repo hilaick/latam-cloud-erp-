@@ -1,16 +1,23 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { EditableCell } from '../../utils/helpers';
 
 export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
     const runbook = activeProject?.runbook || [];
 
-    // Calculate dynamic completion percentage to bubble up to the WBS
     const completedCount = runbook.filter(t => t.status === 'Completed').length;
     const progressPct = runbook.length > 0 ? Math.round((completedCount / runbook.length) * 100) : 0;
 
     const handleUpdate = (id, field, value) => {
         const updated = runbook.map(r => r.id === id ? {...r, [field]: value} : r);
         onUpdateProject(activeProject.id, 'runbook', updated);
+    };
+
+    // 🚨 FIX: Added function to delete rows from the Runbook
+    const handleDelete = (id) => {
+        if(window.confirm("Are you sure you want to remove this step from the Cutover Runbook?")) {
+            const updated = runbook.filter(r => r.id !== id);
+            onUpdateProject(activeProject.id, 'runbook', updated);
+        }
     };
 
     const handleAddManualTask = () => {
@@ -30,7 +37,6 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
     return (
         <div className="max-w-[1400px] mx-auto pb-12 animate-fade-in flex flex-col h-full">
             
-            {/* 🚨 VISUAL RUNBOOK PROGRESS BAR */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6 shrink-0 flex items-center gap-6">
                 <div className="w-16 h-16 rounded-full border-4 border-rose-100 flex items-center justify-center shrink-0 bg-rose-50">
                     <span className="text-xl font-black text-rose-600">{progressPct}%</span>
@@ -58,7 +64,6 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                     </button>
                 </div>
                 <div className="flex-1 bg-slate-50 overflow-x-auto custom-scrollbar relative">
-                    {/* Visual Timeline Line */}
                     <div className="absolute left-[39px] top-0 bottom-0 w-0.5 bg-slate-200 z-0"></div>
                     
                     <table className="w-full text-left min-w-[1000px] relative z-10">
@@ -69,6 +74,8 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                                 <th className="p-4 font-black">Cutover Event / Action</th>
                                 <th className="p-4 w-32 font-black">Est. Duration</th>
                                 <th className="p-4 w-48 font-black">RACI Owner</th>
+                                {/* 🚨 FIX: Added Delete column header */}
+                                <th className="p-4 w-16 text-center font-black">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs bg-transparent">
@@ -79,11 +86,10 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                                 return (
                                     <tr key={task.id} className={`group transition-colors ${isDone ? 'bg-emerald-50/40 opacity-70' : isActive ? 'bg-rose-50/60' : 'bg-white hover:bg-slate-50'}`}>
                                         <td className="p-4 text-center relative">
-                                            {/* Timeline Node */}
                                             <div className={`mx-auto w-6 h-6 rounded-full border-4 flex items-center justify-center transition-colors shadow-sm cursor-pointer
                                                 ${isDone ? 'bg-emerald-500 border-emerald-200 text-white' : isActive ? 'bg-rose-500 border-rose-200 text-white animate-pulse' : 'bg-white border-slate-300 text-transparent hover:border-rose-400'}`}
                                                 onClick={() => handleUpdate(task.id, 'status', isDone ? 'Pending' : isActive ? 'Completed' : 'Active')}
-                                                title="Click to toggle status (Pending -> Active -> Completed)"
+                                                title="Click to toggle status"
                                             >
                                                 <i className={`fas fa-check text-[10px] ${isDone ? 'opacity-100' : 'opacity-0'}`}></i>
                                             </div>
@@ -96,12 +102,18 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                                                 <EditableCell value={task.owner} onSave={v=>handleUpdate(task.id, 'owner', v)} />
                                             </span>
                                         </td>
+                                        {/* 🚨 FIX: Added Delete action icon */}
+                                        <td className="p-4 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => handleDelete(task.id)} className="text-slate-400 hover:text-rose-600 transition-colors" title="Delete Step">
+                                                <i className="fas fa-trash-alt"></i>
+                                            </button>
+                                        </td>
                                     </tr>
                                 )
                             })}
                             {runbook.length === 0 && (
                                 <tr>
-                                    <td colSpan="5" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-white m-4 rounded-xl relative z-10">
+                                    <td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-white m-4 rounded-xl relative z-10">
                                         <i className="fas fa-clipboard-list text-3xl mb-3 text-slate-300"></i>
                                         <p>No runbook tasks scheduled yet.</p>
                                         <button onClick={handleAddManualTask} className="mt-4 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs hover:bg-slate-200 transition-colors border border-slate-300">Add First Step</button>
