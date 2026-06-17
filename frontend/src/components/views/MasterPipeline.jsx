@@ -100,7 +100,6 @@ export default function MasterPipeline() {
                     <table className="w-full text-left whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                {/* 🚨 Changed standard <th> to wrapping divs with resize-x to enable horizontal resizing */}
                                 <th className="p-0 border-r border-slate-200 align-top">
                                     <div className="resize-x overflow-hidden min-w-[200px] w-72 p-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Project & Identity</div>
                                 </th>
@@ -189,7 +188,8 @@ export default function MasterPipeline() {
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleDeleteProject(p.id);
+                                                    // 🚨 FIX: Pass fallback to _id to prevent undefined ID pushing a 404 to the API router
+                                                    handleDeleteProject(p.id || p._id);
                                                 }}
                                                 className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 hover:border-rose-300 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"
                                                 title="Delete Project"
