@@ -171,3 +171,13 @@ class QuotationVersion(db.Model):
     __table_args__ = (
         db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),
     )
+class ExecutionState(db.Model):
+    __tablename__ = 'execution_states'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), unique=True, nullable=False)
+    current_phase = db.Column(db.String(50), default='PHASE_4_0')
+    status = db.Column(db.String(50), default='PENDING') # PENDING, IN_PROGRESS, WAITING_ON_CUSTOMER, COMPLETED
+    pending_action = db.Column(db.String(100)) # E.g., 'UPLOAD_VHD_TO_OBS'
+    migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
+    execution_logs = db.Column(db.Text, default='[]') # JSON array of logs
+    last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
