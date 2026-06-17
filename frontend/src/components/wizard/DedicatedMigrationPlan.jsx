@@ -18,11 +18,10 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                 childTasks.forEach(t => {
                     let val = t.prog || '0';
                     if (val === 'Auto') val = '0'; // Auto assumes 0% until the API updates it
-                    totalPercent += parseInt(val.replace('%', '') || '0');
+                    totalPercent += parseInt(val.replace('%', '') || '0', 10);
                 });
                 const overallProg = Math.round(totalPercent / childTasks.length) + '%';
                 
-                // 🚨 FIX: Placed inside a setTimeout to prevent React context state overwriting between Plan Matrix and Progress state.
                 setTimeout(() => {
                     onUpdateProject(activeProject.id, 'progress', overallProg);
                 }, 50);
@@ -35,7 +34,6 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
         if(window.confirm(`This will overwrite the current Migration Plan with '${customPlaybooks[playbookKey].name}'. Are you sure?`)) {
             onUpdateProject(activeProject.id, 'migrationPlan', JSON.parse(JSON.stringify(customPlaybooks[playbookKey].tasks)));
             
-            // Forcing reset to 0 to prevent previous lingering data
             setTimeout(() => {
                 onUpdateProject(activeProject.id, 'progress', '0%');
             }, 50);
@@ -84,22 +82,32 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs bg-white">
                             {(activeProject.migrationPlan || []).map(task => {
-                                const progVal = task.prog?.includes('100') ? '100%' : task.prog?.includes('0') ? '0%' : 'Auto';
+                                // 🚨 FIX: Replaced strict ternary with simple fallback to allow all values
+                                const progVal = task.prog || '0%';
+                                
+                                // 🚨 FIX: Dynamic color coding based on the current value
+                                const isDone = progVal === '100%';
+                                const isPending = progVal === '0%' || progVal === 'Auto';
+                                const colorClass = isDone ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : isPending ? 'bg-slate-50 border-slate-300 text-slate-600' : 'bg-blue-50 border-blue-300 text-blue-800';
+
                                 return (
                                     <tr key={task.id} className={`${task.isParent ? 'bg-slate-100 font-black border-t-2 border-slate-300' : 'hover:bg-blue-50/50 transition-colors'}`}>
                                         <td className="p-3 text-center font-mono text-slate-500 font-bold">{task.id}</td>
                                         <td className={`p-3 ${task.isParent ? 'text-slate-900 text-sm' : 'pl-10 text-slate-700 font-bold'}`}><EditableCell value={task.name} onSave={v=>handlePlanUpdate(task.id, 'name', v)} /></td>
                                         <td className="p-3">
                                             {!task.isParent && (
-                                                <div className={`px-2 py-1.5 rounded-lg border-2 w-full shadow-sm ${progVal==='100%'?'bg-emerald-50 border-emerald-300 text-emerald-800':progVal==='0%'?'bg-slate-50 border-slate-300 text-slate-600':'bg-blue-50 border-blue-300 text-blue-800'}`}>
+                                                <div className={`px-2 py-1.5 rounded-lg border-2 w-full shadow-sm transition-colors ${colorClass}`}>
                                                     <select 
                                                         value={progVal} 
                                                         onChange={e=>handlePlanUpdate(task.id, 'prog', e.target.value)} 
                                                         className="w-full bg-transparent outline-none cursor-pointer text-center text-[10px] font-black uppercase tracking-widest"
                                                     >
                                                         <option value="Auto">[Auto] API Sync</option>
-                                                        <option value="0%">[0%] Pending</option>
-                                                        <option value="100%">[100%] Waived / Done</option>
+                                                        {/* 🚨 FIX: Generate 5% increments from 0 to 100 */}
+                                                        {Array.from({ length: 21 }, (_, i) => i * 5).map(pct => {
+                                                            const label = pct === 0 ? 'Pending' : pct === 100 ? 'Waived / Done' : 'In Progress';
+                                                            return <option key={pct} value={`${pct}%`}>[{pct}%] {label}</option>;
+                                                        })}
                                                     </select>
                                                 </div>
                                             )}
