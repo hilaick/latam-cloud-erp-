@@ -136,8 +136,10 @@ const ExecutionGuideModal = ({ onClose }) => {
     );
 };
 
+
 export default function StepExecution({ project, onUpdateProject, onPromote }) {
-    const [subTab, setSubTab] = useState('orchestrator');
+    // 🚨 4.0: Default to Readiness Gateway if not validated yet
+    const [subTab, setSubTab] = useState(project?.authValidated ? 'orchestrator' : 'readiness');
     const [sidebarOpen, setSidebarOpen] = useState(true); 
     const [showGuide, setShowGuide] = useState(false);
     
@@ -293,8 +295,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
+    // 🚨 4.0: Added Readiness Gateway to the menu
     const menuItems = [
-        { id: 'orchestrator', num: '4.1-4', icon: 'fa-cogs', label: 'Execution Orchestrator' },
+        { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
+        { id: 'orchestrator', num: '4.1', icon: 'fa-cogs', label: 'Execution Orchestrator' },
         { id: 'workbench', num: '4.5', icon: 'fa-tools', label: 'Engineering Workbench' },
         { id: 'hub', num: '4.6', icon: 'fa-stream', label: 'Delivery Command Center' },
         { id: 'tam', num: '4.7', icon: 'fa-headset', label: 'TAM Service Governance' }
@@ -331,24 +335,40 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
             <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
                 
                 <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
-                    {menuItems.map((item) => (
-                        <button 
-                            key={item.id}
-                            onClick={() => setSubTab(item.id)}
-                            className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
-                                subTab === item.id 
-                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
-                                    : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                            }`}
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>
-                                    {item.num}
+                    {menuItems.map((item) => {
+                        // 🚨 4.0: Lock all other tabs if auth is not validated
+                        const isLocked = !project?.authValidated && item.id !== 'readiness';
+                        
+                        return (
+                            <button 
+                                key={item.id}
+                                onClick={() => {
+                                    if (isLocked) {
+                                        alert("Please complete the 4.0 Readiness Gateway to unlock Execution.");
+                                        return;
+                                    }
+                                    setSubTab(item.id);
+                                }}
+                                className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
+                                    isLocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
+                                    subTab === item.id 
+                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
+                                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${
+                                        isLocked ? 'bg-slate-200 text-slate-400' :
+                                        subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                                    }`}>
+                                        {item.num}
+                                    </div>
+                                    <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
                                 </div>
-                                <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
-                            </div>
-                        </button>
-                    ))}
+                                {isLocked && <i className="fas fa-lock text-slate-300"></i>}
+                            </button>
+                        );
+                    })}
                     
                     <div className="pt-8">
                         {execStatus === 'completed' || execStatus === 'cutover_ready' ? (
@@ -365,6 +385,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     
+                    {/* 🚨 4.0: READINESS GATEWAY VIEW */}
+                    {subTab === 'readiness' && <ReadinessGatewayView project={project} safePartialUpdate={safePartialUpdate} setSubTab={setSubTab} />}
+
                     {subTab === 'orchestrator' && (
                         <div className="space-y-6 animate-fade-in">
                             {isVpcIsolationMode && (
@@ -447,7 +470,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                                     {anticipationInsights.capacity_warnings?.map((warn, i) => (
                                                         <div key={`cap-${i}`} className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-lg flex gap-3 text-rose-200"><i className="fas fa-ban text-rose-500 mt-1"></i><div className="text-xs"><strong>Capacity Alert:</strong> {warn}</div></div>
                                                     ))}
-                                                    {/* 🚨 FIX: Upsell Opportunities strictly removed from Engineering view */}
                                                 </div>
                                             )}
 
@@ -598,6 +620,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                 </div>
             </div>
 
+            {/* CUSTOMER RUNBOOK MODAL */}
             {showRunbookModal && runbookData && (
                 <div className="fixed inset-0 z-[10000] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
@@ -622,6 +645,138 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     );
 }
 
+// 🚨 4.0 NEW READINESS GATEWAY UI
+function ReadinessGatewayView({ project, safePartialUpdate, setSubTab }) {
+    const [pingStatus, setPingStatus] = useState('idle'); 
+    
+    // Read the auth level established in the SOW/Radar
+    const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
+    const isZeroTrust = authLevel === 'Read-Only (Customer Managed)';
+
+    const handlePing = (success) => {
+        setPingStatus('pinging');
+        setTimeout(() => {
+            setPingStatus(success ? 'success' : 'failed');
+        }, 1500);
+    };
+
+    const handleUnlock = () => {
+        safePartialUpdate({ authValidated: true });
+        setSubTab('orchestrator');
+    };
+
+    const handlePivot = () => {
+        safePartialUpdate({ authLevel: 'Read-Only (Customer Managed)', authValidated: true });
+        setPingStatus('idle');
+        setSubTab('orchestrator');
+    };
+
+    return (
+        <div className="animate-fade-in p-8 h-full flex flex-col justify-center items-center">
+            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+                <div className="bg-slate-900 p-6 flex items-center justify-between border-b border-slate-700">
+                    <div>
+                        <h3 className="text-xl font-black text-white flex items-center"><i className="fas fa-shield-alt text-emerald-400 mr-3"></i> 4.0 Execution Readiness Gateway</h3>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">Verify Source Authentication Strategy Before Deployment</p>
+                    </div>
+                </div>
+                
+                <div className="p-8 space-y-8 bg-slate-50">
+                    
+                    {/* Step 1: Read the SOW */}
+                    <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black shrink-0"><i className="fas fa-check"></i></div>
+                        <div>
+                            <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest">1. SOW Strategy Confirmed</h4>
+                            <p className="text-xs text-slate-600 mt-1">The Pre-Sales assessment established the following execution authorization level:</p>
+                            <div className="mt-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                                <i className={`fas ${isZeroTrust ? 'fa-user-shield text-slate-500' : 'fa-terminal text-blue-500'} text-xl`}></i>
+                                <div>
+                                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Project Auth Level</div>
+                                    <div className="font-black text-sm text-slate-800">{authLevel}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Step 2: The Validation Acid Test */}
+                    <div className="flex gap-4">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black shrink-0 transition-colors ${pingStatus === 'success' || isZeroTrust ? 'bg-emerald-100 text-emerald-600' : pingStatus === 'failed' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'}`}>
+                            {pingStatus === 'success' || isZeroTrust ? <i className="fas fa-check"></i> : pingStatus === 'failed' ? <i className="fas fa-times"></i> : "2"}
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest">2. Connectivity Acid Test</h4>
+                            
+                            {isZeroTrust ? (
+                                <div className="mt-2 text-xs text-slate-600">
+                                    <p>Zero-Trust architecture active. The engine does not require connectivity to the source environment. All data plane agents will be deployed manually via Customer Runbooks.</p>
+                                    <div className="mt-6 flex justify-end">
+                                        <button onClick={handleUnlock} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors">
+                                            Acknowledge & Unlock Orchestrator <i className="fas fa-unlock ml-2"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-2 text-xs text-slate-600">
+                                    <p>The system requires connectivity verification to the source environment using the credentials provided during Kickoff.</p>
+                                    
+                                    {pingStatus === 'idle' && (
+                                        <div className="mt-4 flex gap-3">
+                                            <button onClick={() => handlePing(true)} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors flex items-center">
+                                                <i className="fas fa-network-wired mr-2"></i> Run Connectivity Ping
+                                            </button>
+                                            <button onClick={() => handlePing(false)} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-500 hover:bg-slate-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center">
+                                                Simulate Ping Failure (Demo)
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {pingStatus === 'pinging' && (
+                                        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 text-blue-700 font-bold">
+                                            <i className="fas fa-circle-notch fa-spin text-xl"></i>
+                                            <div>Authenticating with Customer Vault and testing port reachability...</div>
+                                        </div>
+                                    )}
+
+                                    {pingStatus === 'success' && (
+                                        <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl animate-fade-in">
+                                            <div className="flex items-center gap-3 text-emerald-700 font-black mb-2">
+                                                <i className="fas fa-check-circle text-xl"></i> OS Admin Access Verified
+                                            </div>
+                                            <p className="text-emerald-800/80 mb-4">Credentials accepted. Network path is clear for Just-in-Time Pre-Flight injection.</p>
+                                            <button onClick={handleUnlock} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors">
+                                                Unlock Execution Orchestrator <i className="fas fa-unlock ml-2"></i>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {pingStatus === 'failed' && (
+                                        <div className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-xl animate-fade-in">
+                                            <div className="flex items-center gap-3 text-rose-700 font-black mb-2">
+                                                <i className="fas fa-exclamation-triangle text-xl"></i> Connection Timeout
+                                            </div>
+                                            <p className="text-rose-800/80 mb-4">Target unreachable or credentials invalid. Cannot proceed with automated injection. You must fallback to Customer-Managed execution.</p>
+                                            <div className="flex gap-3">
+                                                <button onClick={handlePivot} className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-colors">
+                                                    Pivot to Zero-Trust Runbooks <i className="fas fa-random ml-2"></i>
+                                                </button>
+                                                <button onClick={() => setPingStatus('idle')} className="px-6 py-2.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors">
+                                                    Retry Ping
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// 🚨 ENGINEERING WORKBENCH
 function EngineeringWorkbench({ project, onUpdateProject }) {
     const { syncExecutionProgress } = useContext(ERPContext);
     
