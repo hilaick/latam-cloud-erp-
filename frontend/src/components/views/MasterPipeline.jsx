@@ -130,9 +130,11 @@ export default function MasterPipeline() {
                             {filtered.map(p => {
                                 const statusObj = statuses.find(s => s.id === p.lifecycleState) || statuses[0];
                                 const progNum = parseInt(p.progress) || 0;
+                                const targetId = p.id || p._id || p.projectId;
+
                                 return (
-                                    <tr key={p.id} className="hover:bg-indigo-50/30 transition-colors group">
-                                        <td className="p-4 align-top cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => openProject(p.id)} title="Click to Open Project Context">
+                                    <tr key={targetId || Math.random()} className="hover:bg-indigo-50/30 transition-colors group">
+                                        <td className="p-4 align-top cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => openProject(targetId)} title="Click to Open Project Context">
                                             <div className="font-black text-sm text-indigo-700 w-full uppercase truncate">{p.name || 'UNNAMED PROJECT'}</div>
                                             <div className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-1 w-max mt-2 uppercase">
                                                 {p.customerName || (p.name || '').split('-')[0] || 'UNLINKED'}
@@ -163,11 +165,11 @@ export default function MasterPipeline() {
                                             <div className="flex flex-col gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200 w-max shadow-inner">
                                                 <div className="flex items-center justify-between w-full gap-3 border-b border-slate-200 pb-1.5">
                                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-flag-checkered text-blue-500 mr-1.5"></i> Start</span>
-                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(p.id, 'kickoff', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-700 outline-none transition-colors shadow-sm cursor-pointer" />
+                                                    <input type="date" value={p.kickoff || ''} onChange={(e) => handleUpdateProject(targetId, 'kickoff', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-700 outline-none transition-colors shadow-sm cursor-pointer" />
                                                 </div>
                                                 <div className="flex items-center justify-between w-full gap-3 pt-1">
                                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-rocket text-emerald-500 mr-1.5"></i> Live</span>
-                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(p.id, 'date', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-black text-emerald-700 outline-none transition-colors shadow-sm cursor-pointer" />
+                                                    <input type="date" value={p.date || ''} onChange={(e) => handleUpdateProject(targetId, 'date', e.target.value)} className="bg-white border border-slate-200 hover:border-indigo-300 rounded px-1.5 py-0.5 text-[10px] font-mono font-black text-emerald-700 outline-none transition-colors shadow-sm cursor-pointer" />
                                                 </div>
                                             </div>
                                         </td>
@@ -182,17 +184,20 @@ export default function MasterPipeline() {
                                             </div>
                                         </td>
                                         <td className="p-4 align-top">
-                                            <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(p.id, 'blocker', e.target.value)} placeholder="Type notes or current blockers..." className="w-full h-16 bg-amber-50/50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors shadow-inner" />
+                                            <textarea value={p.blocker || ''} onChange={e => handleUpdateProject(targetId, 'blocker', e.target.value)} placeholder="Type notes or current blockers..." className="w-full h-16 bg-amber-50/50 hover:bg-white border border-amber-100 hover:border-amber-300 rounded-lg p-2 text-[10px] font-medium text-slate-700 outline-none focus:border-amber-500 custom-scrollbar leading-relaxed resize-none transition-colors shadow-inner" />
                                         </td>
                                         <td className="p-4 align-top text-center">
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    // 🚨 FIX: Pass fallback to _id to prevent undefined ID pushing a 404 to the API router
-                                                    handleDeleteProject(p.id || p._id);
+                                                    if (!targetId) {
+                                                        alert("This project lacks a valid ID (likely a manual database entry). Please remove it directly from the database.");
+                                                        return;
+                                                    }
+                                                    handleDeleteProject(targetId);
                                                 }}
-                                                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 hover:border-rose-300 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"
-                                                title="Delete Project"
+                                                className={`px-3 py-1.5 border rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm ${!targetId ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border-rose-200 hover:border-rose-300'}`}
+                                                title={!targetId ? "Cannot delete: Missing DB Identity" : "Delete Project"}
                                             >
                                                 <i className="fas fa-trash-alt mr-1"></i> Delete
                                             </button>
