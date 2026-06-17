@@ -15,18 +15,16 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
     const hasScanned = !!project?.mgcData;
     const isLocked = project?.status === 'Approved' || project?.status === 'Locked';
 
-    const { targetCount, upsellCount } = useMemo(() => {
+    // 🚨 FIX: Removed Upsell calculations. Strictly counts valid Billable execution nodes.
+    const targetCount = useMemo(() => {
         if (nodes.length === 0) {
             const compute = project?.blueprintData?.topology?.compute?.length || 0;
             const dbs = project?.blueprintData?.topology?.database?.length || 0;
-            return { targetCount: compute + dbs, upsellCount: 0 };
+            return compute + dbs;
         }
         
         const billableTypes = ['ECS', 'RDS', 'NAT', 'VPN', 'CGW', 'OBS', 'CBR', 'ELB', 'CCE'];
-        const target = nodes.filter(n => n?.status !== 'Live Only' && billableTypes.includes(String(n?.type || '').toUpperCase())).length;
-        const upsell = nodes.filter(n => n?.status === 'Live Only' && billableTypes.some(bt => String(n?.type || '').toUpperCase().includes(bt))).length;
-        
-        return { targetCount: target, upsellCount: upsell };
+        return nodes.filter(n => billableTypes.includes(String(n?.type || '').toUpperCase())).length;
     }, [nodes, project?.blueprintData]);
 
     let displayRisk = 'Pending';
@@ -55,7 +53,6 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
         <div className="animate-fade-in pb-12 flex flex-col h-full">
             <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
                 <div className="flex items-center gap-4">
-                    {/* 🚨 UI UPGRADE: Replaced Burger icon with semantic Chevron Toggles */}
                     <button 
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors"
@@ -128,7 +125,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
                                     <div className="text-xs text-slate-500 mb-4 flex-1">Billable Execution Baseline.</div>
                                     <div className="flex items-end gap-3">
                                         <div className="text-xl font-black text-slate-800">{targetCount > 0 ? `${targetCount} Nodes` : 'Pending'}</div>
-                                        {upsellCount > 0 && <div className="text-[9px] font-black uppercase tracking-widest text-purple-600 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mb-1" title="Billable Scope Creep discovered">+{upsellCount} Upsell</div>}
+                                        {/* 🚨 FIX: Upsell UI removed. */}
                                     </div>
                                     <button onClick={()=>setSubTab('mapper')} className="mt-2 text-left text-[10px] uppercase font-bold text-slate-600 hover:underline">Open Mapper &gt;</button>
                                 </div>
