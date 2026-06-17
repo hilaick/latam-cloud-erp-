@@ -267,7 +267,8 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             {/* SECTION 2: Technical Sizing & Risks */}
                             <div className="pt-6 border-t border-slate-200">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {/* 🚨 FIX: Updated grid-cols to 5 and injected Auth Level dropdown */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                                     
                                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
                                         <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Source Env</label>
@@ -280,6 +281,23 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                             >
                                                 <option value="Unknown">Unknown</option>
                                                 {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Auth Level</label>
+                                        <div className="relative">
+                                            <i className="fas fa-key absolute left-0 top-1 text-slate-400"></i>
+                                            <select 
+                                                value={activeProject.authLevel || 'Read-Only (Customer Managed)'} 
+                                                onChange={(e) => onUpdateProject(activeProject.id, 'authLevel', e.target.value)}
+                                                className="w-full font-bold text-[11px] text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-purple-500 cursor-pointer"
+                                            >
+                                                <option value="Cloud Admin API">Cloud Admin API</option>
+                                                <option value="Active Directory">Active Directory</option>
+                                                <option value="Local OS Admin">Local OS Admin</option>
+                                                <option value="Read-Only (Customer Managed)">Read-Only (Zero Trust)</option>
                                             </select>
                                         </div>
                                     </div>
