@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 export default function GlobalGlossary({ isOpen, onClose }) {
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Pressing 'Esc' closes the modal
     useEffect(() => {
         const handleKeyDown = (e) => { if (e.key === 'Escape' && isOpen) onClose(); };
         window.addEventListener('keydown', handleKeyDown);
@@ -11,14 +10,18 @@ export default function GlobalGlossary({ isOpen, onClose }) {
     }, [isOpen, onClose]);
 
     const glossaryTerms = [
+        { term: "ARB", title: "Architecture Review Board", desc: "A formal governance body that reviews and approves cloud architecture designs, ensuring they meet security, compliance, and best practice standards before implementation." },
         { term: "BOM", title: "Bill of Materials", desc: "The itemized list of precise cloud resources (SKUs, instances, disks) required to build the target environment. Extracted from the Sales Quotation." },
-        { term: "SOW", title: "Statement of Work", desc: "The legally binding commercial document signed by the customer. It contains the BOM and the scope of migration services." },
         { term: "Blueprint", title: "Architecture Blueprint", desc: "The ERP's internal JSON representation of the BOM. This is the machine-readable format that the Execution Orchestrator converts into Terraform code." },
-        { term: "DTRB", title: "Delivery Technical Review Board", desc: "The formal engineering gate where Lead Architects review and approve the Blueprint before any infrastructure is provisioned." },
-        { term: "MgC", title: "Migration Center", desc: "Huawei Cloud's discovery service. Used to scan source environments (AWS, Azure, On-Prem) and generate the raw inventory data." },
-        { term: "STS", title: "Security Token Service", desc: "Provides temporary, ephemeral API credentials (AK/SK). Used to ensure Zero-Trust execution without exposing master account keys." },
-        { term: "EIP", title: "Elastic IP", desc: "A static, public IPv4 address. Used during migrations to bridge the Data Plane so SMS agents can route traffic to private target servers." },
         { term: "CBR", title: "Cloud Backup and Recovery", desc: "Huawei's native backup service. The ERP provisions these empty during execution, and attaches production servers to them during Cutover." },
+        { term: "DTRB", title: "Delivery Technical Review Board", desc: "The formal engineering gate where Lead Architects review and approve the Blueprint before any infrastructure is provisioned." },
+        { term: "EIP", title: "Elastic IP", desc: "A static, public IPv4 address. Used during migrations to bridge the Data Plane so SMS agents can route traffic to private target servers." },
+        { term: "JIT", title: "Just-In-Time Provisioning", desc: "An automated security mechanism that issues temporary STS tokens exactly when an execution phase requires it, ensuring API keys never expire or leak during long migrations." },
+        { term: "MgC", title: "Migration Center", desc: "Huawei Cloud's discovery service. Used to scan source environments (AWS, Azure, On-Prem) and generate the raw inventory data." },
+        { term: "PMO", title: "Project Management Office", desc: "The centralized group responsible for defining and maintaining project management standards, tracking execution, and managing resources and timelines across migrations." },
+        { term: "RACI", title: "Responsibility Assignment Matrix", desc: "Responsible, Accountable, Consulted, and Informed. A matrix used in the WBS and Engineering Workbench to clearly assign roles and responsibilities for each task." },
+        { term: "SOW", title: "Statement of Work", desc: "The legally binding commercial document signed by the customer. It contains the BOM and the scope of migration services." },
+        { term: "STS", title: "Security Token Service", desc: "Provides temporary, ephemeral API credentials (AK/SK). Used to ensure Zero-Trust execution without exposing master account keys." },
         { term: "Vector", title: "Execution Vector", desc: "The algorithmic path chosen by the ERP to migrate a specific server. (e.g., Vector 1 uses SMS agents, Vector 3 uses offline VHD uploads)." }
     ];
 
@@ -32,13 +35,11 @@ export default function GlobalGlossary({ isOpen, onClose }) {
 
     return (
         <div className="fixed inset-0 z-[9999] flex justify-end">
-            {/* Dark Overlay */}
             <div 
                 className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-fade-in"
                 onClick={onClose}
             ></div>
             
-            {/* Panel */}
             <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-slide-left border-l border-slate-200">
                 <div className="px-6 py-5 bg-indigo-600 text-white flex justify-between items-center shrink-0">
                     <div>
@@ -55,7 +56,7 @@ export default function GlobalGlossary({ isOpen, onClose }) {
                         <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <input 
                             type="text" 
-                            placeholder="Search terms (e.g., BOM, DTRB)..." 
+                            placeholder="Search terms (e.g., BOM, JIT, RACI)..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all shadow-sm"
