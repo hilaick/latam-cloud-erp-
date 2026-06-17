@@ -171,6 +171,8 @@ class QuotationVersion(db.Model):
     __table_args__ = (
         db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),
     )
+
+# 🚨 DB-Backed Execution State Machine
 class ExecutionState(db.Model):
     __tablename__ = 'execution_states'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
