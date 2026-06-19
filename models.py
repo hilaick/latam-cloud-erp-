@@ -29,6 +29,8 @@ def setup_db(app):
 class ProjectData(db.Model):
     __tablename__ = 'projects'
     id = db.Column(db.String(50), primary_key=True)
+    # 🚨 CLOUD-NATIVE FORK: Differentiates between 'migration' and 'greenfield'
+    project_type = db.Column(db.String(50), default='migration') 
     data = db.Column(db.Text, nullable=False) 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -73,13 +75,13 @@ class Customer(db.Model):
     azure_tenant_id = db.Column(db.String(120))
     azure_client_id = db.Column(db.String(120))
     azure_client_secret = db.Column(db.String(120))
-    azure_subscription_id = db.Column(db.String(120)) # 🚨 NEW FIELD
+    azure_subscription_id = db.Column(db.String(120)) 
     vcenter_host = db.Column(db.String(120))
 
     # 3. OS DATA PLANE (Local/Domain Admin for Rsync/WinRM)
     os_domain = db.Column(db.String(120))
     os_user = db.Column(db.String(120))
-    os_password = db.Column(db.String(120))
+    os_password = db.Column(db.String(255)) # Encrypted Ciphertext
 
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'
@@ -160,17 +162,13 @@ class QuotationVersion(db.Model):
     quotation_path = db.Column(db.String(500), nullable=False)
     uploaded_by = db.Column(db.String(120), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    blueprint_snapshot = db.Column(db.Text, nullable=False)  # JSON string of blueprint
+    blueprint_snapshot = db.Column(db.Text, nullable=False)  
     change_summary = db.Column(db.Text)
-    cr_id = db.Column(db.String(50))  # Linked Change Request ID
+    cr_id = db.Column(db.String(50))  
     previous_version_id = db.Column(db.String(50), db.ForeignKey('quotation_versions.id'))
     
-    # Relationships
     previous_version = db.relationship('QuotationVersion', remote_side=[id], backref='next_versions')
-    
-    __table_args__ = (
-        db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),
-    )
+    __table_args__ = (db.UniqueConstraint('project_id', 'version_number', name='uq_project_version'),)
 
 # 🚨 DB-Backed Execution State Machine
 class ExecutionState(db.Model):
@@ -179,7 +177,7 @@ class ExecutionState(db.Model):
     project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), unique=True, nullable=False)
     current_phase = db.Column(db.String(50), default='PHASE_4_0')
     status = db.Column(db.String(50), default='PENDING') # PENDING, IN_PROGRESS, WAITING_ON_CUSTOMER, COMPLETED
-    pending_action = db.Column(db.String(100)) # E.g., 'UPLOAD_VHD_TO_OBS'
+    pending_action = db.Column(db.String(100)) 
     migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
-    execution_logs = db.Column(db.Text, default='[]') # JSON array of logs
+    execution_logs = db.Column(db.Text, default='[]') 
     last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
