@@ -5,12 +5,12 @@ import StepArchitecture from './StepArchitecture';
 import StepPlanning from './StepPlanning';
 import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
+import { TriageCardFlow } from '../../utils/helpers';
 
 export default function ProjectWizard({ activeProject, onUpdateProject, onClose }) {
     const [showConfig, setShowConfig] = useState(false);
     const [currentStep, setCurrentStep] = useState(1);
     
-    // Fetch context and generate dynamic dropdown lists
     const { customers, projects } = useContext(ERPContext);
 
     const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
@@ -26,12 +26,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
     ];
 
-    const sourceEnvironments = [
-        "AWS", "Azure", "GCP", "On-Premise (VMware)", "On-Premise (Hyper-V)", 
-        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other", "Unknown"
-    ];
-
-    // Safely determine the Max Unlocked Phase using Optional Chaining (?.)
     const getMaxUnlockedPhase = () => {
         if (!activeProject) return 1;
         
@@ -41,10 +35,8 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         const hasExecution = activeProject?.execStatus;
         const isCutoverReady = ['cutover_ready', 'completed'].includes(activeProject?.execStatus);
         
-        // Check lifecycleState from data field or root
         let lifecycleState = activeProject?.lifecycleState;
         if (!lifecycleState && activeProject?.data) {
-            // data might be a string or object
             const data = activeProject.data;
             if (typeof data === 'string') {
                 try {
@@ -60,8 +52,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         const isPostLive = lifecycleState === '5_postlive' || lifecycleState === '6_completed';
         const isExecutionPhase = lifecycleState === '4_execution';
 
-        console.log('ProjectWizard - lifecycleState:', lifecycleState, 'isPostLive:', isPostLive, 'isExecutionPhase:', isExecutionPhase, 'maxUnlocked calculation:', { isPostLive, isCutoverReady, isExecutionPhase, hasBudget, hasExecution, hasMappedNodes, hasBOM });
-
         if (isPostLive) return 5;
         if (isCutoverReady) return 5;
         if (isExecutionPhase || hasBudget || hasExecution) return 4;
@@ -72,7 +62,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
     const maxUnlocked = getMaxUnlockedPhase();
 
-    // Default user to highest phase
     useEffect(() => {
         if (maxUnlocked > 1) setCurrentStep(maxUnlocked);
     }, [activeProject?.id, maxUnlocked]);
@@ -157,13 +146,10 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
             {/* 🚨 BULLETPROOF CONFIGURATION MODAL */}
             {showConfig && (
                 <div className="fixed inset-0 flex items-center justify-center p-4 sm:p-8 animate-fade-in pointer-events-auto" style={{ zIndex: 99999 }}>
-                    {/* Dark Background Overlay */}
                     <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
                     
-                    {/* Modal Dialog Container */}
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl relative flex flex-col max-h-full overflow-hidden animate-slide-up border border-slate-700">
                         
-                        {/* Header (Shrinks to fit) */}
                         <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-lg flex items-center"><i className="fas fa-sliders-h text-indigo-400 mr-3"></i> Project Details</h3>
@@ -174,7 +160,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             </button>
                         </div>
                         
-                        {/* 🚨 Scrollable Body (flex-1 and min-h-0 are the magic fix) */}
                         <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 bg-slate-50 custom-scrollbar">
                             
                             {/* SECTION 1: Basic Identity */}
@@ -286,44 +271,28 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 </div>
                             </div>
 
-                            {/* SECTION 2: Technical Sizing & Risks */}
-                            <div className="pt-6 border-t border-slate-200">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
-                                {/* 🚨 FIX: Updated grid-cols to 5 and injected Auth Level dropdown */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                                    
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
-                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Source Env</label>
-                                        <div className="relative">
-                                            <i className="fas fa-server absolute left-0 top-1 text-slate-400"></i>
-                                            <select 
-                                                value={activeProject.sourceEnvironment || 'Unknown'} 
-                                                onChange={(e) => onUpdateProject(activeProject.id, 'sourceEnvironment', e.target.value)}
-                                                className="w-full font-bold text-sm text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-purple-500 cursor-pointer"
-                                            >
-                                                <option value="Unknown">Unknown</option>
-                                                {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
-                                        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Auth Level</label>
-                                        <div className="relative">
-                                            <i className="fas fa-key absolute left-0 top-1 text-slate-400"></i>
-                                            <select 
-                                                value={activeProject.authLevel || 'Read-Only (Customer Managed)'} 
-                                                onChange={(e) => onUpdateProject(activeProject.id, 'authLevel', e.target.value)}
-                                                className="w-full font-bold text-[11px] text-slate-800 uppercase bg-transparent border-b border-slate-200 outline-none pb-1 pl-6 focus:border-purple-500 cursor-pointer"
-                                            >
-                                                <option value="Cloud Admin API">Cloud Admin API</option>
-                                                <option value="Active Directory">Active Directory</option>
-                                                <option value="Local OS Admin">Local OS Admin</option>
-                                                <option value="Read-Only (Customer Managed)">Read-Only (Zero Trust)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
+                            {/* SECTION 2: Technical Triage & Execution Scope */}
+                            <div className="pt-6 border-t border-slate-200 mt-6">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-random text-purple-500 mr-2"></i> Pipeline Triage & Scope</h4>
+                                
+                                <TriageCardFlow 
+                                    triage={{
+                                        project_type: activeProject.project_type || 'standard',
+                                        migrationScope: activeProject.migrationScope || 'compute',
+                                        sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
+                                        authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)'
+                                    }} 
+                                    setTriage={(newTriage) => {
+                                        onUpdateProject(activeProject.id, {
+                                            project_type: newTriage.project_type,
+                                            migrationScope: newTriage.migrationScope,
+                                            sourceEnvironment: newTriage.sourceEnvironment,
+                                            authLevel: newTriage.authLevel
+                                        });
+                                    }} 
+                                />
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
                                         <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Workloads (VMs)</label>
                                         <input 
@@ -357,7 +326,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                             <option value="Ultra-High">Ultra-High</option>
                                         </select>
                                     </div>
-
                                 </div>
                             </div>
                         </div>
