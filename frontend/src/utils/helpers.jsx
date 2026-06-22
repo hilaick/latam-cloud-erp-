@@ -34,3 +34,109 @@ export function EditableCell({ value, onSave, type = "text", className = "", pla
         </div>
     );
 }
+
+export function TriageCardFlow({ triage, setTriage }) {
+    const types = [
+        { id: 'greenfield', label: 'Greenfield', desc: 'Born-in-Cloud', icon: 'fa-leaf' },
+        { id: 'standard', label: 'Migration', desc: 'Lift & Shift', icon: 'fa-truck-moving' },
+        { id: 'poc', label: 'PoC Sandbox', desc: 'Fast-Track', icon: 'fa-bolt' },
+        { id: 'expansion', label: 'Expansion', desc: 'Phase 2+', icon: 'fa-expand-arrows-alt' }
+    ];
+
+    const scopes = [
+        { id: 'compute', label: 'Batch Server', icon: 'fa-server' },
+        { id: 'database', label: 'Database Sync', icon: 'fa-database' },
+        { id: 'storage', label: 'Object Storage', icon: 'fa-hdd' },
+        { id: 'cross_region', label: 'Cross-Region', icon: 'fa-globe' }
+    ];
+
+    const sources = [
+        { id: 'AWS', label: 'AWS', icon: 'fab fa-aws' },
+        { id: 'Azure', label: 'Azure', icon: 'fab fa-windows' },
+        { id: 'VMware / On-Premise', label: 'VMware', icon: 'fa-network-wired' },
+        { id: 'Bare Metal', label: 'Bare Metal', icon: 'fa-server' },
+        { id: 'Huawei Cloud', label: 'Huawei Cloud', icon: 'fa-cloud' }
+    ];
+
+    const auths = [
+        { id: 'Cloud Admin API', label: 'Cloud API', icon: 'fa-cloud' },
+        { id: 'Active Directory', label: 'AD / GPO', icon: 'fa-sitemap' },
+        { id: 'Local OS Admin', label: 'OS Admin', icon: 'fa-terminal' },
+        { id: 'Read-Only (Customer Managed)', label: 'Zero-Trust', icon: 'fa-user-shield' }
+    ];
+
+    const isGreenfield = triage.project_type === 'greenfield';
+
+    return (
+        <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+            {/* Col 1: Type */}
+            <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner">
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">1. Engagement Type</h4>
+                <div className="space-y-2">
+                    {types.map(t => (
+                        <div key={t.id} onClick={() => setTriage({...triage, project_type: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.project_type === t.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.project_type === t.id ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <i className={`fas ${t.icon}`}></i>
+                            </div>
+                            <div>
+                                <div className={`text-xs font-black ${triage.project_type === t.id ? 'text-blue-900' : 'text-slate-700'}`}>{t.label}</div>
+                                <div className={`text-[9px] uppercase tracking-widest font-bold ${triage.project_type === t.id ? 'text-blue-500' : 'text-slate-400'}`}>{t.desc}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="hidden lg:flex items-center justify-center text-slate-300"><i className="fas fa-chevron-right text-xl"></i></div>
+
+            {/* Col 2: Scope */}
+            <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">2. Migration Scope</h4>
+                <div className="space-y-2">
+                    {scopes.map(t => (
+                        <div key={t.id} onClick={() => setTriage({...triage, migrationScope: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.migrationScope === t.id ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300'}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.migrationScope === t.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <i className={`fas ${t.icon}`}></i>
+                            </div>
+                            <div className={`text-xs font-black ${triage.migrationScope === t.id ? 'text-indigo-900' : 'text-slate-700'}`}>{t.label}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className={`hidden lg:flex items-center justify-center text-slate-300 transition-opacity ${isGreenfield ? 'opacity-40' : ''}`}><i className="fas fa-chevron-right text-xl"></i></div>
+
+            {/* Col 3: Source */}
+            <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">3. Source Environment</h4>
+                <div className="space-y-2">
+                    {sources.map(t => (
+                        <div key={t.id} onClick={() => setTriage({...triage, sourceEnvironment: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.sourceEnvironment === t.id ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.sourceEnvironment === t.id ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <i className={`fas ${t.icon}`}></i>
+                            </div>
+                            <div className={`text-xs font-black ${triage.sourceEnvironment === t.id ? 'text-purple-900' : 'text-slate-700'}`}>{t.label}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className={`hidden lg:flex items-center justify-center text-slate-300 transition-opacity ${isGreenfield ? 'opacity-40' : ''}`}><i className="fas fa-chevron-right text-xl"></i></div>
+
+            {/* Col 4: Auth */}
+            <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">4. Authorization Level</h4>
+                <div className="space-y-2">
+                    {auths.map(t => (
+                        <div key={t.id} onClick={() => setTriage({...triage, authLevel: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.authLevel === t.id ? 'border-emerald-500 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.authLevel === t.id ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <i className={`fas ${t.icon}`}></i>
+                            </div>
+                            <div className={`text-xs font-black ${triage.authLevel === t.id ? 'text-emerald-900' : 'text-slate-700'}`}>{t.label}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
