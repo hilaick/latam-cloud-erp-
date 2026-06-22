@@ -275,10 +275,10 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 <div className="overflow-x-auto pb-4">
                                     <TriageCardFlow 
                                         triage={{
-                                            project_type: activeProject.project_type || 'standard',
-                                            migrationScope: activeProject.migrationScope || 'compute',
-                                            sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
-                                            authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)'
+                                            project_type: activeProject?.project_type || 'standard',
+                                            migrationScope: activeProject?.migrationScope || (activeProject?.project_type === 'greenfield' ? [] : ['compute']),
+                                            sourceEnvironment: activeProject?.sourceEnvironment || 'VMware / On-Premise',
+                                            authLevel: activeProject?.authLevel || (activeProject?.project_type === 'greenfield' ? [] : ['Read-Only (Customer Managed)'])
                                         }} 
                                         setTriage={(newTriage) => {
                                             onUpdateProject(activeProject.id, {

@@ -49,7 +49,7 @@ export default function TopBar({ onLogout, onOpenGlossary }) {
     };
 
     return (
-        {/* 🚨 FIX: Changed z-40 to z-[45] so TopBar dropdowns sit above the wizard but below the Sidebar */}
+        // 🚨 FIX: Changed z-40 to z-[45] so TopBar dropdowns sit above the wizard but below the Sidebar
         <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-[45] shadow-sm shrink-0">
             
             <div className="flex items-center gap-3 relative" ref={projectMenuRef}>

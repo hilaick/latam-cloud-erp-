@@ -67,6 +67,58 @@ export function TriageCardFlow({ triage, setTriage }) {
 
     const isGreenfield = triage.project_type === 'greenfield';
 
+    // Helper function to handle migration scope selection (multiple)
+    const handleMigrationScopeToggle = (scopeId) => {
+        const currentScopes = Array.isArray(triage.migrationScope) ? triage.migrationScope : 
+                             (triage.migrationScope ? [triage.migrationScope] : []);
+        
+        let newScopes;
+        if (currentScopes.includes(scopeId)) {
+            // Remove if already selected
+            newScopes = currentScopes.filter(id => id !== scopeId);
+        } else {
+            // Add if not selected
+            newScopes = [...currentScopes, scopeId];
+        }
+        
+        // If no scopes selected, set to empty array
+        setTriage({ ...triage, migrationScope: newScopes.length > 0 ? newScopes : [] });
+    };
+
+    // Helper function to handle auth level selection (multiple)
+    const handleAuthLevelToggle = (authId) => {
+        const currentAuths = Array.isArray(triage.authLevel) ? triage.authLevel : 
+                           (triage.authLevel ? [triage.authLevel] : []);
+        
+        let newAuths;
+        if (currentAuths.includes(authId)) {
+            // Remove if already selected
+            newAuths = currentAuths.filter(id => id !== authId);
+        } else {
+            // Add if not selected
+            newAuths = [...currentAuths, authId];
+        }
+        
+        // If no auths selected, set to empty array
+        setTriage({ ...triage, authLevel: newAuths.length > 0 ? newAuths : [] });
+    };
+
+    // Check if a migration scope is selected
+    const isMigrationScopeSelected = (scopeId) => {
+        if (Array.isArray(triage.migrationScope)) {
+            return triage.migrationScope.includes(scopeId);
+        }
+        return triage.migrationScope === scopeId;
+    };
+
+    // Check if an auth level is selected
+    const isAuthLevelSelected = (authId) => {
+        if (Array.isArray(triage.authLevel)) {
+            return triage.authLevel.includes(authId);
+        }
+        return triage.authLevel === authId;
+    };
+
     return (
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
             {/* Col 1: Type */}
@@ -93,14 +145,37 @@ export function TriageCardFlow({ triage, setTriage }) {
             <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">2. Migration Scope</h4>
                 <div className="space-y-2">
-                    {scopes.map(t => (
-                        <div key={t.id} onClick={() => setTriage({...triage, migrationScope: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.migrationScope === t.id ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300'}`}>
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.migrationScope === t.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                <i className={`fas ${t.icon}`}></i>
+                    {scopes.map(t => {
+                        const isSelected = isMigrationScopeSelected(t.id);
+                        const selectedCount = Array.isArray(triage.migrationScope) ? triage.migrationScope.length : (triage.migrationScope ? 1 : 0);
+                        
+                        return (
+                            <div 
+                                key={t.id} 
+                                onClick={() => handleMigrationScopeToggle(t.id)}
+                                className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors relative ${isSelected ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300'}`}
+                            >
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    <i className={`fas ${t.icon}`}></i>
+                                </div>
+                                <div className="flex-1">
+                                    <div className={`text-xs font-black ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>{t.label}</div>
+                                </div>
+                                {isSelected && (
+                                    <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center text-white text-[10px] font-black">
+                                        ✓
+                                    </div>
+                                )}
                             </div>
-                            <div className={`text-xs font-black ${triage.migrationScope === t.id ? 'text-indigo-900' : 'text-slate-700'}`}>{t.label}</div>
+                        );
+                    })}
+                    {Array.isArray(triage.migrationScope) && triage.migrationScope.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                                Selected: {triage.migrationScope.length} scope{triage.migrationScope.length !== 1 ? 's' : ''}
+                            </div>
                         </div>
-                    ))}
+                    )}
                 </div>
             </div>
 
@@ -127,14 +202,37 @@ export function TriageCardFlow({ triage, setTriage }) {
             <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">4. Authorization Level</h4>
                 <div className="space-y-2">
-                    {auths.map(t => (
-                        <div key={t.id} onClick={() => setTriage({...triage, authLevel: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.authLevel === t.id ? 'border-emerald-500 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.authLevel === t.id ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                <i className={`fas ${t.icon}`}></i>
+                    {auths.map(t => {
+                        const isSelected = isAuthLevelSelected(t.id);
+                        const selectedCount = Array.isArray(triage.authLevel) ? triage.authLevel.length : (triage.authLevel ? 1 : 0);
+                        
+                        return (
+                            <div 
+                                key={t.id} 
+                                onClick={() => handleAuthLevelToggle(t.id)}
+                                className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors relative ${isSelected ? 'border-emerald-500 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`}
+                            >
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    <i className={`fas ${t.icon}`}></i>
+                                </div>
+                                <div className="flex-1">
+                                    <div className={`text-xs font-black ${isSelected ? 'text-emerald-900' : 'text-slate-700'}`}>{t.label}</div>
+                                </div>
+                                {isSelected && (
+                                    <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-[10px] font-black">
+                                        ✓
+                                    </div>
+                                )}
                             </div>
-                            <div className={`text-xs font-black ${triage.authLevel === t.id ? 'text-emerald-900' : 'text-slate-700'}`}>{t.label}</div>
+                        );
+                    })}
+                    {Array.isArray(triage.authLevel) && triage.authLevel.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                                Selected: {triage.authLevel.length} authorization{triage.authLevel.length !== 1 ? 's' : ''}
+                            </div>
                         </div>
-                    ))}
+                    )}
                 </div>
             </div>
         </div>
