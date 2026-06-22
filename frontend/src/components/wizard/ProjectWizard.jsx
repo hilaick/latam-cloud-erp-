@@ -91,7 +91,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
     return (
         <div className="bg-slate-50 min-h-[85vh] flex flex-col font-sans relative rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-            {/* 🚨 FIX: Changed z-40 to z-30 to ensure it ducks under the TopBar dropdown menus */}
             <div className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex flex-col xl:flex-row gap-4 justify-between items-center shadow-sm">
                 <div className="flex items-center gap-4 shrink-0">
                     <div>
@@ -134,7 +133,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 </div>
             </div>
 
-            {/* Main Content Area */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
                 {currentStep === 1 && <StepARB project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(2)} />}
                 {currentStep === 2 && <StepArchitecture project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(3)} />}
@@ -275,17 +273,19 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 <div className="overflow-x-auto pb-4">
                                     <TriageCardFlow 
                                         triage={{
-                                            project_type: activeProject?.project_type || 'standard',
-                                            migrationScope: activeProject?.migrationScope || (activeProject?.project_type === 'greenfield' ? [] : ['compute']),
-                                            sourceEnvironment: activeProject?.sourceEnvironment || 'VMware / On-Premise',
-                                            authLevel: activeProject?.authLevel || (activeProject?.project_type === 'greenfield' ? [] : ['Read-Only (Customer Managed)'])
+                                            project_type: activeProject.project_type || 'standard',
+                                            migrationScope: activeProject.migrationScope || 'compute',
+                                            sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
+                                            authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)',
+                                            deliveryScope: activeProject.deliveryScope || 'turnkey'
                                         }} 
                                         setTriage={(newTriage) => {
                                             onUpdateProject(activeProject.id, {
                                                 project_type: newTriage.project_type,
                                                 migrationScope: newTriage.migrationScope,
                                                 sourceEnvironment: newTriage.sourceEnvironment,
-                                                authLevel: newTriage.authLevel
+                                                authLevel: newTriage.authLevel,
+                                                deliveryScope: newTriage.deliveryScope
                                             });
                                         }} 
                                     />
