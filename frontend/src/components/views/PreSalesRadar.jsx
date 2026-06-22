@@ -7,7 +7,6 @@ export default function PreSalesRadar() {
     const { projects, customers, handleAddProject, handleUpdateProject, handleDeleteProject } = useContext(ERPContext);
     const waitingProjects = (projects || []).filter(p => p && p.isWaiting);
     
-    // Dynamic SA memory cache for autocomplete
     const uniqueSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
     const uniquePartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
 
@@ -16,12 +15,13 @@ export default function PreSalesRadar() {
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
     
-    // 🚨 Triage State for New Lead
+    // 🚨 Triage State for New Lead (Includes Delivery Scope)
     const [triage, setTriage] = useState({
         project_type: 'standard',
         migrationScope: 'compute',
         sourceEnvironment: 'VMware / On-Premise',
-        authLevel: 'Read-Only (Customer Managed)'
+        authLevel: 'Read-Only (Customer Managed)',
+        deliveryScope: 'turnkey' 
     });
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
@@ -42,7 +42,6 @@ export default function PreSalesRadar() {
         if(!newLeadName || !newLeadSA || !newLeadCountry || !newLeadCustomer) return alert("Project Name, Customer Account, Target Country, and SA are required."); 
         
         const matchedCustomer = (customers || []).find(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim());
-
         const isGreenfield = triage.project_type === 'greenfield';
         const isPoC = triage.project_type === 'poc';
 
@@ -62,6 +61,7 @@ export default function PreSalesRadar() {
             sourceEnvironment: isGreenfield ? "Greenfield / Cloud Native" : triage.sourceEnvironment, 
             authLevel: isGreenfield ? "Cloud Admin API" : triage.authLevel,
             migrationScope: isGreenfield ? "N/A" : triage.migrationScope,
+            deliveryScope: triage.deliveryScope, // 🚨 Pass new scope
             estimatedWorkloads: 0,
             estimatedMigrationHours: 0,
             blocker: "", 
@@ -74,13 +74,9 @@ export default function PreSalesRadar() {
             sizingStatus: "Not Started", 
             complexityLevel: "Medium"
         }); 
+        
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
-        setTriage({
-            project_type: 'standard',
-            migrationScope: 'compute',
-            sourceEnvironment: 'VMware / On-Premise',
-            authLevel: 'Read-Only (Customer Managed)'
-        });
+        setTriage({ project_type: 'standard', migrationScope: 'compute', sourceEnvironment: 'VMware / On-Premise', authLevel: 'Read-Only (Customer Managed)', deliveryScope: 'turnkey' });
     };
 
     const executeDelete = () => {
@@ -128,7 +124,9 @@ export default function PreSalesRadar() {
                 
                 <h4 className="font-black text-xs uppercase tracking-widest text-slate-500 mb-4">Pipeline Triage Flow</h4>
                 
-                <TriageCardFlow triage={triage} setTriage={setTriage} />
+                <div className="overflow-x-auto pb-4">
+                    <TriageCardFlow triage={triage} setTriage={setTriage} />
+                </div>
 
                 <div className="flex justify-end items-center pt-6 mt-6 border-t border-slate-100">
                     <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors shadow-md">
@@ -154,11 +152,14 @@ export default function PreSalesRadar() {
                                                     {p.customerId ? <><i className="fas fa-shield-alt text-[9px] mr-1"></i> {p.customerName}</> : <><i className="fas fa-exclamation-triangle mr-1"></i> Account Unlinked</>}
                                                 </div>
                                                 <div className="uppercase">{p.name}</div> 
-                                            <div className="mt-2 flex gap-1">
+                                            <div className="mt-2 flex flex-wrap gap-1">
                                                 {p.project_type === 'poc' && <span className="bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-bolt mr-1"></i> PoC</span>}
                                                 {p.project_type === 'greenfield' && <span className="bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-leaf mr-1"></i> Greenfield</span>}
                                                 {p.project_type === 'standard' && <span className="bg-blue-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-truck-moving mr-1"></i> Migration</span>}
                                                 {p.project_type === 'expansion' && <span className="bg-purple-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-expand-arrows-alt mr-1"></i> Phase 2+</span>}
+                                                
+                                                {p.deliveryScope === 'advisory' && <span className="bg-slate-700 text-amber-400 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-chalkboard-teacher mr-1"></i> Advisory Only</span>}
+                                                {p.deliveryScope === 'co_delivery' && <span className="bg-slate-700 text-blue-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-handshake mr-1"></i> Co-Delivery</span>}
                                             </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -191,7 +192,6 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
-            {/* EDITING MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -229,15 +229,18 @@ export default function PreSalesRadar() {
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-random text-blue-500 mr-2"></i> Pipeline Triage Configuration</h4>
                                 
-                                <TriageCardFlow 
-                                    triage={{
-                                        project_type: editingProject.project_type || 'standard',
-                                        migrationScope: editingProject.migrationScope || 'compute',
-                                        sourceEnvironment: editingProject.sourceEnvironment || 'VMware / On-Premise',
-                                        authLevel: editingProject.authLevel || 'Read-Only (Customer Managed)'
-                                    }} 
-                                    setTriage={(newTriage) => setEditingProject({...editingProject, ...newTriage})} 
-                                />
+                                <div className="overflow-x-auto pb-2">
+                                    <TriageCardFlow 
+                                        triage={{
+                                            project_type: editingProject.project_type || 'standard',
+                                            migrationScope: editingProject.migrationScope || 'compute',
+                                            sourceEnvironment: editingProject.sourceEnvironment || 'VMware / On-Premise',
+                                            authLevel: editingProject.authLevel || 'Read-Only (Customer Managed)',
+                                            deliveryScope: editingProject.deliveryScope || 'turnkey'
+                                        }} 
+                                        setTriage={(newTriage) => setEditingProject({...editingProject, ...newTriage})} 
+                                    />
+                                </div>
                             </div>
 
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-5">
