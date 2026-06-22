@@ -15,7 +15,7 @@ export default function PreSalesRadar() {
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
     
-    // 🚨 Triage State for New Lead (Includes Delivery Scope)
+    // Triage State for New Lead (Includes Delivery Scope)
     const [triage, setTriage] = useState({
         project_type: 'standard',
         migrationScope: 'compute',
@@ -61,7 +61,7 @@ export default function PreSalesRadar() {
             sourceEnvironment: isGreenfield ? "Greenfield / Cloud Native" : triage.sourceEnvironment, 
             authLevel: isGreenfield ? "Cloud Admin API" : triage.authLevel,
             migrationScope: isGreenfield ? "N/A" : triage.migrationScope,
-            deliveryScope: triage.deliveryScope, // 🚨 Pass new scope
+            deliveryScope: triage.deliveryScope, 
             estimatedWorkloads: 0,
             estimatedMigrationHours: 0,
             blocker: "", 
@@ -158,8 +158,13 @@ export default function PreSalesRadar() {
                                                 {p.project_type === 'standard' && <span className="bg-blue-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-truck-moving mr-1"></i> Migration</span>}
                                                 {p.project_type === 'expansion' && <span className="bg-purple-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-expand-arrows-alt mr-1"></i> Phase 2+</span>}
                                                 
-                                                {p.deliveryScope === 'advisory' && <span className="bg-slate-700 text-amber-400 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-chalkboard-teacher mr-1"></i> Advisory Only</span>}
+                                                {/* 🚨 Delivery Scope Badges */}
+                                                {p.deliveryScope === 'advisory' && <span className="bg-slate-700 text-amber-400 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-chalkboard-teacher mr-1"></i> Advisory</span>}
                                                 {p.deliveryScope === 'co_delivery' && <span className="bg-slate-700 text-blue-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-handshake mr-1"></i> Co-Delivery</span>}
+                                                {p.deliveryScope === 'arch_review' && <span className="bg-slate-700 text-teal-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-sitemap mr-1"></i> Arch Review</span>}
+                                                {p.deliveryScope === 'escalation' && <span className="bg-slate-700 text-rose-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-life-ring mr-1"></i> Escalation</span>}
+                                                {p.deliveryScope === 'security' && <span className="bg-slate-700 text-emerald-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-shield-alt mr-1"></i> Security</span>}
+                                                {p.deliveryScope === 'post_live' && <span className="bg-slate-700 text-indigo-300 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-chart-line mr-1"></i> Post-Live</span>}
                                             </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -192,6 +197,7 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
+            {/* EDITING MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-8 flex flex-col border border-slate-700 animate-slide-up">
