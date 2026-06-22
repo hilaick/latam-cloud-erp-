@@ -91,8 +91,8 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
     return (
         <div className="bg-slate-50 min-h-[85vh] flex flex-col font-sans relative rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-            {/* Header & CHEVRON TRACKER */}
-            <div className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-4 flex flex-col xl:flex-row gap-4 justify-between items-center shadow-sm">
+            {/* 🚨 FIX: Changed z-40 to z-30 to ensure it ducks under the TopBar dropdown menus */}
+            <div className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-4 flex flex-col xl:flex-row gap-4 justify-between items-center shadow-sm">
                 <div className="flex items-center gap-4 shrink-0">
                     <div>
                         <div className="flex items-center gap-3">
@@ -143,7 +143,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
             </div>
 
-            {/* 🚨 BULLETPROOF CONFIGURATION MODAL */}
             {showConfig && (
                 <div className="fixed inset-0 flex items-center justify-center p-4 sm:p-8 animate-fade-in pointer-events-auto" style={{ zIndex: 99999 }}>
                     <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowConfig(false)}></div>
@@ -162,7 +161,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                         
                         <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 bg-slate-50 custom-scrollbar">
                             
-                            {/* SECTION 1: Basic Identity */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-colors focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
                                     <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Project Name (Scope)</label>
@@ -271,26 +269,27 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 </div>
                             </div>
 
-                            {/* SECTION 2: Technical Triage & Execution Scope */}
                             <div className="pt-6 border-t border-slate-200 mt-6">
                                 <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-random text-purple-500 mr-2"></i> Pipeline Triage & Scope</h4>
                                 
-                                <TriageCardFlow 
-                                    triage={{
-                                        project_type: activeProject.project_type || 'standard',
-                                        migrationScope: activeProject.migrationScope || 'compute',
-                                        sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
-                                        authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)'
-                                    }} 
-                                    setTriage={(newTriage) => {
-                                        onUpdateProject(activeProject.id, {
-                                            project_type: newTriage.project_type,
-                                            migrationScope: newTriage.migrationScope,
-                                            sourceEnvironment: newTriage.sourceEnvironment,
-                                            authLevel: newTriage.authLevel
-                                        });
-                                    }} 
-                                />
+                                <div className="overflow-x-auto pb-4">
+                                    <TriageCardFlow 
+                                        triage={{
+                                            project_type: activeProject.project_type || 'standard',
+                                            migrationScope: activeProject.migrationScope || 'compute',
+                                            sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
+                                            authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)'
+                                        }} 
+                                        setTriage={(newTriage) => {
+                                            onUpdateProject(activeProject.id, {
+                                                project_type: newTriage.project_type,
+                                                migrationScope: newTriage.migrationScope,
+                                                sourceEnvironment: newTriage.sourceEnvironment,
+                                                authLevel: newTriage.authLevel
+                                            });
+                                        }} 
+                                    />
+                                </div>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
@@ -330,7 +329,6 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             </div>
                         </div>
 
-                        {/* Footer (Shrinks to fit, always visible at bottom) */}
                         <div className="px-6 py-4 bg-white border-t border-slate-200 shrink-0 flex justify-end">
                             <button onClick={() => setShowConfig(false)} className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-colors cursor-pointer">
                                 Save & Close
