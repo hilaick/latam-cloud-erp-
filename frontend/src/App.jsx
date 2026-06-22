@@ -36,6 +36,13 @@ function App() {
         refreshData 
     } = useContext(ERPContext);
 
+    // 🚨 FIX: Auto-redirect to Global Dashboard if 'Global' is selected while in a Project Wizard
+    useEffect(() => {
+        if (activePhase === 'wizard' && (!activeProjectId || activeProjectId === 'global')) {
+            setActivePhase('home');
+        }
+    }, [activePhase, activeProjectId, setActivePhase]);
+
     useEffect(() => {
         const token = localStorage.getItem('erp_jwt_token');
         if (token) {
