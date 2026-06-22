@@ -65,11 +65,15 @@ export function TriageCardFlow({ triage, setTriage }) {
         { id: 'Read-Only (Customer Managed)', label: 'Zero-Trust', icon: 'fa-user-shield' }
     ];
 
-    // 🚨 5th Column: Delivery Scope
+    // 🚨 5th Column: Expanded Delivery Scopes
     const deliveryScopes = [
-        { id: 'turnkey', label: 'Turnkey', desc: 'We Execute', icon: 'fa-key' },
+        { id: 'turnkey', label: 'Turnkey', desc: 'We Execute E2E', icon: 'fa-key' },
         { id: 'co_delivery', label: 'Co-Delivery', desc: 'Shared Model', icon: 'fa-handshake' },
-        { id: 'advisory', label: 'Advisory', desc: 'Partner Executes', icon: 'fa-chalkboard-teacher' }
+        { id: 'advisory', label: 'Advisory', desc: 'Partner Executes', icon: 'fa-chalkboard-teacher' },
+        { id: 'arch_review', label: 'Arch Review', desc: 'Validation & Design', icon: 'fa-sitemap' },
+        { id: 'escalation', label: 'Escalation', desc: 'Tier 3 Support', icon: 'fa-life-ring' },
+        { id: 'security', label: 'Security Review', desc: 'Audit & Compliance', icon: 'fa-shield-alt' },
+        { id: 'post_live', label: 'Post-Live', desc: 'FinOps Optimization', icon: 'fa-chart-line' }
     ];
 
     const isGreenfield = triage.project_type === 'greenfield';
@@ -79,7 +83,7 @@ export function TriageCardFlow({ triage, setTriage }) {
             {/* Col 1: Type */}
             <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner min-w-[200px]">
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">1. Engagement Type</h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                     {types.map(t => (
                         <div key={t.id} onClick={() => setTriage({...triage, project_type: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.project_type === t.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.project_type === t.id ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -99,7 +103,7 @@ export function TriageCardFlow({ triage, setTriage }) {
             {/* Col 2: Scope */}
             <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity min-w-[200px] ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">2. Migration Scope</h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                     {scopes.map(t => (
                         <div key={t.id} onClick={() => setTriage({...triage, migrationScope: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.migrationScope === t.id ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.migrationScope === t.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -116,7 +120,7 @@ export function TriageCardFlow({ triage, setTriage }) {
             {/* Col 3: Source */}
             <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity min-w-[200px] ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">3. Source Environment</h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                     {sources.map(t => (
                         <div key={t.id} onClick={() => setTriage({...triage, sourceEnvironment: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.sourceEnvironment === t.id ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.sourceEnvironment === t.id ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -133,7 +137,7 @@ export function TriageCardFlow({ triage, setTriage }) {
             {/* Col 4: Auth */}
             <div className={`flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner transition-opacity min-w-[200px] ${isGreenfield ? 'opacity-40 pointer-events-none' : ''}`}>
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">4. Authorization Level</h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                     {auths.map(t => (
                         <div key={t.id} onClick={() => setTriage({...triage, authLevel: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.authLevel === t.id ? 'border-emerald-500 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.authLevel === t.id ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -147,10 +151,10 @@ export function TriageCardFlow({ triage, setTriage }) {
 
             <div className="hidden xl:flex items-center justify-center text-slate-300"><i className="fas fa-arrow-right text-xl"></i></div>
 
-            {/* 🚨 Col 5: NEW Delivery Scope */}
+            {/* Col 5: Delivery Scope */}
             <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner min-w-[200px]">
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">5. Delivery Scope</h4>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                     {deliveryScopes.map(t => (
                         <div key={t.id} onClick={() => setTriage({...triage, deliveryScope: t.id})} className={`p-3 rounded-xl border-2 cursor-pointer flex items-center gap-3 transition-colors ${triage.deliveryScope === t.id ? 'border-amber-500 bg-amber-50 shadow-sm' : 'border-slate-200 bg-white hover:border-amber-300'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${triage.deliveryScope === t.id ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
