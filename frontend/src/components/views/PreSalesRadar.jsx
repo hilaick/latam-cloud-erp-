@@ -1,6 +1,6 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell } from '../../utils/helpers'; 
+import { EditableCell, TriageCardFlow } from '../../utils/helpers'; 
 import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function PreSalesRadar() {
@@ -15,8 +15,14 @@ export default function PreSalesRadar() {
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
-    const [isPoC, setIsPoC] = useState(false);
-    const [projectType, setProjectType] = useState("standard"); // standard, greenfield, or poc
+    
+    // 🚨 Triage State for New Lead
+    const [triage, setTriage] = useState({
+        project_type: 'standard',
+        migrationScope: 'compute',
+        sourceEnvironment: 'VMware / On-Premise',
+        authLevel: 'Read-Only (Customer Managed)'
+    });
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
     const [editingProject, setEditingProject] = useState(null);
@@ -32,15 +38,13 @@ export default function PreSalesRadar() {
         "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
     ];
 
-    const sourceEnvironments = [
-        "AWS", "Azure", "GCP", "On-Premise (VMware)", "On-Premise (Hyper-V)", 
-        "On-Premise (Bare Metal)", "Huawei Cloud (Cross-Region)", "Greenfield / Cloud Native", "Other"
-    ];
-
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA || !newLeadCountry || !newLeadCustomer) return alert("Project Name, Customer Account, Target Country, and SA are required."); 
         
         const matchedCustomer = (customers || []).find(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim());
+
+        const isGreenfield = triage.project_type === 'greenfield';
+        const isPoC = triage.project_type === 'poc';
 
         handleAddProject({
             id: String(Date.now()), 
@@ -55,21 +59,28 @@ export default function PreSalesRadar() {
             country: newLeadCountry, 
             partner: "TBD", 
             techContact: "TBD", 
-            sourceEnvironment: "Unknown", 
-            authLevel: "Read-Only (Customer Managed)", // Added default auth level
+            sourceEnvironment: isGreenfield ? "Greenfield / Cloud Native" : triage.sourceEnvironment, 
+            authLevel: isGreenfield ? "Cloud Admin API" : triage.authLevel,
+            migrationScope: isGreenfield ? "N/A" : triage.migrationScope,
             estimatedWorkloads: 0,
             estimatedMigrationHours: 0,
             blocker: "", 
             lifecycleState: '1_arb', 
             progress: '0%', 
-            project_type: isPoC ? 'poc' : projectType, // Use selected project type
+            project_type: triage.project_type, 
             pocCap: isPoC ? 1000 : null, 
             pocTtl: isPoC ? '' : null, 
             discoveryStatus: "Not Started", 
             sizingStatus: "Not Started", 
             complexityLevel: "Medium"
         }); 
-        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false); setProjectType("standard");
+        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
+        setTriage({
+            project_type: 'standard',
+            migrationScope: 'compute',
+            sourceEnvironment: 'VMware / On-Premise',
+            authLevel: 'Read-Only (Customer Managed)'
+        });
     };
 
     const executeDelete = () => {
@@ -85,8 +96,11 @@ export default function PreSalesRadar() {
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12 relative">
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Pre-Assessment Triage</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 pb-8">
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account *</label>
                         <input 
@@ -110,20 +124,16 @@ export default function PreSalesRadar() {
                         <input type="text" list="sa-list" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value.toUpperCase())} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold uppercase" />
                         <datalist id="sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
                     </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Type *</label>
-                        <select value={projectType} onChange={e=>setProjectType(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white">
-                            <option value="standard">Standard Migration</option>
-                            <option value="greenfield">Greenfield (Cloud-Native)</option>
-                        </select>
-                    </div>
                 </div>
-                <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                    <div className="flex items-center gap-6">
-                        <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={isPoC} onChange={e => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" /><span className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</span></label>
-                        {isPoC && <span className="text-xs font-black text-amber-600 uppercase tracking-widest"><i className="fas fa-bolt mr-1"></i> PoC will override Project Type</span>}
-                    </div>
-                    <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors shadow-md"><i className="fas fa-plus mr-2"></i> Add Lead</button>
+                
+                <h4 className="font-black text-xs uppercase tracking-widest text-slate-500 mb-4">Pipeline Triage Flow</h4>
+                
+                <TriageCardFlow triage={triage} setTriage={setTriage} />
+
+                <div className="flex justify-end items-center pt-6 mt-6 border-t border-slate-100">
+                    <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors shadow-md">
+                        <i className="fas fa-plus mr-2"></i> Add Lead & Configure Pipeline
+                    </button>
                 </div>
             </div>
             
@@ -146,8 +156,9 @@ export default function PreSalesRadar() {
                                                 <div className="uppercase">{p.name}</div> 
                                             <div className="mt-2 flex gap-1">
                                                 {p.project_type === 'poc' && <span className="bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-bolt mr-1"></i> PoC</span>}
-                                                {p.project_type === 'greenfield' && <span className="bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-cloud mr-1"></i> Greenfield</span>}
+                                                {p.project_type === 'greenfield' && <span className="bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-leaf mr-1"></i> Greenfield</span>}
                                                 {p.project_type === 'standard' && <span className="bg-blue-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-truck-moving mr-1"></i> Migration</span>}
+                                                {p.project_type === 'expansion' && <span className="bg-purple-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-expand-arrows-alt mr-1"></i> Phase 2+</span>}
                                             </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -180,6 +191,7 @@ export default function PreSalesRadar() {
                 })}
             </div>
 
+            {/* EDITING MODAL */}
             {editingProject && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-8 flex flex-col border border-slate-700 animate-slide-up">
@@ -215,25 +227,22 @@ export default function PreSalesRadar() {
                             </div>
 
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing & Risks</h4>
-                                {/* 🚨 FIX: Updated grid-cols to 5 and injected Auth Level dropdown */}
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-5">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Source Env</label>
-                                        <select value={editingProject.sourceEnvironment || 'Unknown'} onChange={e=>setEditingProject({...editingProject, sourceEnvironment: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold bg-white cursor-pointer">
-                                            <option value="Unknown">Unknown</option>
-                                            {sourceEnvironments.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Auth Level</label>
-                                        <select value={editingProject.authLevel || 'Read-Only (Customer Managed)'} onChange={e=>setEditingProject({...editingProject, authLevel: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-[11px] font-bold bg-white cursor-pointer">
-                                            <option value="Cloud Admin API">Cloud Admin API</option>
-                                            <option value="Active Directory">Active Directory</option>
-                                            <option value="Local OS Admin">Local OS Admin</option>
-                                            <option value="Read-Only (Customer Managed)">Read-Only (Zero Trust)</option>
-                                        </select>
-                                    </div>
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-random text-blue-500 mr-2"></i> Pipeline Triage Configuration</h4>
+                                
+                                <TriageCardFlow 
+                                    triage={{
+                                        project_type: editingProject.project_type || 'standard',
+                                        migrationScope: editingProject.migrationScope || 'compute',
+                                        sourceEnvironment: editingProject.sourceEnvironment || 'VMware / On-Premise',
+                                        authLevel: editingProject.authLevel || 'Read-Only (Customer Managed)'
+                                    }} 
+                                    setTriage={(newTriage) => setEditingProject({...editingProject, ...newTriage})} 
+                                />
+                            </div>
+
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-5">
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-cogs text-purple-500 mr-2"></i> Technical Sizing</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Workloads (VMs)</label><input type="number" value={editingProject.estimatedWorkloads || ''} onChange={e=>setEditingProject({...editingProject, estimatedWorkloads: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Labor (hrs)</label><input type="number" value={editingProject.estimatedMigrationHours || ''} onChange={e=>setEditingProject({...editingProject, estimatedMigrationHours: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:border-blue-500 outline-none text-sm font-bold" /></div>
                                     <div>
