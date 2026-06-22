@@ -1,46 +1,140 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useRef, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function TopBar({ onLogout, onOpenGlossary }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
+    
+    // State for menus
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+    const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+    const [projectSearch, setProjectSearch] = useState('');
+    
+    // Refs for click-outside logic
+    const projectMenuRef = useRef(null);
+    const profileMenuRef = useRef(null);
 
     const activeProjects = (projects || []).filter(p => p && !p.isWaiting);
     
+    // Auto-close menus when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (projectMenuRef.current && !projectMenuRef.current.contains(event.target)) {
+                setProjectMenuOpen(false);
+            }
+            if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+                setProfileMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const userStr = localStorage.getItem('erp_user');
     const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
     const initials = (user?.name || "System User").split(' ').map(n => n[0] || '').join('').substring(0, 2).toUpperCase();
 
+    // Derived properties for the custom project dropdown
+    const currentProject = activeProjects.find(p => String(p.id) === String(activeProjectId));
+    const currentProjectDisplay = currentProject 
+        ? `${currentProject.customerName || 'No Account'} - ${currentProject.name || 'Unnamed'}` 
+        : "-- Global View --";
+
+    const filteredProjects = activeProjects.filter(p => {
+        const query = projectSearch.toLowerCase();
+        return (p.name || '').toLowerCase().includes(query) || 
+               (p.customerName || '').toLowerCase().includes(query);
+    });
+
+    const handleSelectProject = (id) => {
+        setActiveProjectId(id);
+        if (id !== 'none') setActivePhase('wizard');
+        setProjectMenuOpen(false);
+        setProjectSearch('');
+    };
+
     return (
         <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm shrink-0">
-            <div className="flex items-center gap-3">
+            
+            {/* LEFT: Project Context Switcher */}
+            <div className="flex items-center gap-3 relative" ref={projectMenuRef}>
                 <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-inner shrink-0">
                     <i className="fas fa-building text-sm md:text-base"></i>
                 </div>
                 <div className="flex flex-col">
                     <div className="text-[8px] md:text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5 hidden sm:block">Active Project Context</div>
-                    <select 
-                        value={activeProjectId || "none"} 
-                        onChange={(e) => { setActiveProjectId(e.target.value); if (e.target.value !== 'none') setActivePhase('wizard'); }}
-                        className="bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none font-black text-xs md:text-sm text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[250px] truncate"
+                    
+                    {/* Custom Dropdown Trigger */}
+                    <button 
+                        onClick={() => setProjectMenuOpen(!projectMenuOpen)}
+                        className="flex items-center justify-between gap-2 bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[280px]"
                     >
-                        <option value="none">-- Global View --</option>
-                        {activeProjects.map(p => (
-                            <option key={p.id} value={p.id}>
-                                {p.customerName || (p.name || '').split('-')[0] || 'No Account'} - {p.name || 'Unnamed Project'}
-                            </option>
-                        ))}
-                    </select>
+                        <span className="font-black text-xs md:text-sm text-slate-800 truncate">
+                            {currentProjectDisplay}
+                        </span>
+                        <i className={`fas fa-chevron-down text-[10px] text-slate-400 transition-transform ${projectMenuOpen ? 'rotate-180' : ''}`}></i>
+                    </button>
+
+                    {/* Custom Dropdown Menu */}
+                    {projectMenuOpen && (
+                        <div className="absolute top-full left-0 mt-2 w-[280px] sm:w-[320px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-slide-up">
+                            
+                            {/* Search Bar */}
+                            <div className="p-3 border-b border-slate-100 bg-slate-50">
+                                <div className="relative">
+                                    <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                    <input 
+                                        type="text" 
+                                        autoFocus
+                                        placeholder="Search by customer or project..." 
+                                        value={projectSearch}
+                                        onChange={(e) => setProjectSearch(e.target.value)}
+                                        className="w-full pl-8 pr-3 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500 shadow-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Project List */}
+                            <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                <button 
+                                    onClick={() => handleSelectProject('none')}
+                                    className={`w-full text-left px-4 py-3 border-b border-slate-100 flex items-center gap-3 transition-colors ${!currentProject ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                >
+                                    <i className="fas fa-globe-americas w-4 text-center"></i>
+                                    <span className="text-xs font-black uppercase tracking-widest">-- Global View --</span>
+                                </button>
+                                
+                                {filteredProjects.length === 0 ? (
+                                    <div className="p-4 text-center text-slate-400 text-xs font-bold italic">No matching projects found.</div>
+                                ) : (
+                                    filteredProjects.map(p => (
+                                        <button 
+                                            key={p.id} 
+                                            onClick={() => handleSelectProject(p.id)}
+                                            className={`w-full text-left px-4 py-3 flex flex-col transition-colors border-b border-slate-50 last:border-0 ${currentProject?.id === p.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-50'}`}
+                                        >
+                                            <span className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${currentProject?.id === p.id ? 'text-blue-200' : 'text-slate-400'}`}>
+                                                {p.customerName || 'No Account'}
+                                            </span>
+                                            <span className={`text-xs font-bold truncate ${currentProject?.id === p.id ? 'text-white' : 'text-slate-800'}`}>
+                                                {p.name || 'Unnamed Project'}
+                                            </span>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
+            {/* RIGHT: Status & User Profile */}
             <div className="flex items-center gap-2 md:gap-4 relative">
                 <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Production DB</span>
                 </div>
                 
-                <div className="relative">
+                <div className="relative" ref={profileMenuRef}>
                     <div 
                         onClick={() => setProfileMenuOpen(!profileMenuOpen)}
                         className="w-8 h-8 md:w-10 md:h-10 text-xs md:text-base rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:bg-blue-600 hover:border-blue-400 transition-colors"
@@ -61,7 +155,6 @@ export default function TopBar({ onLogout, onOpenGlossary }) {
                                 >
                                     <i className="fas fa-users-cog w-5 text-center mr-2"></i> IAM & Profile
                                 </button>
-                                {/* 🚨 NEW GLOSSARY BUTTON */}
                                 <button 
                                     onClick={() => { onOpenGlossary(); setProfileMenuOpen(false); }}
                                     className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl transition-colors flex items-center"
