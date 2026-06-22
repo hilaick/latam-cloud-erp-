@@ -16,6 +16,7 @@ export default function PreSalesRadar() {
     const [newLeadCountry, setNewLeadCountry] = useState("");
     const [newLeadSA, setNewLeadSA] = useState(""); 
     const [isPoC, setIsPoC] = useState(false);
+    const [projectType, setProjectType] = useState("standard"); // standard, greenfield, or poc
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
     const [editingProject, setEditingProject] = useState(null);
@@ -61,14 +62,14 @@ export default function PreSalesRadar() {
             blocker: "", 
             lifecycleState: '1_arb', 
             progress: '0%', 
-            project_type: isPoC ? 'poc' : 'standard', 
+            project_type: isPoC ? 'poc' : projectType, // Use selected project type
             pocCap: isPoC ? 1000 : null, 
             pocTtl: isPoC ? '' : null, 
             discoveryStatus: "Not Started", 
             sizingStatus: "Not Started", 
             complexityLevel: "Medium"
         }); 
-        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false);
+        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); setIsPoC(false); setProjectType("standard");
     };
 
     const executeDelete = () => {
@@ -85,7 +86,7 @@ export default function PreSalesRadar() {
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12 relative">
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Register New Lead</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account *</label>
                         <input 
@@ -109,9 +110,19 @@ export default function PreSalesRadar() {
                         <input type="text" list="sa-list" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value.toUpperCase())} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 outline-none focus:border-blue-500 font-bold uppercase" />
                         <datalist id="sa-list">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
                     </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Type *</label>
+                        <select value={projectType} onChange={e=>setProjectType(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full outline-none font-bold bg-white">
+                            <option value="standard">Standard Migration</option>
+                            <option value="greenfield">Greenfield (Cloud-Native)</option>
+                        </select>
+                    </div>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                    <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={isPoC} onChange={e => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" /><span className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</span></label>
+                    <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={isPoC} onChange={e => setIsPoC(e.target.checked)} className="w-5 h-5 accent-amber-500" /><span className="text-xs font-black text-slate-800 uppercase tracking-widest">Fast-Track PoC</span></label>
+                        {isPoC && <span className="text-xs font-black text-amber-600 uppercase tracking-widest"><i className="fas fa-bolt mr-1"></i> PoC will override Project Type</span>}
+                    </div>
                     <button onClick={handleAddNewLead} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs transition-colors shadow-md"><i className="fas fa-plus mr-2"></i> Add Lead</button>
                 </div>
             </div>
@@ -132,7 +143,12 @@ export default function PreSalesRadar() {
                                                 <div className={`text-[10px] uppercase tracking-widest mb-1 ${p.customerId ? 'text-blue-600' : 'text-amber-500 font-bold'}`}>
                                                     {p.customerId ? <><i className="fas fa-shield-alt text-[9px] mr-1"></i> {p.customerName}</> : <><i className="fas fa-exclamation-triangle mr-1"></i> Account Unlinked</>}
                                                 </div>
-                                                <div className="uppercase">{p.name}</div> {p.project_type === 'poc' && <span className="mt-2 bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-bolt mr-1"></i> PoC</span>}
+                                                <div className="uppercase">{p.name}</div> 
+                                            <div className="mt-2 flex gap-1">
+                                                {p.project_type === 'poc' && <span className="bg-amber-400 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-bolt mr-1"></i> PoC</span>}
+                                                {p.project_type === 'greenfield' && <span className="bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-cloud mr-1"></i> Greenfield</span>}
+                                                {p.project_type === 'standard' && <span className="bg-blue-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm inline-block"><i className="fas fa-truck-moving mr-1"></i> Migration</span>}
+                                            </div>
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => setEditingProject({...p})} className="flex-1 text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200"><i className="fas fa-expand-arrows-alt mr-1"></i> Assess</button>

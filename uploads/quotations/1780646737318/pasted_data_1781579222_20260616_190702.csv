@@ -1,0 +1,28 @@
+Service	Description	Region	AZ	Billing Mode	Purchase Amount	Original Price (USD)	Discount Amount (USD)	Discounted Price (USD)
+Flexus X Instance 1	Flexus X Instance	LA-Mexico City2	General AZ 	Monthly	1 month,1 HECS	38.28	0.00	38.28
+  Type	Flexus X Instance | x0.2u.4g | 2vCPUs | 4GB			ProductId: OFFI1106469442298421254	1 month,*1	24.18	0.00	24.18
+  Image	AlmaLinux | AlmaLinux 9.0 64bit				1 month,*1	0.00	0.00	0.00
+  System Disk	General Purpose SSD | 150GB			ProductId: OFFI647691142630694912	1 month,*1	14.10	0.00	14.10
+Flexus X Instance 2	Flexus X Instance	LA-Mexico City2	General AZ 	Monthly	1 month,1 HECS	38.28	0.00	38.28
+  Type	Flexus X Instance | x0.2u.4g | 2vCPUs | 4GB			ProductId: OFFI1106469442298421254	1 month,*1	24.18	0.00	24.18
+  Image	AlmaLinux | AlmaLinux 9.0 64bit				1 month,*1	0.00	0.00	0.00
+  System Disk	General Purpose SSD | 150GB			ProductId: OFFI647691142630694912	1 month,*1	14.10	0.00	14.10
+Relational Database Service 1	Relational Database Service	LA-Mexico City2	General AZ 	Monthly	1 month,1 PCS	197.92	0.00	197.92
+  Type	General AZ | MySQL | 8.0 | Primary/Standby | Dedicated | 2vCPUs, 8GB 			ProductId: OFFI1000302161888329728	1 month,*1	146.62	0.00	146.62
+  Storage	Cloud SSD | 150GB			ProductId: OFFI1000301475034279937	1 month,*1	51.30	0.00	51.30
+Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	744 hours	86.66	0.00	86.66
+  Bandwidth Price	Dedicated | Dynamic BGP | Traffic | 1TB			ProductId: OFFI580665045183791104	744 hours	82.944	0.00	82.944
+  EIP Price	1 			ProductId: OFFI579940772131536896	744 hours	3.72	0.00	3.72
+Content Delivery Network 1	Content Delivery Network	Global	General AZ 	Pay-per-use	1 month	235.52	0.00	235.52
+  Region	International | Normal traffic package | 1TB | 1 month			ProductId: OFFI929301327409172492	1 month	235.52	0.00	235.52
+Whole Site Acceleration 1	Whole Site Acceleration	Global	General AZ 	Yearly	1 Year,2 PCS	40.88	0.00	40.88
+  Resource Package Type	Request times package for Outside Chinese mainland | 1000Ten thousand times | 1 year			ProductId: OFFI989107472020951040	1 Year,*2	40.88	0.00	40.88
+Host Security Service 1	Host Security Service	CN-Hong Kong	General AZ 	Monthly	1 month,2 PCS	27.60	0.00	27.60
+  Edition	Premium			ProductId: 00301-230065-0--0	1 month,*2	27.60	0.00	27.60
+Cloud Backup and Recovery 1	Cloud Backup and Recovery	CN-Hong Kong	General AZ 	Monthly	1 month	36.86	0.00	36.86
+  Vault Type	Server backup vault | 1024GB			ProductId: OFFI507489216795533313	1 month	36.86	0.00	36.86
+Elastic Load Balance 1	Elastic Load Balance	LA-Mexico City2	General AZ 	Monthly	1 month	133.33	0.00	133.33
+  Network load balancing (TCP/UDP/TLS)	Central AZ | 40 LCU			ProductId: OFFI1156546099172732929	1 month	133.33	0.00	133.33
+Web Application Firewall 1 	Web Application Firewall 	LA-Mexico City	General AZ 	Monthly	1 month	250.00	0.00	250.00
+Total Price						1,085.33	0.00	1,085.33
+Total Price						1,085.33	0.00	1,085.33

@@ -60,28 +60,28 @@ class Customer(db.Model):
     architect = db.Column(db.String(100))
 
     # 1. HUAWEI MASTER & LEAST PRIVILEGE TIERS
-    ak = db.Column(db.String(120))
-    sk = db.Column(db.String(120))
-    tier1_ak = db.Column(db.String(120))
-    tier1_sk = db.Column(db.String(120))
-    tier2_ak = db.Column(db.String(120))
-    tier2_sk = db.Column(db.String(120))
-    tier3_ak = db.Column(db.String(120))
-    tier3_sk = db.Column(db.String(120))
+    ak = db.Column(db.Text)  # Changed from String(120) to Text for encrypted JSON
+    sk = db.Column(db.Text)  # Changed from String(120) to Text for encrypted JSON
+    tier1_ak = db.Column(db.Text)  # Changed from String(120) to Text
+    tier1_sk = db.Column(db.Text)  # Changed from String(120) to Text
+    tier2_ak = db.Column(db.Text)  # Changed from String(120) to Text
+    tier2_sk = db.Column(db.Text)  # Changed from String(120) to Text
+    tier3_ak = db.Column(db.Text)  # Changed from String(120) to Text
+    tier3_sk = db.Column(db.Text)  # Changed from String(120) to Text
 
     # 2. MULTI-CLOUD CONTROL PLANE (Hyperscaler APIs)
-    aws_ak = db.Column(db.String(120))
-    aws_sk = db.Column(db.String(120))
+    aws_ak = db.Column(db.Text)  # Changed from String(120) to Text
+    aws_sk = db.Column(db.Text)  # Changed from String(120) to Text
     azure_tenant_id = db.Column(db.String(120))
     azure_client_id = db.Column(db.String(120))
-    azure_client_secret = db.Column(db.String(120))
+    azure_client_secret = db.Column(db.Text)  # Changed from String(120) to Text
     azure_subscription_id = db.Column(db.String(120)) 
     vcenter_host = db.Column(db.String(120))
 
     # 3. OS DATA PLANE (Local/Domain Admin for Rsync/WinRM)
     os_domain = db.Column(db.String(120))
     os_user = db.Column(db.String(120))
-    os_password = db.Column(db.String(255)) # Encrypted Ciphertext
+    os_password = db.Column(db.Text)  # Already Text for encrypted ciphertext
 
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'

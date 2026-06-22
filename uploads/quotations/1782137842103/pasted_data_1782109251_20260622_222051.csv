@@ -1,0 +1,115 @@
+Service Description Region Billing Mode Purchase Amount
+Elastic Cloud Server 1 Servidores LA-Mexico City2 Pay-per-use 730 hours,3 ECSs
+  Type ProductId: 730 hours,*3
+  Image 730 hours,*3
+  System Disk
+ProductId: 
+OFFI647690971
+631955968
+730 hours,*3
+Relational Database Service 1 Relational Database Service LA-Mexico City2 Pay-per-use 730 hours,3 PCS
+  Type ProductId: 
+OFFI645436365 730 hours,*3
+  Storage ProductId: 730 hours,*3
+Object Storage Service 1 Object Storage Service LA-Mexico City2 Pay-per-use 1
+  Storage Space
+ProductId: 
+OFFI584653582
+453915648
+1
+  Internet Outbound Traffic ProductId: 
+OFFI583119153 1
+  API requests (read)
+ProductId: 
+OFFI584653582
+453915648
+1
+  API requests (write)
+ProductId: 
+OFFI584653582
+453915648
+1
+  API requests (delete)
+ProductId: 
+OFFI584653582
+453915648
+1
+  Pull Traffic
+ProductId: 
+OFFI792673847
+248240643
+1
+  Cross-Region Replication 
+Traffic
+ProductId: 
+OFFI583119153
+545822208
+1
+API Gateway 1 API Gateway LA-Mexico City2 Pay-per-use 730 hours
+  Edition
+ProductId: 
+OFFI592924822
+177345536
+730 hours
+  Bandwidth
+ProductId: 
+OFFI592932312
+684195840
+730 hours
+FunctionGraph 1 FunctionGraph LA-Mexico City2 Pay-per-use 1
+  Requests (1 million 
+counts/Month)
+ProductId: 
+OFFI807424209
+088962560
+1
+  Metering duration (GB
+second)
+ProductId: 
+OFFI807424209
+088962560
+1
+Elastic IP 1 Elastic IP LA-Mexico City2 Pay-per-use 730 hours
+  Bandwidth Price
+ProductId: 
+OFFI580665045
+183791104
+730 hours
+  EIP Price
+ProductId: 
+OFFI579940772
+131536896
+730 hours
+Relational Database Service 3 Relational Database Service LA-Mexico City2 Pay-per-use 730 hours,1 PCS
+  Type
+ProductId: 
+OFFI645436365
+396881410
+730 hours,*1
+Cloud Backup and Recovery 1 Cloud Backup and Recovery LA-Mexico City2 Pay-per-use 730 hours
+  Vault Type
+ProductId: 
+OFFI583498200
+016699396
+730 hours
+Diario el Mundo Fase 2
+AlmaLinux | AlmaLinux 9.4 64bit
+Cloud SSD | 40GB
+0x 10,000 requests
+0GB
+0GB
+General Purpose SSD | 40GB
+0x 10,000 requests
+0GB
+Standard | 2300GB | Single-AZ storage | Object storage | Storage Duration:1month
+0x 1,000 requests
+Basic
+1125000
+x86 | General computing-basic | t6.large.1 | 2 vCPUs | 2GiB
+General AZ | MySQL | 5.7 | Single | General-purpose | 2vCPUs, 4GB 
+3Mbit/s
+90
+Dedicated | Dynamic BGP | Traffic | 100GB x3
+3PCS
+General AZ | MySQL | 5.7 | Read replica | General-purpose | 2vCPUs, 4GB 
+Server backup vault | 1000G

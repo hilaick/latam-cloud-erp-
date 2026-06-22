@@ -40,9 +40,31 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         const hasBudget = activeProject?.budget || activeProject?.financials;
         const hasExecution = activeProject?.execStatus;
         const isCutoverReady = ['cutover_ready', 'completed'].includes(activeProject?.execStatus);
+        
+        // Check lifecycleState from data field or root
+        let lifecycleState = activeProject?.lifecycleState;
+        if (!lifecycleState && activeProject?.data) {
+            // data might be a string or object
+            const data = activeProject.data;
+            if (typeof data === 'string') {
+                try {
+                    const parsed = JSON.parse(data);
+                    lifecycleState = parsed.lifecycleState;
+                } catch (e) {
+                    console.warn('Failed to parse project data:', e);
+                }
+            } else if (typeof data === 'object') {
+                lifecycleState = data.lifecycleState;
+            }
+        }
+        const isPostLive = lifecycleState === '5_postlive' || lifecycleState === '6_completed';
+        const isExecutionPhase = lifecycleState === '4_execution';
 
+        console.log('ProjectWizard - lifecycleState:', lifecycleState, 'isPostLive:', isPostLive, 'isExecutionPhase:', isExecutionPhase, 'maxUnlocked calculation:', { isPostLive, isCutoverReady, isExecutionPhase, hasBudget, hasExecution, hasMappedNodes, hasBOM });
+
+        if (isPostLive) return 5;
         if (isCutoverReady) return 5;
-        if (hasBudget || hasExecution) return 4;
+        if (isExecutionPhase || hasBudget || hasExecution) return 4;
         if (hasMappedNodes) return 3;
         if (hasBOM) return 2;
         return 1;

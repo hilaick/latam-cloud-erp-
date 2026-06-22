@@ -1,12 +1,14 @@
 import os
 import json
 import uuid
+import logging
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from models import db, ProjectData, Customer, QuotationVersion
+from models import db, ProjectData, Customer, QuotationVersion, ExecutionState
 from services.credential_manager import get_credential_manager
 
 crm_bp = Blueprint('crm', __name__)
+logger = logging.getLogger(__name__)
 
 @crm_bp.route('/api/vault/validate', methods=['POST'])
 @jwt_required()
@@ -82,7 +84,14 @@ def delete_project(project_id):
         if not project:
             return jsonify({"success": False, "error": "Project not found"}), 404
         
+        # Delete all related records first (maintain referential integrity)
+        from models import QuotationVersion, ExecutionState, WBSTask, CognitiveLearningLog
+        
         QuotationVersion.query.filter_by(project_id=project_id).delete()
+        ExecutionState.query.filter_by(project_id=project_id).delete()
+        WBSTask.query.filter_by(project_id=project_id).delete()
+        CognitiveLearningLog.query.filter_by(project_id=project_id).delete()
+        
         db.session.delete(project)
         db.session.commit()
         return jsonify({"success": True, "message": f"Project {project_id} deleted"})
@@ -124,32 +133,67 @@ def manage_customers():
             data = request.json
             new_id = data.get('id', str(uuid.uuid4()))
             
-            # 🚨 ENCRYPT THE OS PASSWORD BEFORE SAVING
-            os_pass_raw = data.get('os_password')
-            encrypted_os_pass = None
-            if os_pass_raw and os_pass_raw != "********":
-                # We package it as a dict to use your existing credential manager
-                enc_dict = cm.encrypt_credentials({"os_pass": os_pass_raw})
-                encrypted_os_pass = json.dumps(enc_dict)
+            # 🚨 ENCRYPT ALL CREDENTIALS BEFORE SAVING
+            def encrypt_credential_pair(ak_value, sk_value):
+                """Encrypt AK/SK pair together"""
+                if not ak_value or not sk_value or ak_value == "********" or sk_value == "********":
+                    return None, None
+                try:
+                    enc_dict = cm.encrypt_credentials(ak_value, sk_value)
+                    encrypted_json = json.dumps(enc_dict)
+                    return encrypted_json, encrypted_json
+                except Exception as e:
+                    logger.error(f"Failed to encrypt credentials: {str(e)}")
+                    return None, None
+            
+            def encrypt_single_credential(value):
+                """Encrypt a single credential field"""
+                if not value or value == "********":
+                    return None
+                try:
+                    # For single field, use a placeholder for SK
+                    enc_dict = cm.encrypt_credentials(value, f"placeholder_for_{hash(value)}")
+                    return json.dumps(enc_dict)
+                except Exception as e:
+                    logger.error(f"Failed to encrypt single credential: {str(e)}")
+                    return None
+            
+            # Encrypt AK/SK pairs
+            ak, sk = encrypt_credential_pair(data.get('ak'), data.get('sk'))
+            tier1_ak, tier1_sk = encrypt_credential_pair(data.get('tier1_ak'), data.get('tier1_sk'))
+            tier2_ak, tier2_sk = encrypt_credential_pair(data.get('tier2_ak'), data.get('tier2_sk'))
+            tier3_ak, tier3_sk = encrypt_credential_pair(data.get('tier3_ak'), data.get('tier3_sk'))
+            aws_ak, aws_sk = encrypt_credential_pair(data.get('aws_ak'), data.get('aws_sk'))
+            
+            # Encrypt single credentials
+            azure_client_secret = encrypt_single_credential(data.get('azure_client_secret'))
+            os_password = encrypt_single_credential(data.get('os_password'))
 
             c = Customer(
                 id=new_id,
                 name=data.get('name'), region=data.get('region'), cio=data.get('cio'),
                 it_lead=data.get('it_lead'), architect=data.get('architect'),
                 
-                # Note: To fully secure your vault, the AK/SKs should also be encrypted via cm.encrypt_credentials
-                ak=data.get('ak'), sk=data.get('sk'),
-                tier1_ak=data.get('tier1_ak'), tier1_sk=data.get('tier1_sk'),
-                tier2_ak=data.get('tier2_ak'), tier2_sk=data.get('tier2_sk'),
-                tier3_ak=data.get('tier3_ak'), tier3_sk=data.get('tier3_sk'),
-                aws_ak=data.get('aws_ak'), aws_sk=data.get('aws_sk'),
-                azure_tenant_id=data.get('azure_tenant_id'), azure_client_id=data.get('azure_client_id'),
-                azure_client_secret=data.get('azure_client_secret'), azure_subscription_id=data.get('azure_subscription_id'),
+                # Store encrypted credentials (or None if not provided)
+                ak=ak if ak is not None else data.get('ak'),
+                sk=sk if sk is not None else data.get('sk'),
+                tier1_ak=tier1_ak if tier1_ak is not None else data.get('tier1_ak'),
+                tier1_sk=tier1_sk if tier1_sk is not None else data.get('tier1_sk'),
+                tier2_ak=tier2_ak if tier2_ak is not None else data.get('tier2_ak'),
+                tier2_sk=tier2_sk if tier2_sk is not None else data.get('tier2_sk'),
+                tier3_ak=tier3_ak if tier3_ak is not None else data.get('tier3_ak'),
+                tier3_sk=tier3_sk if tier3_sk is not None else data.get('tier3_sk'),
+                aws_ak=aws_ak if aws_ak is not None else data.get('aws_ak'),
+                aws_sk=aws_sk if aws_sk is not None else data.get('aws_sk'),
+                azure_tenant_id=data.get('azure_tenant_id'),
+                azure_client_id=data.get('azure_client_id'),
+                azure_client_secret=azure_client_secret if azure_client_secret is not None else data.get('azure_client_secret'),
+                azure_subscription_id=data.get('azure_subscription_id'),
                 vcenter_host=data.get('vcenter_host'),
                 
                 os_domain=data.get('os_domain'), 
                 os_user=data.get('os_user'), 
-                os_password=encrypted_os_pass # 🚨 SECURE CIPHERTEXT SAVED
+                os_password=os_password if os_password is not None else data.get('os_password')
             )
             db.session.add(c)
             db.session.commit()
@@ -177,13 +221,70 @@ def update_delete_customer(c_id):
             master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
             cm = get_credential_manager(master_password)
 
-            # 🚨 INTERCEPT AND ENCRYPT OS PASSWORD IF IT WAS CHANGED
-            if 'os_password' in data:
-                if data['os_password'] and data['os_password'] != "********":
-                    enc_dict = cm.encrypt_credentials({"os_pass": data['os_password']})
-                    customer.os_password = json.dumps(enc_dict)
-                # Remove it from data so the generic loop doesn't overwrite it with plaintext
-                del data['os_password'] 
+            # 🚨 ENCRYPT ALL CREDENTIALS IF THEY WERE CHANGED
+            def encrypt_credential_pair(ak_value, sk_value):
+                """Encrypt AK/SK pair together"""
+                if not ak_value or not sk_value or ak_value == "********" or sk_value == "********":
+                    return None, None
+                try:
+                    enc_dict = cm.encrypt_credentials(ak_value, sk_value)
+                    encrypted_json = json.dumps(enc_dict)
+                    return encrypted_json, encrypted_json
+                except Exception as e:
+                    logger.error(f"Failed to encrypt credentials: {str(e)}")
+                    return None, None
+            
+            def encrypt_single_credential(value):
+                """Encrypt a single credential field"""
+                if not value or value == "********":
+                    return None
+                try:
+                    # For single field, use a placeholder for SK
+                    enc_dict = cm.encrypt_credentials(value, f"placeholder_for_{hash(value)}")
+                    return json.dumps(enc_dict)
+                except Exception as e:
+                    logger.error(f"Failed to encrypt single credential: {str(e)}")
+                    return None
+            
+            # Check and encrypt AK/SK pairs
+            ak_sk_pairs = [
+                ('ak', 'sk'),
+                ('tier1_ak', 'tier1_sk'),
+                ('tier2_ak', 'tier2_sk'),
+                ('tier3_ak', 'tier3_sk'),
+                ('aws_ak', 'aws_sk')
+            ]
+            
+            for ak_field, sk_field in ak_sk_pairs:
+                if ak_field in data and sk_field in data:
+                    ak_value = data[ak_field]
+                    sk_value = data[sk_field]
+                    
+                    # Only encrypt if both are provided and not masked
+                    if ak_value and sk_value and ak_value != "********" and sk_value != "********":
+                        # Check if already encrypted
+                        if not (isinstance(ak_value, str) and ak_value.startswith('{') and 'encrypted_' in ak_value):
+                            encrypted_ak, encrypted_sk = encrypt_credential_pair(ak_value, sk_value)
+                            if encrypted_ak and encrypted_sk:
+                                customer.__setattr__(ak_field, encrypted_ak)
+                                customer.__setattr__(sk_field, encrypted_sk)
+                                # Remove from data so generic loop doesn't overwrite
+                                del data[ak_field]
+                                del data[sk_field]
+            
+            # Check and encrypt single credentials
+            single_credentials = ['azure_client_secret', 'os_password']
+            for field in single_credentials:
+                if field in data:
+                    value = data[field]
+                    if value and value != "********":
+                        # Check if already encrypted
+                        if not (isinstance(value, str) and value.startswith('{') and 'encrypted_' in value):
+                            encrypted = encrypt_single_credential(value)
+                            if encrypted:
+                                customer.__setattr__(field, encrypted)
+                                # Remove from data so generic loop doesn't overwrite
+                                del data[field]
 
             # Generic update for remaining fields
             for key in data:
@@ -206,3 +307,52 @@ def get_global_wbs():
 @jwt_required()
 def manage_playbooks():
     return jsonify({"success": True})
+
+@crm_bp.route('/api/erp/projects/<project_id>/set-phase', methods=['POST'])
+@jwt_required()
+def set_project_phase(project_id):
+    """Admin override to set project phase (for retroactive projects)"""
+    try:
+        data = request.json
+        phase = data.get('phase')
+        if not phase:
+            return jsonify({"success": False, "error": "Phase required"}), 400
+            
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+            
+        # Update lifecycle state in JSON data
+        project_data = json.loads(project.data)
+        project_data['lifecycleState'] = phase
+        
+        # Also update database column if needed
+        project.data = json.dumps(project_data, ensure_ascii=False)
+        
+        # Also update execution state if it exists
+        execution_state = ExecutionState.query.filter_by(project_id=project_id).first()
+        if execution_state:
+            # Map lifecycle phase to execution phase
+            # Check if it's a greenfield project
+            project_data = json.loads(project.data)
+            is_greenfield = project_data.get('project_type') == 'greenfield' or project.project_type == 'greenfield'
+            
+            phase_mapping = {
+                '1_arb': 'PHASE_4_0',
+                '2_architecture': 'PHASE_4_0',
+                '3_planning': 'PHASE_4_0',
+                '4_execution': 'PHASE_4_1',  # Start of execution
+                '5_postlive': 'PHASE_4_3' if is_greenfield else 'PHASE_4_6',  # Last phase for project type
+                '6_completed': 'COMPLETED'
+            }
+            execution_phase = phase_mapping.get(phase, 'PHASE_4_0')
+            execution_state.current_phase = execution_phase
+            execution_state.status = 'COMPLETED' if execution_phase == 'COMPLETED' else 'PENDING'
+        
+        db.session.commit()
+        
+        return jsonify({"success": True, "phase": phase, "project_id": project_id, 
+                       "execution_phase_updated": execution_state is not None})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
