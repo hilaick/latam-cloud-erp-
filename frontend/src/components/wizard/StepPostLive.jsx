@@ -11,16 +11,16 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
             <div className="mb-8 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4 md:px-8">
                 <div>
                     <h3 className="font-black text-2xl text-slate-800"><i className="fas fa-award text-amber-500 mr-3"></i> Step 5: Post-Live Governance</h3>
-                    <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation, Digital Twin mapping, and WAR Sign-Off.</p>
+                    <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation, Digital Twin mapping, and Commercial Handover.</p>
                 </div>
-                {isCurrent && (
+                {isCurrent && project?.lifecycleState !== '6_completed' && project?.lifecycleState !== '5_awaiting_commercial' && (
                     <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 whitespace-nowrap">
                         Archive Project <i className="fas fa-check-double ml-2"></i>
                     </button>
                 )}
             </div>
 
-            {/* 3-TAB POST-LIVE NAVIGATION */}
+            {/* 4-TAB POST-LIVE NAVIGATION */}
             <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
                 <button 
                     onClick={() => setSubTab('diff')} 
@@ -40,19 +40,192 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
                 >
                     <i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off
                 </button>
+                {/* 🚨 NEW COMMERCIAL TRUE-UP TAB */}
+                <button 
+                    onClick={() => setSubTab('commercial')} 
+                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}
+                >
+                    <i className="fas fa-shopping-cart mr-2"></i> 4. Commercial True-Up
+                </button>
             </div>
             
             <div className="px-4 md:px-8">
                 {subTab === 'diff' && <PhaseThreeWayDiff project={project} onUpdateProject={onUpdateProject} />}
                 {subTab === 'constellation' && <LiveConstellationView activeProject={project} />}
                 {subTab === 'war' && <PhasePostLive activeProject={project} onUpdateProject={onUpdateProject} />}
+                {subTab === 'commercial' && <CommercialTrueUpView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
         </div>
     );
 }
 
 // ==========================================
-// ⚖️ 1. 3-WAY INFRASTRUCTURE DIFF
+// 🚨 4. COMMERCIAL TRUE-UP (THE EXIT GATE)
+// ==========================================
+function CommercialTrueUpView({ activeProject, onUpdateProject }) {
+    const [isLoading, setIsLoading] = useState(false);
+    const [matrix, setMatrix] = useState(null);
+
+    const handleRunTrueUp = async () => {
+        setIsLoading(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const res = await fetch('/api/finops/reconcile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ projectId: activeProject.id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setMatrix(data.matrix);
+            } else {
+                alert(`Error reconciling FinOps Matrix: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error during BSS API call: ${err.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleHandover = () => {
+        onUpdateProject(activeProject.id, 'lifecycleState', '5_awaiting_commercial');
+        alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped. The project is now owned by the Commercial/Partner team for final PO True-Up.");
+    };
+
+    return (
+        <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-8">
+                <div className="flex justify-between items-start mb-6 border-b border-emerald-100 pb-6">
+                    <div>
+                        <h4 className="font-black text-xl text-emerald-800 flex items-center">
+                            <i className="fas fa-shopping-cart text-emerald-500 mr-3"></i> Procurement & PO Handover
+                        </h4>
+                        <p className="text-xs font-bold text-emerald-600/70 mt-1 uppercase tracking-widest max-w-2xl">
+                            Technical execution is complete. Compare the live Pay-Per-Use (PPU) environment against the Commercial Intent defined in the blueprint to generate the final PO Shopping List.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={handleRunTrueUp} 
+                        disabled={isLoading}
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
+                    >
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS API...</> : <><i className="fas fa-sync-alt mr-2"></i> Run BSS API Scan</>}
+                    </button>
+                </div>
+
+                {!matrix ? (
+                    <div className="text-center py-16 text-emerald-300">
+                        <i className="fas fa-file-invoice-dollar text-6xl mb-4 opacity-50"></i>
+                        <h3 className="font-black text-lg">Awaiting Commercial Scan</h3>
+                        <p className="text-xs font-medium mt-2">Run the scan to cross-reference Huawei Cloud Billing (BSS) active orders.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-8 animate-fade-in">
+                        {/* Summary Blocks */}
+                        <div className="grid grid-cols-3 gap-6">
+                            <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl shadow-inner text-center">
+                                <div className="text-3xl font-black text-slate-800">{matrix.summary.covered}</div>
+                                <div className="text-[10px] font-black uppercase text-slate-500 mt-1">Covered Resources</div>
+                            </div>
+                            <div className={`p-5 rounded-xl border shadow-inner text-center ${matrix.summary.missing_ri > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                <div className={`text-3xl font-black ${matrix.summary.missing_ri > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{matrix.summary.missing_ri}</div>
+                                <div className={`text-[10px] font-black uppercase mt-1 ${matrix.summary.missing_ri > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>Missing RI Contracts</div>
+                            </div>
+                            <div className={`p-5 rounded-xl border shadow-inner text-center ${matrix.summary.missing_account_services > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                <div className={`text-3xl font-black ${matrix.summary.missing_account_services > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{matrix.summary.missing_account_services}</div>
+                                <div className={`text-[10px] font-black uppercase mt-1 ${matrix.summary.missing_account_services > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>Missing Account Svcs</div>
+                            </div>
+                        </div>
+
+                        {/* Deployable Assets Table */}
+                        <div>
+                            <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Deployable Assets (Compute, DB, Storage)</h4>
+                            <table className="w-full text-left bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm text-sm">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
+                                    <tr>
+                                        <th className="p-3">Resource Name</th>
+                                        <th className="p-3">Type</th>
+                                        <th className="p-3">Commercial Intent (Quoted)</th>
+                                        <th className="p-3 text-center">BSS API Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {matrix.deployable_assets.map((asset, i) => (
+                                        <tr key={i} className="hover:bg-slate-50">
+                                            <td className="p-3 font-bold text-slate-700">{asset.name}</td>
+                                            <td className="p-3 text-slate-600">{asset.type}</td>
+                                            <td className="p-3 font-mono text-slate-500">{asset.billing_mode}</td>
+                                            <td className="p-3 text-center">
+                                                {asset.status === 'COVERED' ? (
+                                                    <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check mr-1"></i> Covered</span>
+                                                ) : (
+                                                    <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-exclamation-triangle mr-1"></i> Action Required (PO)</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Account Assets Table */}
+                        {matrix.account_assets.length > 0 && (
+                            <div>
+                                <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Account Assets (Support Plans, Security)</h4>
+                                <table className="w-full text-left bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
+                                        <tr>
+                                            <th className="p-3">Service Name</th>
+                                            <th className="p-3">Type</th>
+                                            <th className="p-3">Commercial Intent (Quoted)</th>
+                                            <th className="p-3 text-center">BSS API Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {matrix.account_assets.map((asset, i) => (
+                                            <tr key={i} className="hover:bg-slate-50">
+                                                <td className="p-3 font-bold text-slate-700">{asset.name}</td>
+                                                <td className="p-3 text-slate-600">{asset.type}</td>
+                                                <td className="p-3 font-mono text-slate-500">{asset.billing_mode}</td>
+                                                <td className="p-3 text-center">
+                                                    {asset.status === 'COVERED' ? (
+                                                        <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check mr-1"></i> Covered</span>
+                                                    ) : (
+                                                        <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-exclamation-triangle mr-1"></i> Action Required (PO)</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-800 p-6 rounded-xl flex justify-between items-center shadow-lg mt-8">
+                            <div>
+                                <h4 className="font-black text-white text-lg">Delivery Exit Gate</h4>
+                                <p className="text-slate-400 text-xs mt-1">Export this True-Up Matrix for Procurement, close technical execution, and shift accountability to Sales.</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => window.print()} className="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-slate-600">
+                                    <i className="fas fa-file-pdf mr-2"></i> Export Shopping List
+                                </button>
+                                <button onClick={handleHandover} className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-emerald-400">
+                                    Mark Technically Complete <i className="fas fa-arrow-right ml-2"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ==========================================
+// ⚖️ 1. 3-WAY INFRASTRUCTURE DIFF (Overhauled)
 // ==========================================
 function PhaseThreeWayDiff({ project, onUpdateProject }) {
     const [isScanningNoc, setIsScanningNoc] = useState(false);
@@ -66,12 +239,20 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const hasNocScanned = nocData !== null;
 
-    // Calculate dynamic creep
-    const requiresCR = hasNocScanned && ['compute', 'databases', 'network', 'storage', 'security'].some(cat => {
-        const blueprintCat = cat === 'database' ? 'databases' : cat;
-        const quoted = project?.blueprintData?.topology?.[blueprintCat]?.length || 0;
-        const actual = nocData?.[cat] || 0;
-        return (actual - quoted) > 0;
+    // 🚨 Overhauled to dynamically extract all categories from the API payload so nothing is hidden
+    const liveCategories = useMemo(() => {
+        if (!hasNocScanned || !nocData?.raw) return [];
+        return Object.keys(nocData.raw).map(key => ({
+            id: key,
+            label: key.charAt(0).toUpperCase() + key.slice(1).replace('_', ' '),
+            count: nocData.raw[key]?.length || 0,
+            items: nocData.raw[key] || []
+        })).filter(cat => cat.count > 0);
+    }, [nocData, hasNocScanned]);
+
+    const requiresCR = hasNocScanned && liveCategories.some(cat => {
+        const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0;
+        return (cat.count - quoted) > 0;
     });
 
     useEffect(() => {
@@ -95,31 +276,15 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     customer_id: project.customerId, 
                     projectId: project.id, 
                     region: project.region || 'la-south-2',
-                    provider: 'Huawei' // Final NOC Scan verifies Target Environment (Huawei)
+                    provider: 'Huawei'
                 })
             });
             const data = await res.json();
             
             if (data.success) {
-                const liveCompute = data.inventory.compute?.length || 0;
-                const liveDb = (data.inventory.databases || data.inventory.database)?.length || 0;
-                const liveNet = data.inventory.network?.length || 0;
-                const liveStorage = data.inventory.storage?.length || 0;
-                const liveSecurity = data.inventory.security?.length || 0;
-
+                // 🚨 Just store the raw payload directly so we don't accidentally drop nested objects like Vaults/EIPs
                 const finalNoc = { 
-                    compute: liveCompute, 
-                    databases: liveDb, 
-                    network: liveNet, 
-                    storage: liveStorage, 
-                    security: liveSecurity,
-                    raw: {
-                        compute: data.inventory.compute || [],
-                        databases: data.inventory.databases || data.inventory.database || [],
-                        network: data.inventory.network || [],
-                        storage: data.inventory.storage || [],
-                        security: data.inventory.security || []
-                    }
+                    raw: data.inventory || {}
                 };
                 
                 setNocData(finalNoc);
@@ -193,7 +358,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-slate-100 text-[10px] uppercase text-slate-500">
                                         <tr>
-                                            <th className="p-3">Resource Type</th>
+                                            <th className="p-3">Resource Category</th>
                                             <th className="p-3 text-center border-l border-slate-200 bg-slate-50">1. As-Is (Source MgC)</th>
                                             <th className="p-3 text-center border-l border-slate-200 bg-blue-50/50">2. To-Be (SOW Blueprint)</th>
                                             <th className="p-3 text-center border-l border-slate-200 bg-emerald-50/50">3. Actual Built (Target NOC)</th>
@@ -201,24 +366,21 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
-                                        {[
-                                            { id: 'compute', icon: 'fa-server', label: 'Compute (ECS/VMs)' },
-                                            { id: 'database', icon: 'fa-database', label: 'Databases (RDS)' }, 
-                                            { id: 'network', icon: 'fa-network-wired', label: 'Networking (VPC/EIP/NAT/CDN)' },
-                                            { id: 'storage', icon: 'fa-hdd', label: 'Storage & Backup (OBS/CBR)' },
-                                            { id: 'security', icon: 'fa-shield-alt', label: 'Security (WAF/Host Security)' }
-                                        ].map(cat => {
+                                        {liveCategories.map(cat => {
                                             const asIs = project?.mgcData?.[cat.id] || 0;
-                                            const blueprintCat = cat.id === 'database' ? 'databases' : cat.id;
-                                            const quoted = project?.blueprintData?.topology?.[blueprintCat]?.length || 0; 
-                                            const actual = nocData?.[cat.id] || nocData?.[blueprintCat] || 0;
-                                            const creep = hasNocScanned ? (actual - quoted) : 0;
+                                            const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0; 
+                                            const actual = cat.count;
+                                            const creep = actual - quoted;
                                             
-                                            if (asIs === 0 && quoted === 0 && actual === 0) return null;
+                                            let icon = 'fa-server';
+                                            if(cat.id.includes('database')) icon = 'fa-database';
+                                            else if(cat.id.includes('network') || cat.id.includes('vpc') || cat.id.includes('eip')) icon = 'fa-network-wired';
+                                            else if(cat.id.includes('storage') || cat.id.includes('vault') || cat.id.includes('obs')) icon = 'fa-hdd';
+                                            else if(cat.id.includes('security')) icon = 'fa-shield-alt';
 
                                             return (
                                                 <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-3 font-bold text-slate-700"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
+                                                    <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${icon} text-slate-400 w-5`}></i> {cat.label}</td>
                                                     <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIs}</td>
                                                     <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
                                                     
@@ -226,12 +388,12 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                     <td 
                                                         className={`p-3 text-center font-mono font-black border-l border-slate-100 bg-emerald-50/30 ${actual > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-100 hover:shadow-inner transition-all group' : 'text-slate-400'}`}
                                                         onClick={() => {
-                                                            if (actual > 0 && nocData?.raw) {
+                                                            if (actual > 0) {
                                                                 setDetailsModal({ 
                                                                     show: true, 
                                                                     category: cat.id, 
                                                                     label: cat.label, 
-                                                                    items: nocData.raw[blueprintCat] || nocData.raw[cat.id] || [] 
+                                                                    items: cat.items 
                                                                 });
                                                             }
                                                         }}
@@ -243,7 +405,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
                                                     <td className="p-3 text-center border-l border-slate-100">
                                                         <span className={`px-2 py-1 rounded text-xs font-black ${creep > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                            {creep > 0 ? `+${creep} (CR)` : creep === 0 && hasNocScanned ? 'Verified' : creep}
+                                                            {creep > 0 ? `+${creep} (CR)` : creep === 0 ? 'Verified' : creep}
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -272,8 +434,8 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex items-center gap-4 shadow-sm">
                                     <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-xl shrink-0"><i className="fas fa-check-circle"></i></div>
                                     <div>
-                                        <h4 className="font-black text-emerald-800 text-sm">Financial Scope Validated</h4>
-                                        <p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. No CR required.</p>
+                                        <h4 className="font-black text-emerald-800 text-sm">Technical Scope Validated</h4>
+                                        <p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. Please proceed to Commercial True-Up.</p>
                                     </div>
                                 </div>
                             )}
@@ -318,50 +480,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         <div><span className="font-bold">Go-Live Date:</span> {formatShortDate(project.date)}</div>
                                         <div><span className="font-bold">Lead Architect:</span> {project.sa || 'N/A'}</div>
                                         <div><span className="font-bold">Partner:</span> {project.partner || 'N/A'}</div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h3 className="font-black text-lg text-slate-900 border-b border-slate-200 pb-2 mb-4">Infrastructure Verification</h3>
-                                    <table className="w-full text-left border border-slate-200">
-                                        <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-                                            <tr>
-                                                <th className="p-2 border-b border-slate-200">Category</th>
-                                                <th className="p-2 border-b border-slate-200 text-center">Quoted (SOW)</th>
-                                                <th className="p-2 border-b border-slate-200 text-center">Provisioned (Live)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td className="p-2 border-b border-slate-100">Compute (ECS/VMs)</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{project?.blueprintData?.topology?.compute?.length || 0}</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{nocData?.compute || 0}</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-2 border-b border-slate-100">Databases (RDS)</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{project?.blueprintData?.topology?.databases?.length || 0}</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{nocData?.databases || 0}</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="p-2 border-b border-slate-100">Networking & Storage</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{(project?.blueprintData?.topology?.network?.length || 0) + (project?.blueprintData?.topology?.storage?.length || 0)}</td>
-                                                <td className="p-2 border-b border-slate-100 text-center">{(nocData?.network || 0) + (nocData?.storage || 0)}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <div className="mt-16 pt-8 border-t-2 border-slate-200">
-                                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-8">Formal Handover Certification</h3>
-                                <div className="flex justify-between gap-12">
-                                    <div className="flex-1">
-                                        <div className="border-b border-slate-400 h-10 mb-2"></div>
-                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Customer Representative</div>
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="border-b border-slate-400 h-10 mb-2"></div>
-                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">LATAM Cloud Delivery</div>
                                     </div>
                                 </div>
                             </div>
@@ -412,7 +530,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                         {items.map((item, idx) => (
                                                             <tr key={idx}>
                                                                 <td className="p-2 border-b border-slate-100 font-bold">{item.name || item.id || `Item ${idx}`}</td>
-                                                                <td className="p-2 border-b border-slate-100 text-slate-600">{item.type || item.flavor || item.engine || 'Standard'}</td>
+                                                                <td className="p-2 border-b border-slate-100 text-slate-600">{item.type || item.flavor || item.engine || item.bandwidth || 'Standard'}</td>
                                                                 <td className="p-2 border-b border-slate-100 font-mono text-slate-500">{item.ip || item.private_ip_address || item.cidr || 'N/A'}</td>
                                                             </tr>
                                                         ))}
@@ -459,7 +577,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         {detailsModal.items.map((item, i) => (
                                             <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
                                                 <td className="p-3 font-bold text-slate-800">{item.name || item.id || `Resource-${i}`}</td>
-                                                <td className="p-3 text-slate-600">{item.type || item.engine || item.flavor || 'Standard'}</td>
+                                                <td className="p-3 text-slate-600">{item.type || item.engine || item.flavor || item.bandwidth || 'Standard'}</td>
                                                 <td className="p-3 font-mono text-slate-500">{item.ip || item.private_ip_address || item.cidr || item.region || 'N/A'}</td>
                                             </tr>
                                         ))}
