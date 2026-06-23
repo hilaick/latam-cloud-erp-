@@ -10,15 +10,109 @@ from flask_jwt_extended import jwt_required
 from services.resource_parser import parse_resource_log, get_all_deployments
 from services.huawei_load_balancer import HuaweiLoadBalancer
 
-from models import Customer
+from models import Customer, ProjectData
 from services.huawei_discovery import HuaweiDiscovery
 from services.source_resources_parser import parse_source_resources_excel
 from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
 from services.tool_recommender import ToolRecommender
+from services.credential_manager import get_credential_manager
+
+# 🚨 Import the new FinOps Scanner
+from services.huawei_bss_scanner import HuaweiBSSScanner
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
+
+# 🚨 NEW: Phase 5 Commercial True-Up Endpoint
+@cloud_ops_bp.route('/api/finops/reconcile', methods=['POST'])
+@jwt_required()
+def reconcile_commercial_intent():
+    try:
+        data = request.get_json()
+        project_id = data.get('projectId')
+        
+        project_record = ProjectData.query.get(project_id)
+        if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        project_data = json.loads(project_record.data)
+        customer_id = project_data.get('customerId')
+        blueprint_data = project_data.get('blueprintData', {})
+        commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
+        
+        if not customer_id: return jsonify({"success": False, "error": "No Customer linked to this project."}), 400
+        
+        customer = Customer.query.get(customer_id)
+        if not customer or not customer.ak or not customer.sk: return jsonify({"success": False, "error": "Customer Master AK/SK missing from Vault."}), 400
+            
+        ak_str = str(customer.ak).strip()
+        sk_str = str(customer.sk).strip()
+        
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
+        
+        if not ak_str.startswith('{') and len(ak_str) > 5: ak, sk = ak_str, sk_str
+        else: ak, sk = cm.decrypt_credentials(json.loads(ak_str))
+            
+        scanner = HuaweiBSSScanner(ak=ak, sk=sk)
+        reconciliation_matrix = scanner.reconcile_intent_matrix(commercial_intent)
+        
+        return jsonify({"success": True, "matrix": reconciliation_matrix})
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
+@jwt_required()
+def get_live_inventory():
+    try:
+        data = request.get_json()
+        customer_id = data.get('customer_id')
+        provider = data.get('provider', 'Huawei')
+        
+        if not customer_id:
+            return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
+            
+        customer = Customer.query.get(customer_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer missing from Vault."}), 404
+
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+
+        if provider == 'Huawei':
+            if not customer.ak or not customer.sk:
+                return jsonify({"success": False, "error": "Huawei Vault keys incomplete."}), 404
+            discovery_engine = HuaweiDiscovery(
+                encrypted_ak_data=customer.ak,
+                encrypted_sk_data=customer.sk,
+                region=customer.region or data.get('region', 'la-south-2'),
+                master_password=master_password
+            )
+            result = discovery_engine.discover_all()
+
+        elif provider == 'AWS':
+            engine = HyperscalerDiscoveryEngine(customer_id)
+            result = engine.run_aws_agentless_discovery(region=data.get('region', 'us-east-1'))
+
+        elif provider == 'Azure':
+            engine = HyperscalerDiscoveryEngine(customer_id)
+            sub_id = data.get('subscriptionId')
+            if not sub_id and getattr(customer, 'azure_subscription_id', None):
+                sub_id = customer.azure_subscription_id
+            if not sub_id: sub_id = '00000000-0000-0000-0000-000000000000'
+            result = engine.run_azure_agentless_discovery(subscription_id=sub_id)
+        else:
+            return jsonify({"success": False, "error": f"Unknown provider: {provider}"}), 400
+        
+        if result.get("success"):
+            return jsonify({"success": True, "inventory": result.get("inventory"), "message": f"{provider} Discovery completed safely."})
+        else:
+            return jsonify({"success": False, "error": result.get("error")}), 500
+
+    except ValueError as ve:
+        return jsonify({"success": False, "error": f"Vault Decryption Failed. Details: {str(ve)}"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
 @cloud_ops_bp.route('/api/audit', methods=['POST'])
 @jwt_required()
@@ -100,62 +194,6 @@ def get_logs():
         return jsonify({"message": "No logs found"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-@cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
-@jwt_required()
-def get_live_inventory():
-    try:
-        data = request.get_json()
-        customer_id = data.get('customer_id')
-        provider = data.get('provider', 'Huawei')
-        
-        if not customer_id:
-            return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
-            
-        customer = Customer.query.get(customer_id)
-        if not customer:
-            return jsonify({"success": False, "error": "Customer missing from Vault."}), 404
-
-        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-
-        if provider == 'Huawei':
-            if not customer.ak or not customer.sk:
-                return jsonify({"success": False, "error": "Huawei Vault keys incomplete."}), 404
-            discovery_engine = HuaweiDiscovery(
-                encrypted_ak_data=customer.ak,
-                encrypted_sk_data=customer.sk,
-                region=customer.region or data.get('region', 'la-south-2'),
-                master_password=master_password
-            )
-            result = discovery_engine.discover_all()
-
-        elif provider == 'AWS':
-            engine = HyperscalerDiscoveryEngine(customer_id)
-            result = engine.run_aws_agentless_discovery(region=data.get('region', 'us-east-1'))
-
-        elif provider == 'Azure':
-            engine = HyperscalerDiscoveryEngine(customer_id)
-            sub_id = data.get('subscriptionId')
-            if not sub_id and getattr(customer, 'azure_subscription_id', None):
-                sub_id = customer.azure_subscription_id
-            
-            if not sub_id:
-                sub_id = '00000000-0000-0000-0000-000000000000'
-                
-            result = engine.run_azure_agentless_discovery(subscription_id=sub_id)
-
-        else:
-            return jsonify({"success": False, "error": f"Unknown provider: {provider}"}), 400
-        
-        if result.get("success"):
-            return jsonify({"success": True, "inventory": result.get("inventory"), "message": f"{provider} Discovery completed safely."})
-        else:
-            return jsonify({"success": False, "error": result.get("error")}), 500
-
-    except ValueError as ve:
-        return jsonify({"success": False, "error": f"Vault Decryption Failed. Details: {str(ve)}"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
 @cloud_ops_bp.route('/api/erp/discovery/agentless', methods=['POST'])
 @jwt_required()
@@ -272,8 +310,6 @@ def query_live_pricing():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-
-
 @cloud_ops_bp.route('/api/finops/billing_validation', methods=['POST'])
 @jwt_required()
 def validate_actual_billing():
@@ -289,9 +325,8 @@ def validate_actual_billing():
         has_drs = any("DRS" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         has_net = any("Network" in str(item.get("service", "")) for item in bom_items if item.get('selected'))
         
-        # 🚨 FIX: Ensure we generate line items even if estimated_cost passed is 0
         fallback_baseline = estimated_cost if estimated_cost > 0 else (len(bom_items) * 150)
-        if fallback_baseline == 0: fallback_baseline = 500 # Absolute minimum mock invoice
+        if fallback_baseline == 0: fallback_baseline = 500 
         
         if has_sms or len(bom_items) > 0:
             actual_sms = (fallback_baseline * 0.40) * 0.95
@@ -303,7 +338,6 @@ def validate_actual_billing():
                 "note": "SMS Worker s6.large.2 compute charges + Target ECS provisioning."
             })
             
-            # Scope Creep / Waste Detection
             hidden_evs = (fallback_baseline * 0.35)
             total_invoiced += hidden_evs
             line_items.append({
@@ -368,16 +402,12 @@ def get_migration_tools():
 @cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
 @jwt_required()
 def get_migration_recommendations():
-    """Get intelligent tool recommendations based on target architecture"""
     try:
         data = request.json
         target_architecture = data.get('target_architecture', [])
-        
-        if not target_architecture:
-            return jsonify({"success": False, "error": "No target architecture data provided"}), 400
+        if not target_architecture: return jsonify({"success": False, "error": "No target architecture data provided"}), 400
         
         recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
-        
         wbs_type = data.get('wbs_type', 'execution')
         if data.get('generate_wbs', False):
             wbs_tasks = ToolRecommender.generate_wbs_tasks(recommendations, wbs_type)
