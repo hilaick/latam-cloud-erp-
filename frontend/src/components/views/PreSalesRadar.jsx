@@ -1,6 +1,6 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
-import { EditableCell, TriageCardFlow } from '../../utils/helpers'; 
+import { EditableCell, PreSalesQualificationMatrix } from '../../utils/helpers'; 
 import TwoFactorModal from '../utils/TwoFactorModal';
 
 export default function PreSalesRadar() {
@@ -41,26 +41,52 @@ export default function PreSalesRadar() {
     const handleAddNewLead = () => { 
         if(!newLeadName || !newLeadSA || !newLeadCountry || !newLeadCustomer) return alert("Project Name, Customer Account, Target Country, and SA are required."); 
         
-        const matchedCustomer = (customers || []).find(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim());
-        const isGreenfield = triage.project_type === 'greenfield';
-        const isPoC = triage.project_type === 'poc';
+        // Try to find a matching customer (case-insensitive, partial match)
+        const matchedCustomer = (customers || []).find(c => 
+            c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim()
+        );
+        
+        // If no exact match, check for partial matches
+        let customerId = null;
+        let customerName = newLeadCustomer.trim().toUpperCase();
+        
+        if (matchedCustomer) {
+            customerId = matchedCustomer.id;
+            customerName = matchedCustomer.name; // Use the canonical name from database
+        } else {
+            // No matching customer found - this will create a new customer entry
+            // The backend should handle creating the customer if needed
+            console.log('Creating project with new customer:', customerName);
+        }
+
+        const isGreenfield = Array.isArray(triage.project_type) ? triage.project_type.includes('greenfield') : triage.project_type === 'greenfield';
+        const isPoC = Array.isArray(triage.project_type) ? triage.project_type.includes('poc') : triage.project_type === 'poc';
+        
+        // Handle array values for migrationScope and authLevel
+        const migrationScopeValue = Array.isArray(triage.migrationScope) ? 
+            (triage.migrationScope.length > 0 ? triage.migrationScope : (isGreenfield ? [] : ['compute'])) : 
+            triage.migrationScope;
+            
+        const authLevelValue = Array.isArray(triage.authLevel) ? 
+            (triage.authLevel.length > 0 ? triage.authLevel : (isGreenfield ? [] : ['Read-Only (Customer Managed)'])) : 
+            triage.authLevel;
 
         handleAddProject({
             id: String(Date.now()), 
-            name: newLeadName, 
-            customerName: newLeadCustomer.trim(), 
-            customerId: matchedCustomer ? matchedCustomer.id : null, 
+            name: newLeadName.toUpperCase(), 
+            customerName: customerName,
+            customerId: customerId, 
             isWaiting: true, 
             waitingStage: "prospect", 
             health: "Yellow", 
             mrr: 0, 
-            sa: newLeadSA, 
+            sa: newLeadSA.toUpperCase(), 
             country: newLeadCountry, 
             partner: "TBD", 
             techContact: "TBD", 
             sourceEnvironment: isGreenfield ? "Greenfield / Cloud Native" : triage.sourceEnvironment, 
-            authLevel: isGreenfield ? "Cloud Admin API" : triage.authLevel,
-            migrationScope: isGreenfield ? "N/A" : triage.migrationScope,
+            authLevel: authLevelValue,
+            migrationScope: isGreenfield ? "N/A" : migrationScopeValue,
             deliveryScope: triage.deliveryScope, 
             estimatedWorkloads: 0,
             estimatedMigrationHours: 0,
@@ -76,7 +102,13 @@ export default function PreSalesRadar() {
         }); 
         
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
-        setTriage({ project_type: 'standard', migrationScope: 'compute', sourceEnvironment: 'VMware / On-Premise', authLevel: 'Read-Only (Customer Managed)', deliveryScope: 'turnkey' });
+        setTriage({ 
+            project_type: Array.isArray(triage.project_type) ? ['standard'] : 'standard', 
+            migrationScope: Array.isArray(triage.migrationScope) ? ['compute'] : 'compute', 
+            sourceEnvironment: 'VMware / On-Premise', 
+            authLevel: Array.isArray(triage.authLevel) ? ['Read-Only (Customer Managed)'] : 'Read-Only (Customer Managed)', 
+            deliveryScope: 'turnkey' 
+        });
     };
 
     const executeDelete = () => {
@@ -93,19 +125,45 @@ export default function PreSalesRadar() {
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12 relative">
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Pre-Assessment Triage</h3>
+                    <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center"><i className="fas fa-satellite-dish text-blue-500 mr-3 text-lg"></i> Pre-Sales Qualification Matrix</h3>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 pb-8">
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Customer Account *</label>
-                        <input 
-                            type="text" list="new-lead-customers" value={newLeadCustomer} 
-                            onChange={e=>setNewLeadCustomer(e.target.value.toUpperCase())} 
-                            placeholder="Type new or select existing..."
-                            className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold uppercase"
-                        />
-                        <datalist id="new-lead-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                list="new-lead-customers" 
+                                value={newLeadCustomer} 
+                                onChange={e => {
+                                    const value = e.target.value;
+                                    setNewLeadCustomer(value);
+                                    // Try to find a matching customer
+                                    const matchedCustomer = (customers || []).find(c => 
+                                        c.name.toLowerCase().includes(value.toLowerCase().trim()) ||
+                                        value.toLowerCase().trim().includes(c.name.toLowerCase())
+                                    );
+                                    if (matchedCustomer && value.toLowerCase() === matchedCustomer.name.toLowerCase()) {
+                                        // Exact match found
+                                        console.log('Matched customer:', matchedCustomer.name, 'ID:', matchedCustomer.id);
+                                    }
+                                }}
+                                placeholder="Type to search or enter new..."
+                                className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-white outline-none focus:border-blue-500 font-bold uppercase pr-10"
+                            />
+                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400">
+                                <i className="fas fa-chevron-down"></i>
+                            </div>
+                        </div>
+                        <datalist id="new-lead-customers">
+                            {(customers || []).map(c => <option key={c.id} value={c.name} />)}
+                        </datalist>
+                        {newLeadCustomer && !(customers || []).some(c => c.name.toLowerCase() === newLeadCustomer.toLowerCase().trim()) && (
+                            <div className="mt-1 text-[9px] text-amber-600 font-bold">
+                                <i className="fas fa-exclamation-triangle mr-1"></i> New customer will be created
+                            </div>
+                        )}
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Project Name *</label>
@@ -122,10 +180,8 @@ export default function PreSalesRadar() {
                     </div>
                 </div>
                 
-                <h4 className="font-black text-xs uppercase tracking-widest text-slate-500 mb-4">Pipeline Triage Flow</h4>
-                
                 <div className="overflow-x-auto pb-4">
-                    <TriageCardFlow triage={triage} setTriage={setTriage} />
+                    <PreSalesQualificationMatrix triage={triage} setTriage={setTriage} />
                 </div>
 
                 <div className="flex justify-end items-center pt-6 mt-6 border-t border-slate-100">
@@ -209,8 +265,28 @@ export default function PreSalesRadar() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-5">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Customer Account</label>
-                                        <input type="text" list="edit-customers" value={editingProject.customerName || ''} onChange={e => { const selectedName = e.target.value.toUpperCase(); const matched = (customers || []).find(c => c.name.toLowerCase() === selectedName.toLowerCase()); setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null }); }} className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+                                        <div className="relative">
+                                            <input 
+                                                type="text" 
+                                                list="edit-customers" 
+                                                value={editingProject.customerName || ''} 
+                                                onChange={e => { 
+                                                    const selectedName = e.target.value.toUpperCase(); 
+                                                    const matched = (customers || []).find(c => c.name.toLowerCase() === selectedName.toLowerCase().trim());
+                                                    setEditingProject({ ...editingProject, customerName: selectedName, customerId: matched ? matched.id : null }); 
+                                                }} 
+                                                className="w-full p-2 border border-slate-300 rounded bg-white focus:border-blue-500 outline-none text-sm font-bold uppercase pr-10"
+                                            />
+                                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400">
+                                                <i className="fas fa-chevron-down"></i>
+                                            </div>
+                                        </div>
                                         <datalist id="edit-customers">{(customers || []).map(c => <option key={c.id} value={c.name} />)}</datalist>
+                                        {editingProject.customerName && !editingProject.customerId && (
+                                            <div className="mt-1 text-[9px] text-amber-600 font-bold">
+                                                <i className="fas fa-exclamation-triangle mr-1"></i> Customer not linked - will create new entry
+                                            </div>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Name (Scope)</label>
@@ -233,15 +309,15 @@ export default function PreSalesRadar() {
                             </div>
 
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-random text-blue-500 mr-2"></i> Pipeline Triage Configuration</h4>
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4 border-b border-slate-100 pb-2"><i className="fas fa-random text-blue-500 mr-2"></i> Pre-Sales Qualification</h4>
                                 
                                 <div className="overflow-x-auto pb-2">
-                                    <TriageCardFlow 
+                                    <PreSalesQualificationMatrix 
                                         triage={{
-                                            project_type: editingProject.project_type || 'standard',
-                                            migrationScope: editingProject.migrationScope || 'compute',
+                                            project_type: Array.isArray(editingProject.project_type) ? editingProject.project_type : (editingProject.project_type ? [editingProject.project_type] : ['standard']),
+                                            migrationScope: Array.isArray(editingProject.migrationScope) ? editingProject.migrationScope : (editingProject.migrationScope ? [editingProject.migrationScope] : ['compute']),
                                             sourceEnvironment: editingProject.sourceEnvironment || 'VMware / On-Premise',
-                                            authLevel: editingProject.authLevel || 'Read-Only (Customer Managed)',
+                                            authLevel: Array.isArray(editingProject.authLevel) ? editingProject.authLevel : (editingProject.authLevel ? [editingProject.authLevel] : ['Read-Only (Customer Managed)']),
                                             deliveryScope: editingProject.deliveryScope || 'turnkey'
                                         }} 
                                         setTriage={(newTriage) => setEditingProject({...editingProject, ...newTriage})} 

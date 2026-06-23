@@ -5,7 +5,7 @@ import StepArchitecture from './StepArchitecture';
 import StepPlanning from './StepPlanning';
 import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
-import { TriageCardFlow } from '../../utils/helpers';
+import { PreSalesQualificationMatrix } from '../../utils/helpers';
 
 export default function ProjectWizard({ activeProject, onUpdateProject, onClose }) {
     const [showConfig, setShowConfig] = useState(false);
@@ -268,16 +268,16 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                             </div>
 
                             <div className="pt-6 border-t border-slate-200 mt-6">
-                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-random text-purple-500 mr-2"></i> Pipeline Triage & Scope</h4>
+                                <h4 className="font-black text-sm text-slate-800 uppercase mb-4"><i className="fas fa-random text-purple-500 mr-2"></i> Pre-Sales Qualification</h4>
                                 
                                 <div className="overflow-x-auto pb-4">
-                                    <TriageCardFlow 
+                                    <PreSalesQualificationMatrix 
                                         triage={{
-                                            project_type: activeProject.project_type || 'standard',
-                                            migrationScope: activeProject.migrationScope || 'compute',
-                                            sourceEnvironment: activeProject.sourceEnvironment || 'VMware / On-Premise',
-                                            authLevel: activeProject.authLevel || 'Read-Only (Customer Managed)',
-                                            deliveryScope: activeProject.deliveryScope || 'turnkey'
+                                            project_type: Array.isArray(activeProject?.project_type) ? activeProject.project_type : (activeProject?.project_type ? [activeProject.project_type] : ['standard']),
+                                            migrationScope: activeProject?.migrationScope || (activeProject?.project_type === 'greenfield' ? [] : ['compute']),
+                                            sourceEnvironment: activeProject?.sourceEnvironment || 'VMware / On-Premise',
+                                            authLevel: activeProject?.authLevel || (activeProject?.project_type === 'greenfield' ? [] : ['Read-Only (Customer Managed)']),
+                                            deliveryScope: activeProject?.deliveryScope || 'turnkey'
                                         }} 
                                         setTriage={(newTriage) => {
                                             onUpdateProject(activeProject.id, {
