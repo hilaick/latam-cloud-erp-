@@ -12,16 +12,7 @@ from io import StringIO
 from typing import Optional, Dict, Any
 from services.semantic_classifier import classify_unknown_service_with_ai
 
-# ============================================================================
-# AGGRESSIVE SMART LOADER (BYPASSES PANDAS C-ENGINE CRASHES)
-# ============================================================================
-
 def load_dataframe_smart(file_path: str) -> pd.DataFrame:
-    """
-    Aggressively parses Cloud Consoles' messy exports.
-    Scans the file in raw text mode to dynamically locate the true header row, 
-    bypassing junk lines injected by cloud consoles.
-    """
     header_idx = 0
     encodings = ['utf-8-sig', 'utf-8', 'latin1', 'utf-16le', 'cp1252']
     
@@ -64,10 +55,6 @@ def load_dataframe_smart(file_path: str) -> pd.DataFrame:
         pass
 
     raise ValueError("Format cannot be determined. File is either completely empty, heavily corrupted, or highly customized.")
-
-# ============================================================================
-# GENERIC FALLBACK MATCHING DICTIONARY
-# ============================================================================
 
 COLUMN_MAP = {
     'server_name': ['server_name', 'vm name', 'server', 'hostname', 'target name', 'name', 'instance name', 'resource name', 'server name', 'host'],
@@ -158,6 +145,14 @@ def parse_huawei_specifications(spec_string):
                 
     return result
 
+def _extract_billing_mode(row: pd.Series) -> str:
+    """Extracts Commercial Intent from messy quoting columns."""
+    for col in ['billing mode', 'pricing mode', 'term', 'charge mode', 'billing']:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).strip()
+            if val: return val
+    return "Pay-per-use"
+
 def _finalize_resource(res, blueprint):
     cat = res['category']
     if cat == 'compute':
@@ -194,10 +189,6 @@ def _finalize_resource(res, blueprint):
             "name": clean_server_name(res['name']), "type": res['type'], "status": "OK"
         })
 
-# ============================================================================
-# MODERN HUAWEI NESTED PARSER 
-# ============================================================================
-
 def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer") -> Dict[str, Any]:
     print(f"🔄 Ingesting Raw Data: {file_path}")
     
@@ -208,11 +199,13 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
         print("🔍 Columns don't match Huawei structure. Switching to Generic Parser.")
         return process_generic_quotation_df(df, customer_name)
     
+    # 🚨 STRUCTURAL UPGRADE: Added 'commercial_intent' parallel to 'topology'
     blueprint = {
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] },
+        "commercial_intent": { "deployable_assets": [], "account_assets": [] }
     }
 
     current_resource = None
@@ -226,8 +219,8 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
             continue
         
         svc_lower = svc_cat_raw.lower()
+        billing_mode = _extract_billing_mode(row)
         
-        # 🚨 NEW LOGIC: Determines if this row is a sub-component (like Disk) of the previous Compute Node
         is_sub_component = False
         if current_resource and current_resource['category'] == 'compute':
             if any(x in svc_lower for x in ['disk', 'volume', 'bandwidth', 'ip address']) and 'elastic ip' not in svc_lower:
@@ -237,7 +230,6 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
             current_resource['specs'] += f" | {svc_cat_raw}: {svc_name_raw} - {svc_specs_raw}"
             continue
 
-        # If it's a new primary resource (Compute, DB, Storage, Security, etc), finalize the old one and start fresh.
         if current_resource:
             _finalize_resource(current_resource, blueprint)
         
@@ -255,6 +247,20 @@ def process_huawei_quotation(file_path: str, customer_name: str = "TBD_Customer"
 
         if cat == 'unknown':
             cat = classify_unknown_service_with_ai(svc_cat_raw, svc_name_raw)
+
+        # 🚨 FinOps Ledger Injection
+        asset_record = {
+            "id": f"{cat}_{index}",
+            "type": svc_cat_raw,
+            "name": svc_name_raw,
+            "billing_mode": billing_mode,
+            "specification": svc_specs_raw[:100] # truncate long specs for UI
+        }
+        
+        if cat in ['compute', 'database', 'network', 'storage']:
+            blueprint['commercial_intent']['deployable_assets'].append(asset_record)
+        else:
+            blueprint['commercial_intent']['account_assets'].append(asset_record)
 
         current_resource = {
             'name': svc_name_raw,
@@ -284,7 +290,8 @@ def process_generic_quotation_df(df: pd.DataFrame, customer_name: str) -> Dict[s
         "customer": customer_name,
         "delivery_scope": "landing_zone_only",
         "governance": { "requires_hypercare": False, "maintenance_windows": [] },
-        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] }
+        "topology": { "network": [], "compute": [], "databases": [], "storage": [], "security": [] },
+        "commercial_intent": { "deployable_assets": [], "account_assets": [] }
     }
     
     for index, row in df.iterrows():
@@ -292,8 +299,11 @@ def process_generic_quotation_df(df: pd.DataFrame, customer_name: str) -> Dict[s
         flavor = str(row[col_flavor]).strip() if col_flavor and pd.notna(row[col_flavor]) else "MISSING_FLAVOR"
         if flavor.lower() in ['', 'nan', 'none']: flavor = "MISSING_FLAVOR"
         
+        name = clean_server_name(row[col_name])
+        billing_mode = _extract_billing_mode(row)
+        
         blueprint["topology"]["compute"].append({
-            "name": clean_server_name(row[col_name]),
+            "name": name,
             "flavor": flavor,
             "is_public": parse_boolean(row[col_public]) if col_public else False,
             "status": "OK" if flavor != "MISSING_FLAVOR" else "WARNING",
@@ -306,4 +316,13 @@ def process_generic_quotation_df(df: pd.DataFrame, customer_name: str) -> Dict[s
                 "original_row": index + 1
             }
         })
+        
+        blueprint['commercial_intent']['deployable_assets'].append({
+            "id": f"compute_{index}",
+            "type": "Generic Compute",
+            "name": name,
+            "billing_mode": billing_mode,
+            "specification": flavor
+        })
+        
     return blueprint
