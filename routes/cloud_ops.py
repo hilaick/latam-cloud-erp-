@@ -24,8 +24,8 @@ cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
 
-# 🚨 NEW: Phase 5 Commercial True-Up Endpoint
-@cloud_ops_bp.route('/api/finops/live-reconciliation', methods=['POST'])
+# 🚨 FIX: Replaced crashing unmapped route with correct HuaweiBSSScanner logic
+@cloud_ops_bp.route('/api/finops/reconcile', methods=['POST'])
 @jwt_required()
 def reconcile_commercial_intent():
     try:
@@ -49,50 +49,21 @@ def reconcile_commercial_intent():
         sk_str = str(customer.sk).strip()
         
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
         
-        from services.enhanced_commercial_trueup import EnhancedCommercialTrueUp
+        if not ak_str.startswith('{') and len(ak_str) > 5: ak, sk = ak_str, sk_str
+        else: ak, sk = cm.decrypt_credentials(json.loads(ak_str))
+            
+        from services.huawei_bss_scanner import HuaweiBSSScanner
+        scanner = HuaweiBSSScanner(ak=ak, sk=sk)
         
-        # Get live inventory for this customer via NOC scan
-        live_inventory = None
-        try:
-            # Call the existing NOC scan endpoint to get live inventory
-            from services.huawei_discovery import HuaweiDiscovery
-            discovery = HuaweiDiscovery(encrypted_ak_data=customer.ak, 
-                                       encrypted_sk_data=customer.sk, 
-                                       region=customer.region,
-                                       master_password=master_password)
-            inventory_result = discovery.discover_all()
-            if inventory_result and 'success' in inventory_result and inventory_result['success']:
-                live_inventory = inventory_result.get('inventory', {})
-        except Exception as e:
-            logger.warning(f"Could not get live inventory: {e}")
-            live_inventory = None
+        # This will aggregate the blueprint and check BSS Orders natively
+        reconciliation_matrix = scanner.reconcile_intent_matrix(commercial_intent)
         
-        # Perform three-way reconciliation
-        trueup = EnhancedCommercialTrueUp(customer_region=customer.region)
-        reconciliation_matrix = trueup.reconcile_three_way(
-            commercial_intent=commercial_intent,
-            live_inventory=live_inventory,
-            bss_orders=None  # Will be fetched or simulated inside
-        )
-        
-        # Get filter counts
-        filter_counts = trueup.get_filter_counts(reconciliation_matrix)
-        reconciliation_matrix['filter_counts'] = filter_counts
-        
-        # Apply filter if specified
-        filter_type = data.get('filter', 'all')
-        if filter_type != 'all':
-            reconciliation_matrix = trueup.apply_filters(reconciliation_matrix, filter_type)
-        
-        return jsonify({
-            "success": True,
-            "matrix": reconciliation_matrix,
-            "filter_counts": filter_counts
-        })
+        return jsonify({"success": True, "matrix": reconciliation_matrix})
         
     except Exception as e:
-        logger.error(f"Error in live reconciliation: {e}", exc_info=True)
+        logger.error(f"Error in BSS Reconciliation: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
@@ -103,24 +74,16 @@ def get_live_inventory():
         customer_id = data.get('customer_id')
         provider = data.get('provider', 'Huawei')
         
-        if not customer_id:
-            return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
+        if not customer_id: return jsonify({"success": False, "error": "Customer ID is required for secure live discovery."}), 400
             
         customer = Customer.query.get(customer_id)
-        if not customer:
-            return jsonify({"success": False, "error": "Customer missing from Vault."}), 404
+        if not customer: return jsonify({"success": False, "error": "Customer missing from Vault."}), 404
 
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
         if provider == 'Huawei':
-            if not customer.ak or not customer.sk:
-                return jsonify({"success": False, "error": "Huawei Vault keys incomplete."}), 404
-            discovery_engine = HuaweiDiscovery(
-                encrypted_ak_data=customer.ak,
-                encrypted_sk_data=customer.sk,
-                region=customer.region or data.get('region', 'la-south-2'),
-                master_password=master_password
-            )
+            if not customer.ak or not customer.sk: return jsonify({"success": False, "error": "Huawei Vault keys incomplete."}), 404
+            discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=customer.region or data.get('region', 'la-south-2'), master_password=master_password)
             result = discovery_engine.discover_all()
 
         elif provider == 'AWS':
@@ -130,22 +93,17 @@ def get_live_inventory():
         elif provider == 'Azure':
             engine = HyperscalerDiscoveryEngine(customer_id)
             sub_id = data.get('subscriptionId')
-            if not sub_id and getattr(customer, 'azure_subscription_id', None):
-                sub_id = customer.azure_subscription_id
+            if not sub_id and getattr(customer, 'azure_subscription_id', None): sub_id = customer.azure_subscription_id
             if not sub_id: sub_id = '00000000-0000-0000-0000-000000000000'
             result = engine.run_azure_agentless_discovery(subscription_id=sub_id)
         else:
             return jsonify({"success": False, "error": f"Unknown provider: {provider}"}), 400
         
-        if result.get("success"):
-            return jsonify({"success": True, "inventory": result.get("inventory"), "message": f"{provider} Discovery completed safely."})
-        else:
-            return jsonify({"success": False, "error": result.get("error")}), 500
+        if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory"), "message": f"{provider} Discovery completed safely."})
+        else: return jsonify({"success": False, "error": result.get("error")}), 500
 
-    except ValueError as ve:
-        return jsonify({"success": False, "error": f"Vault Decryption Failed. Details: {str(ve)}"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
+    except ValueError as ve: return jsonify({"success": False, "error": f"Vault Decryption Failed. Details: {str(ve)}"}), 400
+    except Exception as e: return jsonify({"success": False, "error": f"Unexpected error during discovery: {str(e)}"}), 500
 
 @cloud_ops_bp.route('/api/audit', methods=['POST'])
 @jwt_required()
@@ -175,20 +133,14 @@ def deploy():
         if not ak or not sk: return jsonify({"error": "AK and SK are required"}), 400
         
         from datetime import datetime
-        deployment_log = {
-            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "region": data.get('region', 'ap-southeast-3'),
-            "resources": resources,
-            "status": "requested"
-        }
+        deployment_log = { "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "region": data.get('region', 'ap-southeast-3'), "resources": resources, "status": "requested" }
         
         log_file = PROJECT_ROOT / 'deployments' / f"deployment_{int(datetime.now().timestamp())}.json"
         os.makedirs(PROJECT_ROOT / 'deployments', exist_ok=True)
         with open(log_file, 'w') as f: json.dump(deployment_log, f, indent=2)
         
         return jsonify({"message": "Deployment request received", "log_file": str(log_file), "deployment": deployment_log})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cleanup', methods=['POST'])
 @jwt_required()
@@ -196,26 +148,19 @@ def cleanup():
     try:
         data = request.get_json()
         from datetime import datetime
-        cleanup_log = {
-            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "region": data.get('region', 'ap-southeast-3'),
-            "resource_ids": data.get('resource_ids', []),
-            "status": "requested"
-        }
+        cleanup_log = { "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "region": data.get('region', 'ap-southeast-3'), "resource_ids": data.get('resource_ids', []), "status": "requested" }
         log_file = PROJECT_ROOT / 'deployments' / f"cleanup_{int(datetime.now().timestamp())}.json"
         os.makedirs(PROJECT_ROOT / 'deployments', exist_ok=True)
         with open(log_file, 'w') as f: json.dump(cleanup_log, f, indent=2)
         return jsonify({"message": "Cleanup request received", "log_file": str(log_file), "cleanup": cleanup_log})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/status', methods=['GET'])
 def status():
     try:
         deployments = get_all_deployments(str(PROJECT_ROOT / 'deployments'))
         return jsonify({"status": "online", "deployments": deployments})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/logs', methods=['GET'])
 @jwt_required()
@@ -225,8 +170,7 @@ def get_logs():
         if log_file.exists():
             with open(log_file, 'r') as f: return jsonify({"logs": f.read()})
         return jsonify({"message": "No logs found"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/erp/discovery/agentless', methods=['POST'])
 @jwt_required()
@@ -238,18 +182,15 @@ def trigger_agentless_discovery():
         
         engine = HyperscalerDiscoveryEngine(customer_id)
         
-        if provider == 'AWS':
-            result = engine.run_aws_agentless_discovery()
+        if provider == 'AWS': result = engine.run_aws_agentless_discovery()
         elif provider == 'Azure':
             sub_id = data.get('subscriptionId', '00000000-0000-0000-0000-000000000000')
             result = engine.run_azure_agentless_discovery(subscription_id=sub_id)
-        else:
-            return jsonify({"success": False, "error": "Provider SDK not yet initialized"}), 400
+        else: return jsonify({"success": False, "error": "Provider SDK not yet initialized"}), 400
             
         return jsonify(result)
         
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/source-resources/upload', methods=['POST'])
 @jwt_required()
@@ -268,13 +209,10 @@ def upload_source_resources():
         
         result = parse_source_resources_excel(str(file_path))
         
-        if result.get("success"):
-            return jsonify({"success": True, "filename": filename, "resources": result.get("resources", {}), "counts": result.get("counts", {})})
-        else:
-            return jsonify({"success": False, "error": result.get("error", "Failed to parse the file structure.")}), 400
+        if result.get("success"): return jsonify({"success": True, "filename": filename, "resources": result.get("resources", {}), "counts": result.get("counts", {})})
+        else: return jsonify({"success": False, "error": result.get("error", "Failed to parse the file structure.")}), 400
             
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Server error processing file: {str(e)}"}), 500
+    except Exception as e: return jsonify({"success": False, "error": f"Server error processing file: {str(e)}"}), 500
 
 @cloud_ops_bp.route('/api/finops/query_price', methods=['POST'])
 @jwt_required()
@@ -295,53 +233,23 @@ def query_live_pricing():
             sms_rate = 32.85 
             item_cost = sms_workers_needed * sms_rate
             total_monthly_cost += item_cost
-            bom_items.append({
-                "id": "bom-sms",
-                "service": "SMS Sync Worker Node",
-                "spec": "s6.large.2 (2vCPU / 4GB RAM) + 40GB System Disk",
-                "qty": sms_workers_needed,
-                "cost_per_month": item_cost,
-                "reason": f"Background compute required to receive block-level agent data for {ecs_count} target ECS instances.",
-                "selected": True 
-            })
+            bom_items.append({"id": "bom-sms", "service": "SMS Sync Worker Node", "spec": "s6.large.2 (2vCPU / 4GB RAM) + 40GB System Disk", "qty": sms_workers_needed, "cost_per_month": item_cost, "reason": f"Background compute required to receive block-level agent data for {ecs_count} target ECS instances.", "selected": True })
 
         if rds_count > 0:
             drs_rate = 145.00 
             item_cost = rds_count * drs_rate
             total_monthly_cost += item_cost
-            bom_items.append({
-                "id": "bom-drs",
-                "service": "DRS Replication Cluster",
-                "spec": "rds.pg.c6.large.2.ha (Data Replication Service - Standard)",
-                "qty": rds_count,
-                "cost_per_month": item_cost,
-                "reason": f"Real-time CDC (Change Data Capture) engine for {rds_count} continuous database syncs.",
-                "selected": True
-            })
+            bom_items.append({"id": "bom-drs", "service": "DRS Replication Cluster", "spec": "rds.pg.c6.large.2.ha (Data Replication Service - Standard)", "qty": rds_count, "cost_per_month": item_cost, "reason": f"Real-time CDC (Change Data Capture) engine for {rds_count} continuous database syncs.", "selected": True})
 
         if ecs_count > 0 or rds_count > 0:
             net_rate = 45.00 
             total_monthly_cost += net_rate
-            bom_items.append({
-                "id": "bom-net",
-                "service": "Temporary Network Edge",
-                "spec": "NAT Gateway (Small) + EIP (100Mbps Bandwidth)",
-                "qty": 1,
-                "cost_per_month": net_rate,
-                "reason": "Outbound internet gateway required for source-agent heartbeat and data transmission.",
-                "selected": True
-            })
+            bom_items.append({"id": "bom-net", "service": "Temporary Network Edge", "spec": "NAT Gateway (Small) + EIP (100Mbps Bandwidth)", "qty": 1, "cost_per_month": net_rate, "reason": "Outbound internet gateway required for source-agent heartbeat and data transmission.", "selected": True})
             
         final_run_rate = round(total_monthly_cost * duration_months)
         
-        return jsonify({
-            "success": True, 
-            "overhead_cost": final_run_rate,
-            "bom_items": bom_items,
-            "source": "Huawei BSS API (PostPaid Engine)"
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": True, "overhead_cost": final_run_rate, "bom_items": bom_items, "source": "Huawei BSS API (PostPaid Engine)"})
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/billing_validation', methods=['POST'])
 @jwt_required()
@@ -364,53 +272,26 @@ def validate_actual_billing():
         if has_sms or len(bom_items) > 0:
             actual_sms = (fallback_baseline * 0.40) * 0.95
             total_invoiced += actual_sms
-            line_items.append({
-                "category": "Elastic Cloud Server (ECS)", 
-                "amount": round(actual_sms), 
-                "status": "expected", 
-                "note": "SMS Worker s6.large.2 compute charges + Target ECS provisioning."
-            })
+            line_items.append({"category": "Elastic Cloud Server (ECS)", "amount": round(actual_sms), "status": "expected", "note": "SMS Worker s6.large.2 compute charges + Target ECS provisioning."})
             
             hidden_evs = (fallback_baseline * 0.35)
             total_invoiced += hidden_evs
-            line_items.append({
-                "category": "Elastic Volume Service (EVS)", 
-                "amount": round(hidden_evs), 
-                "status": "danger", 
-                "note": "Unreclaimed target OS block snapshots from SMS sync phases inflating invoice."
-            })
+            line_items.append({"category": "Elastic Volume Service (EVS)", "amount": round(hidden_evs), "status": "danger", "note": "Unreclaimed target OS block snapshots from SMS sync phases inflating invoice."})
 
         if has_drs:
             actual_drs = (fallback_baseline * 0.45) * 1.05 
             total_invoiced += actual_drs
-            line_items.append({
-                "category": "Data Replication Service (DRS)", 
-                "amount": round(actual_drs), 
-                "status": "warning", 
-                "note": "DRS Replication clusters rds.pg.c6.large.2 usage."
-            })
+            line_items.append({"category": "Data Replication Service (DRS)", "amount": round(actual_drs), "status": "warning", "note": "DRS Replication clusters rds.pg.c6.large.2 usage."})
 
         if has_net or len(bom_items) > 0:
             actual_net = 65.00 
             total_invoiced += actual_net
-            line_items.append({
-                "category": "VPC Egress & EIPs", 
-                "amount": round(actual_net), 
-                "status": "warning", 
-                "note": "Higher than expected outbound data transfer (Egress GB) on NAT Gateway."
-            })
+            line_items.append({"category": "VPC Egress & EIPs", "amount": round(actual_net), "status": "warning", "note": "Higher than expected outbound data transfer (Egress GB) on NAT Gateway."})
             
         variance = total_invoiced - fallback_baseline
         
-        return jsonify({
-            "success": True,
-            "invoiced_total": total_invoiced,
-            "variance": variance,
-            "status": "warning" if variance > 0 else "healthy",
-            "line_items": line_items
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": True, "invoiced_total": total_invoiced, "variance": variance, "status": "warning" if variance > 0 else "healthy", "line_items": line_items})
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/migration/tools', methods=['GET'])
 @jwt_required()
