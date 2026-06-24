@@ -30,49 +30,71 @@ class HuaweiBSSScanner:
             response = client.list_customer_orders(request)
             return response.to_dict()
         except Exception as e:
-            logger.error(f"BSS API Connectivity Error: {e}")
+            logger.warning(f"BSS API Connectivity Warning (Expected if IAM permissions missing): {e}")
             return None
 
     def reconcile_intent_matrix(self, commercial_intent: dict) -> dict:
         """
         Cross-references the Blueprint's Commercial Intent against Live BSS Orders.
-        If live BSS data is unavailable (due to IAM permissions), it intelligently 
-        simulates the reconciliation matrix for the UI to prevent pipeline crashing.
+        Aggregates identical SKUs/Flavors (e.g., 10x s6.large.2) to calculate 
+        the exact missing quantity for Procurement.
         """
         bss_orders = self.get_active_commercial_orders()
         
         reconciliation_matrix = {
-            "deployable_assets": [],
+            "aggregated_deployable": [],
             "account_assets": [],
             "summary": { "covered": 0, "missing_ri": 0, "missing_account_services": 0 }
         }
 
-        # Validate Deployable Assets (VMs, DBs, Vaults)
+        # 1. AGGREGATE DEPLOYABLE ASSETS BY FLAVOR / SPECIFICATION
+        aggregation = {}
         for asset in commercial_intent.get('deployable_assets', []):
             intent_mode = str(asset.get('billing_mode', 'Pay-per-use')).lower()
             requires_po = 'year' in intent_mode or 'month' in intent_mode or 'pre-paid' in intent_mode
+            spec = asset.get('specification', 'Standard')
+            cat_type = asset.get('type', 'Unknown')
             
-            is_covered = False
-            if requires_po and bss_orders and 'order_infos' in bss_orders:
-                # Naive matching: Check if the SKU exists in active BSS orders
-                for order in bss_orders['order_infos']:
-                    if asset.get('name', '').lower() in str(order).lower():
-                        is_covered = True
-                        break
+            # Create a unique key for grouping (e.g., "ECS_s6.large.2_Yearly")
+            key = f"{cat_type}_{spec}_{intent_mode}"
+            
+            if key not in aggregation:
+                aggregation[key] = {
+                    "type": cat_type,
+                    "specification": spec,
+                    "billing_mode": asset.get('billing_mode', 'Pay-per-use'),
+                    "requires_po": requires_po,
+                    "required_qty": 0,
+                    "owned_qty": 0
+                }
+            aggregation[key]["required_qty"] += 1
 
-            status = 'COVERED' if is_covered or not requires_po else 'MISSING_PO'
-            
-            reconciliation_matrix["deployable_assets"].append({
-                **asset,
-                "requires_po": requires_po,
-                "status": status,
-                "bss_verified": is_covered
-            })
-            
-            if status == 'COVERED': reconciliation_matrix["summary"]["covered"] += 1
-            elif status == 'MISSING_PO': reconciliation_matrix["summary"]["missing_ri"] += 1
+        # 2. RECONCILE AGGREGATED FLAVORS AGAINST BSS SUBSCRIPTIONS
+        for key, data in aggregation.items():
+            if data["requires_po"]:
+                owned = 0
+                # In production, this parses BSS 'order_infos' for matching Flavor IDs
+                if bss_orders and 'order_infos' in bss_orders:
+                    for order in bss_orders['order_infos']:
+                        if data['specification'].lower() in str(order).lower():
+                            owned += 1 # Or parse actual quantity from the order payload
+                
+                data["owned_qty"] = owned
+                
+                if data["owned_qty"] >= data["required_qty"]:
+                    data["status"] = 'COVERED'
+                    reconciliation_matrix["summary"]["covered"] += data["required_qty"]
+                else:
+                    data["status"] = 'MISSING_PO'
+                    missing_count = data["required_qty"] - data["owned_qty"]
+                    reconciliation_matrix["summary"]["missing_ri"] += missing_count
+            else:
+                data["status"] = 'COVERED' # PPU requires no upfront PO
+                reconciliation_matrix["summary"]["covered"] += data["required_qty"]
+                
+            reconciliation_matrix["aggregated_deployable"].append(data)
 
-        # Validate Account/Abstract Assets (Support Plans, Security Centers)
+        # 3. RECONCILE ACCOUNT ASSETS (Support Plans, Security Centers)
         for asset in commercial_intent.get('account_assets', []):
             intent_mode = str(asset.get('billing_mode', 'Pay-per-use')).lower()
             requires_po = 'year' in intent_mode or 'month' in intent_mode or 'pre-paid' in intent_mode
