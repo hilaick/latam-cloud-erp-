@@ -119,10 +119,10 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         </p>
                     </div>
                     <button 
-                        onClick={handleRunTrueUp} 
-                        disabled={isLoading}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
-                    >
+    onClick={() => handleRunTrueUp('all')} 
+    disabled={isLoading}
+    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
+>                    >
                         {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Live Architecture...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
                     </button>
                 </div>
