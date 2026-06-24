@@ -40,7 +40,6 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
                 >
                     <i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off
                 </button>
-                {/* 🚨 NEW COMMERCIAL TRUE-UP TAB */}
                 <button 
                     onClick={() => setSubTab('commercial')} 
                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}
@@ -65,37 +64,24 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [matrix, setMatrix] = useState(null);
-    const [activeFilter, setActiveFilter] = useState('all');
-    const [filterCounts, setFilterCounts] = useState(null);
 
-    const handleRunTrueUp = async (filterType = 'all') => {
+    const handleRunTrueUp = async () => {
         setIsLoading(true);
-        setActiveFilter(filterType);
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/live-reconciliation', {
+            const res = await fetch('/api/finops/reconcile', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ 
-                    projectId: activeProject.id,
-                    filter: filterType 
-                })
+                body: JSON.stringify({ projectId: activeProject.id })
             });
             const data = await res.json();
             if (data.success) {
                 setMatrix(data.matrix);
-                setFilterCounts(data.filter_counts || {
-                    pending_ri: 0,
-                    not_migrated: 0,
-                    marked_for_deletion: 0,
-                    pending_config: 0,
-                    all: data.matrix?.deployable_assets?.length || 0
-                });
             } else {
-                alert(`Error during Live Architecture Reconciliation: ${data.error}`);
+                alert(`Error reconciling FinOps Matrix: ${data.error}`);
             }
         } catch (err) {
-            alert(`Network error during reconciliation: ${err.message}`);
+            alert(`Network error during BSS API call: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -118,20 +104,21 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             Technical execution is complete. Compare the live Pay-Per-Use (PPU) environment against the Commercial Intent defined in the blueprint to generate the final PO Shopping List.
                         </p>
                     </div>
+                    {/* 🚨 FIX: Wrap function call to prevent Circular JSON Crash */}
                     <button 
-    onClick={() => handleRunTrueUp('all')} 
-    disabled={isLoading}
-    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
->                    >
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Live Architecture...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
+                        onClick={() => handleRunTrueUp()} 
+                        disabled={isLoading}
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
+                    >
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS API...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
                     </button>
                 </div>
 
                 {!matrix ? (
                     <div className="text-center py-16 text-emerald-300">
                         <i className="fas fa-file-invoice-dollar text-6xl mb-4 opacity-50"></i>
-                        <h3 className="font-black text-lg">Live Architecture Reconciliation</h3>
-                        <p className="text-xs font-medium mt-2">Run the reconciliation to compare quoted vs live environment and identify RI requirements.</p>
+                        <h3 className="font-black text-lg">Awaiting Commercial Scan</h3>
+                        <p className="text-xs font-medium mt-2">Run the scan to cross-reference Huawei Cloud Billing (BSS) active orders.</p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
@@ -151,70 +138,39 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             </div>
                         </div>
 
-                        {/* Filter Buttons */}
-                        {filterCounts && (
-                            <div className="flex flex-wrap gap-2 mb-6">
-                                <button
-                                    onClick={() => handleRunTrueUp('all')}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                                >
-                                    All Resources ({filterCounts.all || 0})
-                                </button>
-                                <button
-                                    onClick={() => handleRunTrueUp('pending_ri')}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'pending_ri' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
-                                >
-                                    <i className="fas fa-exclamation-triangle mr-1"></i> Pending RI ({filterCounts.pending_ri || 0})
-                                </button>
-                                <button
-                                    onClick={() => handleRunTrueUp('not_migrated')}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'not_migrated' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'}`}
-                                >
-                                    <i className="fas fa-server mr-1"></i> Not Migrated ({filterCounts.not_migrated || 0})
-                                </button>
-                                <button
-                                    onClick={() => handleRunTrueUp('marked_for_deletion')}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'marked_for_deletion' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'}`}
-                                >
-                                    <i className="fas fa-trash-alt mr-1"></i> Marked for Deletion ({filterCounts.marked_for_deletion || 0})
-                                </button>
-                                <button
-                                    onClick={() => handleRunTrueUp('pending_config')}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'pending_config' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                                >
-                                    <i className="fas fa-cog mr-1"></i> Pending Config ({filterCounts.pending_config || 0})
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Deployable Assets Table */}
+                        {/* Deployable Assets Table (Aggregated by Flavor) */}
                         <div>
-                            <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Deployable Assets (Compute, DB, Storage)</h4>
+                            <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Deployable Assets (Aggregated by Specification)</h4>
                             <table className="w-full text-left bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm text-sm">
                                 <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
                                     <tr>
-                                        <th className="p-3">Resource Name</th>
                                         <th className="p-3">Type</th>
+                                        <th className="p-3 w-1/3">Specification / Flavor</th>
                                         <th className="p-3">Commercial Intent (Quoted)</th>
-                                        <th className="p-3">Live Environment</th>
-                                        <th className="p-3 text-center">RI Status</th>
+                                        <th className="p-3 text-center bg-blue-50/50">Qty Required</th>
+                                        <th className="p-3 text-center bg-emerald-50/50">Active Subs (BSS)</th>
+                                        <th className="p-3 text-center">BSS API Status</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {matrix.deployable_assets.map((asset, i) => (
+                                    {matrix.aggregated_deployable.map((asset, i) => {
+                                        const missing = asset.required_qty - asset.owned_qty;
+                                        return (
                                         <tr key={i} className="hover:bg-slate-50">
-                                            <td className="p-3 font-bold text-slate-700">{asset.name}</td>
-                                            <td className="p-3 text-slate-600">{asset.type}</td>
-                                            <td className="p-3 font-mono text-slate-500">{asset.billing_mode}</td>
+                                            <td className="p-3 font-bold text-slate-700 uppercase tracking-widest text-[10px]">{asset.type}</td>
+                                            <td className="p-3 text-slate-600 font-mono text-xs">{asset.specification}</td>
+                                            <td className="p-3 font-mono text-slate-500 text-xs">{asset.billing_mode}</td>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30">{asset.required_qty}</td>
+                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">{asset.owned_qty}</td>
                                             <td className="p-3 text-center">
                                                 {asset.status === 'COVERED' ? (
                                                     <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check mr-1"></i> Covered</span>
                                                 ) : (
-                                                    <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-exclamation-triangle mr-1"></i> Action Required (PO)</span>
+                                                    <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-exclamation-triangle mr-1"></i> Buy {missing}x RI</span>
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
+                                    )})}
                                 </tbody>
                             </table>
                         </div>
@@ -289,14 +245,24 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const hasNocScanned = nocData !== null;
 
-    // 🚨 Overhauled to dynamically extract all categories from the API payload so nothing is hidden
+    // 🚨 FIX: Normalized Category Extraction (Solves the ECS vs Compute mismatch)
     const liveCategories = useMemo(() => {
         if (!hasNocScanned || !nocData?.raw) return [];
-        return Object.keys(nocData.raw).map(key => ({
+        
+        // Group messy API keys into standard Blueprint buckets
+        const normalized = {
+            compute: [...(nocData.raw.compute || []), ...(nocData.raw.ecs || []), ...(nocData.raw.server || [])],
+            databases: [...(nocData.raw.databases || []), ...(nocData.raw.database || []), ...(nocData.raw.rds || [])],
+            network: [...(nocData.raw.network || []), ...(nocData.raw.vpc || []), ...(nocData.raw.eip || []), ...(nocData.raw.nat || [])],
+            storage: [...(nocData.raw.storage || []), ...(nocData.raw.obs || []), ...(nocData.raw.cbr || [])],
+            security: [...(nocData.raw.security || []), ...(nocData.raw.waf || [])]
+        };
+
+        return Object.keys(normalized).map(key => ({
             id: key,
             label: key.charAt(0).toUpperCase() + key.slice(1).replace('_', ' '),
-            count: nocData.raw[key]?.length || 0,
-            items: nocData.raw[key] || []
+            count: normalized[key].length,
+            items: normalized[key]
         })).filter(cat => cat.count > 0);
     }, [nocData, hasNocScanned]);
 
@@ -332,11 +298,8 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             const data = await res.json();
             
             if (data.success) {
-                // 🚨 Just store the raw payload directly so we don't accidentally drop nested objects like Vaults/EIPs
-                const finalNoc = { 
-                    raw: data.inventory || {}
-                };
-                
+                // Store raw API output so normalizer can handle it dynamically
+                const finalNoc = { raw: data.inventory || {} };
                 setNocData(finalNoc);
                 onUpdateProject(project.id, 'nocData', finalNoc);
                 alert("Final NOC Scan Complete. Actual Built infrastructure verified via live API.");
@@ -355,9 +318,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
         alert("3-Way Diff State Saved.");
     };
 
-    const handlePrint = () => {
-        window.print();
-    };
+    const handlePrint = () => window.print();
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6">
