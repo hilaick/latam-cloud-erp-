@@ -154,6 +154,90 @@ def live_reconciliation():
         logger.error(f"Error in Live Reconciliation: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
+@cloud_ops_bp.route('/api/finops/ecs-ri-reconciliation', methods=['POST'])
+@jwt_required()
+def ecs_ri_reconciliation():
+    """
+    ECS-specific RI reconciliation with 4 filter categories.
+    Focuses only on ECS servers (since only ECS can have RIs).
+    Compares quoted RIs vs live ECS servers vs actual RIs.
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('projectId')
+        
+        if not project_id:
+            return jsonify({"success": False, "error": "Project ID is required"}), 400
+        
+        # Get project and customer
+        project_record = ProjectData.query.get(project_id)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        project_data = json.loads(project_record.data)
+        customer_id = project_data.get('customerId')
+        
+        if not customer_id:
+            return jsonify({"success": False, "error": "No Customer linked to this project."}), 400
+        
+        customer = Customer.query.get(customer_id)
+        if not customer or not customer.ak or not customer.sk:
+            return jsonify({"success": False, "error": "Customer Master AK/SK missing from Vault."}), 400
+        
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        
+        # Get RI quotation data for this project
+        # TODO: This should come from a separate RI quotation upload in Step 5
+        # For now, we'll extract from commercial_intent
+        blueprint_data = project_data.get('blueprintData', {})
+        commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
+        
+        # Extract ECS RI items from commercial_intent
+        quoted_ecs_ris = []
+        for asset in commercial_intent.get('deployable_assets', []):
+            if asset.get('type') == 'ECS' and asset.get('billing_mode') == 'Reserved':
+                quoted_ecs_ris.append({
+                    "specification": asset.get('specification', 'Unknown'),
+                    "quantity": 1,  # Default to 1 per asset
+                    "name": asset.get('name', ''),
+                    "tags": asset.get('tags', {})
+                })
+        
+        # Initialize ECS RI Reconciler
+        from services.ecs_ri_reconciler import ECSRIReconciler
+        reconciler = ECSRIReconciler(
+            encrypted_ak_data=customer.ak,
+            encrypted_sk_data=customer.sk,
+            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            master_password=master_password
+        )
+        
+        # Perform ECS RI reconciliation
+        reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris)
+        
+        # Format response with Active Subs status
+        active_subs_status = {
+            "status": "ECS_RI_RECONCILIATION_ACTIVE",
+            "total_quoted": reconciliation_result["summary"]["total_quoted"],
+            "total_live": reconciliation_result["summary"]["total_live"],
+            "total_with_ri": reconciliation_result["summary"]["total_with_ri"],
+            "by_specification": reconciliation_result["summary"]["by_specification"],
+            "filter_counts": reconciliation_result["filter_counts"]
+        }
+        
+        response = {
+            "success": True,
+            "reconciliation": reconciliation_result,
+            "active_subs_status": active_subs_status,
+            "filters": reconciliation_result["filter_counts"]
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in ECS RI Reconciliation: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
 def get_live_inventory():

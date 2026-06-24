@@ -76,14 +76,14 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         setIsLoading(true);
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/live-reconciliation', {
+            const res = await fetch('/api/finops/ecs-ri-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: activeProject.id })
             });
             const data = await res.json();
             if (data.success) {
-                setMatrix(data.matrix);
+                setMatrix(data.reconciliation);
                 // Update filter counts if available
                 if (data.filters) {
                     setFilterCounts(data.filters);
@@ -93,10 +93,10 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     setActiveSubsStatus(data.active_subs_status);
                 }
             } else {
-                alert(`Error reconciling FinOps Matrix: ${data.error}`);
+                alert(`Error reconciling ECS RI Matrix: ${data.error}`);
             }
         } catch (err) {
-            alert(`Network error during Live Reconciliation: ${err.message}`);
+            alert(`Network error during ECS RI Reconciliation: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -116,10 +116,10 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             <i className="fas fa-shopping-cart text-emerald-500 mr-3"></i> Procurement & PO Handover
                         </h4>
                         <p className="text-xs font-bold text-emerald-600/70 mt-1 uppercase tracking-widest max-w-2xl">
-                            Technical execution is complete. Compare the live Pay-Per-Use (PPU) environment against the Commercial Intent defined in the blueprint to generate the final PO Shopping List.
+                            Technical execution is complete. Compare ECS Reserved Instances (RIs) quoted vs live vs bought.
                         </p>
                         <p className="text-xs text-slate-500 mt-2">
-                            Uses <strong>Live RI Detection</strong> (billing_mode='1' or charging_mode='prePaid') instead of BSS API.
+                            <strong>4 Filter Categories:</strong> Pending RI, Not Migrated, Marked for Deletion, Pending Config
                         </p>
                     </div>
                     {/* 🚨 FIX: Wrap function call to prevent Circular JSON Crash */}
@@ -128,67 +128,79 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             disabled={isLoading}
                             className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
                         >
-                            {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running Live RI Detection...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
+                            {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running ECS RI Detection...</> : <><i className="fas fa-sync-alt mr-2"></i> Run ECS RI Reconciliation</>}
                         </button>
                 </div>
 
                 {!matrix ? (
                     <div className="text-center py-16 text-emerald-300">
                         <i className="fas fa-file-invoice-dollar text-6xl mb-4 opacity-50"></i>
-                        <h3 className="font-black text-lg">Awaiting Live RI Detection Scan</h3>
-                        <p className="text-xs font-medium mt-2">Run the scan to detect Reserved Instances from live Huawei Cloud resources.</p>
+                        <h3 className="font-black text-lg">Awaiting ECS RI Reconciliation</h3>
+                        <p className="text-xs font-medium mt-2">Run the scan to compare quoted RIs vs live ECS servers vs actual RIs.</p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
-                        {/* Active Subs (BSS) Status */}
+                        {/* Active Subs (ECS RI) Status */}
                         {activeSubsStatus && (
                             <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-black text-lg text-blue-800 flex items-center">
-                                        <i className="fas fa-chart-bar text-blue-500 mr-3"></i> Active Subs (Live RI Detection)
+                                        <i className="fas fa-server text-blue-500 mr-3"></i> ECS RI Reconciliation Status
                                     </h4>
-                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${activeSubsStatus.status === 'LIVE_RI_DETECTION_ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${activeSubsStatus.status === 'ECS_RI_RECONCILIATION_ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                         {activeSubsStatus.status}
                                     </span>
                                 </div>
                                 
                                 <div className="grid grid-cols-4 gap-4 mb-6">
                                     <div className="text-center">
-                                        <div className="text-2xl font-black text-blue-700">{activeSubsStatus.total_ris_detected}</div>
-                                        <div className="text-xs font-medium text-blue-600">Total RIs Detected</div>
+                                        <div className="text-2xl font-black text-blue-700">{activeSubsStatus.total_quoted || 0}</div>
+                                        <div className="text-xs font-medium text-blue-600">Quoted RIs</div>
                                     </div>
-                                    {Object.entries(filterCounts).map(([key, count]) => (
-                                        <div key={key} className="text-center">
-                                            <div className="text-2xl font-black text-slate-800">{count}</div>
-                                            <div className="text-xs font-medium text-slate-600 capitalize">{key.replace('_', ' ')}</div>
-                                        </div>
-                                    ))}
+                                    <div className="text-center">
+                                        <div className="text-2xl font-black text-green-700">{activeSubsStatus.total_live || 0}</div>
+                                        <div className="text-xs font-medium text-green-600">Live ECS</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-2xl font-black text-purple-700">{activeSubsStatus.total_with_ri || 0}</div>
+                                        <div className="text-xs font-medium text-purple-600">With RI</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-2xl font-black text-amber-700">{Object.keys(activeSubsStatus.by_specification || {}).length}</div>
+                                        <div className="text-xs font-medium text-amber-600">Specifications</div>
+                                    </div>
                                 </div>
                                 
                                 {/* Aggregation by Specification */}
-                                {Object.keys(activeSubsStatus.by_specification).length > 0 && (
+                                {activeSubsStatus.by_specification && Object.keys(activeSubsStatus.by_specification).length > 0 && (
                                     <div>
-                                        <h5 className="font-bold text-sm text-blue-700 mb-2">Aggregation by Specification:</h5>
+                                        <h5 className="font-bold text-sm text-blue-700 mb-2">ECS Specifications Summary:</h5>
                                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                             {Object.entries(activeSubsStatus.by_specification).map(([spec, data]) => (
                                                 <div key={spec} className="bg-white border border-blue-100 rounded-lg p-3">
                                                     <div className="font-bold text-sm text-blue-800 truncate">{spec}</div>
                                                     <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
                                                         <div className="text-center">
-                                                            <div className="font-black text-blue-600">{data.required}</div>
-                                                            <div className="text-blue-500">Req</div>
+                                                            <div className="font-black text-blue-600">{data.quoted || 0}</div>
+                                                            <div className="text-blue-500">Quoted</div>
                                                         </div>
                                                         <div className="text-center">
-                                                            <div className="font-black text-green-600">{data.live}</div>
+                                                            <div className="font-black text-green-600">{data.live || 0}</div>
                                                             <div className="text-green-500">Live</div>
                                                         </div>
                                                         <div className="text-center">
-                                                            <div className="font-black text-purple-600">{data.ri}</div>
-                                                            <div className="text-purple-500">RI</div>
+                                                            <div className="font-black text-purple-600">{data.with_ri || 0}</div>
+                                                            <div className="text-purple-500">With RI</div>
                                                         </div>
                                                     </div>
-                                                    <div className={`mt-2 text-center text-xs font-bold px-2 py-1 rounded ${data.status === 'COVERED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                        {data.status}
+                                                    <div className={`mt-2 text-center text-xs font-bold px-2 py-1 rounded ${
+                                                        data.filter_category === 'pending_ri' ? 'bg-amber-100 text-amber-800' :
+                                                        data.filter_category === 'not_migrated' ? 'bg-red-100 text-red-800' :
+                                                        data.filter_category === 'marked_for_deletion' ? 'bg-gray-100 text-gray-800' :
+                                                        data.filter_category === 'pending_config' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {data.filter_category?.replace('_', ' ').toUpperCase() || 'COVERED'}
                                                     </div>
                                                 </div>
                                             ))}
