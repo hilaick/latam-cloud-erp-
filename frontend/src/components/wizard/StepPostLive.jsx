@@ -71,6 +71,9 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         pending_config: 0
     });
     const [activeSubsStatus, setActiveSubsStatus] = useState(null);
+    const [showRIPasteModal, setShowRIPasteModal] = useState(false);
+    const [riQuotationData, setRIQuotationData] = useState('');
+    const [isUploadingRI, setIsUploadingRI] = useState(false);
 
     const handleRunTrueUp = async () => {
         setIsLoading(true);
@@ -107,6 +110,79 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped. The project is now owned by the Commercial/Partner team for final PO True-Up.");
     };
 
+    const handleRIQuotationUpload = async (file) => {
+        if (!file) return;
+        
+        setIsUploadingRI(true);
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('projectId', activeProject.id);
+        formData.append('quotationType', 'ri'); // Mark as RI quotation
+        
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const res = await fetch('/api/finops/upload-ri-quotation', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
+            
+            const data = await res.json();
+            if (data.success) {
+                alert('RI Quotation uploaded successfully!');
+                // Refresh the reconciliation data
+                handleRunTrueUp();
+            } else {
+                alert(`Error uploading RI quotation: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+        } finally {
+            setIsUploadingRI(false);
+        }
+    };
+
+    const handleRIPasteSubmit = async () => {
+        if (!riQuotationData.trim()) {
+            alert('Please paste RI quotation data');
+            return;
+        }
+        
+        setIsUploadingRI(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const res = await fetch('/api/finops/upload-ri-quotation', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    projectId: activeProject.id,
+                    quotationType: 'ri',
+                    rawData: riQuotationData
+                })
+            });
+            
+            const data = await res.json();
+            if (data.success) {
+                alert('RI Quotation data submitted successfully!');
+                setShowRIPasteModal(false);
+                setRIQuotationData('');
+                // Refresh the reconciliation data
+                handleRunTrueUp();
+            } else {
+                alert(`Error submitting RI quotation: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+        } finally {
+            setIsUploadingRI(false);
+        }
+    };
+
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-8">
@@ -121,6 +197,41 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         <p className="text-xs text-slate-500 mt-2">
                             <strong>4 Filter Categories:</strong> Pending RI, Not Migrated, Marked for Deletion, Pending Config
                         </p>
+                        
+                        {/* Price Calculator RI Upload */}
+                        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h5 className="font-bold text-sm text-amber-800 flex items-center">
+                                        <i className="fas fa-calculator text-amber-600 mr-2"></i> Price Calculator - RI Upload
+                                    </h5>
+                                    <p className="text-xs text-amber-700 mt-1">
+                                        Upload the Price Calculator RI quotation (separate from ARB Handover PPU)
+                                    </p>
+                                </div>
+                                <div className="flex space-x-2">
+                                    <button 
+                                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center"
+                                        onClick={() => document.getElementById('ri-quotation-upload').click()}
+                                    >
+                                        <i className="fas fa-upload mr-2"></i> Upload RI Quotation
+                                    </button>
+                                    <input 
+                                        type="file" 
+                                        id="ri-quotation-upload" 
+                                        className="hidden" 
+                                        accept=".xlsx,.xls,.csv"
+                                        onChange={(e) => handleRIQuotationUpload(e.target.files[0])}
+                                    />
+                                    <button 
+                                        className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center"
+                                        onClick={() => setShowRIPasteModal(true)}
+                                    >
+                                        <i className="fas fa-paste mr-2"></i> Paste Raw Data
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     {/* 🚨 FIX: Wrap function call to prevent Circular JSON Crash */}
                         <button 
@@ -147,8 +258,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                     <h4 className="font-black text-lg text-blue-800 flex items-center">
                                         <i className="fas fa-server text-blue-500 mr-3"></i> ECS RI Reconciliation Status
                                     </h4>
-                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${activeSubsStatus.status === 'ECS_RI_RECONCILIATION_ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                        {activeSubsStatus.status}
+                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${activeSubsStatus?.status === 'ECS_RI_RECONCILIATION_ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        {activeSubsStatus?.status || 'INACTIVE'}
                                     </span>
                                 </div>
                                 
@@ -166,13 +277,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <div className="text-xs font-medium text-purple-600">With RI</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-2xl font-black text-amber-700">{Object.keys(activeSubsStatus.by_specification || {}).length}</div>
+                                        <div className="text-2xl font-black text-amber-700">{Object.keys(activeSubsStatus?.by_specification || {}).length}</div>
                                         <div className="text-xs font-medium text-amber-600">Specifications</div>
                                     </div>
                                 </div>
                                 
                                 {/* Aggregation by Specification */}
-                                {activeSubsStatus.by_specification && Object.keys(activeSubsStatus.by_specification).length > 0 && (
+                                {activeSubsStatus?.by_specification && Object.keys(activeSubsStatus.by_specification).length > 0 && (
                                     <div>
                                         <h5 className="font-bold text-sm text-blue-700 mb-2">ECS Specifications Summary:</h5>
                                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -330,6 +441,72 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     </div>
                 )}
             </div>
+            
+            {/* RI Quotation Paste Modal */}
+            {showRIPasteModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-black text-lg text-slate-800">
+                                <i className="fas fa-calculator text-amber-600 mr-2"></i> 
+                                Paste Price Calculator RI Data
+                            </h3>
+                            <button 
+                                onClick={() => setShowRIPasteModal(false)}
+                                className="text-slate-500 hover:text-slate-700"
+                            >
+                                <i className="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <p className="text-sm text-slate-600 mb-2">
+                                Paste the RI data from Price Calculator (Excel/CSV format). Include columns for:
+                            </p>
+                            <ul className="text-sm text-slate-600 list-disc pl-5 mb-4">
+                                <li>Server Name / Hostname</li>
+                                <li>Specification / Flavor</li>
+                                <li>Quantity</li>
+                                <li>Billing Mode (Reserved)</li>
+                                <li>Tags (marked_for_deletion, pending_config, pending_license)</li>
+                            </ul>
+                            
+                            <textarea
+                                className="w-full h-64 p-4 border border-slate-300 rounded-lg font-mono text-sm"
+                                placeholder="Paste RI quotation data here..."
+                                value={riQuotationData}
+                                onChange={(e) => setRIQuotationData(e.target.value)}
+                            />
+                        </div>
+                        
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                onClick={() => setShowRIPasteModal(false)}
+                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRIPasteSubmit}
+                                disabled={isUploadingRI || !riQuotationData.trim()}
+                                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                            >
+                                {isUploadingRI ? (
+                                    <>
+                                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <i className="fas fa-check mr-2"></i>
+                                        Submit RI Data
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

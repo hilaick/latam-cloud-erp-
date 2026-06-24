@@ -238,6 +238,63 @@ def ecs_ri_reconciliation():
         logger.error(f"Error in ECS RI Reconciliation: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
+@cloud_ops_bp.route('/api/finops/upload-ri-quotation', methods=['POST'])
+@jwt_required()
+def upload_ri_quotation():
+    """
+    Upload Price Calculator RI quotation (separate from ARB Handover PPU).
+    Stores RI-specific data for ECS reconciliation.
+    """
+    try:
+        # Check if file upload or raw data
+        if 'file' in request.files:
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({"success": False, "error": "No file selected"}), 400
+            
+            project_id = request.form.get('projectId')
+            quotation_type = request.form.get('quotationType', 'ri')
+            
+            if not project_id:
+                return jsonify({"success": False, "error": "Project ID is required"}), 400
+            
+            # Save the file
+            from services.quotation_versioning import save_quotation_file
+            file_path = save_quotation_file(project_id, file, file.filename)
+            
+            # TODO: Parse RI-specific data from Price Calculator Excel
+            # For now, just store the file path
+            return jsonify({
+                "success": True,
+                "message": "RI quotation uploaded successfully",
+                "file_path": file_path,
+                "quotation_type": quotation_type
+            })
+            
+        elif request.is_json:
+            data = request.get_json()
+            project_id = data.get('projectId')
+            quotation_type = data.get('quotationType', 'ri')
+            raw_data = data.get('rawData', '')
+            
+            if not project_id:
+                return jsonify({"success": False, "error": "Project ID is required"}), 400
+            
+            # TODO: Parse raw RI data (CSV/JSON format)
+            # For now, just acknowledge receipt
+            return jsonify({
+                "success": True,
+                "message": "RI quotation data received",
+                "quotation_type": quotation_type,
+                "data_length": len(raw_data)
+            })
+        else:
+            return jsonify({"success": False, "error": "No file or data provided"}), 400
+            
+    except Exception as e:
+        logger.error(f"Error uploading RI quotation: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
 def get_live_inventory():
