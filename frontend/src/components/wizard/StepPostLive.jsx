@@ -64,12 +64,19 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [matrix, setMatrix] = useState(null);
+    const [filterCounts, setFilterCounts] = useState({
+        pending_ri: 0,
+        not_migrated: 0,
+        marked_for_deletion: 0,
+        pending_config: 0
+    });
+    const [activeSubsStatus, setActiveSubsStatus] = useState(null);
 
     const handleRunTrueUp = async () => {
         setIsLoading(true);
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/reconcile', {
+            const res = await fetch('/api/finops/live-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: activeProject.id })
@@ -77,11 +84,19 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             const data = await res.json();
             if (data.success) {
                 setMatrix(data.matrix);
+                // Update filter counts if available
+                if (data.filters) {
+                    setFilterCounts(data.filters);
+                }
+                // Update active subs status
+                if (data.active_subs_status) {
+                    setActiveSubsStatus(data.active_subs_status);
+                }
             } else {
                 alert(`Error reconciling FinOps Matrix: ${data.error}`);
             }
         } catch (err) {
-            alert(`Network error during BSS API call: ${err.message}`);
+            alert(`Network error during Live Reconciliation: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -103,25 +118,102 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         <p className="text-xs font-bold text-emerald-600/70 mt-1 uppercase tracking-widest max-w-2xl">
                             Technical execution is complete. Compare the live Pay-Per-Use (PPU) environment against the Commercial Intent defined in the blueprint to generate the final PO Shopping List.
                         </p>
+                        <p className="text-xs text-slate-500 mt-2">
+                            Uses <strong>Live RI Detection</strong> (billing_mode='1' or charging_mode='prePaid') instead of BSS API.
+                        </p>
                     </div>
                     {/* 🚨 FIX: Wrap function call to prevent Circular JSON Crash */}
-                    <button 
-                        onClick={() => handleRunTrueUp()} 
-                        disabled={isLoading}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
-                    >
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS API...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
-                    </button>
+                        <button 
+                            onClick={() => handleRunTrueUp()} 
+                            disabled={isLoading}
+                            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
+                        >
+                            {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running Live RI Detection...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
+                        </button>
                 </div>
 
                 {!matrix ? (
                     <div className="text-center py-16 text-emerald-300">
                         <i className="fas fa-file-invoice-dollar text-6xl mb-4 opacity-50"></i>
-                        <h3 className="font-black text-lg">Awaiting Commercial Scan</h3>
-                        <p className="text-xs font-medium mt-2">Run the scan to cross-reference Huawei Cloud Billing (BSS) active orders.</p>
+                        <h3 className="font-black text-lg">Awaiting Live RI Detection Scan</h3>
+                        <p className="text-xs font-medium mt-2">Run the scan to detect Reserved Instances from live Huawei Cloud resources.</p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
+                        {/* Active Subs (BSS) Status */}
+                        {activeSubsStatus && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-black text-lg text-blue-800 flex items-center">
+                                        <i className="fas fa-chart-bar text-blue-500 mr-3"></i> Active Subs (Live RI Detection)
+                                    </h4>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${activeSubsStatus.status === 'LIVE_RI_DETECTION_ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        {activeSubsStatus.status}
+                                    </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-4 gap-4 mb-6">
+                                    <div className="text-center">
+                                        <div className="text-2xl font-black text-blue-700">{activeSubsStatus.total_ris_detected}</div>
+                                        <div className="text-xs font-medium text-blue-600">Total RIs Detected</div>
+                                    </div>
+                                    {Object.entries(filterCounts).map(([key, count]) => (
+                                        <div key={key} className="text-center">
+                                            <div className="text-2xl font-black text-slate-800">{count}</div>
+                                            <div className="text-xs font-medium text-slate-600 capitalize">{key.replace('_', ' ')}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                
+                                {/* Aggregation by Specification */}
+                                {Object.keys(activeSubsStatus.by_specification).length > 0 && (
+                                    <div>
+                                        <h5 className="font-bold text-sm text-blue-700 mb-2">Aggregation by Specification:</h5>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                            {Object.entries(activeSubsStatus.by_specification).map(([spec, data]) => (
+                                                <div key={spec} className="bg-white border border-blue-100 rounded-lg p-3">
+                                                    <div className="font-bold text-sm text-blue-800 truncate">{spec}</div>
+                                                    <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                                                        <div className="text-center">
+                                                            <div className="font-black text-blue-600">{data.required}</div>
+                                                            <div className="text-blue-500">Req</div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="font-black text-green-600">{data.live}</div>
+                                                            <div className="text-green-500">Live</div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="font-black text-purple-600">{data.ri}</div>
+                                                            <div className="text-purple-500">RI</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`mt-2 text-center text-xs font-bold px-2 py-1 rounded ${data.status === 'COVERED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                        {data.status}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Filter Buttons */}
+                        <div className="flex flex-wrap gap-2">
+                            {Object.entries(filterCounts).map(([key, count]) => (
+                                <button
+                                    key={key}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center ${count > 0 ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}
+                                    onClick={() => alert(`Filter by: ${key.replace('_', ' ')}`)}
+                                >
+                                    <span className="mr-2">{key.replace('_', ' ')}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${count > 0 ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 text-slate-600'}`}>
+                                        {count}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+
                         {/* Summary Blocks */}
                         <div className="grid grid-cols-3 gap-6">
                             <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl shadow-inner text-center">

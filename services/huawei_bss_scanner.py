@@ -22,7 +22,7 @@ class HuaweiBSSScanner:
             credentials = GlobalCredentials(self.ak, self.sk)
             client = BssClient.new_builder() \
                 .with_credentials(credentials) \
-                .with_region(BssRegion.value_of("ap-southeast-3")) \
+                .with_region(BssRegion.value_of("cn-north-1")) \
                 .build()
             
             # Status 3 = Paid/Active/Completed Order

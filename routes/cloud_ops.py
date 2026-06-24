@@ -54,16 +54,104 @@ def reconcile_commercial_intent():
         if not ak_str.startswith('{') and len(ak_str) > 5: ak, sk = ak_str, sk_str
         else: ak, sk = cm.decrypt_credentials(json.loads(ak_str))
             
-        from services.huawei_bss_scanner import HuaweiBSSScanner
-        scanner = HuaweiBSSScanner(ak=ak, sk=sk)
+        from services.huawei_ri_detector import HuaweiRIDetector
+        detector = HuaweiRIDetector(
+            encrypted_ak_data=customer.ak,
+            encrypted_sk_data=customer.sk,
+            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            master_password=master_password
+        )
         
-        # This will aggregate the blueprint and check BSS Orders natively
-        reconciliation_matrix = scanner.reconcile_intent_matrix(commercial_intent)
+        # This will do 3-way reconciliation: Quoted RIs vs Live Servers vs Actual RIs
+        reconciliation_matrix = detector.reconcile_live_ris_with_intent(commercial_intent)
         
         return jsonify({"success": True, "matrix": reconciliation_matrix})
         
     except Exception as e:
-        logger.error(f"Error in BSS Reconciliation: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/finops/live-reconciliation', methods=['POST'])
+@jwt_required()
+def live_reconciliation():
+    """
+    Enhanced reconciliation with Live RI Detection and 3-way comparison.
+    Returns filter counts for 4 categories and aggregates by specification.
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('projectId')
+        
+        project_record = ProjectData.query.get(project_id)
+        if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        project_data = json.loads(project_record.data)
+        customer_id = project_data.get('customerId')
+        blueprint_data = project_data.get('blueprintData', {})
+        commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
+        
+        if not customer_id: return jsonify({"success": False, "error": "No Customer linked to this project."}), 400
+        
+        customer = Customer.query.get(customer_id)
+        if not customer or not customer.ak or not customer.sk: return jsonify({"success": False, "error": "Customer Master AK/SK missing from Vault."}), 400
+            
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
+        
+        from services.huawei_ri_detector import HuaweiRIDetector
+        detector = HuaweiRIDetector(
+            encrypted_ak_data=customer.ak,
+            encrypted_sk_data=customer.sk,
+            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            master_password=master_password
+        )
+        
+        # Get live inventory first for the 3-way comparison
+        from services.huawei_discovery import HuaweiDiscovery
+        discovery = HuaweiDiscovery(
+            encrypted_ak_data=customer.ak,
+            encrypted_sk_data=customer.sk,
+            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            master_password=master_password
+        )
+        live_inventory = discovery.discover_all()
+        
+        # Perform 3-way reconciliation
+        reconciliation_matrix = detector.reconcile_live_ris_with_intent(commercial_intent, live_inventory)
+        
+        # Add Active Subs (BSS) API Status (now using Live RI Detection)
+        active_subs_status = {
+            "status": "LIVE_RI_DETECTION_ACTIVE",
+            "total_ris_detected": reconciliation_matrix.get("summary", {}).get("covered", 0) + reconciliation_matrix.get("summary", {}).get("missing_ri", 0),
+            "by_specification": {},
+            "filter_counts": reconciliation_matrix.get("filter_counts", {})
+        }
+        
+        # Aggregate by specification
+        for item in reconciliation_matrix.get("aggregated_deployable", []):
+            spec = item.get("specification", "Unknown")
+            if spec not in active_subs_status["by_specification"]:
+                active_subs_status["by_specification"][spec] = {
+                    "required": 0,
+                    "live": 0,
+                    "ri": 0,
+                    "status": item.get("status", "unknown")
+                }
+            active_subs_status["by_specification"][spec]["required"] += item.get("required_qty", 0)
+            active_subs_status["by_specification"][spec]["live"] += item.get("live_qty", 0)
+            active_subs_status["by_specification"][spec]["ri"] += item.get("ri_qty", 0)
+        
+        response = {
+            "success": True,
+            "matrix": reconciliation_matrix,
+            "active_subs_status": active_subs_status,
+            "three_way_comparison": reconciliation_matrix.get("three_way_comparison", {}),
+            "filters": reconciliation_matrix.get("filter_counts", {})
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in Live Reconciliation: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
