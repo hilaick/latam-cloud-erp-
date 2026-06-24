@@ -65,24 +65,37 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [matrix, setMatrix] = useState(null);
+    const [activeFilter, setActiveFilter] = useState('all');
+    const [filterCounts, setFilterCounts] = useState(null);
 
-    const handleRunTrueUp = async () => {
+    const handleRunTrueUp = async (filterType = 'all') => {
         setIsLoading(true);
+        setActiveFilter(filterType);
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/reconcile', {
+            const res = await fetch('/api/finops/live-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ projectId: activeProject.id })
+                body: JSON.stringify({ 
+                    projectId: activeProject.id,
+                    filter: filterType 
+                })
             });
             const data = await res.json();
             if (data.success) {
                 setMatrix(data.matrix);
+                setFilterCounts(data.filter_counts || {
+                    pending_ri: 0,
+                    not_migrated: 0,
+                    marked_for_deletion: 0,
+                    pending_config: 0,
+                    all: data.matrix?.deployable_assets?.length || 0
+                });
             } else {
-                alert(`Error reconciling FinOps Matrix: ${data.error}`);
+                alert(`Error during Live Architecture Reconciliation: ${data.error}`);
             }
         } catch (err) {
-            alert(`Network error during BSS API call: ${err.message}`);
+            alert(`Network error during reconciliation: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -110,15 +123,15 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         disabled={isLoading}
                         className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
                     >
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Querying BSS API...</> : <><i className="fas fa-sync-alt mr-2"></i> Run BSS API Scan</>}
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Live Architecture...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Live Reconciliation</>}
                     </button>
                 </div>
 
                 {!matrix ? (
                     <div className="text-center py-16 text-emerald-300">
                         <i className="fas fa-file-invoice-dollar text-6xl mb-4 opacity-50"></i>
-                        <h3 className="font-black text-lg">Awaiting Commercial Scan</h3>
-                        <p className="text-xs font-medium mt-2">Run the scan to cross-reference Huawei Cloud Billing (BSS) active orders.</p>
+                        <h3 className="font-black text-lg">Live Architecture Reconciliation</h3>
+                        <p className="text-xs font-medium mt-2">Run the reconciliation to compare quoted vs live environment and identify RI requirements.</p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
@@ -138,6 +151,42 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             </div>
                         </div>
 
+                        {/* Filter Buttons */}
+                        {filterCounts && (
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                <button
+                                    onClick={() => handleRunTrueUp('all')}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    All Resources ({filterCounts.all || 0})
+                                </button>
+                                <button
+                                    onClick={() => handleRunTrueUp('pending_ri')}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'pending_ri' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
+                                >
+                                    <i className="fas fa-exclamation-triangle mr-1"></i> Pending RI ({filterCounts.pending_ri || 0})
+                                </button>
+                                <button
+                                    onClick={() => handleRunTrueUp('not_migrated')}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'not_migrated' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'}`}
+                                >
+                                    <i className="fas fa-server mr-1"></i> Not Migrated ({filterCounts.not_migrated || 0})
+                                </button>
+                                <button
+                                    onClick={() => handleRunTrueUp('marked_for_deletion')}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'marked_for_deletion' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'}`}
+                                >
+                                    <i className="fas fa-trash-alt mr-1"></i> Marked for Deletion ({filterCounts.marked_for_deletion || 0})
+                                </button>
+                                <button
+                                    onClick={() => handleRunTrueUp('pending_config')}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${activeFilter === 'pending_config' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                                >
+                                    <i className="fas fa-cog mr-1"></i> Pending Config ({filterCounts.pending_config || 0})
+                                </button>
+                            </div>
+                        )}
+
                         {/* Deployable Assets Table */}
                         <div>
                             <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Deployable Assets (Compute, DB, Storage)</h4>
@@ -147,7 +196,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <th className="p-3">Resource Name</th>
                                         <th className="p-3">Type</th>
                                         <th className="p-3">Commercial Intent (Quoted)</th>
-                                        <th className="p-3 text-center">BSS API Status</th>
+                                        <th className="p-3">Live Environment</th>
+                                        <th className="p-3 text-center">RI Status</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">

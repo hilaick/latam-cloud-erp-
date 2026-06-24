@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import math
+import logging
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 
@@ -17,15 +18,14 @@ from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
 from services.tool_recommender import ToolRecommender
 from services.credential_manager import get_credential_manager
 
-# 🚨 Import the new FinOps Scanner
-from services.huawei_bss_scanner import HuaweiBSSScanner
+logger = logging.getLogger(__name__)
 
 cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
 
 # 🚨 NEW: Phase 5 Commercial True-Up Endpoint
-@cloud_ops_bp.route('/api/finops/reconcile', methods=['POST'])
+@cloud_ops_bp.route('/api/finops/live-reconciliation', methods=['POST'])
 @jwt_required()
 def reconcile_commercial_intent():
     try:
@@ -49,17 +49,50 @@ def reconcile_commercial_intent():
         sk_str = str(customer.sk).strip()
         
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-        cm = get_credential_manager(master_password)
         
-        if not ak_str.startswith('{') and len(ak_str) > 5: ak, sk = ak_str, sk_str
-        else: ak, sk = cm.decrypt_credentials(json.loads(ak_str))
-            
-        scanner = HuaweiBSSScanner(ak=ak, sk=sk)
-        reconciliation_matrix = scanner.reconcile_intent_matrix(commercial_intent)
+        from services.enhanced_commercial_trueup import EnhancedCommercialTrueUp
         
-        return jsonify({"success": True, "matrix": reconciliation_matrix})
+        # Get live inventory for this customer via NOC scan
+        live_inventory = None
+        try:
+            # Call the existing NOC scan endpoint to get live inventory
+            from services.huawei_discovery import HuaweiDiscovery
+            discovery = HuaweiDiscovery(encrypted_ak_data=customer.ak, 
+                                       encrypted_sk_data=customer.sk, 
+                                       region=customer.region,
+                                       master_password=master_password)
+            inventory_result = discovery.discover_all()
+            if inventory_result and 'success' in inventory_result and inventory_result['success']:
+                live_inventory = inventory_result.get('inventory', {})
+        except Exception as e:
+            logger.warning(f"Could not get live inventory: {e}")
+            live_inventory = None
+        
+        # Perform three-way reconciliation
+        trueup = EnhancedCommercialTrueUp(customer_region=customer.region)
+        reconciliation_matrix = trueup.reconcile_three_way(
+            commercial_intent=commercial_intent,
+            live_inventory=live_inventory,
+            bss_orders=None  # Will be fetched or simulated inside
+        )
+        
+        # Get filter counts
+        filter_counts = trueup.get_filter_counts(reconciliation_matrix)
+        reconciliation_matrix['filter_counts'] = filter_counts
+        
+        # Apply filter if specified
+        filter_type = data.get('filter', 'all')
+        if filter_type != 'all':
+            reconciliation_matrix = trueup.apply_filters(reconciliation_matrix, filter_type)
+        
+        return jsonify({
+            "success": True,
+            "matrix": reconciliation_matrix,
+            "filter_counts": filter_counts
+        })
         
     except Exception as e:
+        logger.error(f"Error in live reconciliation: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])

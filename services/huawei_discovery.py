@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Dict, Any
 
@@ -56,20 +57,36 @@ logger = logging.getLogger(__name__)
 class HuaweiDiscovery:
     def __init__(self, encrypted_ak_data: Any, encrypted_sk_data: Any, region: str, master_password: str):
         self.regions = [r.strip() for r in str(region).split(',')] if region else ['la-south-2']
+        # Handle None or empty credentials
+        if encrypted_ak_data is None or encrypted_sk_data is None:
+            raise ValueError("AK/SK credentials are missing")
+            
         ak_str = str(encrypted_ak_data).strip()
         sk_str = str(encrypted_sk_data).strip()
-
-        if not ak_str.startswith('{') and len(ak_str) > 5:
-            self.raw_ak = ak_str; self.raw_sk = sk_str
-        else:
+        
+        # Check for 'None' string (from str(None))
+        if ak_str == 'None' or sk_str == 'None':
+            raise ValueError("AK/SK credentials are not set (value is None)")
+        
+        # Check for empty strings
+        if not ak_str or not sk_str:
+            raise ValueError("AK/SK credentials are empty")
+        
+        # If AK looks like JSON (encrypted), decrypt it
+        # Otherwise use plain text credentials
+        if ak_str.startswith('{') and len(ak_str) > 10:  # JSON should be longer than 10 chars
             try:
                 from services.credential_manager import get_credential_manager
-                self.raw_ak, self.raw_sk = get_credential_manager(master_password).decrypt_credentials({
-                    'encrypted_ak': encrypted_ak_data, 'encrypted_sk': encrypted_sk_data
-                })
+                # ak_str contains the entire encrypted JSON
+                encrypted_data = json.loads(ak_str)
+                self.raw_ak, self.raw_sk = get_credential_manager(master_password).decrypt_credentials(encrypted_data)
             except Exception as e:
                 logger.error(f"Failed to decrypt vault: {str(e)}")
-                raise ValueError("Invalid vault credentials format.")
+                raise ValueError(f"Invalid vault credentials format: {str(e)}")
+        else:
+            # Plain text credentials
+            self.raw_ak = ak_str
+            self.raw_sk = sk_str
 
         self.project_ids = {}
         try:
@@ -105,7 +122,51 @@ class HuaweiDiscovery:
                             vals = list(s.addresses.values())
                             if vals and len(vals) > 0 and len(vals[0]) > 0:
                                 private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
-                        inventory["compute"].append({ "id": s.id, "name": s.name, "type": "ECS", "private_ip_address": private_ip, "region": target_region })
+                        
+                        # Get billing mode from metadata or extendparam
+                        billing_mode = 'Unknown'
+                        charging_mode = 'Unknown'
+                        
+                        # Check metadata for billing info
+                        if hasattr(s, 'metadata') and s.metadata:
+                            if isinstance(s.metadata, dict):
+                                billing_mode = s.metadata.get('billing_mode', 'Unknown')
+                                charging_mode = s.metadata.get('charging_mode', 'Unknown')
+                            elif hasattr(s.metadata, 'get'):
+                                billing_mode = s.metadata.get('billing_mode', 'Unknown')
+                                charging_mode = s.metadata.get('charging_mode', 'Unknown')
+                        
+                        # Check extendparam
+                        if hasattr(s, 'extendparam') and s.extendparam:
+                            if isinstance(s.extendparam, dict):
+                                if billing_mode == 'Unknown':
+                                    billing_mode = s.extendparam.get('billing_mode', billing_mode)
+                                if charging_mode == 'Unknown':
+                                    charging_mode = s.extendparam.get('charging_mode', charging_mode)
+                            elif hasattr(s.extendparam, 'get'):
+                                if billing_mode == 'Unknown':
+                                    billing_mode = s.extendparam.get('billing_mode', billing_mode)
+                                if charging_mode == 'Unknown':
+                                    charging_mode = s.extendparam.get('charging_mode', charging_mode)
+                        
+                        # Determine if it's Reserved Instance
+                        is_reserved = False
+                        if billing_mode == '1' or charging_mode == 'prePaid':
+                            is_reserved = True
+                        elif 'reserved' in str(billing_mode).lower() or 'reserved' in str(charging_mode).lower():
+                            is_reserved = True
+                        
+                        inventory["compute"].append({ 
+                            "id": s.id, 
+                            "name": s.name, 
+                            "type": "ECS", 
+                            "private_ip_address": private_ip, 
+                            "region": target_region,
+                            "billing_mode": billing_mode,
+                            "charging_mode": charging_mode,
+                            "is_reserved_instance": is_reserved,
+                            "flavor": getattr(s, 'flavor', {}).get('id', 'Unknown') if hasattr(s, 'flavor') and s.flavor else 'Unknown'
+                        })
                 except Exception as e: inventory["diagnostics"].append(f"[{target_region}] ECS Connect Error: {str(e)}")
 
                 # 2. DATABASES
