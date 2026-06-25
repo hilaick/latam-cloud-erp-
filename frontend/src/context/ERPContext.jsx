@@ -34,7 +34,8 @@ export const ERPProvider = ({ children }) => {
     const getAuthHeaders = () => {
         const token = localStorage.getItem('erp_jwt_token');
         const headers = { 'Content-Type': 'application/json' };
-        if (token) {
+        // 🚨 STRICT VALIDATION: Do not send "null" or "undefined" strings
+        if (token && token !== 'null' && token !== 'undefined') {
             headers['Authorization'] = `Bearer ${token}`;
         }
         return headers;
@@ -78,11 +79,15 @@ export const ERPProvider = ({ children }) => {
         
         setLastFetchTime(now);
         const token = localStorage.getItem('erp_jwt_token');
-        if (!token) return;
+        if (!token || token === 'null' || token === 'undefined') {
+            handleAuthError();
+            return;
+        }
 
         try {
             const res = await fetch('/api/erp/state', { headers: getAuthHeaders() });
-            if (res.status === 401) return handleAuthError();
+            // 🚨 FIX: Intercept 422 Unprocessable Entity (Malformed JWT)
+            if (res.status === 401 || res.status === 422) return handleAuthError();
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && data.projects) setProjects(data.projects.filter(p => !p.isDeleted));
@@ -94,7 +99,7 @@ export const ERPProvider = ({ children }) => {
 
         try {
             const pbRes = await fetch('/api/erp/playbooks', { headers: getAuthHeaders() });
-            if (pbRes.status === 401) return handleAuthError();
+            if (pbRes.status === 401 || pbRes.status === 422) return handleAuthError();
             
             let pbData = {};
             if (pbRes.ok) {
@@ -116,7 +121,7 @@ export const ERPProvider = ({ children }) => {
 
         try {
             const custRes = await fetch('/api/erp/customers', { headers: getAuthHeaders() });
-            if (custRes.status === 401) return handleAuthError();
+            if (custRes.status === 401 || custRes.status === 422) return handleAuthError();
             if (custRes.ok) {
                 const custData = await custRes.json();
                 if (custData.success && custData.customers) setCustomers(custData.customers);
@@ -129,8 +134,10 @@ export const ERPProvider = ({ children }) => {
 
     useEffect(() => {
         const token = localStorage.getItem('erp_jwt_token');
-        if (token) {
+        if (token && token !== 'null' && token !== 'undefined') {
             fetchState();
+        } else {
+            handleAuthError();
         }
     }, []);
 
@@ -149,7 +156,7 @@ export const ERPProvider = ({ children }) => {
             body: JSON.stringify(modifiedProject) 
         })
         .then(r => { 
-            if(r.status === 401) handleAuthError();
+            if(r.status === 401 || r.status === 422) handleAuthError();
             else if(!r.ok) throw new Error(`Failed to save project: ${r.status} ${r.statusText}`);
         })
         .catch(err => {
@@ -197,7 +204,7 @@ export const ERPProvider = ({ children }) => {
         setProjects(prev => [newProject, ...prev]);
         fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newProject) })
             .then(r => { 
-                if(r.status === 401) handleAuthError();
+                if(r.status === 401 || r.status === 422) handleAuthError();
                 else if(!r.ok) throw new Error(`Failed to add project: ${r.status} ${r.statusText}`);
             })
             .catch(err => {
@@ -210,7 +217,7 @@ export const ERPProvider = ({ children }) => {
         setCustomers(prev => [...prev, newCustomer]);
         fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCustomer) })
             .then(r => { 
-                if(r.status === 401) handleAuthError();
+                if(r.status === 401 || r.status === 422) handleAuthError();
                 else if(!r.ok) throw new Error(`Failed to add customer: ${r.status} ${r.statusText}`);
             })
             .catch(err => {
@@ -223,7 +230,7 @@ export const ERPProvider = ({ children }) => {
         setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
         fetch(`/api/erp/customers/${updatedCustomer.id}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(updatedCustomer) })
             .then(r => { 
-                if(r.status === 401) handleAuthError();
+                if(r.status === 401 || r.status === 422) handleAuthError();
                 else if(!r.ok) throw new Error(`Failed to update customer: ${r.status} ${r.statusText}`);
             })
             .catch(err => {
@@ -266,7 +273,7 @@ export const ERPProvider = ({ children }) => {
             headers: getAuthHeaders() 
         })
         .then(r => {
-            if (r.status === 401) handleAuthError();
+            if (r.status === 401 || r.status === 422) handleAuthError();
             else if (!r.ok) throw new Error(`Failed to delete project: ${r.status} ${r.statusText}`);
             else {
                 setProjects(prev => prev.filter(p => String(p.id) !== String(id)));
@@ -290,16 +297,13 @@ export const ERPProvider = ({ children }) => {
 
         let updatedHighLevelPlan = [...highLevelPlan];
 
-        // 1. Calculate progress for each High-Level Task based on its Execution children
         updatedHighLevelPlan = updatedHighLevelPlan.map(hlTask => {
-            if (hlTask.isParent) return hlTask; // Skip overarching waves
+            if (hlTask.isParent) return hlTask; 
 
-            // Find all granular execution tasks tagged to this High-Level ID
             const childTasks = executionPlan.filter(ex => String(ex.parentWbsId) === String(hlTask.id));
             
-            if (childTasks.length === 0) return hlTask; // No execution tasks yet, keep existing
+            if (childTasks.length === 0) return hlTask; 
 
-            // Calculate average progress of children
             let totalPercent = 0;
             childTasks.forEach(child => {
                 const val = parseInt((child.prog || '0').replace('%', ''), 10);
@@ -310,7 +314,6 @@ export const ERPProvider = ({ children }) => {
             return { ...hlTask, prog: `${avgProgress}%` };
         });
 
-        // 2. Roll up the total project progress for the PMO Master Pipeline
         const validHlTasks = updatedHighLevelPlan.filter(t => !t.isParent);
         let masterTotal = 0;
         validHlTasks.forEach(t => {
@@ -319,7 +322,6 @@ export const ERPProvider = ({ children }) => {
         });
         const masterOverallProgress = validHlTasks.length > 0 ? Math.round(masterTotal / validHlTasks.length) + '%' : '0%';
 
-        // 3. Dispatch updates to the database/state with setTimeout to prevent React race conditions
         handleUpdateProject(projectId, 'migrationPlan', updatedHighLevelPlan);
         setTimeout(() => {
             handleUpdateProject(projectId, 'progress', masterOverallProgress);
@@ -342,7 +344,7 @@ export const ERPProvider = ({ children }) => {
             handleUpdateCustomer, 
             handleDeleteCustomer, 
             handleDeleteProject,
-            syncExecutionProgress, // 🚨 Expose Progress Engine
+            syncExecutionProgress, 
             refreshData: fetchState
         }}>
             {children}
