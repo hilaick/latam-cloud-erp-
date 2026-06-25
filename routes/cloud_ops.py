@@ -239,6 +239,14 @@ def ecs_ri_reconciliation():
             "filter_counts": reconciliation_result["filter_counts"]
         }
         
+        # Debug log
+        logger.info(f"ECS RI Reconciliation Response:")
+        logger.info(f"  Total Quoted: {active_subs_status['total_quoted']}")
+        logger.info(f"  Total Live: {active_subs_status['total_live']}")
+        logger.info(f"  Total Bought: {active_subs_status['total_bought']}")
+        logger.info(f"  Total Missing: {active_subs_status['total_missing']}")
+        logger.info(f"  By Specification (first 3): {dict(list(active_subs_status['by_specification'].items())[:3])}")
+        
         response = {
             "success": True,
             "reconciliation": reconciliation_result,

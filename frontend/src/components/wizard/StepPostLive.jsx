@@ -72,13 +72,16 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [riQuotationSummary, setRIQuotationSummary] = useState(null);
 
     const handleRunTrueUp = async () => {
-        setIsLoading(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            setIsLoading(true);
+            const token = localStorage.getItem('token');
             const res = await fetch('/api/finops/ecs-ri-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ projectId: activeProject.id })
+                body: JSON.stringify({ 
+                    projectId: activeProject.id,
+                    _t: Date.now() // Cache buster
+                })
             });
             const data = await res.json();
             if (data.success) {

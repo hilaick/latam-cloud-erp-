@@ -212,7 +212,8 @@ class ECSRIReconciler:
                     'live': item['live_count'],
                     'bought': item['bought_count'],
                     'missing': item['missing_ris'],
-                    'status': item['status']
+                    'status': item['status'],
+                    'filter_category': self._get_filter_category(item['status'])
                 }
             
             # Calculate filter counts (simplified for now)
@@ -282,6 +283,19 @@ class ECSRIReconciler:
                 break
         
         return normalized
+    
+    def _get_filter_category(self, status: str) -> str:
+        """Convert status to filter category for frontend compatibility."""
+        if status == 'NO_RI':
+            return 'pending_ri'
+        elif status == 'NOT_MIGRATED':
+            return 'not_migrated'
+        elif status == 'PARTIAL_RI':
+            return 'pending_ri'  # Partially covered still needs RI
+        elif status == 'FULL_RI':
+            return 'covered'
+        else:
+            return 'covered'
     
     def _get_spec_status(self, quoted: int, live: int, bought: int) -> str:
         """Get status for a specification based on quoted/live/bought counts."""
