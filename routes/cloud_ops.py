@@ -24,7 +24,6 @@ cloud_ops_bp = Blueprint('cloud_ops', __name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 huawei_lb = HuaweiLoadBalancer()
 
-# 🚨 FIX: Replaced crashing unmapped route with correct HuaweiBSSScanner logic
 @cloud_ops_bp.route('/api/finops/reconcile', methods=['POST'])
 @jwt_required()
 def reconcile_commercial_intent():
@@ -58,11 +57,10 @@ def reconcile_commercial_intent():
         detector = HuaweiRIDetector(
             encrypted_ak_data=customer.ak,
             encrypted_sk_data=customer.sk,
-            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            region=customer.region if hasattr(customer, 'region') and customer.region else 'la-south-2',
             master_password=master_password
         )
         
-        # This will do 3-way reconciliation: Quoted RIs vs Live Servers vs Actual RIs
         reconciliation_matrix = detector.reconcile_live_ris_with_intent(commercial_intent)
         
         return jsonify({"success": True, "matrix": reconciliation_matrix})
@@ -73,10 +71,6 @@ def reconcile_commercial_intent():
 @cloud_ops_bp.route('/api/finops/live-reconciliation', methods=['POST'])
 @jwt_required()
 def live_reconciliation():
-    """
-    Enhanced reconciliation with Live RI Detection and 3-way comparison.
-    Returns filter counts for 4 categories and aggregates by specification.
-    """
     try:
         data = request.get_json()
         project_id = data.get('projectId')
@@ -97,28 +91,27 @@ def live_reconciliation():
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
         cm = get_credential_manager(master_password)
         
+        project_region = project_data.get('region') or getattr(customer, 'region', 'la-south-2')
+        
         from services.huawei_ri_detector import HuaweiRIDetector
         detector = HuaweiRIDetector(
             encrypted_ak_data=customer.ak,
             encrypted_sk_data=customer.sk,
-            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            region=project_region,
             master_password=master_password
         )
         
-        # Get live inventory first for the 3-way comparison
         from services.huawei_discovery import HuaweiDiscovery
         discovery = HuaweiDiscovery(
             encrypted_ak_data=customer.ak,
             encrypted_sk_data=customer.sk,
-            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            region=project_region,
             master_password=master_password
         )
         live_inventory = discovery.discover_all()
         
-        # Perform 3-way reconciliation
         reconciliation_matrix = detector.reconcile_live_ris_with_intent(commercial_intent, live_inventory)
         
-        # Add Active Subs (BSS) API Status (now using Live RI Detection)
         active_subs_status = {
             "status": "LIVE_RI_DETECTION_ACTIVE",
             "total_ris_detected": reconciliation_matrix.get("summary", {}).get("covered", 0) + reconciliation_matrix.get("summary", {}).get("missing_ri", 0),
@@ -126,7 +119,6 @@ def live_reconciliation():
             "filter_counts": reconciliation_matrix.get("filter_counts", {})
         }
         
-        # Aggregate by specification
         for item in reconciliation_matrix.get("aggregated_deployable", []):
             spec = item.get("specification", "Unknown")
             if spec not in active_subs_status["by_specification"]:
@@ -157,11 +149,6 @@ def live_reconciliation():
 @cloud_ops_bp.route('/api/finops/ecs-ri-reconciliation', methods=['POST'])
 @jwt_required()
 def ecs_ri_reconciliation():
-    """
-    ECS-specific RI reconciliation with 4 filter categories.
-    Focuses only on ECS servers (since only ECS can have RIs).
-    Compares quoted RIs vs live ECS servers vs actual RIs.
-    """
     try:
         data = request.get_json()
         project_id = data.get('projectId')
@@ -169,7 +156,6 @@ def ecs_ri_reconciliation():
         if not project_id:
             return jsonify({"success": False, "error": "Project ID is required"}), 400
         
-        # Get project and customer
         project_record = ProjectData.query.get(project_id)
         if not project_record:
             return jsonify({"success": False, "error": "Project not found"}), 404
@@ -186,12 +172,9 @@ def ecs_ri_reconciliation():
         
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
         
-        # Get RI quotation data for this project
         quoted_ecs_ris = []
         
-        # Check if RI quotation data is available
         if 'ri_quotation' in project_data and 'servers' in project_data['ri_quotation']:
-            # Use the parsed RI quotation data from Step 5 upload
             for server in project_data['ri_quotation']['servers']:
                 quoted_ecs_ris.append({
                     "name": server.get('name', ''),
@@ -202,33 +185,31 @@ def ecs_ri_reconciliation():
                     "billing_mode": server.get('billing_mode', 'RI')
                 })
         else:
-            # Fallback to commercial_intent (legacy)
             blueprint_data = project_data.get('blueprintData', {})
             commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
             
-            # Extract ECS RI items from commercial_intent
             for asset in commercial_intent.get('deployable_assets', []):
                 if asset.get('type') == 'ECS' and asset.get('billing_mode') == 'Reserved':
                     quoted_ecs_ris.append({
                         "specification": asset.get('specification', 'Unknown'),
-                        "quantity": 1,  # Default to 1 per asset
+                        "quantity": 1, 
                         "name": asset.get('name', ''),
                         "tags": asset.get('tags', {})
                     })
         
-        # Initialize ECS RI Reconciler
+        # 🚨 FIX: Pass proper region down to the Reconciler
+        project_region = project_data.get('region') or getattr(customer, 'region', 'la-south-2')
+        
         from services.ecs_ri_reconciler_v2 import ECSRIReconciler
         reconciler = ECSRIReconciler(
             encrypted_ak_data=customer.ak,
             encrypted_sk_data=customer.sk,
-            region=customer.default_region if hasattr(customer, 'default_region') else 'la-south-2',
+            region=project_region,
             master_password=master_password
         )
         
-        # Perform ECS RI reconciliation
         reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris)
         
-        # Format response with 3-way comparison
         active_subs_status = {
             "status": "ECS_RI_RECONCILIATION_ACTIVE",
             "total_quoted": reconciliation_result["summary"]["total_quoted"],
@@ -238,14 +219,6 @@ def ecs_ri_reconciliation():
             "by_specification": reconciliation_result["summary"]["by_specification"],
             "filter_counts": reconciliation_result["filter_counts"]
         }
-        
-        # Debug log
-        logger.info(f"ECS RI Reconciliation Response:")
-        logger.info(f"  Total Quoted: {active_subs_status['total_quoted']}")
-        logger.info(f"  Total Live: {active_subs_status['total_live']}")
-        logger.info(f"  Total Bought: {active_subs_status['total_bought']}")
-        logger.info(f"  Total Missing: {active_subs_status['total_missing']}")
-        logger.info(f"  By Specification (first 3): {dict(list(active_subs_status['by_specification'].items())[:3])}")
         
         response = {
             "success": True,
@@ -269,12 +242,7 @@ def ecs_ri_reconciliation():
 @cloud_ops_bp.route('/api/finops/upload-ri-quotation', methods=['POST'])
 @jwt_required()
 def upload_ri_quotation():
-    """
-    Upload Price Calculator RI quotation (separate from ARB Handover PPU).
-    Stores RI-specific data for ECS reconciliation.
-    """
     try:
-        # Check if file upload or raw data
         if 'file' in request.files:
             file = request.files['file']
             if file.filename == '':
@@ -286,19 +254,15 @@ def upload_ri_quotation():
             if not project_id:
                 return jsonify({"success": False, "error": "Project ID is required"}), 400
             
-            # Save the file
             from services.quotation_versioning import save_quotation_file
             file_path = save_quotation_file(project_id, file, file.filename)
             
-            # Parse the Price Calculator RI data
             import pandas as pd
             import os
             from datetime import datetime
             
-            # Read the Excel file
             df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
             
-            # Find the header row (where 'Required' appears)
             header_row = None
             for i in range(len(df)):
                 row_contains_required = False
@@ -316,27 +280,22 @@ def upload_ri_quotation():
                     "error": "Could not find 'Required' column in Price Calculator - RI sheet"
                 }), 400
             
-            # Read with proper header
             df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
             
-            # Extract ECS RI servers
             ecs_ri_servers = []
             for idx, row in df_ri.iterrows():
                 required_val = row.get('Required')
                 service_val = row.get('Service')
                 
                 if pd.notna(required_val) and pd.notna(service_val) and 'Elastic Cloud Server' in str(service_val):
-                    # Extract specification from the Specifications column
                     specs = str(row.get('Specifications', ''))
                     
-                    # Parse specification (third part after splitting by |)
                     specification = 'Unknown'
                     if '|' in specs:
                         parts = [p.strip() for p in specs.split('|')]
                         if len(parts) > 2:
-                            specification = parts[2]  # Third part is the specification
+                            specification = parts[2] 
                     
-                    # Safely convert quantity to int
                     quantity_val = row.get('Quantity', 1)
                     try:
                         quantity = int(float(quantity_val)) if pd.notna(quantity_val) else 1
@@ -354,7 +313,6 @@ def upload_ri_quotation():
                         'specifications_full': specs[:200]
                     })
             
-            # Store the parsed data in the project
             from models import ProjectData, db
             import json
             
@@ -362,7 +320,6 @@ def upload_ri_quotation():
             if not project:
                 return jsonify({"success": False, "error": "Project not found"}), 404
             
-            # Update project data with RI quotation
             data = json.loads(project.data)
             if 'ri_quotation' not in data:
                 data['ri_quotation'] = {}
@@ -371,7 +328,6 @@ def upload_ri_quotation():
             data['ri_quotation']['file_path'] = file_path
             data['ri_quotation']['servers'] = ecs_ri_servers
             
-            # Group by specification for summary
             spec_counts = {}
             for server in ecs_ri_servers:
                 spec = server['specification']
@@ -393,7 +349,7 @@ def upload_ri_quotation():
                 "file_path": file_path,
                 "quotation_type": quotation_type,
                 "summary": data['ri_quotation']['summary'],
-                "servers": ecs_ri_servers[:10]  # Return first 10 for preview
+                "servers": ecs_ri_servers[:10] 
             })
             
         elif request.is_json:
@@ -405,8 +361,6 @@ def upload_ri_quotation():
             if not project_id:
                 return jsonify({"success": False, "error": "Project ID is required"}), 400
             
-            # TODO: Parse raw RI data (CSV/JSON format)
-            # For now, just acknowledge receipt
             return jsonify({
                 "success": True,
                 "message": "RI quotation data received (raw parsing not yet implemented)",
