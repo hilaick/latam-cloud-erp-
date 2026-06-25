@@ -11,7 +11,7 @@ class ECSRIReconciler:
     Compares three data sources:
     1. Quoted RIs (from Price Calculator)
     2. Live ECS servers (from Huawei Cloud discovery)
-    3. Bought RIs (from Huawei Console RI list)
+    3. Bought RIs (from Huawei Console BSS API + Prepaid ECS nodes)
     """
     
     def __init__(self, encrypted_ak_data: str, encrypted_sk_data: str, 
@@ -25,15 +25,10 @@ class ECSRIReconciler:
         self.region = region
         
     def get_live_ecs_servers(self) -> List[Dict]:
-        """
-        Get live ECS servers from Huawei Cloud.
-        """
         try:
             logger.info(f"Getting live ECS servers from region {self.region}")
-            
-            # 🚨 FIX: Correctly unpack the {"success": True, "inventory": {...}} response payload
             response = self.discovery.discover_all()
-            inventory = response.get('inventory', {}) if response.get('success') else {}
+            inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
             
             live_ecs_servers = []
             for server in inventory.get('compute', []):
@@ -51,53 +46,84 @@ class ECSRIReconciler:
                         'flavor': server.get('flavor')
                     })
             
-            logger.info(f"Found {len(live_ecs_servers)} live ECS servers")
             return live_ecs_servers
-            
         except Exception as e:
             logger.error(f"Error getting live ECS servers: {e}", exc_info=True)
             return []
     
     def get_bought_ris(self) -> List[Dict]:
         """
-        Get bought RIs from Huawei Console.
-        This would normally call the Huawei Cloud BSS API for Reserved Instances.
-        For now, we'll simulate by checking billing_mode='1' or charging_mode='prePaid'
+        Gets bought RIs from two places:
+        1. Prepaid ECS nodes (chargingMode = 1)
+        2. Floating RIs from the BSS Orders API
         """
         try:
-            logger.info(f"Getting bought RIs from region {self.region}")
-            
-            # 🚨 FIX: Correctly unpack the {"success": True, "inventory": {...}} response payload
-            response = self.discovery.discover_all()
-            inventory = response.get('inventory', {}) if response.get('success') else {}
-            
+            logger.info(f"Getting bought RIs for region {self.region}")
             bought_ris = []
+            
+            # 1. Fetch Prepaid ECS (Node-level RIs)
+            response = self.discovery.discover_all()
+            inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
+            
             for server in inventory.get('compute', []):
                 if server.get('type') == 'ECS':
-                    billing_mode = str(server.get('billing_mode', ''))
-                    charging_mode = str(server.get('charging_mode', ''))
-                    
-                    # Huawei Cloud uses billing_mode='1' or charging_mode='prePaid' for RIs
-                    is_reserved = (
-                        billing_mode == '1' or 
-                        charging_mode == 'prePaid' or
-                        'reserved' in billing_mode.lower() or
-                        'reserved' in charging_mode.lower()
-                    )
-                    
-                    if is_reserved:
+                    if server.get('is_reserved_instance') == True:
                         bought_ris.append({
                             'id': server.get('id'),
-                            'name': server.get('name'),
+                            'name': server.get('name') + " (Prepaid ECS Node)",
                             'specification': server.get('flavor', server.get('specification', 'Unknown')),
-                            'billing_mode': billing_mode,
-                            'charging_mode': charging_mode,
+                            'billing_mode': 'Prepaid',
+                            'charging_mode': '1',
                             'tags': server.get('tags', {}),
-                            'created_at': server.get('created_at')
+                            'created_at': server.get('created_at', '')
                         })
+
+            # 2. Fetch Floating RIs from BSS API
+            try:
+                from huaweicloudsdkcore.auth.credentials import GlobalCredentials
+                from huaweicloudsdkbss.v2.region.bss_region import BssRegion
+                from huaweicloudsdkbss.v2.bss_client import BssClient
+                from huaweicloudsdkbss.v2.model.list_customer_orders_request import ListCustomerOrdersRequest
+                
+                credentials = GlobalCredentials(self.discovery.raw_ak, self.discovery.raw_sk)
+                client = BssClient.new_builder() \
+                    .with_credentials(credentials) \
+                    .with_region(BssRegion.value_of("ap-southeast-3")) \
+                    .build()
+                
+                # Fetch completed orders
+                request = ListCustomerOrdersRequest(status=3) 
+                bss_resp = client.list_customer_orders(request)
+                
+                if getattr(bss_resp, 'order_infos', None):
+                    for order in bss_resp.order_infos:
+                        order_dict = order.to_dict() if hasattr(order, 'to_dict') else order.__dict__
+                        details = str(order_dict).lower()
+                        if 'reserved' in details or 'ri ' in details:
+                            # Safely extract common flavors
+                            spec = 'Unknown'
+                            for s in ['s6.large.2', 'c7.xlarge.2', 's6.xlarge.2', 'c6.large.2', 'c6.xlarge.2', 's6.medium.2', 'c7.large.2']:
+                                if s in details:
+                                    spec = s
+                                    break
+                                    
+                            bought_ris.append({
+                                'id': order_dict.get('order_id', 'BSS_RI'),
+                                'name': f"Floating RI (Order {order_dict.get('order_id', '')})",
+                                'specification': spec,
+                                'billing_mode': 'Floating Reserved',
+                                'charging_mode': '1',
+                                'tags': {},
+                                'created_at': order_dict.get('create_time', '')
+                            })
+            except Exception as bss_err:
+                logger.warning(f"BSS API fetch skipped/failed (expected if missing IAM rights): {bss_err}")
+
+            # Filter duplicates to prevent double-counting
+            unique_bought = {ri['id']: ri for ri in bought_ris}.values()
             
-            logger.info(f"Found {len(bought_ris)} bought RIs")
-            return bought_ris
+            logger.info(f"Found {len(unique_bought)} Total Bought RIs")
+            return list(unique_bought)
             
         except Exception as e:
             logger.error(f"Error getting bought RIs: {e}", exc_info=True)
@@ -220,12 +246,12 @@ class ECSRIReconciler:
                     'filter_category': self._get_filter_category(item['status'])
                 }
             
-            # Calculate filter counts
+            # Calculate filter counts (simplified for now)
             filter_counts = {
                 'pending_ri': total_missing,
-                'not_migrated': 0, 
-                'marked_for_deletion': 0, 
-                'pending_config': 0 
+                'not_migrated': 0,  
+                'marked_for_deletion': 0,  
+                'pending_config': 0  
             }
             
             return {
@@ -271,10 +297,6 @@ class ECSRIReconciler:
             }
     
     def _normalize_spec_name(self, spec: str) -> str:
-        """
-        Normalize specification name for comparison.
-        Removes prefixes like 'general.', 's2.', 'c3.', etc.
-        """
         if not spec:
             return 'Unknown'
         
@@ -289,20 +311,18 @@ class ECSRIReconciler:
         return normalized
     
     def _get_filter_category(self, status: str) -> str:
-        """Convert status to filter category for frontend compatibility."""
         if status == 'NO_RI':
             return 'pending_ri'
         elif status == 'NOT_MIGRATED':
             return 'not_migrated'
         elif status == 'PARTIAL_RI':
-            return 'pending_ri'  # Partially covered still needs RI
+            return 'pending_ri'  
         elif status == 'FULL_RI':
             return 'covered'
         else:
             return 'covered'
     
     def _get_spec_status(self, quoted: int, live: int, bought: int) -> str:
-        """Get status for a specification based on quoted/live/bought counts."""
         if quoted == 0:
             return 'NOT_QUOTED'
         elif live == 0:
