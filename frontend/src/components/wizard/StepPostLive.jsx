@@ -64,16 +64,12 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [matrix, setMatrix] = useState(null);
-    const [filterCounts, setFilterCounts] = useState({
-        pending_ri: 0,
-        not_migrated: 0,
-        marked_for_deletion: 0,
-        pending_config: 0
-    });
+    const [filterCounts, setFilterCounts] = useState(null);
     const [activeSubsStatus, setActiveSubsStatus] = useState(null);
+    const [isUploadingRI, setIsUploadingRI] = useState(false);
     const [showRIPasteModal, setShowRIPasteModal] = useState(false);
     const [riQuotationData, setRIQuotationData] = useState('');
-    const [isUploadingRI, setIsUploadingRI] = useState(false);
+    const [riQuotationSummary, setRIQuotationSummary] = useState(null);
 
     const handleRunTrueUp = async () => {
         setIsLoading(true);
@@ -131,7 +127,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             
             const data = await res.json();
             if (data.success) {
-                alert('RI Quotation uploaded successfully!');
+                // Store the RI quotation summary
+                if (data.summary) {
+                    setRIQuotationSummary(data.summary);
+                }
+                alert(`RI Quotation uploaded successfully! Found ${data.summary?.total_servers || 0} ECS servers with ${data.summary?.total_ris || 0} total RIs across ${data.summary?.unique_specifications || 0} unique specifications.`);
                 // Refresh the reconciliation data
                 handleRunTrueUp();
             } else {
@@ -231,6 +231,42 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                     </button>
                                 </div>
                             </div>
+                            
+                            {/* RI Quotation Summary */}
+                            {riQuotationSummary && (
+                                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h6 className="font-bold text-sm text-green-800 flex items-center">
+                                                <i className="fas fa-check-circle text-green-600 mr-2"></i> RI Quotation Loaded
+                                            </h6>
+                                            <p className="text-xs text-green-700 mt-1">
+                                                Found {riQuotationSummary.total_servers} ECS servers with {riQuotationSummary.total_ris} total RIs across {riQuotationSummary.unique_specifications} specifications
+                                            </p>
+                                        </div>
+                                        <button 
+                                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center"
+                                            onClick={() => setRIQuotationSummary(null)}
+                                        >
+                                            <i className="fas fa-times mr-1"></i> Clear
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Specifications Summary */}
+                                    {riQuotationSummary.by_specification && Object.keys(riQuotationSummary.by_specification).length > 0 && (
+                                        <div className="mt-3">
+                                            <div className="text-xs font-medium text-green-700 mb-1">Specifications:</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {Object.entries(riQuotationSummary.by_specification).map(([spec, count]) => (
+                                                    <span key={spec} className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                                                        {spec}: {count}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                     {/* 🚨 FIX: Wrap function call to prevent Circular JSON Crash */}

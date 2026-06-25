@@ -187,21 +187,34 @@ def ecs_ri_reconciliation():
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
         
         # Get RI quotation data for this project
-        # TODO: This should come from a separate RI quotation upload in Step 5
-        # For now, we'll extract from commercial_intent
-        blueprint_data = project_data.get('blueprintData', {})
-        commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
-        
-        # Extract ECS RI items from commercial_intent
         quoted_ecs_ris = []
-        for asset in commercial_intent.get('deployable_assets', []):
-            if asset.get('type') == 'ECS' and asset.get('billing_mode') == 'Reserved':
+        
+        # Check if RI quotation data is available
+        if 'ri_quotation' in project_data and 'servers' in project_data['ri_quotation']:
+            # Use the parsed RI quotation data from Step 5 upload
+            for server in project_data['ri_quotation']['servers']:
                 quoted_ecs_ris.append({
-                    "specification": asset.get('specification', 'Unknown'),
-                    "quantity": 1,  # Default to 1 per asset
-                    "name": asset.get('name', ''),
-                    "tags": asset.get('tags', {})
+                    "name": server.get('name', ''),
+                    "specification": server.get('specification', 'Unknown'),
+                    "quantity": server.get('quantity', 1),
+                    "description": server.get('description', ''),
+                    "region": server.get('region', ''),
+                    "billing_mode": server.get('billing_mode', 'RI')
                 })
+        else:
+            # Fallback to commercial_intent (legacy)
+            blueprint_data = project_data.get('blueprintData', {})
+            commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
+            
+            # Extract ECS RI items from commercial_intent
+            for asset in commercial_intent.get('deployable_assets', []):
+                if asset.get('type') == 'ECS' and asset.get('billing_mode') == 'Reserved':
+                    quoted_ecs_ris.append({
+                        "specification": asset.get('specification', 'Unknown'),
+                        "quantity": 1,  # Default to 1 per asset
+                        "name": asset.get('name', ''),
+                        "tags": asset.get('tags', {})
+                    })
         
         # Initialize ECS RI Reconciler
         from services.ecs_ri_reconciler import ECSRIReconciler
@@ -262,13 +275,110 @@ def upload_ri_quotation():
             from services.quotation_versioning import save_quotation_file
             file_path = save_quotation_file(project_id, file, file.filename)
             
-            # TODO: Parse RI-specific data from Price Calculator Excel
-            # For now, just store the file path
+            # Parse the Price Calculator RI data
+            import pandas as pd
+            import os
+            from datetime import datetime
+            
+            # Read the Excel file
+            df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
+            
+            # Find the header row (where 'Required' appears)
+            header_row = None
+            for i in range(len(df)):
+                row_contains_required = False
+                try:
+                    row_contains_required = df.iloc[i].astype(str).str.contains('Required').any()
+                except:
+                    pass
+                if row_contains_required:
+                    header_row = i
+                    break
+            
+            if header_row is None:
+                return jsonify({
+                    "success": False,
+                    "error": "Could not find 'Required' column in Price Calculator - RI sheet"
+                }), 400
+            
+            # Read with proper header
+            df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
+            
+            # Extract ECS RI servers
+            ecs_ri_servers = []
+            for idx, row in df_ri.iterrows():
+                required_val = row.get('Required')
+                service_val = row.get('Service')
+                
+                if pd.notna(required_val) and pd.notna(service_val) and 'Elastic Cloud Server' in str(service_val):
+                    # Extract specification from the Specifications column
+                    specs = str(row.get('Specifications', ''))
+                    
+                    # Parse specification (third part after splitting by |)
+                    specification = 'Unknown'
+                    if '|' in specs:
+                        parts = [p.strip() for p in specs.split('|')]
+                        if len(parts) > 2:
+                            specification = parts[2]  # Third part is the specification
+                    
+                    # Safely convert quantity to int
+                    quantity_val = row.get('Quantity', 1)
+                    try:
+                        quantity = int(float(quantity_val)) if pd.notna(quantity_val) else 1
+                    except:
+                        quantity = 1
+                    
+                    ecs_ri_servers.append({
+                        'name': str(required_val).strip(),
+                        'description': str(row.get('Description', '')).strip(),
+                        'service': str(service_val).strip(),
+                        'region': str(row.get('Region', '')).strip(),
+                        'billing_mode': str(row.get('Billing Mode', '')).strip(),
+                        'quantity': quantity,
+                        'specification': specification,
+                        'specifications_full': specs[:200]
+                    })
+            
+            # Store the parsed data in the project
+            from models import ProjectData, db
+            import json
+            
+            project = ProjectData.query.get(project_id)
+            if not project:
+                return jsonify({"success": False, "error": "Project not found"}), 404
+            
+            # Update project data with RI quotation
+            data = json.loads(project.data)
+            if 'ri_quotation' not in data:
+                data['ri_quotation'] = {}
+            
+            data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
+            data['ri_quotation']['file_path'] = file_path
+            data['ri_quotation']['servers'] = ecs_ri_servers
+            
+            # Group by specification for summary
+            spec_counts = {}
+            for server in ecs_ri_servers:
+                spec = server['specification']
+                spec_counts[spec] = spec_counts.get(spec, 0) + server['quantity']
+            
+            data['ri_quotation']['summary'] = {
+                'total_servers': len(ecs_ri_servers),
+                'total_ris': sum(spec_counts.values()),
+                'unique_specifications': len(spec_counts),
+                'by_specification': spec_counts
+            }
+            
+            project.data = json.dumps(data)
+            db.session.commit()
+            
             return jsonify({
                 "success": True,
-                "message": "RI quotation uploaded successfully",
+                "message": f"RI quotation uploaded and parsed successfully. Found {len(ecs_ri_servers)} ECS servers with {sum(spec_counts.values())} total RIs across {len(spec_counts)} unique specifications.",
                 "file_path": file_path,
-                "quotation_type": quotation_type
+                "quotation_type": quotation_type,
+                "summary": data['ri_quotation']['summary'],
+                "servers": ecs_ri_servers[:10]  # Return first 10 for preview
             })
             
         elif request.is_json:
@@ -284,7 +394,7 @@ def upload_ri_quotation():
             # For now, just acknowledge receipt
             return jsonify({
                 "success": True,
-                "message": "RI quotation data received",
+                "message": "RI quotation data received (raw parsing not yet implemented)",
                 "quotation_type": quotation_type,
                 "data_length": len(raw_data)
             })
