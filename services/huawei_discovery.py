@@ -19,7 +19,6 @@ except Exception as e:
     HAS_NAT = False
     NAT_ERR = str(e)
 
-# 🚨 FIX: Explicitly alias cbr_module to prevent NameError
 try:
     from huaweicloudsdkcbr.v3 import CbrClient, ListVaultsRequest
     import huaweicloudsdkcbr.v3 as cbr_module
@@ -127,22 +126,23 @@ class HuaweiDiscovery:
                             if vals and len(vals) > 0 and len(vals[0]) > 0:
                                 private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
                         
+                        # 🚨 FIX: Aggressively target Huawei's exact `metering.chargingMode` keys
                         billing_mode = 'Unknown'
                         charging_mode = 'Unknown'
                         
                         if hasattr(s, 'metadata') and s.metadata:
-                            if isinstance(s.metadata, dict):
-                                billing_mode = s.metadata.get('billing_mode', 'Unknown')
-                                charging_mode = s.metadata.get('charging_mode', 'Unknown')
-                            elif hasattr(s.metadata, 'get'):
-                                billing_mode = s.metadata.get('billing_mode', 'Unknown')
-                                charging_mode = s.metadata.get('charging_mode', 'Unknown')
+                            try:
+                                m = s.metadata if isinstance(s.metadata, dict) else s.metadata.__dict__
+                                billing_mode = m.get('billing_mode', m.get('metering.billing_mode', m.get('metering.billingMode', 'Unknown')))
+                                charging_mode = m.get('charging_mode', m.get('metering.charging_mode', m.get('metering.chargingMode', 'Unknown')))
+                            except Exception:
+                                pass
                         
                         is_reserved = False
-                        if billing_mode == '1' or charging_mode == 'prePaid' or 'reserved' in str(billing_mode).lower() or 'reserved' in str(charging_mode).lower():
+                        # Huawei uses '1' for Prepaid / Yearly / Monthly
+                        if str(billing_mode) == '1' or str(charging_mode) == '1' or 'prepaid' in str(charging_mode).lower() or 'reserved' in str(billing_mode).lower() or 'reserved' in str(charging_mode).lower():
                             is_reserved = True
                             
-                        # 🚨 FIX: Safely parse Huawei's Object-based Flavor reference without crashing
                         flavor_id = 'Unknown'
                         if hasattr(s, 'flavor') and s.flavor:
                             if hasattr(s.flavor, 'id'): flavor_id = s.flavor.id
