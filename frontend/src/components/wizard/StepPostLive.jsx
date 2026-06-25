@@ -78,10 +78,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             const res = await fetch('/api/finops/ecs-ri-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ 
-                    projectId: activeProject.id,
-                    _t: Date.now() // Cache buster
-                })
+                body: JSON.stringify({ projectId: activeProject.id })
             });
             const data = await res.json();
             if (data.success) {

@@ -61,7 +61,7 @@ def handle_exception(e):
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-latam-erp-key-2026")
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-latam-erp-key-2026!")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
 jwt = JWTManager(app)
 
