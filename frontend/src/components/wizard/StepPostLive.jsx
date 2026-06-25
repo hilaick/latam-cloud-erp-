@@ -303,18 +303,22 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                     <div className="text-center">
                                         <div className="text-2xl font-black text-blue-700">{activeSubsStatus.total_quoted || 0}</div>
                                         <div className="text-xs font-medium text-blue-600">Quoted RIs</div>
+                                        <div className="text-xs text-blue-500">Price Calculator</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-2xl font-black text-green-700">{activeSubsStatus.total_live || 0}</div>
-                                        <div className="text-xs font-medium text-green-600">Live ECS</div>
+                                        <div className="text-2xl font-black text-emerald-700">{activeSubsStatus.total_live || 0}</div>
+                                        <div className="text-xs font-medium text-emerald-600">Live ECS</div>
+                                        <div className="text-xs text-emerald-500">Huawei Cloud</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-2xl font-black text-purple-700">{activeSubsStatus.total_with_ri || 0}</div>
-                                        <div className="text-xs font-medium text-purple-600">With RI</div>
+                                        <div className="text-2xl font-black text-purple-700">{activeSubsStatus.total_bought || 0}</div>
+                                        <div className="text-xs font-medium text-purple-600">Bought RIs</div>
+                                        <div className="text-xs text-purple-500">Console RI List</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-2xl font-black text-amber-700">{Object.keys(activeSubsStatus?.by_specification || {}).length}</div>
-                                        <div className="text-xs font-medium text-amber-600">Specifications</div>
+                                        <div className="text-2xl font-black text-amber-700">{activeSubsStatus.total_missing || 0}</div>
+                                        <div className="text-xs font-medium text-amber-600">Missing RIs</div>
+                                        <div className="text-xs text-amber-500">Quoted - Bought</div>
                                     </div>
                                 </div>
                                 
@@ -326,18 +330,22 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                             {activeSubsStatus?.by_specification && Object.entries(activeSubsStatus.by_specification).map(([spec, data]) => (
                                                 <div key={spec} className="bg-white border border-blue-100 rounded-lg p-3">
                                                     <div className="font-bold text-sm text-blue-800 truncate">{spec}</div>
-                                                    <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                                                    <div className="grid grid-cols-4 gap-2 mt-2 text-xs">
                                                         <div className="text-center">
-                                                            <div className="font-black text-blue-600">{data.quoted || 0}</div>
-                                                            <div className="text-blue-500">Quoted</div>
+                                                            <div className="font-black text-blue-700">{data.quoted || 0}</div>
+                                                            <div className="text-blue-600">Quoted</div>
                                                         </div>
                                                         <div className="text-center">
-                                                            <div className="font-black text-green-600">{data.live || 0}</div>
-                                                            <div className="text-green-500">Live</div>
+                                                            <div className="font-black text-emerald-700">{data.live || 0}</div>
+                                                            <div className="text-emerald-600">Live</div>
                                                         </div>
                                                         <div className="text-center">
-                                                            <div className="font-black text-purple-600">{data.with_ri || 0}</div>
-                                                            <div className="text-purple-500">With RI</div>
+                                                            <div className="font-black text-purple-700">{data.bought || 0}</div>
+                                                            <div className="text-purple-600">Bought</div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className={`font-black ${data.missing > 0 ? 'text-amber-700' : 'text-green-700'}`}>{data.missing || 0}</div>
+                                                            <div className={data.missing > 0 ? 'text-amber-600' : 'text-green-600'}>Missing</div>
                                                         </div>
                                                     </div>
                                                     <div className={`mt-2 text-center text-xs font-bold px-2 py-1 rounded ${

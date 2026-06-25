@@ -217,7 +217,7 @@ def ecs_ri_reconciliation():
                     })
         
         # Initialize ECS RI Reconciler
-        from services.ecs_ri_reconciler import ECSRIReconciler
+        from services.ecs_ri_reconciler_v2 import ECSRIReconciler
         reconciler = ECSRIReconciler(
             encrypted_ak_data=customer.ak,
             encrypted_sk_data=customer.sk,
@@ -228,12 +228,13 @@ def ecs_ri_reconciliation():
         # Perform ECS RI reconciliation
         reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris)
         
-        # Format response with Active Subs status
+        # Format response with 3-way comparison
         active_subs_status = {
             "status": "ECS_RI_RECONCILIATION_ACTIVE",
             "total_quoted": reconciliation_result["summary"]["total_quoted"],
             "total_live": reconciliation_result["summary"]["total_live"],
-            "total_with_ri": reconciliation_result["summary"]["total_with_ri"],
+            "total_bought": reconciliation_result["summary"]["total_bought"],
+            "total_missing": reconciliation_result["summary"]["total_missing"],
             "by_specification": reconciliation_result["summary"]["by_specification"],
             "filter_counts": reconciliation_result["filter_counts"]
         }
@@ -242,7 +243,13 @@ def ecs_ri_reconciliation():
             "success": True,
             "reconciliation": reconciliation_result,
             "active_subs_status": active_subs_status,
-            "filters": reconciliation_result["filter_counts"]
+            "filters": reconciliation_result["filter_counts"],
+            "three_way_data": {
+                "quoted_ris": quoted_ecs_ris,
+                "live_ecs_count": len(reconciliation_result.get("detailed_results", {}).get("live_ecs_servers", [])),
+                "bought_ris_count": len(reconciliation_result.get("detailed_results", {}).get("bought_ris", [])),
+                "matrix": reconciliation_result.get("matrix", [])
+            }
         }
         
         return jsonify(response)
