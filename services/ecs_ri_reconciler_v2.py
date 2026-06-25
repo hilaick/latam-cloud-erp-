@@ -147,15 +147,38 @@ class ECSRIReconciler:
                     bought_by_spec[spec] = []
                 bought_by_spec[spec].append(ri)
             
-            # Merge all specifications
-            all_specs = set(list(quoted_by_spec.keys()) + list(live_by_spec.keys()) + list(bought_by_spec.keys()))
+            # Normalize spec names for comparison
+            normalized_quoted_by_spec = {}
+            for spec, data in quoted_by_spec.items():
+                normalized_spec = self._normalize_spec_name(spec)
+                if normalized_spec not in normalized_quoted_by_spec:
+                    normalized_quoted_by_spec[normalized_spec] = {'quoted_count': 0, 'quoted_servers': []}
+                normalized_quoted_by_spec[normalized_spec]['quoted_count'] += data['quoted_count']
+                normalized_quoted_by_spec[normalized_spec]['quoted_servers'].extend(data['quoted_servers'])
+            
+            normalized_live_by_spec = {}
+            for spec, servers in live_by_spec.items():
+                normalized_spec = self._normalize_spec_name(spec)
+                if normalized_spec not in normalized_live_by_spec:
+                    normalized_live_by_spec[normalized_spec] = []
+                normalized_live_by_spec[normalized_spec].extend(servers)
+            
+            normalized_bought_by_spec = {}
+            for spec, servers in bought_by_spec.items():
+                normalized_spec = self._normalize_spec_name(spec)
+                if normalized_spec not in normalized_bought_by_spec:
+                    normalized_bought_by_spec[normalized_spec] = []
+                normalized_bought_by_spec[normalized_spec].extend(servers)
+            
+            # Merge all normalized specifications
+            all_specs = set(list(normalized_quoted_by_spec.keys()) + list(normalized_live_by_spec.keys()) + list(normalized_bought_by_spec.keys()))
             
             # Build reconciliation matrix
             reconciliation_matrix = []
             for spec in sorted(all_specs):
-                quoted_data = quoted_by_spec.get(spec, {'quoted_count': 0, 'quoted_servers': []})
-                live_servers = live_by_spec.get(spec, [])
-                bought_servers = bought_by_spec.get(spec, [])
+                quoted_data = normalized_quoted_by_spec.get(spec, {'quoted_count': 0, 'quoted_servers': []})
+                live_servers = normalized_live_by_spec.get(spec, [])
+                bought_servers = normalized_bought_by_spec.get(spec, [])
                 
                 # Calculate missing RIs
                 quoted_count = quoted_data['quoted_count']
@@ -241,6 +264,24 @@ class ECSRIReconciler:
                 },
                 'error': str(e)
             }
+    
+    def _normalize_spec_name(self, spec: str) -> str:
+        """
+        Normalize specification name for comparison.
+        Removes prefixes like 'general.', 's2.', 'c3.', etc.
+        """
+        if not spec:
+            return 'Unknown'
+        
+        # Remove common prefixes
+        prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.']
+        normalized = spec.lower()
+        for prefix in prefixes:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
+        
+        return normalized
     
     def _get_spec_status(self, quoted: int, live: int, bought: int) -> str:
         """Get status for a specification based on quoted/live/bought counts."""
