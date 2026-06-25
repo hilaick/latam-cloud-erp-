@@ -38,8 +38,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [matrix, setMatrix] = useState(null);
     const [activeSubsStatus, setActiveSubsStatus] = useState(null);
+    
+    // File Upload States
     const [isUploading, setIsUploading] = useState(false);
     const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
+    const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export : null);
 
     const handleRunTrueUp = async () => {
         try {
@@ -52,7 +55,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             });
             const data = await res.json();
             if (data.success) {
-                setMatrix(data.reconciliation);
+                // 🚨 FIX: Extract exactly the array, avoiding the object crash
+                setMatrix(data.reconciliation.matrix || []);
                 if (data.active_subs_status) setActiveSubsStatus(data.active_subs_status);
             } else {
                 alert(`Error reconciling ECS RI Matrix: ${data.error}`);
@@ -64,26 +68,39 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         }
     };
 
-    const handleFileUpload = async (file) => {
+    const handleFileUpload = async (file, endpoint) => {
         if (!file) return;
         setIsUploading(true);
+        
         const formData = new FormData();
         formData.append('file', file);
         formData.append('projectId', activeProject.id);
         
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/upload-ri-quotation', {
-                method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
             });
+            
             const data = await res.json();
             if (data.success) {
                 alert(data.message);
-                setRIQuotationSummary(data.summary);
-                if (matrix) handleRunTrueUp();
-            } else alert(`Error uploading file: ${data.error}`);
-        } catch (err) { alert(`Network error: ${err.message}`); } 
-        finally { setIsUploading(false); }
+                if (endpoint.includes('console')) {
+                    setConsoleRISummary(data.summary);
+                } else {
+                    setRIQuotationSummary(data.summary);
+                }
+                if (matrix) handleRunTrueUp(); // Refresh if matrix is active
+            } else {
+                alert(`Error uploading file: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const handleHandover = () => {
@@ -95,6 +112,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-8">
                 
+                {/* Header */}
                 <div className="flex justify-between items-start mb-6 border-b border-emerald-100 pb-6">
                     <div>
                         <h4 className="font-black text-xl text-emerald-800 flex items-center">
@@ -104,33 +122,70 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             Compare ECS Reserved Instances (RIs) Quoted vs Live vs Bought.
                         </p>
                     </div>
-                    <button onClick={() => handleRunTrueUp()} disabled={isLoading} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0">
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Automated Scan</>}
+                    <button 
+                        onClick={() => handleRunTrueUp()} 
+                        disabled={isLoading}
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
+                    >
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Reconciler</>}
                     </button>
                 </div>
 
-                {/* 1. QUOTED RIs */}
-                <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group mb-8">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <h5 className="font-black text-sm text-blue-800 flex items-center">
-                                <i className="fas fa-calculator text-blue-500 mr-2"></i> Quoted RIs Baseline
-                            </h5>
-                            <p className="text-[10px] text-blue-600/80 mt-1 font-medium">Upload the Price Calculator RI spreadsheet to establish the target FinOps baseline.</p>
-                        </div>
-                        <button onClick={() => document.getElementById('ri-quotation-upload').click()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
-                            <i className="fas fa-upload mr-1.5"></i> Upload Baseline
-                        </button>
-                        <input type="file" id="ri-quotation-upload" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e.target.files[0])} />
-                    </div>
+                {/* TWIN UPLOAD PANELS */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     
-                    {riQuotationSummary && (
-                        <div className="mt-4 p-3 bg-white rounded-lg border border-blue-100 shadow-sm flex justify-between items-center animate-fade-in">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-blue-500 mr-1"></i> Data Loaded</div>
-                            <div className="text-xs font-black text-blue-700">{riQuotationSummary.total_ris} RIs required by Baseline</div>
+                    {/* 1. QUOTED RIs */}
+                    <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h5 className="font-black text-sm text-blue-800 flex items-center">
+                                    <i className="fas fa-calculator text-blue-500 mr-2"></i> 1. Source: Quoted RIs
+                                </h5>
+                                <p className="text-[10px] text-blue-600/80 mt-1 font-medium mb-4">Upload the Price Calculator RI spreadsheet.</p>
+                            </div>
+                            <button onClick={() => document.getElementById('ri-quotation-upload').click()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                <i className="fas fa-upload mr-1.5"></i> Upload Baseline
+                            </button>
+                            <input type="file" id="ri-quotation-upload" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e.target.files[0], '/api/finops/upload-ri-quotation')} />
                         </div>
-                    )}
+                        
+                        {riQuotationSummary ? (
+                            <div className="mt-2 p-3 bg-white rounded-lg border border-blue-100 shadow-sm flex justify-between items-center animate-fade-in">
+                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-blue-500 mr-1"></i> Data Loaded</div>
+                                <div className="text-xs font-black text-blue-700">{riQuotationSummary.total_ris} RIs required by Baseline</div>
+                            </div>
+                        ) : (
+                            <div className="mt-2 p-3 border border-dashed border-blue-300 rounded-lg text-center text-[10px] font-black uppercase text-blue-400">No data loaded</div>
+                        )}
+                    </div>
+
+                    {/* 2. BOUGHT RIs (Console Export) */}
+                    <div className="p-5 bg-purple-50 border border-purple-200 rounded-xl relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h5 className="font-black text-sm text-purple-800 flex items-center">
+                                    <i className="fas fa-cloud-download-alt text-purple-500 mr-2"></i> 2. Source: Bought RIs
+                                </h5>
+                                <p className="text-[10px] text-purple-600/80 mt-1 font-medium mb-4">Export the Active RI list from Huawei ECS Console.</p>
+                            </div>
+                            <button onClick={() => document.getElementById('console-ri-upload').click()} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                <i className="fas fa-upload mr-1.5"></i> Upload
+                            </button>
+                            <input type="file" id="console-ri-upload" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e.target.files[0], '/api/finops/upload-console-ris')} />
+                        </div>
+                        
+                        {consoleRISummary ? (
+                            <div className="mt-2 p-3 bg-white rounded-lg border border-purple-100 shadow-sm flex justify-between items-center animate-fade-in">
+                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-purple-500 mr-1"></i> Data Loaded</div>
+                                <div className="text-xs font-black text-purple-700">{consoleRISummary.total_ris} Active RIs Owned</div>
+                            </div>
+                        ) : (
+                            <div className="mt-2 p-3 border border-dashed border-purple-300 rounded-lg text-center text-[10px] font-black uppercase text-purple-400">No data loaded</div>
+                        )}
+                    </div>
+
                 </div>
 
                 {isUploading && <div className="text-center py-4 text-xs font-black uppercase tracking-widest text-slate-400 animate-pulse"><i className="fas fa-circle-notch fa-spin mr-2"></i> Processing File...</div>}
@@ -139,7 +194,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl">
                         <i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i>
                         <h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3>
-                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quote CSV above, then run the Reconciler to hit the Huawei Global Billing API and calculate missing coverage.</p>
+                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quote and Console CSVs above, then run the Reconciler to calculate exactly which specifications are missing coverage.</p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
@@ -157,7 +212,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                     </div>
                                     <div className="text-center border-r border-slate-200">
                                         <div className="text-3xl font-black text-purple-600">{activeSubsStatus.total_bought || 0}</div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mt-1">Bought RIs (BSS API)</div>
+                                        <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mt-1">Bought RIs (Owned)</div>
                                     </div>
                                     <div className="text-center">
                                         <div className={`text-3xl font-black ${activeSubsStatus.total_missing > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{activeSubsStatus.total_missing || 0}</div>
@@ -176,7 +231,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <th className="p-3">Specification / Flavor</th>
                                         <th className="p-3 text-center bg-blue-50/50">Required (Quoted)</th>
                                         <th className="p-3 text-center bg-emerald-50/50">Running (Live ECS)</th>
-                                        <th className="p-3 text-center bg-purple-50/50">Owned (BSS API)</th>
+                                        <th className="p-3 text-center bg-purple-50/50">Owned (RIs)</th>
                                         <th className="p-3 text-center">Status / Action</th>
                                     </tr>
                                 </thead>
