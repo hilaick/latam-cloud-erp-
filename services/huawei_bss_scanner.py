@@ -18,14 +18,14 @@ class HuaweiBSSScanner:
     def get_active_ris(self) -> list:
         """
         Fetches Active 'Floating' Reserved Instances from the BSS Orders API.
-        Hardcoded to ap-southeast-1 (Global Billing Hub).
+        Hardcoded to cn-north-1 (Global Billing Hub).
         """
         try:
-            logger.info("FinOps Broker: Authenticating with BSS Global Hub (ap-southeast-1)")
+            logger.info("FinOps Broker: Authenticating with BSS Global Hub (cn-north-1)")
             credentials = GlobalCredentials(self.raw_ak, self.raw_sk)
             client = BssClient.new_builder() \
                 .with_credentials(credentials) \
-                .with_region(BssRegion.value_of("ap-southeast-1")) \
+                .with_region(BssRegion.value_of("cn-north-1")) \
                 .build()
             
             # Status 3 = Paid/Completed/Active Order

@@ -220,6 +220,104 @@ def get_quotation_versions(project_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/finops/upload-ecs-ri-quotation', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def upload_ecs_ri_quotation():
+    """Upload ECS RI quotation specifically for Commercial True-Up phase"""
+    if request.method == 'OPTIONS': return '', 200
+    try:
+        file = request.files.get('file')
+        project_id = request.form.get('project_id')
+        
+        if not file:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        if not project_id:
+            return jsonify({'success': False, 'error': 'Project ID is required'}), 400
+        
+        current_user = get_jwt_identity()
+        
+        # Save uploaded file
+        upload_dir = PROJECT_ROOT / 'uploads' / 'ecs_ri_quotations'
+        upload_dir.mkdir(exist_ok=True, parents=True)
+        
+        filename = secure_filename(file.filename) if file.filename else 'ecs_ri_quotation.xlsx'
+        file_path = upload_dir / filename
+        file.save(str(file_path))
+        
+        # Process Excel/CSV file to extract ECS RI data
+        import pandas as pd
+        
+        # Read the file based on extension
+        file_ext = filename.lower()
+        if file_ext.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        elif file_ext.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(file_path)
+        else:
+            return jsonify({'success': False, 'error': 'Unsupported file format. Please upload .csv, .xlsx, or .xls'}), 400
+        
+        # Parse ECS RI data from Excel
+        ecs_ri_servers = []
+        for _, row in df.iterrows():
+            if pd.notna(row.iloc[0]):  # Check if first column has data
+                server_name = str(row.iloc[0]).strip()
+                specification = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else 'Unknown'
+                
+                # Handle quantity - convert to int if possible
+                quantity_val = row.iloc[2] if len(row) > 2 else 1
+                try:
+                    quantity = int(float(quantity_val)) if pd.notna(quantity_val) else 1
+                except:
+                    quantity = 1
+                
+                description = str(row.iloc[3]).strip() if len(row) > 3 and pd.notna(row.iloc[3]) else ''
+                region = str(row.iloc[4]).strip() if len(row) > 4 and pd.notna(row.iloc[4]) else ''
+                billing_mode = str(row.iloc[5]).strip() if len(row) > 5 and pd.notna(row.iloc[5]) else 'RI'
+                
+                ecs_ri_servers.append({
+                    "name": server_name,
+                    "specification": specification,
+                    "quantity": quantity,
+                    "description": description,
+                    "region": region,
+                    "billing_mode": billing_mode
+                })
+        
+        # Store in database
+        from models import ProjectData
+        import json as json_module
+        
+        project = ProjectData.query.get(project_id)
+        if not project:
+            # Create new project if it doesn't exist
+            project = ProjectData(id=project_id, project_type='migration', data=json_module.dumps({}))
+            db.session.add(project)
+        
+        # Update project data with ECS RI quotation (separate from main blueprint)
+        project_data = json_module.loads(project.data) if project.data else {}
+        project_data['ri_quotation'] = {
+            'filename': filename,
+            'file_path': str(file_path),
+            'uploaded_at': datetime.utcnow().isoformat(),
+            'uploaded_by': current_user,
+            'servers': ecs_ri_servers
+        }
+        project.data = json_module.dumps(project_data)
+        project.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'ECS RI quotation uploaded successfully',
+            'count': len(ecs_ri_servers),
+            'filename': filename
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading ECS RI quotation: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/quotation/version/<version_id>', methods=['GET'])
 @jwt_required()
 def get_quotation_version(version_id):

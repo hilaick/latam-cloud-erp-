@@ -1,0 +1,4 @@
+Server Name,Specification,Quantity,Description,Region,Billing Mode
+ECS-001,c7.2xlarge.4,2,Web Server,la-south-2,RI
+ECS-002,s6.4xlarge.2,1,Database Server,la-south-2,RI
+ECS-003,c6.2xlarge.2,3,Application Server,la-south-2,RI

@@ -63,6 +63,7 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 // ==========================================
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const [matrix, setMatrix] = useState(null);
     const [activeSubsStatus, setActiveSubsStatus] = useState(null);
 
@@ -90,6 +91,55 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         }
     };
 
+    const handleUploadQuotation = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        // Check file type
+        const allowedTypes = ['.xlsx', '.xls', '.csv'];
+        const fileExt = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+        if (!allowedTypes.includes(fileExt)) {
+            alert('Please upload an Excel (.xlsx, .xls) or CSV file');
+            e.target.value = null;
+            return;
+        }
+
+        setIsUploading(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('project_id', activeProject.id);
+            
+            const res = await fetch('/api/finops/upload-ecs-ri-quotation', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert(`ECS RI Quotation uploaded successfully! Processed ${data.count} servers.`);
+                // Refresh project data to get updated RI quotation
+                const updatedProject = { ...activeProject };
+                if (!updatedProject.ri_quotation) updatedProject.ri_quotation = {};
+                updatedProject.ri_quotation = {
+                    filename: data.filename,
+                    count: data.count,
+                    uploaded_at: new Date().toISOString()
+                };
+                onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
+            } else {
+                alert(`Upload Error: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error during upload: ${err.message}`);
+        } finally {
+            setIsUploading(false);
+            e.target.value = null;
+        }
+    };
+
     const handleHandover = () => {
         onUpdateProject(activeProject.id, 'lifecycleState', '5_awaiting_commercial');
         alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped. The project is now owned by the Commercial/Partner team for final PO True-Up.");
@@ -108,20 +158,50 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             Compare ECS Reserved Instances (RIs) Quoted vs Live vs Bought.
                         </p>
                     </div>
-                    <button 
-                        onClick={() => handleRunTrueUp()} 
-                        disabled={isLoading}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0"
-                    >
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Automated Scan</>}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="relative">
+                            <input 
+                                type="file" 
+                                accept=".xlsx,.xls,.csv"
+                                onChange={handleUploadQuotation}
+                                disabled={isUploading}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                            />
+                            <button 
+                                disabled={isUploading}
+                                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center shrink-0"
+                            >
+                                {isUploading ? (
+                                    <><i className="fas fa-spinner fa-spin mr-2"></i> Uploading...</>
+                                ) : (
+                                    <><i className="fas fa-file-upload mr-2"></i> Upload Quotation</>
+                                )}
+                            </button>
+                        </div>
+                        <button 
+                            onClick={() => handleRunTrueUp()} 
+                            disabled={isLoading || !activeProject?.ri_quotation}
+                            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Automated Scan</>}
+                        </button>
+                    </div>
                 </div>
 
                 {!matrix ? (
                     <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl">
                         <i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i>
                         <h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3>
-                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Click "Run Automated Scan" above to cross-reference the Original Quotation with the Live Network and the BSS Billing Subscriptions.</p>
+                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">
+                            {!activeProject?.ri_quotation ? (
+                                <>
+                                    <strong>Step 1:</strong> Upload the ECS RI Quotation (Excel/CSV) to compare Quoted vs Live vs Bought.<br/>
+                                    <strong>Step 2:</strong> Click "Run Automated Scan" to cross-reference with Live Network and BSS Billing.
+                                </>
+                            ) : (
+                                <>Click "Run Automated Scan" above to cross-reference the ECS RI Quotation with the Live Network and the BSS Billing Subscriptions.</>
+                            )}
+                        </p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
