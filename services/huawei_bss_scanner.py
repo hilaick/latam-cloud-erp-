@@ -8,113 +8,60 @@ logger = logging.getLogger(__name__)
 
 class HuaweiBSSScanner:
     """
-    Integrates with the Huawei Cloud Billing Support System (BSS) API.
-    Used exclusively in Phase 5 to verify if Procurement/Partners have actually 
-    placed the Purchase Orders (POs) for RIs, Vaults, and Support Plans.
+    FinOps Identity Broker: Integrates directly with Huawei's Global Billing System.
+    Bypasses EPS-scoped technical tokens and uses Master AK/SK to pull financial records.
     """
-    def __init__(self, ak: str, sk: str):
-        self.ak = ak
-        self.sk = sk
+    def __init__(self, raw_ak: str, raw_sk: str):
+        self.raw_ak = raw_ak
+        self.raw_sk = raw_sk
 
-    def get_active_commercial_orders(self):
-        """Fetches active orders/subscriptions from the BSS API."""
+    def get_active_ris(self) -> list:
+        """
+        Fetches Active 'Floating' Reserved Instances from the BSS Orders API.
+        Hardcoded to ap-southeast-1 (Global Billing Hub).
+        """
         try:
-            credentials = GlobalCredentials(self.ak, self.sk)
+            logger.info("FinOps Broker: Authenticating with BSS Global Hub (ap-southeast-1)")
+            credentials = GlobalCredentials(self.raw_ak, self.raw_sk)
             client = BssClient.new_builder() \
                 .with_credentials(credentials) \
-                .with_region(BssRegion.value_of("cn-north-1")) \
+                .with_region(BssRegion.value_of("ap-southeast-1")) \
                 .build()
             
-            # Status 3 = Paid/Active/Completed Order
+            # Status 3 = Paid/Completed/Active Order
             request = ListCustomerOrdersRequest(status=3) 
             response = client.list_customer_orders(request)
-            return response.to_dict()
+            
+            bought_ris = []
+            
+            if hasattr(response, 'order_infos') and response.order_infos:
+                for order in response.order_infos:
+                    # Normalize object response to dict for safe traversal
+                    order_dict = order.to_dict() if hasattr(order, 'to_dict') else order.__dict__
+                    details = str(order_dict).lower()
+                    
+                    # Identify RI / Reserved packages
+                    if 'reserved' in details or 'ri ' in details or 'year' in details or 'month' in details:
+                        # Fallback heuristic spec matcher
+                        spec = 'Unknown'
+                        for s in ['s6.large.2', 'c7.xlarge.2', 's6.xlarge.2', 'c6.large.2', 'c6.xlarge.2', 's6.medium.2', 'c7.large.2', 'c7.2xlarge.2', 's6.2xlarge.2']:
+                            if s in details:
+                                spec = s
+                                break
+                                
+                        bought_ris.append({
+                            'id': order_dict.get('order_id', 'BSS_RI_ORDER'),
+                            'name': f"Floating RI (Order {order_dict.get('order_id', '')})",
+                            'specification': spec,
+                            'billing_mode': 'Floating Reserved',
+                            'charging_mode': '1',
+                            'tags': {},
+                            'created_at': order_dict.get('create_time', '')
+                        })
+            
+            logger.info(f"FinOps Broker: Found {len(bought_ris)} Floating RIs via BSS API.")
+            return bought_ris
+            
         except Exception as e:
-            logger.warning(f"BSS API Connectivity Warning (Expected if IAM permissions missing): {e}")
-            return None
-
-    def reconcile_intent_matrix(self, commercial_intent: dict) -> dict:
-        """
-        Cross-references the Blueprint's Commercial Intent against Live BSS Orders.
-        Aggregates identical SKUs/Flavors (e.g., 10x s6.large.2) to calculate 
-        the exact missing quantity for Procurement.
-        """
-        bss_orders = self.get_active_commercial_orders()
-        
-        reconciliation_matrix = {
-            "aggregated_deployable": [],
-            "account_assets": [],
-            "summary": { "covered": 0, "missing_ri": 0, "missing_account_services": 0 }
-        }
-
-        # 1. AGGREGATE DEPLOYABLE ASSETS BY FLAVOR / SPECIFICATION
-        aggregation = {}
-        for asset in commercial_intent.get('deployable_assets', []):
-            intent_mode = str(asset.get('billing_mode', 'Pay-per-use')).lower()
-            requires_po = 'year' in intent_mode or 'month' in intent_mode or 'pre-paid' in intent_mode
-            spec = asset.get('specification', 'Standard')
-            cat_type = asset.get('type', 'Unknown')
-            
-            # Create a unique key for grouping (e.g., "ECS_s6.large.2_Yearly")
-            key = f"{cat_type}_{spec}_{intent_mode}"
-            
-            if key not in aggregation:
-                aggregation[key] = {
-                    "type": cat_type,
-                    "specification": spec,
-                    "billing_mode": asset.get('billing_mode', 'Pay-per-use'),
-                    "requires_po": requires_po,
-                    "required_qty": 0,
-                    "owned_qty": 0
-                }
-            aggregation[key]["required_qty"] += 1
-
-        # 2. RECONCILE AGGREGATED FLAVORS AGAINST BSS SUBSCRIPTIONS
-        for key, data in aggregation.items():
-            if data["requires_po"]:
-                owned = 0
-                # In production, this parses BSS 'order_infos' for matching Flavor IDs
-                if bss_orders and 'order_infos' in bss_orders:
-                    for order in bss_orders['order_infos']:
-                        if data['specification'].lower() in str(order).lower():
-                            owned += 1 # Or parse actual quantity from the order payload
-                
-                data["owned_qty"] = owned
-                
-                if data["owned_qty"] >= data["required_qty"]:
-                    data["status"] = 'COVERED'
-                    reconciliation_matrix["summary"]["covered"] += data["required_qty"]
-                else:
-                    data["status"] = 'MISSING_PO'
-                    missing_count = data["required_qty"] - data["owned_qty"]
-                    reconciliation_matrix["summary"]["missing_ri"] += missing_count
-            else:
-                data["status"] = 'COVERED' # PPU requires no upfront PO
-                reconciliation_matrix["summary"]["covered"] += data["required_qty"]
-                
-            reconciliation_matrix["aggregated_deployable"].append(data)
-
-        # 3. RECONCILE ACCOUNT ASSETS (Support Plans, Security Centers)
-        for asset in commercial_intent.get('account_assets', []):
-            intent_mode = str(asset.get('billing_mode', 'Pay-per-use')).lower()
-            requires_po = 'year' in intent_mode or 'month' in intent_mode or 'pre-paid' in intent_mode
-            
-            is_covered = False
-            if bss_orders and 'order_infos' in bss_orders:
-                for order in bss_orders['order_infos']:
-                    if asset.get('type', '').lower() in str(order).lower():
-                        is_covered = True
-                        break
-                        
-            status = 'COVERED' if is_covered or not requires_po else 'MISSING_PO'
-            
-            reconciliation_matrix["account_assets"].append({
-                **asset,
-                "requires_po": requires_po,
-                "status": status,
-                "bss_verified": is_covered
-            })
-
-            if status == 'MISSING_PO': reconciliation_matrix["summary"]["missing_account_services"] += 1
-
-        return reconciliation_matrix
+            logger.error(f"FinOps Broker Failed (Check IAM 'BSS ReadOnlyAccess' permissions): {e}")
+            return []
