@@ -391,7 +391,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         </div>
 
                         {/* Account Assets Table */}
-                        {matrix.account_assets.length > 0 && (
+                        {matrix?.account_assets?.length > 0 && (
                             <div>
                                 <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Account Assets (Support Plans, Security)</h4>
                                 <table className="w-full text-left bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm text-sm">
@@ -854,7 +854,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                         </div>
                         
                         <div className="p-6 overflow-y-auto bg-slate-50 flex-1 custom-scrollbar">
-                            {detailsModal.items.length === 0 ? (
+                            {detailsModal?.items?.length === 0 ? (
                                 <div className="text-center text-slate-400 font-bold py-8 border-2 border-dashed border-slate-300 rounded-xl">No resource details found.</div>
                             ) : (
                                 <table className="w-full text-left bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -879,7 +879,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                         </div>
                         
                         <div className="px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-between items-center shrink-0">
-                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest">Total Count: {detailsModal.items.length}</div>
+                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest">Total Count: {detailsModal?.items?.length || 0}</div>
                             <button onClick={() => setDetailsModal({ show: false, category: '', label: '', items: [] })} className="px-6 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md">Close Matrix</button>
                         </div>
                     </div>
