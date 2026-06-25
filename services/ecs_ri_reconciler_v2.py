@@ -30,16 +30,17 @@ class ECSRIReconciler:
         """
         try:
             logger.info(f"Getting live ECS servers from region {self.region}")
-            inventory = self.discovery.discover_all()
+            
+            # 🚨 FIX: Correctly unpack the {"success": True, "inventory": {...}} response payload
+            response = self.discovery.discover_all()
+            inventory = response.get('inventory', {}) if response.get('success') else {}
             
             live_ecs_servers = []
             for server in inventory.get('compute', []):
-                # 🚨 FIX: Discovery uses 'type', not 'resource_type'
                 if server.get('type') == 'ECS':
                     live_ecs_servers.append({
                         'id': server.get('id'),
                         'name': server.get('name'),
-                        # 🚨 FIX: Discovery uses 'flavor', fallback to 'Unknown'
                         'specification': server.get('flavor', server.get('specification', 'Unknown')),
                         'status': server.get('status'),
                         'billing_mode': server.get('billing_mode'),
@@ -65,28 +66,29 @@ class ECSRIReconciler:
         """
         try:
             logger.info(f"Getting bought RIs from region {self.region}")
-            inventory = self.discovery.discover_all()
+            
+            # 🚨 FIX: Correctly unpack the {"success": True, "inventory": {...}} response payload
+            response = self.discovery.discover_all()
+            inventory = response.get('inventory', {}) if response.get('success') else {}
             
             bought_ris = []
             for server in inventory.get('compute', []):
-                # 🚨 FIX: Discovery uses 'type', not 'resource_type'
                 if server.get('type') == 'ECS':
-                    billing_mode = server.get('billing_mode')
-                    charging_mode = server.get('charging_mode')
+                    billing_mode = str(server.get('billing_mode', ''))
+                    charging_mode = str(server.get('charging_mode', ''))
                     
                     # Huawei Cloud uses billing_mode='1' or charging_mode='prePaid' for RIs
                     is_reserved = (
                         billing_mode == '1' or 
                         charging_mode == 'prePaid' or
-                        (billing_mode and 'reserved' in str(billing_mode).lower()) or
-                        (charging_mode and 'reserved' in str(charging_mode).lower())
+                        'reserved' in billing_mode.lower() or
+                        'reserved' in charging_mode.lower()
                     )
                     
                     if is_reserved:
                         bought_ris.append({
                             'id': server.get('id'),
                             'name': server.get('name'),
-                            # 🚨 FIX: Map 'flavor' to 'specification' correctly
                             'specification': server.get('flavor', server.get('specification', 'Unknown')),
                             'billing_mode': billing_mode,
                             'charging_mode': charging_mode,
@@ -218,12 +220,12 @@ class ECSRIReconciler:
                     'filter_category': self._get_filter_category(item['status'])
                 }
             
-            # Calculate filter counts (simplified for now)
+            # Calculate filter counts
             filter_counts = {
                 'pending_ri': total_missing,
-                'not_migrated': 0,  # Will be populated when we have migration status
-                'marked_for_deletion': 0,  # Will be populated from tags
-                'pending_config': 0  # Will be populated from tags
+                'not_migrated': 0, 
+                'marked_for_deletion': 0, 
+                'pending_config': 0 
             }
             
             return {
