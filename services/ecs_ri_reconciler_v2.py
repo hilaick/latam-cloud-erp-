@@ -34,12 +34,13 @@ class ECSRIReconciler:
             
             live_ecs_servers = []
             for server in inventory.get('compute', []):
-                # Only include ECS servers
-                if server.get('resource_type') == 'ECS':
+                # 🚨 FIX: Discovery uses 'type', not 'resource_type'
+                if server.get('type') == 'ECS':
                     live_ecs_servers.append({
                         'id': server.get('id'),
                         'name': server.get('name'),
-                        'specification': server.get('specification', 'Unknown'),
+                        # 🚨 FIX: Discovery uses 'flavor', fallback to 'Unknown'
+                        'specification': server.get('flavor', server.get('specification', 'Unknown')),
                         'status': server.get('status'),
                         'billing_mode': server.get('billing_mode'),
                         'charging_mode': server.get('charging_mode'),
@@ -68,8 +69,8 @@ class ECSRIReconciler:
             
             bought_ris = []
             for server in inventory.get('compute', []):
-                # Check if server has Reserved Instance
-                if server.get('resource_type') == 'ECS':
+                # 🚨 FIX: Discovery uses 'type', not 'resource_type'
+                if server.get('type') == 'ECS':
                     billing_mode = server.get('billing_mode')
                     charging_mode = server.get('charging_mode')
                     
@@ -85,7 +86,8 @@ class ECSRIReconciler:
                         bought_ris.append({
                             'id': server.get('id'),
                             'name': server.get('name'),
-                            'specification': server.get('specification', 'Unknown'),
+                            # 🚨 FIX: Map 'flavor' to 'specification' correctly
+                            'specification': server.get('flavor', server.get('specification', 'Unknown')),
                             'billing_mode': billing_mode,
                             'charging_mode': charging_mode,
                             'tags': server.get('tags', {}),
