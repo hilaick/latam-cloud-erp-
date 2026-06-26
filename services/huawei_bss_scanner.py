@@ -32,15 +32,25 @@ class MockHttpRequest:
                 self.query[k] = v
 
 class HuaweiBSSScanner:
-    """
-    FinOps Identity Broker: Implements Option 1 (Console API Hijack).
-    Bypasses standard Open APIs and forges a V4-signed request directly to the 
-    hidden console proxy (csborderadapterservice) to fetch the true RI list.
-    """
     def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
+
+    def _get_safe_signer(self):
+        """Safely instantiates the Huawei Signer regardless of SDK version kwargs"""
+        if not Signer:
+            return None
+        try:
+            return Signer(self.raw_ak, self.raw_sk) # Positional fallback
+        except Exception:
+            try:
+                return Signer(key=self.raw_ak, secret=self.raw_sk) # Standard kwargs
+            except Exception:
+                s = Signer()
+                s.Key = self.raw_ak
+                s.Secret = self.raw_sk
+                return s
 
     def get_project_id(self, signer) -> str:
         try:
@@ -62,12 +72,11 @@ class HuaweiBSSScanner:
         
         try:
             diagnostics.append("Initiating Console API Hijack (csborderadapterservice)...")
-            if not Signer:
+            signer = self._get_safe_signer()
+            if not signer:
                 diagnostics.append("FAILED: Huawei Signer module missing. Ensure huaweicloudsdkcore is installed.")
                 return bought_ris, diagnostics
 
-            signer = Signer(ak=self.raw_ak, sk=self.raw_sk)
-            
             # Step 1: Grab Tenant ID for payload
             tenant_id = self.get_project_id(signer)
             if tenant_id: diagnostics.append(f"Successfully resolved Tenant ID: {tenant_id}")
@@ -125,7 +134,6 @@ class HuaweiBSSScanner:
                 diagnostics.append(error_msg)
                 logger.warning(error_msg)
 
-                # Fallback to standard Open API if the console proxy rejects V4 signatures
                 diagnostics.append("Falling back to standard Open API...")
                 return self._fallback_open_api(signer, diagnostics)
 
