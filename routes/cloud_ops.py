@@ -73,7 +73,8 @@ def ecs_ri_reconciliation():
                 "total_live": reconciliation_result["summary"].get("total_live", 0),
                 "total_bought": reconciliation_result["summary"].get("total_bought", 0),
                 "total_missing": reconciliation_result["summary"].get("total_missing", 0)
-            }
+            },
+            "diagnostics": reconciliation_result.get("diagnostics", [])
         })
         
     except Exception as e:
@@ -131,7 +132,6 @@ def upload_ri_quotation():
                     
                 specs = str(row.get(col_spec, '')).strip()
                 specification = specs
-                # 🚨 FULL SPEC FIX: Extrapolate string "x0.8u.16g (8 vCPUs | 16GiB)"
                 if '|' in specs:
                     parts = [p.strip() for p in specs.split('|')]
                     if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
@@ -152,16 +152,26 @@ def upload_ri_quotation():
         data = json.loads(project.data)
         if 'ri_quotation' not in data: data['ri_quotation'] = {}
         
-        summary = { 'total_servers': len(ecs_ri_servers), 'total_ris': sum(s['quantity'] for s in ecs_ri_servers) }
+        summary = {
+            'total_servers': len(ecs_ri_servers),
+            'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
+        }
+        
         data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
         data['ri_quotation']['servers'] = ecs_ri_servers
         data['ri_quotation']['summary'] = summary
         
         project.data = json.dumps(data)
         db.session.commit()
-        return jsonify({ "success": True, "message": f"Parsed {summary['total_ris']} Quoted RIs.", "summary": summary })
+        
+        return jsonify({ 
+            "success": True, 
+            "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.",
+            "summary": summary
+        })
         
     except Exception as e:
+        logger.error(f"Upload Quoted RI Error: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/upload-ecs-ri-raw', methods=['POST'])
@@ -175,7 +185,6 @@ def upload_ecs_ri_raw():
         
         ecs_ri_servers = []
         if fmt == 'csv':
-            # 🚨 FIX: Dynamic Delimiter handles \t perfectly
             delimiter = '\t' if '\t' in raw_data else ','
             import csv
             from io import StringIO
@@ -200,7 +209,11 @@ def upload_ecs_ri_raw():
                         try: qty = int(float(row[qty_key]))
                         except: pass
                         
-                    ecs_ri_servers.append({'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI', 'specification': spec, 'quantity': qty})
+                    ecs_ri_servers.append({
+                        'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI',
+                        'specification': spec,
+                        'quantity': qty
+                    })
         elif fmt == 'json':
             try:
                 parsed_json = json.loads(raw_data)
@@ -224,8 +237,11 @@ def upload_ecs_ri_raw():
             proj_data['ri_quotation']['summary'] = summary
             project.data = json.dumps(proj_data)
             db.session.commit()
+            
         return jsonify({"success": True, "count": len(ecs_ri_servers), "summary": summary})
-    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/upload-console-ris', methods=['POST'])
 @jwt_required()
@@ -262,16 +278,26 @@ def upload_console_ris():
                 parts = [p.strip() for p in spec_raw.split('|')]
                 if len(parts) >= 5: spec_raw = f"{parts[2]} ({parts[3]} | {parts[4]})"
                 
-            console_ris.append({'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI', 'specification': spec_raw, 'quantity': qty})
+            console_ris.append({
+                'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI',
+                'specification': spec_raw,
+                'quantity': qty
+            })
             
         project = ProjectData.query.get(project_id)
         data = json.loads(project.data)
-        summary = { 'file_path': str(file_path), 'servers': console_ris, 'total_ris': sum(ri['quantity'] for ri in console_ris) }
+        summary = {
+            'file_path': str(file_path),
+            'servers': console_ris,
+            'total_ris': sum(ri['quantity'] for ri in console_ris)
+        }
         data['console_ri_export'] = summary
+        
         project.data = json.dumps(data)
         db.session.commit()
         return jsonify({ "success": True, "message": f"Loaded {summary['total_ris']} Console RIs.", "summary": summary })
-    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/clear-ecs-ri-quotation', methods=['POST'])
 @jwt_required()
