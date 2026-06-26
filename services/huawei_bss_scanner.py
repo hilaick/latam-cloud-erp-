@@ -1,47 +1,52 @@
 import logging
 import requests
 from huaweicloudsdkcore.signer.signer import Signer
+from huaweicloudsdkcore.http.http_request import HttpRequest
 
 logger = logging.getLogger(__name__)
 
 class HuaweiBSSScanner:
-    """
-    FinOps Identity Broker: Integrates directly with Huawei's Billing System via REST API.
-    Bypasses the SDK's Order API and directly queries the active Reserved Instances pool 
-    using V4 Request Signing to mirror the ECM Console exact behavior.
-    """
     def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
 
-    def get_active_ris(self) -> list:
+    def get_active_ris(self) -> tuple:
+        """
+        Returns: (bought_ris: list, diagnostics: list)
+        """
+        diagnostics = []
+        bought_ris = []
+        
         try:
             logger.info(f"FinOps Broker: Authenticating via V4 Signer for RI List in {self.region}")
             signer = Signer(ak=self.raw_ak, sk=self.raw_sk)
             
-            # 🚨 CORE FIX: Target the Active Resources list, NOT the Orders list.
-            # We try the local regional proxy first (which ECM console uses), then fallback to Global Hubs.
             endpoints = [
                 f"https://bss.{self.region}.myhuaweicloud.com/v2/bills/customer-reserved-instances",
                 "https://bss.ap-southeast-1.myhuaweicloud.com/v2/bills/customer-reserved-instances",
                 "https://bss.la-south-2.myhuaweicloud.com/v2/bills/customer-reserved-instances"
             ]
 
-            bought_ris = []
             for url in endpoints:
                 try:
-                    req = requests.Request("GET", url)
-                    req.headers["Content-Type"] = "application/json"
-                    prepared = req.prepare()
+                    diagnostics.append(f"Attempting to fetch RIs from: {url}")
                     
-                    # Cryptographically sign the raw HTTP request with Huawei V4 Auth
-                    signer.sign(prepared)
+                    # 🚨 FIX: Use Huawei's native HttpRequest object for the Signer
+                    r = HttpRequest("GET", url)
+                    r.headers = {"Content-Type": "application/json"}
                     
-                    resp = requests.Session().send(prepared, timeout=15)
+                    # Sign the request (injects X-Sdk-Date and Authorization headers)
+                    signer.sign(r)
+                    
+                    # Execute the signed request using the standard requests library
+                    resp = requests.get(r.url, headers=r.headers, timeout=15)
+                    
                     if resp.status_code == 200:
                         data = resp.json()
                         ri_list = data.get('customer_reserved_instances', [])
+                        
+                        diagnostics.append(f"SUCCESS: 200 OK from {url}. Found {len(ri_list)} total RI records in payload.")
                         
                         for ri in ri_list:
                             # Status 1 = Valid/Active in Huawei BSS
@@ -57,14 +62,22 @@ class HuaweiBSSScanner:
                                     'status': 'Active'
                                 })
                         
-                        logger.info(f"Successfully loaded {len(bought_ris)} Active RIs from {url}")
-                        return bought_ris  # Exit immediately if we found the active list
+                        diagnostics.append(f"Parsed {len(bought_ris)} Active Status=1 RIs.")
+                        return bought_ris, diagnostics
                     else:
-                        logger.warning(f"V4 API returned {resp.status_code} for {url}: {resp.text}")
-                except Exception as e:
-                    logger.warning(f"V4 API Call failed on {url}: {e}")
+                        error_msg = f"FAILED: HTTP {resp.status_code} from {url} - {resp.text}"
+                        logger.warning(error_msg)
+                        diagnostics.append(error_msg)
+                        
+                except Exception as endpoint_e:
+                    error_msg = f"CRASH on {url}: {str(endpoint_e)}"
+                    logger.warning(error_msg)
+                    diagnostics.append(error_msg)
             
-            return bought_ris
+            return bought_ris, diagnostics
+            
         except Exception as e:
-            logger.error(f"FinOps Broker V4 Auth request crashed: {e}", exc_info=True)
-            return []
+            error_msg = f"FinOps Broker Fatal Crash: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            diagnostics.append(error_msg)
+            return [], diagnostics
