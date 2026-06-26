@@ -91,7 +91,7 @@ class ECSRIReconciler:
             return []
     
     def _normalize_spec_name(self, spec: str) -> str:
-        """Strips formatting 'x0.8u.16g (8 vCPUs | 16GiB)' -> 'x0.8u.16g'"""
+        """Strips formatting 'x0.8u.16g (8 vCPUs | 16GiB)' -> 'x0.8u.16g' to match Huawei APIs"""
         if not spec: return 'Unknown'
         base_spec = spec.split(' ')[0].lower() 
         prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.']
@@ -147,7 +147,6 @@ class ECSRIReconciler:
                 live_count = len(live_by_spec.get(norm_spec, []))
                 bought_count = len(bought_by_spec.get(norm_spec, []))
                 
-                # 🚨 CORE FIX: Build detailed structured objects for the Drill-Down UI
                 display_spec = original_display_names.get(norm_spec, norm_spec)
                 
                 item = {
@@ -161,6 +160,7 @@ class ECSRIReconciler:
                     'bought_ris': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': 'Prepaid / RI', 'spec': display_spec} for s in bought_by_spec.get(norm_spec, [])]
                 }
                 
+                # Anchor Matrix strictly to Quoted RIs, drop unquoted directly to Scope Creep
                 if quoted_count > 0: reconciliation_matrix.append(item)
                 elif live_count > 0: unquoted_matrix.append(item)
             
