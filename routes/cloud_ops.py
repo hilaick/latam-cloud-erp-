@@ -55,12 +55,16 @@ def ecs_ri_reconciliation():
                     "quantity": server.get('quantity', 1)
                 })
         
-        project_region = project_data.get('region') or getattr(customer, 'region', 'la-south-2')
+        console_ris = []
+        if 'console_ri_export' in project_data and 'servers' in project_data['console_ri_export']:
+            console_ris = project_data['console_ri_export']['servers']
+        
+        project_region = project_data.get('region') or getattr(customer, 'region', 'la-north-2')
         
         from services.ecs_ri_reconciler_v2 import ECSRIReconciler
         reconciler = ECSRIReconciler(raw_ak=raw_ak, raw_sk=raw_sk, region=project_region)
         
-        reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris)
+        reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris, console_ris)
         
         return jsonify({
             "success": True,
@@ -103,7 +107,7 @@ def upload_ri_quotation():
                 service_val = row.get('Service')
                 
                 if pd.notna(required_val) and pd.notna(service_val) and 'Elastic Cloud Server' in str(service_val):
-                    # 🚨 FIX: Extract Full Specs cleanly (e.g. x0.8u.16g (8 vCPUs | 16GiB))
+                    # 🚨 FULL SPEC FIX: "x0.8u.16g (8 vCPUs | 16GiB)"
                     specs = str(row.get('Specifications', ''))
                     specification = 'Unknown'
                     if '|' in specs:
@@ -149,7 +153,7 @@ def upload_ecs_ri_raw():
         
         ecs_ri_servers = []
         if fmt == 'csv':
-            # 🚨 FIX: Dynamic Delimiter (Tabs vs Commas)
+            # 🚨 FIX: Dynamic Delimiter (Tabs for direct Excel paste, Commas for CSV)
             delimiter = '\t' if '\t' in raw_data else ','
             import csv
             from io import StringIO
@@ -195,6 +199,56 @@ def upload_ecs_ri_raw():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@cloud_ops_bp.route('/api/finops/upload-console-ris', methods=['POST'])
+@jwt_required()
+def upload_console_ris():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"success": False, "error": "No file selected"}), 400
+            
+        file = request.files['file']
+        project_id = request.form.get('projectId')
+        
+        upload_dir = PROJECT_ROOT / 'uploads' / 'console_exports'
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = upload_dir / secure_filename(file.filename or 'console_ri_export.csv')
+        file.save(str(file_path))
+        
+        import pandas as pd
+        df = pd.read_excel(file_path) if str(file_path).endswith(('.xls', '.xlsx')) else pd.read_csv(file_path)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        col_spec = next((c for c in df.columns if 'flavor' in c or 'specification' in c or 'instance type' in c), None)
+        col_qty = next((c for c in df.columns if 'quantity' in c or 'count' in c or 'instance count' in c), None)
+        col_name = next((c for c in df.columns if 'name' in c or 'id' in c), None)
+        
+        console_ris = []
+        for _, row in df.iterrows():
+            qty = 1
+            if col_qty and pd.notna(row[col_qty]):
+                try: qty = int(float(row[col_qty]))
+                except: pass
+            console_ris.append({
+                'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI',
+                'specification': str(row[col_spec]).strip(),
+                'quantity': qty
+            })
+            
+        project = ProjectData.query.get(project_id)
+        data = json.loads(project.data)
+        data['console_ri_export'] = {
+            'file_path': str(file_path),
+            'servers': console_ris,
+            'total_ris': sum(ri['quantity'] for ri in console_ris)
+        }
+        
+        project.data = json.dumps(data)
+        db.session.commit()
+        
+        return jsonify({ "success": True, "message": "Loaded Console RIs.", "summary": data['console_ri_export'] })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @cloud_ops_bp.route('/api/finops/clear-ecs-ri-quotation', methods=['POST'])
 @jwt_required()
 def clear_ecs_ri_quotation():
@@ -203,10 +257,11 @@ def clear_ecs_ri_quotation():
         project = ProjectData.query.get(project_id)
         if project:
             data = json.loads(project.data)
-            if 'ri_quotation' in data:
-                del data['ri_quotation']
-                project.data = json.dumps(data)
-                db.session.commit()
+            if 'ri_quotation' in data: del data['ri_quotation']
+            if 'finops_matrix' in data: del data['finops_matrix']
+            if 'console_ri_export' in data: del data['console_ri_export']
+            project.data = json.dumps(data)
+            db.session.commit()
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
