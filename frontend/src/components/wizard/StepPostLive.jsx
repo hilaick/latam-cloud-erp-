@@ -7,20 +7,13 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
     return (
         <div className="animate-fade-in pb-12">
             
-            {/* Header & Archive */}
             <div className="mb-8 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4 md:px-8">
                 <div>
                     <h3 className="font-black text-2xl text-slate-800"><i className="fas fa-award text-amber-500 mr-3"></i> Step 5: Post-Live Governance</h3>
                     <p className="text-sm text-slate-500 mt-2">3-Way Reconciliation, Digital Twin mapping, and Commercial Handover.</p>
                 </div>
-                {isCurrent && project?.lifecycleState !== '6_completed' && project?.lifecycleState !== '5_awaiting_commercial' && (
-                    <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '6_completed'); alert("Project Closed Successfully!");}} className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-lg transition-transform active:scale-95 whitespace-nowrap">
-                        Archive Project <i className="fas fa-check-double ml-2"></i>
-                    </button>
-                )}
             </div>
 
-            {/* 4-TAB POST-LIVE NAVIGATION */}
             <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
                 <button onClick={() => setSubTab('diff')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff Matrix</button>
                 <button onClick={() => setSubTab('constellation')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'constellation' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-meteor mr-2"></i> 2. Target Constellation</button>
@@ -59,6 +52,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [matrix, setMatrix] = useState(storedFinops?.matrix || null);
     const [unquotedMatrix, setUnquotedMatrix] = useState(storedFinops?.unquoted_matrix || []);
     const [activeSubsStatus, setActiveSubsStatus] = useState(storedFinops?.active_subs_status || null);
+    const [apiDiagnostics, setApiDiagnostics] = useState(storedFinops?.diagnostics || []);
+    const [showDiagnostics, setShowDiagnostics] = useState(false);
     
     const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
     const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export?.summary : null);
@@ -67,6 +62,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
 
     const handleRunTrueUp = async () => {
         setIsLoading(true);
+        setApiDiagnostics([]);
         try {
             const token = localStorage.getItem('erp_jwt_token'); 
             const res = await fetch('/api/finops/ecs-ri-reconciliation', {
@@ -79,12 +75,14 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 const newMatrix = data.reconciliation.matrix || [];
                 const newUnquoted = data.reconciliation.unquoted_matrix || [];
                 const newStats = data.active_subs_status || null;
+                const newDiagnostics = data.diagnostics || [];
                 
                 setMatrix(newMatrix);
                 setUnquotedMatrix(newUnquoted);
                 setActiveSubsStatus(newStats);
+                setApiDiagnostics(newDiagnostics);
                 
-                const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, active_subs_status: newStats };
+                const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, active_subs_status: newStats, diagnostics: newDiagnostics };
                 onUpdateProject(activeProject.id, 'finops_matrix', leanMatrix);
             } else { alert(`Error reconciling ECS RI Matrix: ${data.error}`); }
         } catch (err) { alert(`Network error during ECS RI Reconciliation: ${err.message}`); } 
@@ -108,7 +106,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             if (data.success) {
                 alert(data.message || 'File uploaded successfully.');
                 if (endpoint.includes('console')) setConsoleRISummary(data.summary);
-                else setRIQuotationSummary(data.summary);
+                else setRIQuotationSummary(data.summary); 
                 
                 if (matrix) handleRunTrueUp(); 
             } else alert(`Upload Error: ${data.error}`);
@@ -122,15 +120,14 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         try {
             const token = localStorage.getItem('erp_jwt_token');
             await fetch('/api/finops/clear-ecs-ri-quotation', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ project_id: activeProject.id })
             });
             onUpdateProject(activeProject.id, 'ri_quotation', null);
             onUpdateProject(activeProject.id, 'finops_matrix', null);
             onUpdateProject(activeProject.id, 'console_ri_export', null);
             setMatrix(null); setUnquotedMatrix([]); setActiveSubsStatus(null);
-            setRIQuotationSummary(null); setConsoleRISummary(null);
+            setRIQuotationSummary(null); setConsoleRISummary(null); setApiDiagnostics([]);
         } catch (err) {} finally { setIsClearing(false); }
     };
 
@@ -140,8 +137,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         try {
             const token = localStorage.getItem('erp_jwt_token');
             const res = await fetch('/api/finops/upload-ecs-ri-raw', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ project_id: activeProject.id, data: rawData, format: getSafeRawFormat() })
             });
             const data = await res.json();
@@ -160,7 +156,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
 
     const handleHandover = () => {
         onUpdateProject(activeProject.id, 'lifecycleState', '5_awaiting_commercial');
-        alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped. The project is now owned by the Commercial/Partner team for final PO True-Up.");
+        alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped.");
     };
 
     return (
@@ -192,12 +188,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             <i className="fas fa-paste mr-2"></i> PASTE EXCEL
                         </button>
                         
-                        <button onClick={() => handleRunTrueUp()} disabled={isLoading || !riQuotationSummary} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={() => handleRunTrueUp()} disabled={isLoading || (!riQuotationSummary && !matrix)} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                             {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Automated Scan</>}
                         </button>
                     </div>
                 </div>
 
+                {/* TWIN UPLOAD PANELS */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     {/* 1. QUOTED RIs */}
                     <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group">
@@ -234,9 +231,27 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-purple-500 mr-1"></i> Loaded</div>
                                 <div className="text-xs font-black text-purple-700">{consoleRISummary.total_ris} Active RIs Owned</div>
                             </div>
-                        ) : <div className="mt-2 p-3 border border-dashed border-purple-300 rounded-lg text-center text-[10px] font-black uppercase text-purple-400">Not Uploaded (Will rely on Nova/BSS)</div>}
+                        ) : <div className="mt-2 p-3 border border-dashed border-purple-300 rounded-lg text-center text-[10px] font-black uppercase text-purple-400">Not Uploaded (Will rely on Nova/BSS API)</div>}
                     </div>
                 </div>
+
+                {/* 🚨 DIAGNOSTICS TOGGLE */}
+                {apiDiagnostics.length > 0 && (
+                    <div className="mb-8">
+                        <button onClick={() => setShowDiagnostics(!showDiagnostics)} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-800 flex items-center">
+                            <i className={`fas fa-chevron-${showDiagnostics ? 'down' : 'right'} mr-2`}></i> {showDiagnostics ? 'Hide' : 'Show'} API Diagnostics ({apiDiagnostics.length} Logs)
+                        </button>
+                        {showDiagnostics && (
+                            <div className="mt-3 bg-slate-900 rounded-xl p-4 h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
+                                {apiDiagnostics.map((log, i) => (
+                                    <div key={i} className={`mb-1 ${log.includes('FAILED') || log.includes('CRASH') ? 'text-rose-400' : ''}`}>
+                                        <span className="text-slate-500">[{new Date().toLocaleTimeString()}]</span> {log}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {!matrix ? (
                     <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl">
@@ -302,7 +317,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                                 )}
                                             </td>
                                             
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(name => ({name, id: 'N/A', status: 'Quoted Baseline'}))})}>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(name => ({name: name.name || name, id: 'N/A', status: 'Quoted Baseline'}))})}>
                                                 {asset.quoted_count} {asset.quoted_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
                                             </td>
                                             
@@ -328,7 +343,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         </div>
 
                         {/* TABLE 2: SCOPE CREEP / UNQUOTED */}
-                        {unquotedMatrix && unquotedMatrix.length > 0 && (
+                        {unquotedMatrix.length > 0 && (
                             <div className="mt-8 border-2 border-rose-200 rounded-xl overflow-hidden shadow-sm">
                                 <div className="bg-rose-50 p-4 border-b border-rose-200">
                                     <h4 className="font-black text-sm uppercase tracking-widest text-rose-800"><i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep / Unquoted Resources</h4>
@@ -430,7 +445,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 </div>
             </div>
 
-            {/* 🚨 DRILL-DOWN MODAL FOR SERVERS (Commercial True-Up) */}
+            {/* 🚨 DRILL-DOWN MODAL FOR SERVERS */}
             {detailsModal.show && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col border border-slate-700 animate-slide-up">
@@ -520,7 +535,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const runFinalNocScan = async () => {
         if (!project.customerId) {
-            alert("NOC Scan Error: No Customer linked to this project.");
+            alert("NOC Scan Error: No Customer linked to this project.\n\nPlease ensure this project is linked to a Customer Profile with valid Vault Credentials in the CRM or Edit Context tab.");
             return;
         }
 
@@ -540,6 +555,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             const data = await res.json();
             
             if (data.success) {
+                // Store raw API output so normalizer can handle it dynamically
                 const finalNoc = { raw: data.inventory || {} };
                 setNocData(finalNoc);
                 onUpdateProject(project.id, 'nocData', finalNoc);
