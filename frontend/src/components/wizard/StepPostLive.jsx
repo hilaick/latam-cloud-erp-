@@ -70,6 +70,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [rawFormat, setRawFormat] = useState('csv');
     const getSafeRawFormat = () => rawFormat || 'csv';
     
+    // 🚨 STATE PERSISTENCE: Load from DB if it exists
     const storedFinops = useMemo(() => {
         if (!activeProject?.data) return null;
         try { return JSON.parse(activeProject.data).finops_matrix || null; } catch(e) { return null; }
@@ -82,6 +83,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
     const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export : null);
 
+    // 🚨 Drill-Down Modal State for Commercial True-Up
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
 
     const handleRunTrueUp = async () => {
@@ -103,6 +105,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 setUnquotedMatrix(newUnquoted);
                 setActiveSubsStatus(newStats);
                 
+                // Slim the payload to prevent DB 500 errors
                 const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, active_subs_status: newStats };
                 onUpdateProject(activeProject.id, 'finops_matrix', leanMatrix);
             } else {
@@ -121,7 +124,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('project_id', activeProject.id);
-        formData.append('projectId', activeProject.id); 
+        formData.append('projectId', activeProject.id); // Some routes use different casing
         
         try {
             const token = localStorage.getItem('erp_jwt_token');
@@ -132,9 +135,9 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             if (data.success) {
                 alert(data.message || 'File uploaded successfully.');
                 if (endpoint.includes('console')) setConsoleRISummary(data.summary);
-                else setRIQuotationSummary(data.summary); // 🚨 Now properly receives the summary!
+                else setRIQuotationSummary(data.summary);
                 
-                if (matrix) handleRunTrueUp(); 
+                if (matrix) handleRunTrueUp(); // Auto-refresh matrix
             } else alert(`Upload Error: ${data.error}`);
         } catch (err) { alert(`Network error: ${err.message}`); } 
         finally { setIsUploading(false); }
@@ -175,7 +178,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 if (!updatedProject.ri_quotation) updatedProject.ri_quotation = {};
                 updatedProject.ri_quotation = { summary: data.summary, count: data.count, uploaded_at: new Date().toISOString() };
                 onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
-                setRIQuotationSummary(data.summary); // 🚨 Instantly unlocks the scan button
+                setRIQuotationSummary(data.summary);
                 setRawData('');
                 if (matrix) handleRunTrueUp();
             } else alert(`Import Error: ${data.error}`);
@@ -322,12 +325,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                                             <td className="p-3 text-slate-800 font-mono font-bold text-xs">
                                                 {asset.specification}
+                                                {/* 🚨 SAFELY RENDER OBJECT NAMES */}
                                                 {asset.quoted_servers && asset.quoted_servers.length > 0 && (
-                                                    <div className="text-[10px] text-slate-500 mt-1">{asset.quoted_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s}>{s}</div>))}</div>
+                                                    <div className="text-[10px] text-slate-500 mt-1">{asset.quoted_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>
                                                 )}
                                             </td>
                                             
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(name => ({name, id: 'N/A', status: 'Quoted'}))})}>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers})}>
                                                 {asset.quoted_count} {asset.quoted_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
                                             </td>
                                             
@@ -353,7 +357,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         </div>
 
                         {/* TABLE 2: SCOPE CREEP / UNQUOTED */}
-                        {unquotedMatrix.length > 0 && (
+                        {unquotedMatrix && unquotedMatrix.length > 0 && (
                             <div className="mt-8 border-2 border-rose-200 rounded-xl overflow-hidden shadow-sm">
                                 <div className="bg-rose-50 p-4 border-b border-rose-200">
                                     <h4 className="font-black text-sm uppercase tracking-widest text-rose-800"><i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep / Unquoted Resources</h4>
@@ -373,7 +377,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                             const missing = asset.live_count - asset.bought_count;
                                             return (
                                             <tr key={i} className="hover:bg-rose-50/30 transition-colors">
-                                                <td className="p-3 text-slate-800 font-mono font-bold text-xs">{asset.specification}</td>
+                                                <td className="p-3 text-slate-800 font-mono font-bold text-xs">
+                                                    {asset.specification}
+                                                    {/* 🚨 SAFELY RENDER OBJECT NAMES */}
+                                                    {asset.live_servers && asset.live_servers.length > 0 && (
+                                                        <div className="text-[10px] text-rose-500 mt-1">{asset.live_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>
+                                                    )}
+                                                </td>
                                                 
                                                 <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30 cursor-pointer hover:bg-emerald-100" onClick={() => asset.live_count > 0 && setDetailsModal({show: true, title: `Scope Creep (Live): ${asset.specification}`, items: asset.live_servers})}>
                                                     {asset.live_count} <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>
@@ -384,11 +394,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                                 </td>
                                                 
                                                 <td className="p-3 text-center">
-                                                    {missing <= 0 ? (
-                                                        <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-shield-alt mr-1"></i> Pre-Paid</span>
-                                                    ) : (
-                                                        <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-fire mr-1"></i> {missing}x PPU Bleed</span>
-                                                    )}
+                                                    {missing <= 0 ? <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest">Pre-Paid</span> : <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-fire mr-1"></i> {missing}x PPU Bleed</span>}
                                                 </td>
                                             </tr>
                                         )})}
