@@ -1,83 +1,102 @@
 import logging
-import requests
-from huaweicloudsdkcore.signer.signer import Signer
-from huaweicloudsdkcore.http.http_request import HttpRequest
+from huaweicloudsdkcore.auth.credentials import GlobalCredentials
+from huaweicloudsdkcore.region.region import Region
+from huaweicloudsdkbss.v2.bss_client import BssClient
+
+# Dynamically import the OCE request objects to guarantee it doesn't crash on different SDK versions
+try:
+    from huaweicloudsdkbss.v2.model.list_customerself_resource_request import ListCustomerselfResourceRequest
+    HAS_SELF_REQ = True
+except ImportError:
+    HAS_SELF_REQ = False
+
+try:
+    from huaweicloudsdkbss.v2.model.list_customer_resources_request import ListCustomerResourcesRequest
+    HAS_CUST_REQ = True
+except ImportError:
+    HAS_CUST_REQ = False
 
 logger = logging.getLogger(__name__)
 
 class HuaweiBSSScanner:
+    """
+    FinOps Identity Broker: Integrates directly with Huawei's OCE (Customer Operation Capabilities) API.
+    Uses the Yearly/Monthly resources endpoint to identify active Reserved Instances.
+    """
     def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
 
     def get_active_ris(self) -> tuple:
-        """
-        Returns: (bought_ris: list, diagnostics: list)
-        """
         diagnostics = []
         bought_ris = []
         
         try:
-            logger.info(f"FinOps Broker: Authenticating via V4 Signer for RI List in {self.region}")
-            signer = Signer(ak=self.raw_ak, sk=self.raw_sk)
+            logger.info("FinOps Broker: Authenticating via OCE (Customer Operation Capabilities) API")
+            diagnostics.append("Authenticating via OCE (Customer Operation Capabilities) API...")
             
-            endpoints = [
-                f"https://bss.{self.region}.myhuaweicloud.com/v2/bills/customer-reserved-instances",
-                "https://bss.ap-southeast-1.myhuaweicloud.com/v2/bills/customer-reserved-instances",
-                "https://bss.la-south-2.myhuaweicloud.com/v2/bills/customer-reserved-instances"
-            ]
-
-            for url in endpoints:
-                try:
-                    diagnostics.append(f"Attempting to fetch RIs from: {url}")
-                    
-                    # 🚨 FIX: Use Huawei's native HttpRequest object for the Signer
-                    r = HttpRequest("GET", url)
-                    r.headers = {"Content-Type": "application/json"}
-                    
-                    # Sign the request (injects X-Sdk-Date and Authorization headers)
-                    signer.sign(r)
-                    
-                    # Execute the signed request using the standard requests library
-                    resp = requests.get(r.url, headers=r.headers, timeout=15)
-                    
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        ri_list = data.get('customer_reserved_instances', [])
-                        
-                        diagnostics.append(f"SUCCESS: 200 OK from {url}. Found {len(ri_list)} total RI records in payload.")
-                        
-                        for ri in ri_list:
-                            # Status 1 = Valid/Active in Huawei BSS
-                            if str(ri.get('status')) == '1':
-                                bought_ris.append({
-                                    'id': ri.get('reserved_instance_id', 'BSS_RI'),
-                                    'name': f"Floating RI ({ri.get('enterprise_project_name', 'Default')})",
-                                    'specification': ri.get('spec_code', 'Unknown'),
-                                    'billing_mode': 'Floating Reserved',
-                                    'charging_mode': '1',
-                                    'tags': {},
-                                    'created_at': ri.get('effective_time', ''),
-                                    'status': 'Active'
-                                })
-                        
-                        diagnostics.append(f"Parsed {len(bought_ris)} Active Status=1 RIs.")
-                        return bought_ris, diagnostics
-                    else:
-                        error_msg = f"FAILED: HTTP {resp.status_code} from {url} - {resp.text}"
-                        logger.warning(error_msg)
-                        diagnostics.append(error_msg)
-                        
-                except Exception as endpoint_e:
-                    error_msg = f"CRASH on {url}: {str(endpoint_e)}"
-                    logger.warning(error_msg)
-                    diagnostics.append(error_msg)
+            # OCE/BSS APIs must hit the global hub
+            credentials = GlobalCredentials(self.raw_ak, self.raw_sk)
+            global_bss_region = Region("ap-southeast-1", "https://bss.ap-southeast-1.myhuaweicloud.com")
             
+            client = BssClient.new_builder() \
+                .with_credentials(credentials) \
+                .with_region(global_bss_region) \
+                .build()
+                
+            response = None
+            
+            # Using the official OCE API: GET /v2/resources/customer-resources
+            if HAS_SELF_REQ and hasattr(client, 'list_customerself_resource'):
+                req = ListCustomerselfResourceRequest()
+                response = client.list_customerself_resource(req)
+            elif HAS_CUST_REQ and hasattr(client, 'list_customer_resources'):
+                req = ListCustomerResourcesRequest()
+                response = client.list_customer_resources(req)
+            else:
+                error_msg = "FAILED: Your Huawei BSS SDK is missing the OCE Resource Request modules. Please run: pip install --upgrade huaweicloudsdkbss"
+                logger.error(error_msg)
+                diagnostics.append(error_msg)
+                return bought_ris, diagnostics
+                
+            if response and hasattr(response, 'data') and response.data:
+                resource_list = response.data
+                diagnostics.append(f"SUCCESS: OCE API returned {len(resource_list)} active yearly/monthly resources.")
+                
+                for res in resource_list:
+                    res_dict = res.to_dict() if hasattr(res, 'to_dict') else res.__dict__
+                    details = str(res_dict).lower()
+                    
+                    # Isolate Reserved Instances from standard yearly/monthly VMs
+                    is_ri = (
+                        'reserved' in details or 
+                        'ri ' in details or 
+                        str(res_dict.get('resource_type_code')) == 'reserved_instance' or
+                        str(res_dict.get('product_name', '')).lower().find('reserved') != -1
+                    )
+                    
+                    if is_ri:
+                        spec = str(res_dict.get('resource_spec_code', 'Unknown'))
+                        bought_ris.append({
+                            'id': res_dict.get('resource_id', 'OCE_RI'),
+                            'name': f"Floating RI ({res_dict.get('product_name', 'Default')})",
+                            'specification': spec,
+                            'billing_mode': 'Floating Reserved',
+                            'charging_mode': '1',
+                            'tags': {},
+                            'created_at': res_dict.get('effective_time', ''),
+                            'status': 'Active'
+                        })
+                        
+                diagnostics.append(f"Parsed {len(bought_ris)} Active RIs from OCE payload.")
+            else:
+                diagnostics.append("SUCCESS: OCE API responded, but 0 active prepaid resources were found for this account.")
+                
             return bought_ris, diagnostics
             
         except Exception as e:
-            error_msg = f"FinOps Broker Fatal Crash: {str(e)}"
+            error_msg = f"OCE API Fetch Failed (Check IAM 'BSS ReadOnlyAccess' permissions): {str(e)}"
             logger.error(error_msg, exc_info=True)
             diagnostics.append(error_msg)
-            return [], diagnostics
+            return bought_ris, diagnostics
