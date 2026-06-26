@@ -124,42 +124,54 @@ def upload_ri_quotation():
             
         ecs_ri_servers = []
         for _, row in df_ri.iterrows():
-            service_val = str(row.get(col_svc, '')).lower() if col_svc else 'elastic cloud server'
+            # 🚨 STRICT FILTER: Only allow ECS. Ignore EIPs, NATs, Backup Vaults.
+            if col_svc:
+                service_val = str(row.get(col_svc, '')).lower()
+                if 'elastic cloud server' not in service_val and 'ecs' not in service_val:
+                    continue
             
-            if 'elastic cloud server' in service_val or 'ecs' in service_val or not col_svc:
-                req_val = str(row.get(col_req, '')).strip()
-                if not req_val or req_val == 'nan': continue
-                    
-                specs = str(row.get(col_spec, '')).strip()
-                specification = specs
-                if '|' in specs:
-                    parts = [p.strip() for p in specs.split('|')]
-                    if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
-                    elif len(parts) > 2: specification = parts[2]
-                    
-                qty = 1
-                if col_qty and pd.notna(row.get(col_qty)):
-                    try: qty = int(float(row.get(col_qty)))
-                    except: pass
-                    
-                ecs_ri_servers.append({
-                    'name': req_val,
-                    'specification': specification,
-                    'quantity': qty
-                })
+            req_val = str(row.get(col_req, '')).strip()
+            if not req_val or req_val == 'nan': continue
+                
+            specs = str(row.get(col_spec, '')).strip()
+            specification = specs
+            if '|' in specs:
+                parts = [p.strip() for p in specs.split('|')]
+                if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
+                elif len(parts) > 2: specification = parts[2]
+                
+            qty = 1
+            if col_qty and pd.notna(row.get(col_qty)):
+                try: qty = int(float(row.get(col_qty)))
+                except: pass
+                
+            ecs_ri_servers.append({
+                'name': req_val,
+                'specification': specification,
+                'quantity': qty
+            })
                 
         project = ProjectData.query.get(project_id)
         data = json.loads(project.data)
         if 'ri_quotation' not in data: data['ri_quotation'] = {}
         
-        summary = { 'total_servers': len(ecs_ri_servers), 'total_ris': sum(s['quantity'] for s in ecs_ri_servers) }
+        summary = {
+            'total_servers': len(ecs_ri_servers),
+            'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
+        }
+        
         data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
         data['ri_quotation']['servers'] = ecs_ri_servers
         data['ri_quotation']['summary'] = summary
         
         project.data = json.dumps(data)
         db.session.commit()
-        return jsonify({ "success": True, "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.", "summary": summary })
+        
+        return jsonify({ 
+            "success": True, 
+            "message": f"Successfully parsed {summary['total_ris']} Quoted ECS RIs.",
+            "summary": summary
+        })
         
     except Exception as e:
         logger.error(f"Upload Quoted RI Error: {e}", exc_info=True)
@@ -249,9 +261,8 @@ def upload_console_ris():
             
         df.columns = [str(c).strip().lower() for c in df.columns]
         
-        # Look for Huawei Console specific columns
-        col_spec = next((c for c in df.columns if 'specification' in c or 'flavor' in c or 'spec' in c), None)
-        col_qty = next((c for c in df.columns if 'quantity' in c or 'count' in c), None)
+        col_spec = next((c for c in df.columns if 'flavor' in c or 'specification' in c or 'instance type' in c), None)
+        col_qty = next((c for c in df.columns if 'quantity' in c or 'count' in c or 'instance count' in c), None)
         col_name = next((c for c in df.columns if 'name' in c or 'id' in c), None)
         
         console_ris = []
@@ -262,8 +273,6 @@ def upload_console_ris():
                 except: pass
             
             spec_raw = str(row[col_spec]).strip() if col_spec else 'Unknown'
-            
-            # 🚨 FIX: Reverses Huawei's Backwards "96 vCPUs | 768 GiB | m7n.24xlarge.8" into standard format
             if '|' in spec_raw:
                 parts = [p.strip() for p in spec_raw.split('|')]
                 if len(parts) == 3 and ('vcpu' in parts[0].lower() or 'cpu' in parts[0].lower()):
