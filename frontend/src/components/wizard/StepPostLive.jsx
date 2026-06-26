@@ -64,6 +64,12 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
+    const [isRawImporting, setIsRawImporting] = useState(false);
+    const [rawData, setRawData] = useState('');
+    const [rawFormat, setRawFormat] = useState('csv');
+    // Ensure rawFormat is never undefined - use a getter function
+    const getSafeRawFormat = () => rawFormat || 'csv';
     const [matrix, setMatrix] = useState(null);
     const [activeSubsStatus, setActiveSubsStatus] = useState(null);
 
@@ -126,7 +132,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 updatedProject.ri_quotation = {
                     filename: data.filename,
                     count: data.count,
-                    uploaded_at: new Date().toISOString()
+                    uploaded_at: new Date().toISOString(),
+                    servers: data.servers || []  // Include servers from backend
                 };
                 onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
             } else {
@@ -137,6 +144,84 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         } finally {
             setIsUploading(false);
             e.target.value = null;
+        }
+    };
+
+    const handleClearQuotation = async () => {
+        if (!confirm('Are you sure you want to clear the uploaded quotation? This will remove all ECS RI data for this project.')) {
+            return;
+        }
+
+        setIsClearing(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const res = await fetch('/api/finops/clear-ecs-ri-quotation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ project_id: activeProject.id })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert('ECS RI quotation cleared successfully!');
+                // Clear local state
+                const updatedProject = { ...activeProject };
+                if (updatedProject.ri_quotation) {
+                    delete updatedProject.ri_quotation;
+                    onUpdateProject(activeProject.id, 'ri_quotation', null);
+                }
+                setMatrix(null);
+                setActiveSubsStatus(null);
+            } else {
+                alert(`Error clearing quotation: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+        } finally {
+            setIsClearing(false);
+        }
+    };
+
+    const handleRawImport = async () => {
+        if (!rawData.trim()) {
+            alert('Please paste CSV or JSON data');
+            return;
+        }
+
+        setIsRawImporting(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const res = await fetch('/api/finops/upload-ecs-ri-raw', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    project_id: activeProject.id,
+                    data: rawData,
+                    format: getSafeRawFormat()
+                })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert(`ECS RI data imported successfully! Processed ${data.count} servers.${data.preview ? '\n\nPreview:\n' + data.preview.map(s => `• ${s}`).join('\n') : ''}`);
+                // Refresh project data
+                const updatedProject = { ...activeProject };
+                if (!updatedProject.ri_quotation) updatedProject.ri_quotation = {};
+                updatedProject.ri_quotation = {
+                    filename: `raw-import.${getSafeRawFormat()}`,
+                    count: data.count,
+                    uploaded_at: new Date().toISOString(),
+                    servers: data.servers || []
+                };
+                onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
+                setRawData('');
+            } else {
+                alert(`Import Error: ${data.error}`);
+            }
+        } catch (err) {
+            alert(`Network error: ${err.message}`);
+        } finally {
+            setIsRawImporting(false);
         }
     };
 
@@ -158,7 +243,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             Compare ECS Reserved Instances (RIs) Quoted vs Live vs Bought.
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3">
                         <div className="relative">
                             <input 
                                 type="file" 
@@ -178,6 +263,31 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 )}
                             </button>
                         </div>
+                        
+                        {/* Clear Quotation Button */}
+                        <button 
+                            onClick={handleClearQuotation}
+                            disabled={isClearing || !activeProject?.ri_quotation}
+                            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center shrink-0"
+                            title="Clear uploaded quotation data"
+                        >
+                            {isClearing ? (
+                                <><i className="fas fa-spinner fa-spin mr-2"></i> Clearing...</>
+                            ) : (
+                                <><i className="fas fa-trash-alt mr-2"></i> Clear Quotation</>
+                            )}
+                        </button>
+                        
+                        {/* Raw Import Button (opens modal) */}
+                        <button 
+                            onClick={() => document.getElementById('rawImportModal').classList.remove('hidden')}
+                            disabled={isRawImporting}
+                            className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center shrink-0"
+                            title="Import raw CSV/JSON data"
+                        >
+                            <i className="fas fa-code mr-2"></i> RAW IMPORT
+                        </button>
+                        
                         <button 
                             onClick={() => handleRunTrueUp()} 
                             disabled={isLoading || !activeProject?.ri_quotation}
@@ -247,12 +357,57 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         const missing = asset.quoted_count - asset.bought_count;
                                         return (
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                            <td className="p-3 text-slate-800 font-mono font-bold text-xs">{asset.specification}</td>
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30">{asset.quoted_count}</td>
-                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">{asset.live_count}</td>
-                                            <td className="p-3 text-center font-black text-purple-700 bg-purple-50/30">{asset.bought_count}</td>
+                                            <td className="p-3 text-slate-800 font-mono font-bold text-xs">
+                                                {asset.specification}
+                                                {asset.quoted_servers && asset.quoted_servers.length > 0 && (
+                                                    <div className="text-[10px] text-slate-500 mt-1">
+                                                        {asset.quoted_servers.slice(0, 2).map((name, idx) => (
+                                                            <div key={idx} className="truncate" title={name}>{name}</div>
+                                                        ))}
+                                                        {asset.quoted_servers.length > 2 && (
+                                                            <div className="text-slate-400">+{asset.quoted_servers.length - 2} more</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30">
+                                                {asset.quoted_count}
+                                                {asset.quoted_servers && asset.quoted_servers.length > 0 && (
+                                                    <div className="text-[10px] text-blue-600 mt-1">
+                                                        {asset.quoted_servers.length} server{asset.quoted_servers.length !== 1 ? 's' : ''}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">
+                                                {asset.live_count}
+                                                {asset.live_servers && asset.live_servers.length > 0 && (
+                                                    <div className="text-[10px] text-emerald-600 mt-1">
+                                                        {asset.live_servers.slice(0, 2).map((server, idx) => (
+                                                            <div key={idx} className="truncate" title={server}>{server}</div>
+                                                        ))}
+                                                        {asset.live_servers.length > 2 && (
+                                                            <div className="text-emerald-400">+{asset.live_servers.length - 2} more</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-center font-black text-purple-700 bg-purple-50/30">
+                                                {asset.bought_count}
+                                                {asset.bought_ris && asset.bought_ris.length > 0 && (
+                                                    <div className="text-[10px] text-purple-600 mt-1">
+                                                        {asset.bought_ris.slice(0, 2).map((ri, idx) => (
+                                                            <div key={idx} className="truncate" title={ri}>{ri}</div>
+                                                        ))}
+                                                        {asset.bought_ris.length > 2 && (
+                                                            <div className="text-purple-400">+{asset.bought_ris.length - 2} more</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="p-3 text-center">
-                                                {missing <= 0 ? (
+                                                {asset.quoted_count === 0 ? (
+                                                    <span className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-minus-circle mr-1"></i> Not Required</span>
+                                                ) : missing <= 0 ? (
                                                     <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check-circle mr-1"></i> Covered</span>
                                                 ) : (
                                                     <span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-exclamation-triangle mr-1"></i> Buy {missing}x RI</span>
@@ -671,6 +826,96 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     @page { margin: 2cm; }
                 }
             `}} />
+            
+            {/* RAW IMPORT Modal */}
+            <div id="rawImportModal" className="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-fade-in">
+                    <div className="border-b border-slate-200 p-6">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-black text-lg text-slate-800">
+                                <i className="fas fa-code mr-2 text-amber-600"></i>
+                                RAW IMPORT - CSV/JSON Data
+                            </h3>
+                            <button 
+                                onClick={() => document.getElementById('rawImportModal').classList.add('hidden')}
+                                className="text-slate-400 hover:text-slate-600 text-xl"
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <p className="text-sm text-slate-600 mt-2">
+                            Paste CSV or JSON data directly. CSV format: "Server Name,Specification,Quantity". JSON format: array of objects with "name" and "specification" fields.
+                        </p>
+                    </div>
+                    
+                    <div className="p-6 space-y-4">
+                        <div className="flex gap-4">
+                            <div className="flex-1">
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-700 mb-2">
+                                    <i className="fas fa-file-alt mr-2"></i>
+                                    Data Format
+                                </label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setRawFormat('csv')}
+                                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${getSafeRawFormat() === 'csv' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    >
+                                        CSV
+                                    </button>
+                                    <button
+                                        onClick={() => setRawFormat('json')}
+                                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${getSafeRawFormat() === 'json' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    >
+                                        JSON
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-700 mb-2">
+                                <i className="fas fa-paste mr-2"></i>
+                                Paste Data ({getSafeRawFormat() ? getSafeRawFormat().toUpperCase() : 'CSV'})
+                            </label>
+                            <textarea
+                                value={rawData}
+                                onChange={(e) => setRawData(e.target.value)}
+                                placeholder={getSafeRawFormat() === 'csv' ? 'Server Name,Specification,Quantity\necs-1,c7.xlarge.4,2\necs-2,s6.2xlarge.4,1' : getSafeRawFormat() === 'json' ? '[\n  {"name": "ecs-1", "specification": "c7.xlarge.4", "quantity": 2},\n  {"name": "ecs-2", "specification": "s6.2xlarge.4", "quantity": 1}\n]' : 'Server Name,Specification,Quantity\necs-1,c7.xlarge.4,2\necs-2,s6.2xlarge.4,1'}
+                                className="w-full h-64 font-mono text-sm p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                                spellCheck="false"
+                            />
+                        </div>
+                        
+                        <div className="text-xs text-slate-500">
+                            <i className="fas fa-info-circle mr-1"></i>
+                            {getSafeRawFormat() === 'csv' ? 'CSV format: Server Name,Specification,Quantity (header optional)' : getSafeRawFormat() === 'json' ? 'JSON format: Array of objects with "name", "specification", and optional "quantity" fields' : 'CSV format: Server Name,Specification,Quantity (header optional)'}
+                        </div>
+                    </div>
+                    
+                    <div className="border-t border-slate-200 p-6 flex justify-end gap-3">
+                        <button
+                            onClick={() => document.getElementById('rawImportModal').classList.add('hidden')}
+                            className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => {
+                                handleRawImport();
+                                document.getElementById('rawImportModal').classList.add('hidden');
+                            }}
+                            disabled={isRawImporting || !rawData.trim()}
+                            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center"
+                        >
+                            {isRawImporting ? (
+                                <><i className="fas fa-spinner fa-spin mr-2"></i> Importing...</>
+                            ) : (
+                                <><i className="fas fa-upload mr-2"></i> Import Data</>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

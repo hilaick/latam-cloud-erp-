@@ -174,17 +174,28 @@ def ecs_ri_reconciliation():
         
         quoted_ecs_ris = []
         
-        if 'ri_quotation' in project_data and 'servers' in project_data['ri_quotation']:
-            for server in project_data['ri_quotation']['servers']:
-                quoted_ecs_ris.append({
-                    "name": server.get('name', ''),
-                    "specification": server.get('specification', 'Unknown'),
-                    "quantity": server.get('quantity', 1),
-                    "description": server.get('description', ''),
-                    "region": server.get('region', ''),
-                    "billing_mode": server.get('billing_mode', 'RI')
-                })
+        logger.info(f"DEBUG: Checking ri_quotation in project_data. Keys: {list(project_data.keys())}")
+        
+        if 'ri_quotation' in project_data:
+            logger.info(f"DEBUG: Found ri_quotation key in project_data")
+            logger.info(f"DEBUG: ri_quotation type: {type(project_data['ri_quotation'])}")
+            logger.info(f"DEBUG: ri_quotation keys: {list(project_data['ri_quotation'].keys()) if isinstance(project_data['ri_quotation'], dict) else 'Not a dict'}")
+            if 'servers' in project_data['ri_quotation']:
+                logger.info(f"DEBUG: Found ri_quotation with {len(project_data['ri_quotation']['servers'])} servers")
+                for server in project_data['ri_quotation']['servers']:
+                    quoted_ecs_ris.append({
+                        "name": server.get('name', ''),
+                        "specification": server.get('specification', 'Unknown'),
+                        "quantity": server.get('quantity', 1),
+                        "description": server.get('description', ''),
+                        "region": server.get('region', ''),
+                        "billing_mode": server.get('billing_mode', 'RI')
+                    })
+                logger.info(f"DEBUG: Processed {len(quoted_ecs_ris)} quoted ECS RIs from ri_quotation")
+            else:
+                logger.info("DEBUG: ri_quotation exists but no 'servers' key")
         else:
+            logger.info("DEBUG: No ri_quotation found in project_data, falling back to blueprintData")
             blueprint_data = project_data.get('blueprintData', {})
             commercial_intent = blueprint_data.get('commercial_intent', {'deployable_assets': [], 'account_assets': []})
             
@@ -196,6 +207,7 @@ def ecs_ri_reconciliation():
                         "name": asset.get('name', ''),
                         "tags": asset.get('tags', {})
                     })
+            logger.info(f"DEBUG: Processed {len(quoted_ecs_ris)} quoted ECS RIs from blueprintData")
         
         # 🚨 FIX: Pass proper region down to the Reconciler
         project_region = project_data.get('region') or getattr(customer, 'region', 'la-south-2')
