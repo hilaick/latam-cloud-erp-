@@ -152,23 +152,14 @@ def upload_ri_quotation():
         data = json.loads(project.data)
         if 'ri_quotation' not in data: data['ri_quotation'] = {}
         
-        summary = {
-            'total_servers': len(ecs_ri_servers),
-            'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
-        }
-        
+        summary = { 'total_servers': len(ecs_ri_servers), 'total_ris': sum(s['quantity'] for s in ecs_ri_servers) }
         data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
         data['ri_quotation']['servers'] = ecs_ri_servers
         data['ri_quotation']['summary'] = summary
         
         project.data = json.dumps(data)
         db.session.commit()
-        
-        return jsonify({ 
-            "success": True, 
-            "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.",
-            "summary": summary
-        })
+        return jsonify({ "success": True, "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.", "summary": summary })
         
     except Exception as e:
         logger.error(f"Upload Quoted RI Error: {e}", exc_info=True)
@@ -209,11 +200,7 @@ def upload_ecs_ri_raw():
                         try: qty = int(float(row[qty_key]))
                         except: pass
                         
-                    ecs_ri_servers.append({
-                        'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI',
-                        'specification': spec,
-                        'quantity': qty
-                    })
+                    ecs_ri_servers.append({'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI', 'specification': spec, 'quantity': qty})
         elif fmt == 'json':
             try:
                 parsed_json = json.loads(raw_data)
@@ -262,8 +249,9 @@ def upload_console_ris():
             
         df.columns = [str(c).strip().lower() for c in df.columns]
         
-        col_spec = next((c for c in df.columns if 'flavor' in c or 'specification' in c or 'instance type' in c), None)
-        col_qty = next((c for c in df.columns if 'quantity' in c or 'count' in c or 'instance count' in c), None)
+        # Look for Huawei Console specific columns
+        col_spec = next((c for c in df.columns if 'specification' in c or 'flavor' in c or 'spec' in c), None)
+        col_qty = next((c for c in df.columns if 'quantity' in c or 'count' in c), None)
         col_name = next((c for c in df.columns if 'name' in c or 'id' in c), None)
         
         console_ris = []
@@ -274,9 +262,14 @@ def upload_console_ris():
                 except: pass
             
             spec_raw = str(row[col_spec]).strip() if col_spec else 'Unknown'
+            
+            # 🚨 FIX: Reverses Huawei's Backwards "96 vCPUs | 768 GiB | m7n.24xlarge.8" into standard format
             if '|' in spec_raw:
                 parts = [p.strip() for p in spec_raw.split('|')]
-                if len(parts) >= 5: spec_raw = f"{parts[2]} ({parts[3]} | {parts[4]})"
+                if len(parts) == 3 and ('vcpu' in parts[0].lower() or 'cpu' in parts[0].lower()):
+                    spec_raw = f"{parts[2]} ({parts[0]} | {parts[1]})"
+                elif len(parts) >= 5:
+                    spec_raw = f"{parts[2]} ({parts[3]} | {parts[4]})"
                 
             console_ris.append({
                 'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI',
