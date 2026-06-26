@@ -78,59 +78,173 @@ def ecs_ri_reconciliation():
 @jwt_required()
 def upload_ri_quotation():
     try:
-        if 'file' in request.files:
-            file = request.files['file']
-            project_id = request.form.get('project_id')
+        if 'file' not in request.files:
+            return jsonify({"success": False, "error": "No file uploaded"}), 400
             
-            from services.quotation_versioning import save_quotation_file
-            file_path = save_quotation_file(project_id, file, file.filename)
-            
-            import pandas as pd
-            df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
-            
-            header_row = next((i for i in range(len(df)) if df.iloc[i].astype(str).str.contains('Required').any()), None)
-            if header_row is None:
-                return jsonify({"success": False, "error": "Could not find 'Required' column in sheet"}), 400
-            
-            df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
-            
-            ecs_ri_servers = []
-            for idx, row in df_ri.iterrows():
-                required_val = row.get('Required')
-                service_val = row.get('Service')
+        file = request.files['file']
+        project_id = request.form.get('project_id') or request.form.get('projectId')
+        
+        from services.quotation_versioning import save_quotation_file
+        file_path = save_quotation_file(project_id, file, file.filename)
+        
+        import pandas as pd
+        
+        # 🚨 FIX: Smart Parsing for CSV vs Excel
+        if str(file_path).lower().endswith('.csv'):
+            df = pd.read_csv(file_path, header=None)
+        else:
+            try:
+                df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
+            except:
+                df = pd.read_excel(file_path, header=None)
+        
+        # 🚨 FIX: Aggressively search for the header row
+        header_row = 0
+        for i in range(min(50, len(df))):
+            row_str = df.iloc[i].astype(str).str.lower()
+            if row_str.str.contains('required|service|product|name').any():
+                header_row = i
+                break
                 
-                if pd.notna(required_val) and pd.notna(service_val) and 'Elastic Cloud Server' in str(service_val):
-                    specs = str(row.get('Specifications', ''))
-                    specification = 'Unknown'
-                    if '|' in specs:
-                        parts = [p.strip() for p in specs.split('|')]
-                        if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
-                        elif len(parts) > 2: specification = parts[2]
+        # Reload with correct header
+        if str(file_path).lower().endswith('.csv'):
+            df_ri = pd.read_csv(file_path, header=header_row)
+        else:
+            try:
+                df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
+            except:
+                df_ri = pd.read_excel(file_path, header=header_row)
+        
+        df_ri.columns = [str(c).strip().lower() for c in df_ri.columns]
+        
+        col_req = next((c for c in df_ri.columns if 'required' in c or 'name' in c or 'server' in c), None)
+        col_svc = next((c for c in df_ri.columns if 'service' in c or 'product' in c), None)
+        col_spec = next((c for c in df_ri.columns if 'specification' in c or 'flavor' in c), None)
+        col_qty = next((c for c in df_ri.columns if 'quantity' in c or 'count' in c), None)
+        
+        if not col_req or not col_spec:
+            return jsonify({"success": False, "error": "Could not identify Name/Specification columns in file."}), 400
+            
+        ecs_ri_servers = []
+        for _, row in df_ri.iterrows():
+            service_val = str(row.get(col_svc, '')).lower() if col_svc else 'elastic cloud server'
+            
+            # Filter strictly for ECS rows
+            if 'elastic cloud server' in service_val or 'ecs' in service_val or not col_svc:
+                req_val = str(row.get(col_req, '')).strip()
+                if not req_val or req_val == 'nan': continue
                     
-                    try: quantity = int(float(row.get('Quantity', 1)))
-                    except: quantity = 1
+                specs = str(row.get(col_spec, '')).strip()
+                specification = specs
+                if '|' in specs:
+                    parts = [p.strip() for p in specs.split('|')]
+                    if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
+                    elif len(parts) > 2: specification = parts[2]
                     
+                qty = 1
+                if col_qty and pd.notna(row.get(col_qty)):
+                    try: qty = int(float(row.get(col_qty)))
+                    except: pass
+                    
+                ecs_ri_servers.append({
+                    'name': req_val,
+                    'specification': specification,
+                    'quantity': qty
+                })
+                
+        project = ProjectData.query.get(project_id)
+        data = json.loads(project.data)
+        if 'ri_quotation' not in data: data['ri_quotation'] = {}
+        
+        # 🚨 FIX: Package the summary exactly as React expects it
+        summary = {
+            'total_servers': len(ecs_ri_servers),
+            'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
+        }
+        
+        data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
+        data['ri_quotation']['servers'] = ecs_ri_servers
+        data['ri_quotation']['summary'] = summary
+        
+        project.data = json.dumps(data)
+        db.session.commit()
+        
+        return jsonify({ 
+            "success": True, 
+            "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.",
+            "summary": summary
+        })
+        
+    except Exception as e:
+        logger.error(f"Upload Quoted RI Error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/finops/upload-ecs-ri-raw', methods=['POST'])
+@jwt_required()
+def upload_ecs_ri_raw():
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+        raw_data = data.get('data', '')
+        fmt = data.get('format', 'csv')
+        
+        ecs_ri_servers = []
+        if fmt == 'csv':
+            delimiter = '\t' if '\t' in raw_data else ','
+            import csv
+            from io import StringIO
+            
+            reader = csv.DictReader(StringIO(raw_data.strip()), delimiter=delimiter)
+            for row in reader:
+                keys = {str(k).lower().strip(): k for k in row.keys() if k}
+                name_key = next((keys[k] for k in keys if 'name' in k or 'server' in k or 'host' in k or 'required' in k), None)
+                spec_key = next((keys[k] for k in keys if 'spec' in k or 'flavor' in k or 'type' in k), None)
+                qty_key = next((keys[k] for k in keys if 'qty' in k or 'quantity' in k or 'count' in k), None)
+                
+                if spec_key and row.get(spec_key):
+                    spec_raw = str(row[spec_key]).strip()
+                    spec = spec_raw
+                    if '|' in spec_raw:
+                        parts = [p.strip() for p in spec_raw.split('|')]
+                        if len(parts) >= 5: spec = f"{parts[2]} ({parts[3]} | {parts[4]})"
+                        elif len(parts) > 2: spec = parts[2]
+                            
+                    qty = 1
+                    if qty_key and row.get(qty_key):
+                        try: qty = int(float(row[qty_key]))
+                        except: pass
+                        
                     ecs_ri_servers.append({
-                        'name': str(required_val).strip(),
-                        'quantity': quantity,
-                        'specification': specification
+                        'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI',
+                        'specification': spec,
+                        'quantity': qty
                     })
-            
-            project = ProjectData.query.get(project_id)
-            data = json.loads(project.data)
-            if 'ri_quotation' not in data: data['ri_quotation'] = {}
-            
-            data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
-            data['ri_quotation']['servers'] = ecs_ri_servers
-            data['ri_quotation']['summary'] = {
-                'total_servers': len(ecs_ri_servers),
-                'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
-            }
-            
-            project.data = json.dumps(data)
+        elif fmt == 'json':
+            try:
+                parsed_json = json.loads(raw_data)
+                if isinstance(parsed_json, list):
+                    for item in parsed_json:
+                        ecs_ri_servers.append({
+                            'name': str(item.get('name', item.get('server', 'Raw RI'))),
+                            'specification': str(item.get('specification', item.get('spec', item.get('flavor', 'Unknown')))),
+                            'quantity': int(item.get('quantity', item.get('qty', 1)))
+                        })
+            except: pass
+                    
+        project = ProjectData.query.get(project_id)
+        summary = { 'total_servers': len(ecs_ri_servers), 'total_ris': sum(s['quantity'] for s in ecs_ri_servers) }
+        
+        if project:
+            proj_data = json.loads(project.data)
+            if 'ri_quotation' not in proj_data: proj_data['ri_quotation'] = {}
+            proj_data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
+            proj_data['ri_quotation']['servers'] = ecs_ri_servers
+            proj_data['ri_quotation']['summary'] = summary
+            project.data = json.dumps(proj_data)
             db.session.commit()
             
-            return jsonify({ "success": True, "count": len(ecs_ri_servers), "servers": ecs_ri_servers[:5] })
+        return jsonify({"success": True, "count": len(ecs_ri_servers), "summary": summary})
+        
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -140,7 +254,7 @@ def upload_console_ris():
     try:
         if 'file' not in request.files: return jsonify({"success": False, "error": "No file selected"}), 400
         file = request.files['file']
-        project_id = request.form.get('projectId')
+        project_id = request.form.get('projectId') or request.form.get('project_id')
         
         upload_dir = PROJECT_ROOT / 'uploads' / 'console_exports'
         upload_dir.mkdir(parents=True, exist_ok=True)
@@ -148,7 +262,11 @@ def upload_console_ris():
         file.save(str(file_path))
         
         import pandas as pd
-        df = pd.read_excel(file_path) if str(file_path).endswith(('.xls', '.xlsx')) else pd.read_csv(file_path)
+        if str(file_path).lower().endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+            
         df.columns = [str(c).strip().lower() for c in df.columns]
         
         col_spec = next((c for c in df.columns if 'flavor' in c or 'specification' in c or 'instance type' in c), None)
@@ -163,7 +281,6 @@ def upload_console_ris():
                 except: pass
             
             spec_raw = str(row[col_spec]).strip() if col_spec else 'Unknown'
-            # Format console specs consistently
             if '|' in spec_raw:
                 parts = [p.strip() for p in spec_raw.split('|')]
                 if len(parts) >= 5: spec_raw = f"{parts[2]} ({parts[3]} | {parts[4]})"
@@ -176,17 +293,34 @@ def upload_console_ris():
             
         project = ProjectData.query.get(project_id)
         data = json.loads(project.data)
-        data['console_ri_export'] = {
+        summary = {
             'file_path': str(file_path),
             'servers': console_ris,
             'total_ris': sum(ri['quantity'] for ri in console_ris)
         }
+        data['console_ri_export'] = summary
         
         project.data = json.dumps(data)
         db.session.commit()
-        return jsonify({ "success": True, "summary": data['console_ri_export'] })
+        return jsonify({ "success": True, "message": f"Loaded {summary['total_ris']} Console RIs.", "summary": summary })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/finops/clear-ecs-ri-quotation', methods=['POST'])
+@jwt_required()
+def clear_ecs_ri_quotation():
+    try:
+        project_id = request.get_json().get('project_id')
+        project = ProjectData.query.get(project_id)
+        if project:
+            data = json.loads(project.data)
+            if 'ri_quotation' in data: del data['ri_quotation']
+            if 'finops_matrix' in data: del data['finops_matrix']
+            if 'console_ri_export' in data: del data['console_ri_export']
+            project.data = json.dumps(data)
+            db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
@@ -194,13 +328,18 @@ def get_live_inventory():
     try:
         data = request.get_json()
         customer_id = data.get('customer_id')
+        provider = data.get('provider', 'Huawei')
+        
         if not customer_id: return jsonify({"success": False, "error": "Customer ID is required."}), 400
         customer = Customer.query.get(customer_id)
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
-        discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=data.get('region', 'la-south-2'), master_password=master_password)
-        result = discovery_engine.discover_all()
+        if provider == 'Huawei':
+            discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=data.get('region', 'la-south-2'), master_password=master_password)
+            result = discovery_engine.discover_all()
         
         if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory")})
         else: return jsonify({"success": False, "error": result.get("error")}), 500
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+
+# [Omitted standard routes like /api/audit, /api/deploy etc for brevity, they remain identical]
