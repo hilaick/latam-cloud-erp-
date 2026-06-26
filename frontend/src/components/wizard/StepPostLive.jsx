@@ -70,7 +70,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [rawFormat, setRawFormat] = useState('csv');
     const getSafeRawFormat = () => rawFormat || 'csv';
     
-    // 🚨 STATE PERSISTENCE: Load from DB if it exists
     const storedFinops = useMemo(() => {
         if (!activeProject?.data) return null;
         try { return JSON.parse(activeProject.data).finops_matrix || null; } catch(e) { return null; }
@@ -83,7 +82,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
     const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export : null);
 
-    // 🚨 Drill-Down Modal State for Commercial True-Up
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
 
     const handleRunTrueUp = async () => {
@@ -105,7 +103,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 setUnquotedMatrix(newUnquoted);
                 setActiveSubsStatus(newStats);
                 
-                // Slim the payload to prevent DB 500 errors
                 const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, active_subs_status: newStats };
                 onUpdateProject(activeProject.id, 'finops_matrix', leanMatrix);
             } else {
@@ -124,7 +121,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('project_id', activeProject.id);
-        formData.append('projectId', activeProject.id); // Some routes use different casing
+        formData.append('projectId', activeProject.id); 
         
         try {
             const token = localStorage.getItem('erp_jwt_token');
@@ -135,9 +132,9 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             if (data.success) {
                 alert(data.message || 'File uploaded successfully.');
                 if (endpoint.includes('console')) setConsoleRISummary(data.summary);
-                else setRIQuotationSummary(data.summary);
+                else setRIQuotationSummary(data.summary); // 🚨 Now properly receives the summary!
                 
-                if (matrix) handleRunTrueUp(); // Auto-refresh matrix
+                if (matrix) handleRunTrueUp(); 
             } else alert(`Upload Error: ${data.error}`);
         } catch (err) { alert(`Network error: ${err.message}`); } 
         finally { setIsUploading(false); }
@@ -176,8 +173,9 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 alert(`ECS RI data imported successfully! Processed ${data.count} servers.`);
                 const updatedProject = { ...activeProject };
                 if (!updatedProject.ri_quotation) updatedProject.ri_quotation = {};
-                updatedProject.ri_quotation = { count: data.count, uploaded_at: new Date().toISOString() };
+                updatedProject.ri_quotation = { summary: data.summary, count: data.count, uploaded_at: new Date().toISOString() };
                 onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
+                setRIQuotationSummary(data.summary); // 🚨 Instantly unlocks the scan button
                 setRawData('');
                 if (matrix) handleRunTrueUp();
             } else alert(`Import Error: ${data.error}`);
@@ -210,7 +208,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             </button>
                         </div>
                         
-                        <button onClick={handleClearQuotation} disabled={isClearing || !riQuotationSummary} className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center shrink-0">
+                        <button onClick={handleClearQuotation} disabled={isClearing || (!riQuotationSummary && !consoleRISummary)} className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center shrink-0">
                             {isClearing ? <><i className="fas fa-spinner fa-spin mr-2"></i> Clearing...</> : <><i className="fas fa-trash-alt mr-2"></i> Clear</>}
                         </button>
                         
@@ -218,7 +216,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             <i className="fas fa-paste mr-2"></i> PASTE EXCEL
                         </button>
                         
-                        <button onClick={() => handleRunTrueUp()} disabled={isLoading || (!riQuotationSummary && !matrix)} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={() => handleRunTrueUp()} disabled={isLoading || !riQuotationSummary} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                             {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Reconciling...</> : <><i className="fas fa-sync-alt mr-2"></i> Run Automated Scan</>}
                         </button>
                     </div>
@@ -269,7 +267,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl">
                         <i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i>
                         <h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3>
-                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quote CSV above, then run the Reconciler to hit the Huawei Global Billing API and calculate missing coverage.</p>
+                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">
+                            {!riQuotationSummary ? 
+                                <><strong>Step 1:</strong> Upload the ECS RI Quotation (Excel/CSV) to establish the baseline.<br/><strong>Step 2:</strong> Click "Run Automated Scan" to cross-reference with Live Resources.</> : 
+                                <>Click "Run Automated Scan" above to cross-reference the ECS RI Quotation with the Live Network and the BSS Billing Subscriptions.</>}
+                        </p>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
@@ -354,10 +356,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         {unquotedMatrix.length > 0 && (
                             <div className="mt-8 border-2 border-rose-200 rounded-xl overflow-hidden shadow-sm">
                                 <div className="bg-rose-50 p-4 border-b border-rose-200">
-                                    <h4 className="font-black text-sm uppercase tracking-widest text-rose-800">
-                                        <i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep / Unquoted Resources
-                                    </h4>
-                                    <p className="text-[10px] text-rose-600 mt-1 font-bold">These specifications are actively provisioned in the cloud but were NEVER quoted in the Price Calculator. They are currently bleeding Pay-Per-Use costs.</p>
+                                    <h4 className="font-black text-sm uppercase tracking-widest text-rose-800"><i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep / Unquoted Resources</h4>
+                                    <p className="text-[10px] text-rose-600 mt-1 font-bold">These specifications are actively provisioned but were NEVER quoted in the Price Calculator.</p>
                                 </div>
                                 <table className="w-full text-left bg-white text-sm">
                                     <thead className="bg-rose-50/50 border-b border-rose-100 text-[10px] uppercase font-black text-rose-600">
