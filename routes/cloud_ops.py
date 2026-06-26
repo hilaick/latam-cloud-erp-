@@ -1,13 +1,19 @@
 import os
 import json
 import subprocess
+import math
 import logging
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import jwt_required
+from services.resource_parser import parse_resource_log, get_all_deployments
+from services.huawei_load_balancer import HuaweiLoadBalancer
 from models import Customer, ProjectData, db
 from services.huawei_discovery import HuaweiDiscovery
+from services.source_resources_parser import parse_source_resources_excel
+from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
+from services.tool_recommender import ToolRecommender
 from services.credential_manager import get_credential_manager
 from datetime import datetime
 
@@ -88,17 +94,11 @@ def upload_ri_quotation():
         file_path = save_quotation_file(project_id, file, file.filename)
         
         import pandas as pd
-        
-        # 🚨 FIX: Smart Parsing for CSV vs Excel
-        if str(file_path).lower().endswith('.csv'):
-            df = pd.read_csv(file_path, header=None)
+        if str(file_path).lower().endswith('.csv'): df = pd.read_csv(file_path, header=None)
         else:
-            try:
-                df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
-            except:
-                df = pd.read_excel(file_path, header=None)
+            try: df = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=None)
+            except: df = pd.read_excel(file_path, header=None)
         
-        # 🚨 FIX: Aggressively search for the header row
         header_row = 0
         for i in range(min(50, len(df))):
             row_str = df.iloc[i].astype(str).str.lower()
@@ -106,14 +106,10 @@ def upload_ri_quotation():
                 header_row = i
                 break
                 
-        # Reload with correct header
-        if str(file_path).lower().endswith('.csv'):
-            df_ri = pd.read_csv(file_path, header=header_row)
+        if str(file_path).lower().endswith('.csv'): df_ri = pd.read_csv(file_path, header=header_row)
         else:
-            try:
-                df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
-            except:
-                df_ri = pd.read_excel(file_path, header=header_row)
+            try: df_ri = pd.read_excel(file_path, sheet_name='Price Calculator - RI', header=header_row)
+            except: df_ri = pd.read_excel(file_path, header=header_row)
         
         df_ri.columns = [str(c).strip().lower() for c in df_ri.columns]
         
@@ -129,13 +125,13 @@ def upload_ri_quotation():
         for _, row in df_ri.iterrows():
             service_val = str(row.get(col_svc, '')).lower() if col_svc else 'elastic cloud server'
             
-            # Filter strictly for ECS rows
             if 'elastic cloud server' in service_val or 'ecs' in service_val or not col_svc:
                 req_val = str(row.get(col_req, '')).strip()
                 if not req_val or req_val == 'nan': continue
                     
                 specs = str(row.get(col_spec, '')).strip()
                 specification = specs
+                # 🚨 FULL SPEC FIX: Extrapolate string "x0.8u.16g (8 vCPUs | 16GiB)"
                 if '|' in specs:
                     parts = [p.strip() for p in specs.split('|')]
                     if len(parts) >= 5: specification = f"{parts[2]} ({parts[3]} | {parts[4]})"
@@ -156,27 +152,16 @@ def upload_ri_quotation():
         data = json.loads(project.data)
         if 'ri_quotation' not in data: data['ri_quotation'] = {}
         
-        # 🚨 FIX: Package the summary exactly as React expects it
-        summary = {
-            'total_servers': len(ecs_ri_servers),
-            'total_ris': sum(s['quantity'] for s in ecs_ri_servers)
-        }
-        
+        summary = { 'total_servers': len(ecs_ri_servers), 'total_ris': sum(s['quantity'] for s in ecs_ri_servers) }
         data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
         data['ri_quotation']['servers'] = ecs_ri_servers
         data['ri_quotation']['summary'] = summary
         
         project.data = json.dumps(data)
         db.session.commit()
-        
-        return jsonify({ 
-            "success": True, 
-            "message": f"Successfully parsed {summary['total_ris']} Quoted RIs.",
-            "summary": summary
-        })
+        return jsonify({ "success": True, "message": f"Parsed {summary['total_ris']} Quoted RIs.", "summary": summary })
         
     except Exception as e:
-        logger.error(f"Upload Quoted RI Error: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/upload-ecs-ri-raw', methods=['POST'])
@@ -190,6 +175,7 @@ def upload_ecs_ri_raw():
         
         ecs_ri_servers = []
         if fmt == 'csv':
+            # 🚨 FIX: Dynamic Delimiter handles \t perfectly
             delimiter = '\t' if '\t' in raw_data else ','
             import csv
             from io import StringIO
@@ -214,11 +200,7 @@ def upload_ecs_ri_raw():
                         try: qty = int(float(row[qty_key]))
                         except: pass
                         
-                    ecs_ri_servers.append({
-                        'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI',
-                        'specification': spec,
-                        'quantity': qty
-                    })
+                    ecs_ri_servers.append({'name': str(row.get(name_key, '')).strip() if name_key else 'Raw RI', 'specification': spec, 'quantity': qty})
         elif fmt == 'json':
             try:
                 parsed_json = json.loads(raw_data)
@@ -242,11 +224,8 @@ def upload_ecs_ri_raw():
             proj_data['ri_quotation']['summary'] = summary
             project.data = json.dumps(proj_data)
             db.session.commit()
-            
         return jsonify({"success": True, "count": len(ecs_ri_servers), "summary": summary})
-        
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/upload-console-ris', methods=['POST'])
 @jwt_required()
@@ -262,10 +241,8 @@ def upload_console_ris():
         file.save(str(file_path))
         
         import pandas as pd
-        if str(file_path).lower().endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        if str(file_path).lower().endswith('.csv'): df = pd.read_csv(file_path)
+        else: df = pd.read_excel(file_path)
             
         df.columns = [str(c).strip().lower() for c in df.columns]
         
@@ -285,26 +262,16 @@ def upload_console_ris():
                 parts = [p.strip() for p in spec_raw.split('|')]
                 if len(parts) >= 5: spec_raw = f"{parts[2]} ({parts[3]} | {parts[4]})"
                 
-            console_ris.append({
-                'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI',
-                'specification': spec_raw,
-                'quantity': qty
-            })
+            console_ris.append({'name': str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else 'Console RI', 'specification': spec_raw, 'quantity': qty})
             
         project = ProjectData.query.get(project_id)
         data = json.loads(project.data)
-        summary = {
-            'file_path': str(file_path),
-            'servers': console_ris,
-            'total_ris': sum(ri['quantity'] for ri in console_ris)
-        }
+        summary = { 'file_path': str(file_path), 'servers': console_ris, 'total_ris': sum(ri['quantity'] for ri in console_ris) }
         data['console_ri_export'] = summary
-        
         project.data = json.dumps(data)
         db.session.commit()
         return jsonify({ "success": True, "message": f"Loaded {summary['total_ris']} Console RIs.", "summary": summary })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/finops/clear-ecs-ri-quotation', methods=['POST'])
 @jwt_required()
@@ -341,5 +308,3 @@ def get_live_inventory():
         if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory")})
         else: return jsonify({"success": False, "error": result.get("error")}), 500
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
-
-# [Omitted standard routes like /api/audit, /api/deploy etc for brevity, they remain identical]
