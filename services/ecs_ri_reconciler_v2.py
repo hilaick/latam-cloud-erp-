@@ -29,10 +29,10 @@ class ECSRIReconciler:
             for server in inventory.get('compute', []):
                 if server.get('type') == 'ECS':
                     live_ecs_servers.append({
-                        'id': server.get('id'),
-                        'name': server.get('name'),
+                        'id': server.get('id', 'N/A'),
+                        'name': server.get('name', 'Unknown Node'),
                         'specification': server.get('flavor', server.get('specification', 'Unknown')),
-                        'status': server.get('status'),
+                        'status': server.get('status', 'Unknown'),
                         'billing_mode': server.get('billing_mode'),
                         'charging_mode': server.get('charging_mode'),
                         'tags': server.get('tags', {}),
@@ -52,7 +52,7 @@ class ECSRIReconciler:
             floating_ris = self.bss_scanner.get_active_ris()
             bought_ris.extend(floating_ris)
 
-            # 2. Console Upload CSV (Absolute Source of Truth if BSS fails)
+            # 2. Console Upload CSV
             for ri in console_ris:
                 qty = ri.get('quantity', 1)
                 for _ in range(qty):
@@ -63,7 +63,8 @@ class ECSRIReconciler:
                         'billing_mode': 'Reserved',
                         'charging_mode': '1',
                         'tags': {},
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.now().isoformat(),
+                        'status': 'Active'
                     })
 
             # 3. Node-level Prepaid ECS (Fallback from Nova)
@@ -73,16 +74,16 @@ class ECSRIReconciler:
                 for server in inventory.get('compute', []):
                     if server.get('type') == 'ECS' and server.get('is_reserved_instance') == True:
                         bought_ris.append({
-                            'id': server.get('id'),
-                            'name': server.get('name') + " (Prepaid Node)",
+                            'id': server.get('id', 'N/A'),
+                            'name': server.get('name', 'Unknown Node') + " (Prepaid Node)",
                             'specification': server.get('flavor', server.get('specification', 'Unknown')),
                             'billing_mode': 'Prepaid',
                             'charging_mode': '1',
-                            'tags': server.get('tags', {})
+                            'tags': server.get('tags', {}),
+                            'status': server.get('status', 'Active')
                         })
             except Exception: pass
 
-            # Ensure we don't double count if BSS and Console both captured it
             unique_bought = {ri['id']: ri for ri in bought_ris}.values()
             return list(unique_bought)
         except Exception as e:
@@ -90,12 +91,9 @@ class ECSRIReconciler:
             return []
     
     def _normalize_spec_name(self, spec: str) -> str:
-        """
-        Strips away beautiful text formatting: 'x0.8u.16g (8 vCPUs | 16GiB)' -> 'x0.8u.16g'
-        This guarantees perfect programmatic matching with Huawei API payload.
-        """
+        """Strips formatting 'x0.8u.16g (8 vCPUs | 16GiB)' -> 'x0.8u.16g'"""
         if not spec: return 'Unknown'
-        base_spec = spec.split(' ')[0].lower() # Grab everything before the first space
+        base_spec = spec.split(' ')[0].lower() 
         prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.']
         for prefix in prefixes:
             if base_spec.startswith(prefix):
@@ -108,19 +106,21 @@ class ECSRIReconciler:
             live_ecs_servers = self.get_live_ecs_servers()
             bought_ris = self.get_bought_ris(console_ris or [])
             
-            # Use original full string for UI presentation
             original_display_names = {}
             
             quoted_by_spec = {}
             for quoted in quoted_ecs_ris:
                 spec = quoted.get('specification', 'Unknown')
                 norm = self._normalize_spec_name(spec)
-                original_display_names[norm] = spec 
+                if norm not in original_display_names or len(spec) > len(original_display_names[norm]):
+                    original_display_names[norm] = spec 
                 
                 if norm not in quoted_by_spec: quoted_by_spec[norm] = {'count': 0, 'servers': []}
                 quoted_by_spec[norm]['count'] += quoted.get('quantity', 1)
                 quoted_by_spec[norm]['servers'].append({
                     'name': quoted.get('name', ''),
+                    'id': 'N/A',
+                    'status': 'Quoted Baseline',
                     'original_spec': spec
                 })
             
@@ -147,22 +147,22 @@ class ECSRIReconciler:
                 live_count = len(live_by_spec.get(norm_spec, []))
                 bought_count = len(bought_by_spec.get(norm_spec, []))
                 
+                # 🚨 CORE FIX: Build detailed structured objects for the Drill-Down UI
+                display_spec = original_display_names.get(norm_spec, norm_spec)
+                
                 item = {
-                    'specification': original_display_names.get(norm_spec, norm_spec),
+                    'specification': display_spec,
                     'quoted_count': quoted_count,
                     'live_count': live_count,
                     'bought_count': bought_count,
                     'missing_ris': max(0, quoted_count - bought_count),
-                    'quoted_servers': [s['name'] for s in quoted_by_spec.get(norm_spec, {}).get('servers', [])],
-                    'live_servers': [f"{s['name']} ({s.get('status', 'unknown')})" for s in live_by_spec.get(norm_spec, [])],
-                    'bought_ris': [s['name'] for s in bought_by_spec.get(norm_spec, [])]
+                    'quoted_servers': quoted_by_spec.get(norm_spec, {}).get('servers', []),
+                    'live_servers': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': s.get('status', 'Unknown'), 'spec': display_spec} for s in live_by_spec.get(norm_spec, [])],
+                    'bought_ris': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': 'Prepaid / RI', 'spec': display_spec} for s in bought_by_spec.get(norm_spec, [])]
                 }
                 
-                # 🚨 CORE FIX: Anchor main table to Quoted. Push rest to Scope Creep.
-                if quoted_count > 0:
-                    reconciliation_matrix.append(item)
-                elif live_count > 0:
-                    unquoted_matrix.append(item)
+                if quoted_count > 0: reconciliation_matrix.append(item)
+                elif live_count > 0: unquoted_matrix.append(item)
             
             return {
                 'summary': { 
