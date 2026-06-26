@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 class HuaweiBSSScanner:
     """
     FinOps Identity Broker: Integrates directly with Huawei's Billing System.
-    Explicitly forces connection to the LOCAL region (e.g., la-south-2) to bypass 
+    Explicitly forces connection to the LOCAL region (e.g., la-north-2) to bypass 
     cross-region data residency locks and mirror the console RI view.
     """
-    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-south-2'):
+    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
