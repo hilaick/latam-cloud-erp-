@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { formatShortDate } from '../../utils/helpers';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
-    const [subTab, setSubTab] = useState('commercial'); // Defaulting to commercial for easier true-up testing
+    const [subTab, setSubTab] = useState('commercial'); 
 
     return (
         <div className="animate-fade-in pb-12">
@@ -22,30 +22,10 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 
             {/* 4-TAB POST-LIVE NAVIGATION */}
             <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
-                <button 
-                    onClick={() => setSubTab('diff')} 
-                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
-                >
-                    <i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff Matrix
-                </button>
-                <button 
-                    onClick={() => setSubTab('constellation')} 
-                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'constellation' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
-                >
-                    <i className="fas fa-meteor mr-2"></i> 2. Target Constellation
-                </button>
-                <button 
-                    onClick={() => setSubTab('war')} 
-                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'war' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
-                >
-                    <i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off
-                </button>
-                <button 
-                    onClick={() => setSubTab('commercial')} 
-                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}
-                >
-                    <i className="fas fa-shopping-cart mr-2"></i> 4. Commercial True-Up
-                </button>
+                <button onClick={() => setSubTab('diff')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff Matrix</button>
+                <button onClick={() => setSubTab('constellation')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'constellation' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-meteor mr-2"></i> 2. Target Constellation</button>
+                <button onClick={() => setSubTab('war')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'war' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off</button>
+                <button onClick={() => setSubTab('commercial')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}><i className="fas fa-shopping-cart mr-2"></i> 4. Commercial True-Up</button>
             </div>
             
             <div className="px-4 md:px-8">
@@ -70,7 +50,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [rawFormat, setRawFormat] = useState('csv');
     const getSafeRawFormat = () => rawFormat || 'csv';
     
-    // 🚨 STATE PERSISTENCE: Load from DB if it exists
+    // STATE PERSISTENCE
     const storedFinops = useMemo(() => {
         if (!activeProject?.data) return null;
         try { return JSON.parse(activeProject.data).finops_matrix || null; } catch(e) { return null; }
@@ -81,9 +61,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [activeSubsStatus, setActiveSubsStatus] = useState(storedFinops?.active_subs_status || null);
     
     const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
-    const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export : null);
+    const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export?.summary : null);
 
-    // 🚨 Drill-Down Modal State for Commercial True-Up
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
 
     const handleRunTrueUp = async () => {
@@ -105,17 +84,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 setUnquotedMatrix(newUnquoted);
                 setActiveSubsStatus(newStats);
                 
-                // Slim the payload to prevent DB 500 errors
                 const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, active_subs_status: newStats };
                 onUpdateProject(activeProject.id, 'finops_matrix', leanMatrix);
-            } else {
-                alert(`Error reconciling ECS RI Matrix: ${data.error}`);
-            }
-        } catch (err) {
-            alert(`Network error during ECS RI Reconciliation: ${err.message}`);
-        } finally {
-            setIsLoading(false);
-        }
+            } else { alert(`Error reconciling ECS RI Matrix: ${data.error}`); }
+        } catch (err) { alert(`Network error during ECS RI Reconciliation: ${err.message}`); } 
+        finally { setIsLoading(false); }
     };
 
     const handleFileUpload = async (file, endpoint) => {
@@ -124,7 +97,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('project_id', activeProject.id);
-        formData.append('projectId', activeProject.id); // Some routes use different casing
+        formData.append('projectId', activeProject.id); 
         
         try {
             const token = localStorage.getItem('erp_jwt_token');
@@ -137,7 +110,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 if (endpoint.includes('console')) setConsoleRISummary(data.summary);
                 else setRIQuotationSummary(data.summary);
                 
-                if (matrix) handleRunTrueUp(); // Auto-refresh matrix
+                if (matrix) handleRunTrueUp(); 
             } else alert(`Upload Error: ${data.error}`);
         } catch (err) { alert(`Network error: ${err.message}`); } 
         finally { setIsUploading(false); }
@@ -225,7 +198,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
 
-                {/* TWIN UPLOAD PANELS */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     {/* 1. QUOTED RIs */}
                     <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group">
@@ -325,13 +297,12 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                                             <td className="p-3 text-slate-800 font-mono font-bold text-xs">
                                                 {asset.specification}
-                                                {/* 🚨 SAFELY RENDER OBJECT NAMES */}
                                                 {asset.quoted_servers && asset.quoted_servers.length > 0 && (
                                                     <div className="text-[10px] text-slate-500 mt-1">{asset.quoted_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>
                                                 )}
                                             </td>
                                             
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers})}>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(name => ({name, id: 'N/A', status: 'Quoted Baseline'}))})}>
                                                 {asset.quoted_count} {asset.quoted_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
                                             </td>
                                             
@@ -379,7 +350,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                             <tr key={i} className="hover:bg-rose-50/30 transition-colors">
                                                 <td className="p-3 text-slate-800 font-mono font-bold text-xs">
                                                     {asset.specification}
-                                                    {/* 🚨 SAFELY RENDER OBJECT NAMES */}
                                                     {asset.live_servers && asset.live_servers.length > 0 && (
                                                         <div className="text-[10px] text-rose-500 mt-1">{asset.live_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>
                                                     )}
@@ -481,11 +451,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 <tbody className="divide-y divide-slate-100 text-xs">
                                     {detailsModal.items.map((item, i) => (
                                         <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
-                                            <td className="p-3 font-bold text-slate-800">{item.name}</td>
+                                            <td className="p-3 font-bold text-slate-800">{item.name || item}</td>
                                             <td className="p-3 font-mono text-slate-400">{item.id || 'N/A'}</td>
-                                            <td className="p-3 font-mono text-slate-600">{item.spec || item.original_spec || 'Unknown'}</td>
+                                            <td className="p-3 font-mono text-slate-600">{item.spec || item.original_spec || 'N/A'}</td>
                                             <td className="p-3 text-center">
-                                                <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${item.status === 'ACTIVE' || item.status === 'Quoted' || item.status === 'Prepaid / RI' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>{item.status}</span>
+                                                <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${item.status === 'ACTIVE' || item.status === 'Quoted Baseline' || item.status === 'Prepaid / RI' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>{item.status || 'Active'}</span>
                                             </td>
                                         </tr>
                                     ))}
@@ -550,7 +520,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const runFinalNocScan = async () => {
         if (!project.customerId) {
-            alert("NOC Scan Error: No Customer linked to this project.\n\nPlease ensure this project is linked to a Customer Profile with valid Vault Credentials in the CRM or Edit Context tab.");
+            alert("NOC Scan Error: No Customer linked to this project.");
             return;
         }
 
@@ -563,14 +533,13 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                 body: JSON.stringify({ 
                     customer_id: project.customerId, 
                     projectId: project.id, 
-                    region: project.region || 'la-south-2',
+                    region: project.region || 'la-north-2',
                     provider: 'Huawei'
                 })
             });
             const data = await res.json();
             
             if (data.success) {
-                // Store raw API output so normalizer can handle it dynamically
                 const finalNoc = { raw: data.inventory || {} };
                 setNocData(finalNoc);
                 onUpdateProject(project.id, 'nocData', finalNoc);
@@ -758,7 +727,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                     <h3 className="font-black text-lg text-slate-900 border-b border-slate-200 pb-2 mb-4">Project Summary</h3>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div><span className="font-bold">Customer:</span> {project.customerName || 'N/A'}</div>
-                                        <div><span className="font-bold">Target Region:</span> {project.region || 'la-south-2'}</div>
+                                        <div><span className="font-bold">Target Region:</span> {project.region || 'la-north-2'}</div>
                                         <div><span className="font-bold">Kickoff Date:</span> {formatShortDate(project.kickoff)}</div>
                                         <div><span className="font-bold">Go-Live Date:</span> {formatShortDate(project.date)}</div>
                                         <div><span className="font-bold">Lead Architect:</span> {project.sa || 'N/A'}</div>
@@ -907,11 +876,9 @@ function LiveConstellationView({ activeProject }) {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const containerRef = useRef(null);
 
-    // Zoom Controls
     const handleZoom = (factor) => setZoom(prev => Math.min(Math.max(0.4, prev + factor), 3));
     const handleResetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
-    // Fullscreen Controls
     const toggleFullscreen = () => {
         if (!containerRef.current) return;
         if (!document.fullscreenElement) {
@@ -927,7 +894,6 @@ function LiveConstellationView({ activeProject }) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    // Drag / Pan Controls
     const handleMouseDown = (e) => {
         setIsDragging(true);
         setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -940,7 +906,6 @@ function LiveConstellationView({ activeProject }) {
 
     const handleMouseUp = () => setIsDragging(false);
 
-    // Source Data: Prioritize Live NOC over Mapper Nodes
     const targetNodes = useMemo(() => {
         const rawNoc = activeProject?.nocData?.raw;
         
@@ -972,7 +937,6 @@ function LiveConstellationView({ activeProject }) {
 
     }, [activeProject]);
 
-    // D3-style Graph Logic
     const graphData = useMemo(() => {
         const width = 1000;
         const height = 600;
@@ -1205,7 +1169,6 @@ function PhasePostLive({ activeProject, onUpdateProject }) {
 
     const handleAutoEvaluate = () => {
         setAutoEval(true);
-        // Simulate API evaluating the infrastructure and assigning scores
         setR(95); setS(100); setP(90); setC(85); setO(95);
     };
 
