@@ -2,11 +2,12 @@ import logging
 from typing import Dict, List, Any
 from services.huawei_discovery import HuaweiDiscovery
 from services.huawei_bss_scanner import HuaweiBSSScanner
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class ECSRIReconciler:
-    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-south-2'):
+    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
@@ -43,14 +44,29 @@ class ECSRIReconciler:
             logger.error(f"Reconciler Error (Live ECS): {e}")
             return []
     
-    def get_bought_ris(self) -> List[Dict]:
+    def get_bought_ris(self, console_ris: List[Dict]) -> List[Dict]:
         try:
             bought_ris = []
-            # 1. Floating RIs
+            
+            # 1. Floating RIs from BSS API
             floating_ris = self.bss_scanner.get_active_ris()
             bought_ris.extend(floating_ris)
 
-            # 2. Node-level Prepaid ECS
+            # 2. Console Upload CSV (Absolute Source of Truth if BSS fails)
+            for ri in console_ris:
+                qty = ri.get('quantity', 1)
+                for _ in range(qty):
+                    bought_ris.append({
+                        'id': f"CONSOLE_RI_{len(bought_ris)}",
+                        'name': ri.get('name', 'Console Exported RI'),
+                        'specification': ri.get('specification', 'Unknown'),
+                        'billing_mode': 'Reserved',
+                        'charging_mode': '1',
+                        'tags': {},
+                        'created_at': datetime.now().isoformat()
+                    })
+
+            # 3. Node-level Prepaid ECS (Fallback from Nova)
             try:
                 response = self.discovery.discover_all()
                 inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
@@ -66,6 +82,7 @@ class ECSRIReconciler:
                         })
             except Exception: pass
 
+            # Ensure we don't double count if BSS and Console both captured it
             unique_bought = {ri['id']: ri for ri in bought_ris}.values()
             return list(unique_bought)
         except Exception as e:
@@ -86,10 +103,10 @@ class ECSRIReconciler:
                 break
         return base_spec
 
-    def reconcile_ecs_ris(self, quoted_ecs_ris: List[Dict]) -> Dict:
+    def reconcile_ecs_ris(self, quoted_ecs_ris: List[Dict], console_ris: List[Dict] = None) -> Dict:
         try:
             live_ecs_servers = self.get_live_ecs_servers()
-            bought_ris = self.get_bought_ris()
+            bought_ris = self.get_bought_ris(console_ris or [])
             
             # Use original full string for UI presentation
             original_display_names = {}
@@ -102,7 +119,10 @@ class ECSRIReconciler:
                 
                 if norm not in quoted_by_spec: quoted_by_spec[norm] = {'count': 0, 'servers': []}
                 quoted_by_spec[norm]['count'] += quoted.get('quantity', 1)
-                quoted_by_spec[norm]['servers'].append(quoted.get('name', ''))
+                quoted_by_spec[norm]['servers'].append({
+                    'name': quoted.get('name', ''),
+                    'original_spec': spec
+                })
             
             live_by_spec = {}
             for server in live_ecs_servers:
@@ -133,15 +153,15 @@ class ECSRIReconciler:
                     'live_count': live_count,
                     'bought_count': bought_count,
                     'missing_ris': max(0, quoted_count - bought_count),
-                    'quoted_servers': quoted_by_spec.get(norm_spec, {}).get('servers', []),
-                    'live_servers': [s['name'] for s in live_by_spec.get(norm_spec, [])],
+                    'quoted_servers': [s['name'] for s in quoted_by_spec.get(norm_spec, {}).get('servers', [])],
+                    'live_servers': [f"{s['name']} ({s.get('status', 'unknown')})" for s in live_by_spec.get(norm_spec, [])],
                     'bought_ris': [s['name'] for s in bought_by_spec.get(norm_spec, [])]
                 }
                 
                 # 🚨 CORE FIX: Anchor main table to Quoted. Push rest to Scope Creep.
                 if quoted_count > 0:
                     reconciliation_matrix.append(item)
-                else:
+                elif live_count > 0:
                     unquoted_matrix.append(item)
             
             return {
