@@ -11,6 +11,7 @@ class ECSRIReconciler:
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
+        self.diagnostics = []
         
         self.discovery = HuaweiDiscovery(
             encrypted_ak_data=self.raw_ak,
@@ -22,6 +23,7 @@ class ECSRIReconciler:
         
     def get_live_ecs_servers(self) -> List[Dict]:
         try:
+            self.diagnostics.append(f"Scanning Nova/ECS for live servers in {self.region}...")
             response = self.discovery.discover_all()
             inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
             
@@ -39,59 +41,60 @@ class ECSRIReconciler:
                         'created_at': server.get('created_at'),
                         'is_reserved_instance': server.get('is_reserved_instance', False)
                     })
+            self.diagnostics.append(f"Found {len(live_ecs_servers)} Live ECS servers.")
             return live_ecs_servers
         except Exception as e:
-            logger.error(f"Reconciler Error (Live ECS): {e}")
+            self.diagnostics.append(f"Nova/ECS Scan Failed: {str(e)}")
             return []
     
     def get_bought_ris(self, console_ris: List[Dict]) -> List[Dict]:
+        bought_ris = []
+        
+        # 1. Floating RIs from BSS API
+        floating_ris, bss_logs = self.bss_scanner.get_active_ris()
+        self.diagnostics.extend(bss_logs)
+        bought_ris.extend(floating_ris)
+
+        # 2. Console Upload CSV
+        for ri in console_ris:
+            qty = ri.get('quantity', 1)
+            for _ in range(qty):
+                bought_ris.append({
+                    'id': f"CONSOLE_RI_{len(bought_ris)}",
+                    'name': ri.get('name', 'Console Exported RI'),
+                    'specification': ri.get('specification', 'Unknown'),
+                    'billing_mode': 'Reserved',
+                    'charging_mode': '1',
+                    'tags': {},
+                    'created_at': datetime.now().isoformat(),
+                    'status': 'Active'
+                })
+
+        # 3. Node-level Prepaid ECS (Fallback from Nova)
         try:
-            bought_ris = []
-            
-            # 1. Floating RIs from BSS API
-            floating_ris = self.bss_scanner.get_active_ris()
-            bought_ris.extend(floating_ris)
-
-            # 2. Console Upload CSV
-            for ri in console_ris:
-                qty = ri.get('quantity', 1)
-                for _ in range(qty):
+            response = self.discovery.discover_all()
+            inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
+            prepaid_nodes = 0
+            for server in inventory.get('compute', []):
+                if server.get('type') == 'ECS' and server.get('is_reserved_instance') == True:
+                    prepaid_nodes += 1
                     bought_ris.append({
-                        'id': f"CONSOLE_RI_{len(bought_ris)}",
-                        'name': ri.get('name', 'Console Exported RI'),
-                        'specification': ri.get('specification', 'Unknown'),
-                        'billing_mode': 'Reserved',
+                        'id': server.get('id', 'N/A'),
+                        'name': server.get('name', 'Unknown Node') + " (Prepaid Node)",
+                        'specification': server.get('flavor', server.get('specification', 'Unknown')),
+                        'billing_mode': 'Prepaid',
                         'charging_mode': '1',
-                        'tags': {},
-                        'created_at': datetime.now().isoformat(),
-                        'status': 'Active'
+                        'tags': server.get('tags', {}),
+                        'status': server.get('status', 'Active')
                     })
+            self.diagnostics.append(f"Found {prepaid_nodes} Node-Level Prepaid ECS servers.")
+        except Exception as e: 
+            self.diagnostics.append(f"Prepaid Node Scan Failed: {str(e)}")
 
-            # 3. Node-level Prepaid ECS (Fallback from Nova)
-            try:
-                response = self.discovery.discover_all()
-                inventory = response.get('inventory', {}) if isinstance(response, dict) else {}
-                for server in inventory.get('compute', []):
-                    if server.get('type') == 'ECS' and server.get('is_reserved_instance') == True:
-                        bought_ris.append({
-                            'id': server.get('id', 'N/A'),
-                            'name': server.get('name', 'Unknown Node') + " (Prepaid Node)",
-                            'specification': server.get('flavor', server.get('specification', 'Unknown')),
-                            'billing_mode': 'Prepaid',
-                            'charging_mode': '1',
-                            'tags': server.get('tags', {}),
-                            'status': server.get('status', 'Active')
-                        })
-            except Exception: pass
-
-            unique_bought = {ri['id']: ri for ri in bought_ris}.values()
-            return list(unique_bought)
-        except Exception as e:
-            logger.error(f"Reconciler Error (Bought RIs): {e}")
-            return []
+        unique_bought = {ri['id']: ri for ri in bought_ris}.values()
+        return list(unique_bought)
     
     def _normalize_spec_name(self, spec: str) -> str:
-        """Strips formatting 'x0.8u.16g (8 vCPUs | 16GiB)' -> 'x0.8u.16g' to match Huawei APIs"""
         if not spec: return 'Unknown'
         base_spec = spec.split(' ')[0].lower() 
         prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.']
@@ -103,6 +106,7 @@ class ECSRIReconciler:
 
     def reconcile_ecs_ris(self, quoted_ecs_ris: List[Dict], console_ris: List[Dict] = None) -> Dict:
         try:
+            self.diagnostics = [] # Reset logs
             live_ecs_servers = self.get_live_ecs_servers()
             bought_ris = self.get_bought_ris(console_ris or [])
             
@@ -146,7 +150,6 @@ class ECSRIReconciler:
                 quoted_count = quoted_by_spec.get(norm_spec, {}).get('count', 0)
                 live_count = len(live_by_spec.get(norm_spec, []))
                 bought_count = len(bought_by_spec.get(norm_spec, []))
-                
                 display_spec = original_display_names.get(norm_spec, norm_spec)
                 
                 item = {
@@ -160,9 +163,10 @@ class ECSRIReconciler:
                     'bought_ris': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': 'Prepaid / RI', 'spec': display_spec} for s in bought_by_spec.get(norm_spec, [])]
                 }
                 
-                # Anchor Matrix strictly to Quoted RIs, drop unquoted directly to Scope Creep
                 if quoted_count > 0: reconciliation_matrix.append(item)
                 elif live_count > 0: unquoted_matrix.append(item)
+            
+            self.diagnostics.append("Matrix construction complete.")
             
             return {
                 'summary': { 
@@ -172,9 +176,11 @@ class ECSRIReconciler:
                     'total_missing': sum(i['missing_ris'] for i in reconciliation_matrix)
                 },
                 'matrix': reconciliation_matrix,
-                'unquoted_matrix': unquoted_matrix
+                'unquoted_matrix': unquoted_matrix,
+                'diagnostics': self.diagnostics
             }
             
         except Exception as e:
+            self.diagnostics.append(f"Fatal Matrix Error: {str(e)}")
             logger.error(f"Error in ECS RI reconciliation: {e}", exc_info=True)
-            return {'summary': {}, 'matrix': [], 'unquoted_matrix': [], 'error': str(e)}
+            return {'summary': {}, 'matrix': [], 'unquoted_matrix': [], 'diagnostics': self.diagnostics, 'error': str(e)}
