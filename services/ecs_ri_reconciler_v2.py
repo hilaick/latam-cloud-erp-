@@ -152,7 +152,7 @@ class ECSRIReconciler:
                 bought_count = len(bought_by_spec.get(norm_spec, []))
                 display_spec = original_display_names.get(norm_spec, norm_spec)
                 
-                # 🚨 Ensure Tags are passed to the frontend for Technical Category grouping
+                # Ensure Tags are passed to the frontend for Technical Category grouping
                 item = {
                     'specification': display_spec,
                     'quoted_count': quoted_count,
