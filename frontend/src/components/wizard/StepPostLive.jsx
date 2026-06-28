@@ -45,10 +45,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isClearing, setIsClearing] = useState(false);
     const [isRawImporting, setIsRawImporting] = useState(false);
     const [rawData, setRawData] = useState('');
-    const [rawFormat, setRawFormat] = useState('csv');
-    const getSafeRawFormat = () => rawFormat || 'csv';
     
-    // UI Filter State
     const [matrixFilter, setMatrixFilter] = useState('ALL');
     
     const storedFinops = useMemo(() => {
@@ -65,7 +62,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export?.summary : null);
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
 
-    // 🚨 TECHNICAL TAG PARSER
+    // TECHNICAL TAG PARSER
     const getTechStatus = (server) => {
         if (!server.tags) return 'Ready';
         const tags = server.tags;
@@ -78,7 +75,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         return 'Ready';
     };
 
-    // 🚨 ROW MATH ENGINE
+    // ROW MATH ENGINE
     const calculateRowStats = (row) => {
         const liveServers = row.live_servers || [];
         const deleting = liveServers.filter(s => getTechStatus(s) === 'Deleting').length;
@@ -86,15 +83,12 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         const ready = liveServers.filter(s => getTechStatus(s) === 'Ready').length;
         
         const notMigrated = Math.max(0, row.quoted_count - liveServers.length);
-        
-        // Billing Focus Math: Eligible = (Ready + Pending) -> we assume Pending still need RIs
         const eligibleForRI = ready + pending; 
         const deficit = Math.max(0, eligibleForRI - row.bought_count);
 
         return { deleting, pending, ready, notMigrated, eligibleForRI, deficit, owned: row.bought_count, quoted: row.quoted_count };
     };
 
-    // Compute Global Totals for Dashboards
     const matrixTotals = useMemo(() => {
         if (!matrix) return null;
         return matrix.reduce((acc, row) => {
@@ -110,7 +104,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         }, { deleting: 0, pending: 0, ready: 0, notMigrated: 0, eligibleForRI: 0, deficit: 0, owned: 0 });
     }, [matrix]);
 
-    // Apply Filter Dropdown
     const filteredMatrix = useMemo(() => {
         if (!matrix) return [];
         return matrix.filter(row => {
@@ -124,52 +117,72 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         });
     }, [matrix, matrixFilter]);
 
+    // 🚨 CSV EXPORTER ENGINE
+    const handleExportCSV = () => {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "LATAM CLOUD MIGRATION FACTORY - PROCUREMENT REPORT\n\n";
+        csvContent += "1. PROCUREMENT ACTION MATRIX (QUOTED BASELINE)\n";
+        csvContent += "Specification,Quoted Baseline,Live (Ready/Pending),Owned RIs,Net Deficit (Buy Quantity)\n";
+        
+        matrix.forEach(row => {
+            const s = calculateRowStats(row);
+            csvContent += `"${row.specification}",${row.quoted_count},${s.eligibleForRI},${s.owned},${s.deficit}\n`;
+        });
+
+        if (unquotedMatrix && unquotedMatrix.length > 0) {
+            csvContent += "\n2. SCOPE CREEP / UNQUOTED RESOURCES\n";
+            csvContent += "Specification,Live Provisioned,Owned RIs,Financial Risk (PPU Bleed)\n";
+            unquotedMatrix.forEach(row => {
+                const missing = row.live_count - row.bought_count;
+                csvContent += `"${row.specification}",${row.live_count},${row.bought_count},${missing > 0 ? missing : 0}\n`;
+            });
+        }
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `${activeProject?.name || 'Project'}_Commercial_TrueUp.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const handleRunTrueUp = async () => {
-        setIsLoading(true);
-        setApiDiagnostics([]);
+        setIsLoading(true); setApiDiagnostics([]);
         try {
             const token = localStorage.getItem('erp_jwt_token'); 
             const res = await fetch('/api/finops/ecs-ri-reconciliation', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: activeProject.id })
             });
             const data = await res.json();
             if (data.success) {
-                const newMatrix = data.reconciliation.matrix || [];
-                const newUnquoted = data.reconciliation.unquoted_matrix || [];
-                const newDiagnostics = data.diagnostics || [];
-                
-                setMatrix(newMatrix);
-                setUnquotedMatrix(newUnquoted);
-                setApiDiagnostics(newDiagnostics);
-                
-                const leanMatrix = { matrix: newMatrix, unquoted_matrix: newUnquoted, diagnostics: newDiagnostics };
-                onUpdateProject(activeProject.id, 'finops_matrix', leanMatrix);
+                setMatrix(data.reconciliation.matrix || []);
+                setUnquotedMatrix(data.reconciliation.unquoted_matrix || []);
+                setApiDiagnostics(data.diagnostics || []);
+                onUpdateProject(activeProject.id, 'finops_matrix', { 
+                    matrix: data.reconciliation.matrix || [], 
+                    unquoted_matrix: data.reconciliation.unquoted_matrix || [], 
+                    diagnostics: data.diagnostics || [] 
+                });
             } else { alert(`Error reconciling ECS RI Matrix: ${data.error}`); }
-        } catch (err) { alert(`Network error during ECS RI Reconciliation: ${err.message}`); } 
-        finally { setIsLoading(false); }
+        } catch (err) { alert(`Network error: ${err.message}`); } finally { setIsLoading(false); }
     };
 
     const handleFileUpload = async (file, endpoint) => {
         if (!file) return;
         setIsUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('project_id', activeProject.id);
-        formData.append('projectId', activeProject.id); 
+        const formData = new FormData(); formData.append('file', file); formData.append('projectId', activeProject.id); 
         try {
             const token = localStorage.getItem('erp_jwt_token');
             const res = await fetch(endpoint, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
             const data = await res.json();
             if (data.success) {
                 alert(data.message || 'File uploaded successfully.');
-                if (endpoint.includes('console')) setConsoleRISummary(data.summary);
-                else setRIQuotationSummary(data.summary); 
+                if (endpoint.includes('console')) setConsoleRISummary(data.summary); else setRIQuotationSummary(data.summary); 
                 if (matrix) handleRunTrueUp(); 
             } else alert(`Upload Error: ${data.error}`);
-        } catch (err) { alert(`Network error: ${err.message}`); } 
-        finally { setIsUploading(false); }
+        } catch (err) { alert(`Network error: ${err.message}`); } finally { setIsUploading(false); }
     };
 
     const handleClearQuotation = async () => {
@@ -178,51 +191,34 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         try {
             const token = localStorage.getItem('erp_jwt_token');
             await fetch('/api/finops/clear-ecs-ri-quotation', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: activeProject.id }) });
-            onUpdateProject(activeProject.id, 'ri_quotation', null);
-            onUpdateProject(activeProject.id, 'finops_matrix', null);
-            onUpdateProject(activeProject.id, 'console_ri_export', null);
-            setMatrix(null); setUnquotedMatrix([]); 
-            setRIQuotationSummary(null); setConsoleRISummary(null); setApiDiagnostics([]);
+            onUpdateProject(activeProject.id, 'ri_quotation', null); onUpdateProject(activeProject.id, 'finops_matrix', null); onUpdateProject(activeProject.id, 'console_ri_export', null);
+            setMatrix(null); setUnquotedMatrix([]); setRIQuotationSummary(null); setConsoleRISummary(null); setApiDiagnostics([]);
         } catch (err) {} finally { setIsClearing(false); }
     };
 
     const handleRawImport = async () => {
-        if (!rawData.trim()) { alert('Please paste CSV or TSV data'); return; }
+        if (!rawData.trim()) { alert('Please paste TSV/CSV data'); return; }
         setIsRawImporting(true);
         try {
             const token = localStorage.getItem('erp_jwt_token');
-            const res = await fetch('/api/finops/upload-ecs-ri-raw', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: activeProject.id, data: rawData, format: getSafeRawFormat() }) });
+            const res = await fetch('/api/finops/upload-ecs-ri-raw', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: activeProject.id, data: rawData, format: 'csv' }) });
             const data = await res.json();
             if (data.success) {
-                alert(`ECS RI data imported successfully! Processed ${data.count} servers.`);
-                const updatedProject = { ...activeProject };
-                if (!updatedProject.ri_quotation) updatedProject.ri_quotation = {};
-                updatedProject.ri_quotation = { summary: data.summary, count: data.count, uploaded_at: new Date().toISOString() };
-                onUpdateProject(activeProject.id, 'ri_quotation', updatedProject.ri_quotation);
-                setRIQuotationSummary(data.summary);
-                setRawData('');
-                if (matrix) handleRunTrueUp();
+                alert(`Imported ${data.count} servers.`);
+                const updated = { ...activeProject.ri_quotation, summary: data.summary, count: data.count };
+                onUpdateProject(activeProject.id, 'ri_quotation', updated);
+                setRIQuotationSummary(data.summary); setRawData(''); if (matrix) handleRunTrueUp();
             } else alert(`Import Error: ${data.error}`);
         } catch (err) { alert(`Network error: ${err.message}`); } finally { setIsRawImporting(false); }
-    };
-
-    const handleHandover = () => {
-        onUpdateProject(activeProject.id, 'lifecycleState', '5_awaiting_commercial');
-        alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped.");
     };
 
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in relative">
             <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-8">
-                
                 <div className="flex justify-between items-start mb-6 border-b border-emerald-100 pb-6">
                     <div>
-                        <h4 className="font-black text-xl text-emerald-800 flex items-center">
-                            <i className="fas fa-shopping-cart text-emerald-500 mr-3"></i> Procurement & PO Handover
-                        </h4>
-                        <p className="text-xs font-bold text-emerald-600/70 mt-1 uppercase tracking-widest max-w-2xl">
-                            Compare Quoted ECS Baseline against Live Technical Tags and Active Reserved Instances.
-                        </p>
+                        <h4 className="font-black text-xl text-emerald-800 flex items-center"><i className="fas fa-shopping-cart text-emerald-500 mr-3"></i> Procurement & PO Handover</h4>
+                        <p className="text-xs font-bold text-emerald-600/70 mt-1 uppercase tracking-widest max-w-2xl">Compare Quoted ECS Baseline against Live Technical Tags and Active Reserved Instances.</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="relative">
@@ -244,115 +240,63 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    {/* 1. QUOTED RIs */}
                     <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h5 className="font-black text-sm text-blue-800 flex items-center"><i className="fas fa-calculator text-blue-500 mr-2"></i> 1. Source: Quoted Baseline</h5>
-                                <p className="text-[10px] text-blue-600/80 mt-1 font-medium mb-1">Price Calculator Upload.</p>
-                            </div>
-                        </div>
+                        <h5 className="font-black text-sm text-blue-800 flex items-center"><i className="fas fa-calculator text-blue-500 mr-2"></i> 1. Source: Quoted Baseline</h5>
+                        <p className="text-[10px] text-blue-600/80 mt-1 font-medium mb-1">Price Calculator Upload.</p>
                         {riQuotationSummary ? (
-                            <div className="mt-2 p-3 bg-white rounded-lg border border-blue-100 shadow-sm flex justify-between items-center animate-fade-in">
-                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-blue-500 mr-1"></i> Loaded</div>
-                                <div className="text-xs font-black text-blue-700">{riQuotationSummary.total_ris} Servers in Baseline</div>
-                            </div>
+                            <div className="mt-2 p-3 bg-white rounded-lg border border-blue-100 shadow-sm flex justify-between items-center animate-fade-in"><div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-blue-500 mr-1"></i> Loaded</div><div className="text-xs font-black text-blue-700">{riQuotationSummary.total_ris} Servers in Baseline</div></div>
                         ) : <div className="mt-2 p-3 border border-dashed border-blue-300 rounded-lg text-center text-[10px] font-black uppercase text-blue-400">No data loaded</div>}
                     </div>
 
-                    {/* 2. BOUGHT RIs */}
                     <div className="p-5 bg-purple-50 border border-purple-200 rounded-xl relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
                         <div className="flex justify-between items-start">
-                            <div>
-                                <h5 className="font-black text-sm text-purple-800 flex items-center"><i className="fas fa-cloud-download-alt text-purple-500 mr-2"></i> 2. Fallback: Bought RIs</h5>
-                                <p className="text-[10px] text-purple-600/80 mt-1 font-medium mb-1">Optional: Upload active RI List if API blocked.</p>
-                            </div>
-                            <div className="relative">
-                                <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e.target.files[0], '/api/finops/upload-console-ris')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
-                                <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-upload mr-1.5"></i> Upload</button>
-                            </div>
+                            <div><h5 className="font-black text-sm text-purple-800 flex items-center"><i className="fas fa-cloud-download-alt text-purple-500 mr-2"></i> 2. Fallback: Bought RIs</h5><p className="text-[10px] text-purple-600/80 mt-1 font-medium mb-1">Optional: Upload active RI List if API blocked.</p></div>
+                            <div className="relative"><input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e.target.files[0], '/api/finops/upload-console-ris')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/><button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-upload mr-1.5"></i> Upload</button></div>
                         </div>
                         {consoleRISummary ? (
-                            <div className="mt-2 p-3 bg-white rounded-lg border border-purple-100 shadow-sm flex justify-between items-center animate-fade-in">
-                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-purple-500 mr-1"></i> Loaded</div>
-                                <div className="text-xs font-black text-purple-700">{consoleRISummary.total_ris} Active RIs Owned</div>
-                            </div>
-                        ) : <div className="mt-2 p-3 border border-dashed border-purple-300 rounded-lg text-center text-[10px] font-black uppercase text-purple-400">Not Uploaded (Will rely on Nova API)</div>}
+                            <div className="mt-2 p-3 bg-white rounded-lg border border-purple-100 shadow-sm flex justify-between items-center animate-fade-in"><div className="text-[10px] font-black text-slate-500 uppercase tracking-widest"><i className="fas fa-check text-purple-500 mr-1"></i> Loaded</div><div className="text-xs font-black text-purple-700">{consoleRISummary.total_ris} Active RIs Owned</div></div>
+                        ) : <div className="mt-2 p-3 border border-dashed border-purple-300 rounded-lg text-center text-[10px] font-black uppercase text-purple-400">Not Uploaded (Will rely on Native API)</div>}
                     </div>
                 </div>
 
                 {apiDiagnostics.length > 0 && (
                     <div className="mb-8">
-                        <button onClick={() => setShowDiagnostics(!showDiagnostics)} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-800 flex items-center">
-                            <i className={`fas fa-chevron-${showDiagnostics ? 'down' : 'right'} mr-2`}></i> {showDiagnostics ? 'Hide' : 'Show'} API Diagnostics ({apiDiagnostics.length} Logs)
-                        </button>
+                        <button onClick={() => setShowDiagnostics(!showDiagnostics)} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-800 flex items-center"><i className={`fas fa-chevron-${showDiagnostics ? 'down' : 'right'} mr-2`}></i> {showDiagnostics ? 'Hide' : 'Show'} API Diagnostics ({apiDiagnostics.length} Logs)</button>
                         {showDiagnostics && (
                             <div className="mt-3 bg-slate-900 rounded-xl p-4 h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
-                                {apiDiagnostics.map((log, i) => (
-                                    <div key={i} className={`mb-1 ${log.includes('FAILED') || log.includes('CRASH') || log.includes('WARNING') ? 'text-rose-400' : ''}`}>
-                                        <span className="text-slate-500">[{new Date().toLocaleTimeString()}]</span> {log}
-                                    </div>
-                                ))}
+                                {apiDiagnostics.map((log, i) => (<div key={i} className={`mb-1 ${log.includes('FAILED') || log.includes('CRASH') || log.includes('WARNING') ? 'text-rose-400' : ''}`}><span className="text-slate-500">[{new Date().toLocaleTimeString()}]</span> {log}</div>))}
                             </div>
                         )}
                     </div>
                 )}
 
                 {!matrix ? (
-                    <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl">
-                        <i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i>
-                        <h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3>
-                        <p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quotation Baseline and run the Automated Scan to evaluate Technical Tags and Financial RI matching.</p>
-                    </div>
+                    <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl"><i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i><h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3><p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quotation Baseline and run the Automated Scan to evaluate Technical Tags and Financial RI matching.</p></div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
-                        
-                        {/* 🚨 SPLIT DASHBOARDS: A. BILLING VS B. TECHNICAL */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             
-                            {/* A. BILLING FOCUS */}
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 shadow-sm">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-emerald-800 mb-4 border-b border-emerald-200 pb-2"><i className="fas fa-dollar-sign mr-2"></i> A. Billing Focus (RI Procurement)</h4>
                                 <div className="grid grid-cols-3 gap-4">
-                                    <div className="text-center">
-                                        <div className="text-2xl font-black text-emerald-700">{matrixTotals.eligibleForRI}</div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mt-1">Live Servers Needing RI</div>
-                                    </div>
-                                    <div className="text-center">
-                                        <div className="text-2xl font-black text-purple-600">{matrixTotals.owned}</div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-purple-500 mt-1">Owned RIs</div>
-                                    </div>
-                                    <div className="text-center bg-white rounded-lg border border-emerald-100 p-2 shadow-sm">
-                                        <div className={`text-2xl font-black ${matrixTotals.deficit > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{matrixTotals.deficit}</div>
-                                        <div className={`text-[9px] font-black uppercase tracking-widest mt-1 ${matrixTotals.deficit > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Net Deficit (Buy)</div>
-                                    </div>
+                                    <div className="text-center"><div className="text-2xl font-black text-emerald-700">{matrixTotals.eligibleForRI}</div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mt-1">Live Servers Needing RI</div></div>
+                                    <div className="text-center"><div className="text-2xl font-black text-purple-600">{matrixTotals.owned}</div><div className="text-[9px] font-black uppercase tracking-widest text-purple-500 mt-1">Owned RIs</div></div>
+                                    <div className="text-center bg-white rounded-lg border border-emerald-100 p-2 shadow-sm"><div className={`text-2xl font-black ${matrixTotals.deficit > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{matrixTotals.deficit}</div><div className={`text-[9px] font-black uppercase tracking-widest mt-1 ${matrixTotals.deficit > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Net Deficit (Buy)</div></div>
                                 </div>
                             </div>
 
-                            {/* B. TECHNICAL CATEGORIES */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-4 border-b border-slate-200 pb-2"><i className="fas fa-server mr-2"></i> B. Technical Categories (Baseline vs Live)</h4>
                                 <div className="grid grid-cols-3 gap-4">
-                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('NOT_MIGRATED')}>
-                                        <div className="text-2xl font-black text-amber-600">{matrixTotals.notMigrated}</div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-amber-600 mt-1">Not Migrated / Provisioned</div>
-                                    </div>
-                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('PENDING')}>
-                                        <div className="text-2xl font-black text-blue-600">{matrixTotals.pending}</div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-blue-500 mt-1">Pending Config / License</div>
-                                    </div>
-                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('DELETING')}>
-                                        <div className="text-2xl font-black text-slate-400">{matrixTotals.deleting}</div>
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1 line-through">Marked for Deletion</div>
-                                    </div>
+                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('NOT_MIGRATED')}><div className="text-2xl font-black text-amber-600">{matrixTotals.notMigrated}</div><div className="text-[9px] font-black uppercase tracking-widest text-amber-600 mt-1">Not Migrated / Provisioned</div></div>
+                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('PENDING')}><div className="text-2xl font-black text-blue-600">{matrixTotals.pending}</div><div className="text-[9px] font-black uppercase tracking-widest text-blue-500 mt-1">Pending Config / License</div></div>
+                                    <div className="text-center cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors" onClick={() => setMatrixFilter('DELETING')}><div className="text-2xl font-black text-slate-400">{matrixTotals.deleting}</div><div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1 line-through">Marked for Deletion</div></div>
                                 </div>
                             </div>
-
                         </div>
 
-                        {/* TABLE 1: ANCHORED QUOTED MATRIX */}
                         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                             <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-slate-800">Procurement Action Matrix</h4>
@@ -385,41 +329,20 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                                             <td className="p-3 text-slate-800 font-mono font-bold text-xs">
                                                 {asset.specification}
-                                                {asset.quoted_servers && asset.quoted_servers.length > 0 && (
-                                                    <div className="text-[10px] text-slate-400 mt-1 font-sans font-medium">{asset.quoted_servers.slice(0, 2).map((sv, idx) => (<div key={idx} className="truncate" title={sv.name || sv}>{sv.name || sv}</div>))}</div>
-                                                )}
+                                                {asset.quoted_servers && asset.quoted_servers.length > 0 && (<div className="text-[10px] text-slate-400 mt-1 font-sans font-medium">{asset.quoted_servers.slice(0, 2).map((sv, idx) => (<div key={idx} className="truncate" title={sv.name || sv}>{sv.name || sv}</div>))}</div>)}
                                             </td>
-                                            
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30">
-                                                {asset.quoted_count}
-                                            </td>
-                                            
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30">{asset.quoted_count}</td>
                                             <td className="p-3 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => asset.live_count > 0 && setDetailsModal({show: true, title: `Technical Details: ${asset.specification}`, items: asset.live_servers})}>
                                                 <div className="flex flex-col gap-1">
                                                     {s.notMigrated > 0 && <div className="text-amber-600 text-[10px] font-bold"><i className="fas fa-exclamation-triangle mr-1 w-3"></i> {s.notMigrated} Not Migrated</div>}
                                                     {s.ready > 0 && <div className="text-emerald-600 text-[10px] font-bold"><i className="fas fa-check-circle mr-1 w-3"></i> {s.ready} Provisioned / Ready</div>}
                                                     {s.pending > 0 && <div className="text-blue-600 text-[10px] font-bold"><i className="fas fa-hourglass-half mr-1 w-3"></i> {s.pending} Pending Config/License</div>}
                                                     {s.deleting > 0 && <div className="text-slate-400 text-[10px] font-bold line-through"><i className="fas fa-trash-alt mr-1 w-3"></i> {s.deleting} Marked for Deletion</div>}
-                                                    {asset.live_count > 0 && <div className="text-[8px] uppercase tracking-widest text-slate-400 mt-1">Click to view tags <i className="fas fa-search-plus ml-0.5"></i></div>}
                                                 </div>
                                             </td>
-                                            
-                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">
-                                                {s.eligibleForRI}
-                                                <div className="text-[8px] font-bold text-emerald-600/50 mt-1 uppercase">Ready + Pending</div>
-                                            </td>
-                                            
-                                            <td className={`p-3 text-center font-black ${s.owned > 0 ? 'text-purple-700 bg-purple-50/30 cursor-pointer hover:bg-purple-100' : 'text-slate-400 bg-purple-50/10'}`} onClick={() => s.owned > 0 && setDetailsModal({show: true, title: `Owned / Prepaid RIs: ${asset.specification}`, items: asset.bought_ris.map(r=>({...r, techStatus: 'Prepaid / RI'}))})}>
-                                                {s.owned} {s.owned > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
-                                            </td>
-                                            
-                                            <td className="p-3 text-center">
-                                                {s.deficit <= 0 ? (
-                                                    <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check-circle mr-1"></i> Covered</span>
-                                                ) : (
-                                                    <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-shopping-cart mr-1"></i> Buy {s.deficit}x RI</span>
-                                                )}
-                                            </td>
+                                            <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30">{s.eligibleForRI} <div className="text-[8px] font-bold text-emerald-600/50 mt-1 uppercase">Ready + Pending</div></td>
+                                            <td className={`p-3 text-center font-black ${s.owned > 0 ? 'text-purple-700 bg-purple-50/30 cursor-pointer hover:bg-purple-100' : 'text-slate-400 bg-purple-50/10'}`} onClick={() => s.owned > 0 && setDetailsModal({show: true, title: `Owned / Prepaid RIs: ${asset.specification}`, items: asset.bought_ris.map(r=>({...r, techStatus: 'Prepaid / RI'}))})}>{s.owned} {s.owned > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}</td>
+                                            <td className="p-3 text-center">{s.deficit <= 0 ? <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check-circle mr-1"></i> Covered</span> : <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-shopping-cart mr-1"></i> Buy {s.deficit}x RI</span>}</td>
                                         </tr>
                                     )})}
                                 </tbody>
@@ -435,36 +358,17 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 </div>
                                 <table className="w-full text-left bg-white text-sm">
                                     <thead className="bg-rose-50/50 border-b border-rose-100 text-[10px] uppercase font-black text-rose-600">
-                                        <tr>
-                                            <th className="p-3">Specification / Flavor</th>
-                                            <th className="p-3 text-center bg-emerald-50/50 text-emerald-700">Provisioned (Live ECS)</th>
-                                            <th className="p-3 text-center bg-purple-50/50 text-purple-700">Owned / Prepaid</th>
-                                            <th className="p-3 text-center">Financial Risk</th>
-                                        </tr>
+                                        <tr><th className="p-3">Specification / Flavor</th><th className="p-3 text-center bg-emerald-50/50 text-emerald-700">Provisioned (Live ECS)</th><th className="p-3 text-center bg-purple-50/50 text-purple-700">Owned / Prepaid</th><th className="p-3 text-center">Financial Risk</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-rose-50">
                                         {unquotedMatrix.map((asset, i) => {
                                             const missing = asset.live_count - asset.bought_count;
                                             return (
                                             <tr key={i} className="hover:bg-rose-50/30 transition-colors">
-                                                <td className="p-3 text-slate-800 font-mono font-bold text-xs">
-                                                    {asset.specification}
-                                                    {asset.live_servers && asset.live_servers.length > 0 && (
-                                                        <div className="text-[10px] text-rose-500 mt-1">{asset.live_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>
-                                                    )}
-                                                </td>
-                                                
-                                                <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30 cursor-pointer hover:bg-emerald-100" onClick={() => asset.live_count > 0 && setDetailsModal({show: true, title: `Scope Creep (Live): ${asset.specification}`, items: asset.live_servers})}>
-                                                    {asset.live_count} <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>
-                                                </td>
-                                                
-                                                <td className="p-3 text-center font-black text-purple-700 bg-purple-50/30 cursor-pointer hover:bg-purple-100" onClick={() => asset.bought_count > 0 && setDetailsModal({show: true, title: `Owned RIs: ${asset.specification}`, items: asset.bought_ris.map(r=>({...r, techStatus: 'Prepaid / RI'}))})}>
-                                                    {asset.bought_count} {asset.bought_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
-                                                </td>
-                                                
-                                                <td className="p-3 text-center">
-                                                    {missing <= 0 ? <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest">Pre-Paid</span> : <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-fire mr-1"></i> {missing}x PPU Bleed</span>}
-                                                </td>
+                                                <td className="p-3 text-slate-800 font-mono font-bold text-xs">{asset.specification} {asset.live_servers && asset.live_servers.length > 0 && (<div className="text-[10px] text-rose-500 mt-1">{asset.live_servers.slice(0, 2).map((s, idx) => (<div key={idx} className="truncate" title={s.name || s}>{s.name || s}</div>))}</div>)}</td>
+                                                <td className="p-3 text-center font-black text-emerald-700 bg-emerald-50/30 cursor-pointer hover:bg-emerald-100" onClick={() => asset.live_count > 0 && setDetailsModal({show: true, title: `Scope Creep (Live): ${asset.specification}`, items: asset.live_servers})}>{asset.live_count} <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i></td>
+                                                <td className="p-3 text-center font-black text-purple-700 bg-purple-50/30 cursor-pointer hover:bg-purple-100" onClick={() => asset.bought_count > 0 && setDetailsModal({show: true, title: `Owned RIs: ${asset.specification}`, items: asset.bought_ris.map(r=>({...r, techStatus: 'Prepaid / RI'}))})}>{asset.bought_count} {asset.bought_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}</td>
+                                                <td className="p-3 text-center">{missing <= 0 ? <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest">Pre-Paid</span> : <span className="bg-rose-500 text-white px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm"><i className="fas fa-fire mr-1"></i> {missing}x PPU Bleed</span>}</td>
                                             </tr>
                                         )})}
                                     </tbody>
@@ -478,8 +382,8 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 <p className="text-slate-400 text-xs mt-1">Export this True-Up Matrix for Procurement, close technical execution, and shift accountability to Sales.</p>
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={() => window.print()} className="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-slate-600">
-                                    <i className="fas fa-file-pdf mr-2"></i> Export Shopping List
+                                <button onClick={handleExportCSV} className="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-slate-600">
+                                    <i className="fas fa-file-csv mr-2"></i> Export Procurement Report
                                 </button>
                                 <button onClick={handleHandover} className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-emerald-400">
                                     Mark Technically Complete <i className="fas fa-arrow-right ml-2"></i>
@@ -495,31 +399,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             <div id="rawImportModal" className="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-fade-in">
                     <div className="border-b border-slate-200 p-6">
-                        <div className="flex justify-between items-center">
-                            <h3 className="font-black text-lg text-slate-800">
-                                <i className="fas fa-paste mr-2 text-amber-600"></i>
-                                PASTE EXCEL (Raw TSV/CSV)
-                            </h3>
-                            <button onClick={() => document.getElementById('rawImportModal').classList.add('hidden')} className="text-slate-400 hover:text-slate-600 text-xl"><i className="fas fa-times"></i></button>
-                        </div>
-                        <p className="text-sm text-slate-600 mt-2">
-                            Copy the rows directly from Excel and paste them below. The parser will automatically detect columns.
-                        </p>
+                        <div className="flex justify-between items-center"><h3 className="font-black text-lg text-slate-800"><i className="fas fa-paste mr-2 text-amber-600"></i>PASTE EXCEL (Raw TSV/CSV)</h3><button onClick={() => document.getElementById('rawImportModal').classList.add('hidden')} className="text-slate-400 hover:text-slate-600 text-xl"><i className="fas fa-times"></i></button></div>
+                        <p className="text-sm text-slate-600 mt-2">Copy the rows directly from Excel and paste them below. The parser will automatically detect columns.</p>
                     </div>
-                    
                     <div className="p-6 space-y-4">
-                        <textarea
-                            value={rawData}
-                            onChange={(e) => setRawData(e.target.value)}
-                            placeholder="Server Name&#9;Specification&#9;Quantity&#10;ecs-1&#9;x0.8u.16g&#9;2"
-                            className="w-full h-64 font-mono text-sm p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none whitespace-pre"
-                            spellCheck="false"
-                        />
-                        <div className="text-xs text-slate-500">
-                            <i className="fas fa-info-circle mr-1"></i> Include columns for Name, Specification, and Quantity.
-                        </div>
+                        <textarea value={rawData} onChange={(e) => setRawData(e.target.value)} placeholder="Server Name&#9;Specification&#9;Quantity&#10;ecs-1&#9;x0.8u.16g&#9;2" className="w-full h-64 font-mono text-sm p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none whitespace-pre" spellCheck="false" />
+                        <div className="text-xs text-slate-500"><i className="fas fa-info-circle mr-1"></i> Include columns for Name, Specification, and Quantity.</div>
                     </div>
-                    
                     <div className="border-t border-slate-200 p-6 flex justify-end gap-3">
                         <button onClick={() => document.getElementById('rawImportModal').classList.add('hidden')} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold transition-colors">Cancel</button>
                         <button onClick={() => { handleRawImport(); document.getElementById('rawImportModal').classList.add('hidden'); }} disabled={isRawImporting || !rawData.trim()} className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center">
@@ -529,7 +415,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 </div>
             </div>
 
-            {/* 🚨 DRILL-DOWN MODAL FOR SERVERS (Enhanced with Tech Status) */}
+            {/* DRILL-DOWN MODAL FOR SERVERS */}
             {detailsModal.show && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[80vh] flex flex-col border border-slate-700 animate-slide-up">
@@ -540,12 +426,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         <div className="p-6 overflow-y-auto bg-slate-50 flex-1 custom-scrollbar">
                             <table className="w-full text-left bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                 <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 border-b border-slate-200">
-                                    <tr>
-                                        <th className="p-3">Resource Name</th>
-                                        <th className="p-3">Instance ID</th>
-                                        <th className="p-3">Full Specification</th>
-                                        <th className="p-3 text-center">Technical Status</th>
-                                    </tr>
+                                    <tr><th className="p-3">Resource Name</th><th className="p-3">Instance ID</th><th className="p-3">Full Specification</th><th className="p-3 text-center">Technical Status</th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
                                     {detailsModal.items.map((item, i) => {
@@ -561,9 +442,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                             <td className="p-3 font-bold text-slate-800">{item.name || item}</td>
                                             <td className="p-3 font-mono text-slate-400">{item.id || 'N/A'}</td>
                                             <td className="p-3 font-mono text-slate-600">{item.spec || item.original_spec || 'N/A'}</td>
-                                            <td className="p-3 text-center">
-                                                <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${statusColor}`}>{techStatus}</span>
-                                            </td>
+                                            <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${statusColor}`}>{techStatus}</span></td>
                                         </tr>
                                     )})}
                                 </tbody>
@@ -581,34 +460,42 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
 }
 
 // ==========================================
-// ⚖️ 1. 3-WAY INFRASTRUCTURE DIFF
+// ⚖️ 1. 3-WAY INFRASTRUCTURE DIFF (FIXED CATEGORIES)
 // ==========================================
 function PhaseThreeWayDiff({ project, onUpdateProject }) {
     const [isScanningNoc, setIsScanningNoc] = useState(false);
     const [nocData, setNocData] = useState(project?.nocData || null);
     const [crApproved, setCrApproved] = useState(project?.crApproved || false);
-    
     const [showDossier, setShowDossier] = useState(false);
     const [showDetailedReport, setShowDetailedReport] = useState(false);
     const [detailsModal, setDetailsModal] = useState({ show: false, category: '', label: '', items: [] });
 
     const hasNocScanned = nocData !== null;
 
+    // 🚨 FIX: Force all 5 core standard categories to render, even if the Live count is 0.
     const liveCategories = useMemo(() => {
-        if (!hasNocScanned || !nocData?.raw) return [];
+        const raw = nocData?.raw || {};
         const normalized = {
-            compute: [...(nocData.raw.compute || []), ...(nocData.raw.ecs || []), ...(nocData.raw.server || [])],
-            databases: [...(nocData.raw.databases || []), ...(nocData.raw.database || []), ...(nocData.raw.rds || [])],
-            network: [...(nocData.raw.network || []), ...(nocData.raw.vpc || []), ...(nocData.raw.eip || []), ...(nocData.raw.nat || [])],
-            storage: [...(nocData.raw.storage || []), ...(nocData.raw.obs || []), ...(nocData.raw.cbr || [])],
-            security: [...(nocData.raw.security || []), ...(nocData.raw.waf || [])]
+            compute: [...(raw.compute || []), ...(raw.ecs || []), ...(raw.server || [])],
+            databases: [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
+            network: [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
+            storage: [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
+            security: [...(raw.security || []), ...(raw.waf || [])]
         };
-        return Object.keys(normalized).map(key => ({
-            id: key,
-            label: key.charAt(0).toUpperCase() + key.slice(1).replace('_', ' '),
-            count: normalized[key].length,
-            items: normalized[key]
-        })).filter(cat => cat.count > 0);
+
+        const standardSet = [
+            { id: 'compute', label: 'Compute', icon: 'fa-server' },
+            { id: 'databases', label: 'Databases', icon: 'fa-database' },
+            { id: 'network', label: 'Network', icon: 'fa-network-wired' },
+            { id: 'storage', label: 'Storage', icon: 'fa-hdd' },
+            { id: 'security', label: 'Security', icon: 'fa-shield-alt' }
+        ];
+
+        return standardSet.map(cat => ({
+            ...cat,
+            count: normalized[cat.id]?.length || 0,
+            items: normalized[cat.id] || []
+        })); // <-- We removed the .filter(c => c.count > 0) so all categories ALWAYS show!
     }, [nocData, hasNocScanned]);
 
     const requiresCR = hasNocScanned && liveCategories.some(cat => {
@@ -691,24 +578,18 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                             const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0; 
                                             const actual = cat.count;
                                             const creep = actual - quoted;
-                                            
-                                            let icon = 'fa-server';
-                                            if(cat.id.includes('database')) icon = 'fa-database';
-                                            else if(cat.id.includes('network') || cat.id.includes('vpc') || cat.id.includes('eip')) icon = 'fa-network-wired';
-                                            else if(cat.id.includes('storage') || cat.id.includes('vault') || cat.id.includes('obs')) icon = 'fa-hdd';
-                                            else if(cat.id.includes('security')) icon = 'fa-shield-alt';
 
                                             return (
                                                 <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${icon} text-slate-400 w-5`}></i> {cat.label}</td>
+                                                    <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
                                                     <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIs}</td>
                                                     <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
                                                     <td className={`p-3 text-center font-mono font-black border-l border-slate-100 bg-emerald-50/30 ${actual > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-100 hover:shadow-inner transition-all group' : 'text-slate-400'}`} onClick={() => { if (actual > 0) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: cat.items }); }}>
                                                         {actual} {actual > 0 && <i className="fas fa-search-plus ml-1.5 opacity-0 group-hover:opacity-100 text-[10px]"></i>}
                                                     </td>
                                                     <td className="p-3 text-center border-l border-slate-100">
-                                                        <span className={`px-2 py-1 rounded text-xs font-black ${creep > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                            {creep > 0 ? `+${creep} (CR)` : creep === 0 ? 'Verified' : creep}
+                                                        <span className={`px-2 py-1 rounded text-xs font-black ${creep > 0 ? 'bg-rose-100 text-rose-700' : (creep < 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}`}>
+                                                            {creep > 0 ? `+${creep} (CR)` : creep < 0 ? `${creep} (Not Built)` : 'Verified'}
                                                         </span>
                                                     </td>
                                                 </tr>
