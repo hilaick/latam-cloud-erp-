@@ -46,7 +46,7 @@ def ecs_ri_reconciliation():
         raw_ak, raw_sk = cm.decrypt_credentials(json.loads(ak_str)) if ak_str.startswith('{') else (ak_str, sk_str)
         
         quoted_ecs_ris = []
-        if 'ri_quotation' in project_data and 'servers' in project_data['ri_quotation']:
+        if 'ri_quotation' in project_data and project_data['ri_quotation'] is not None and 'servers' in project_data['ri_quotation']:
             for server in project_data['ri_quotation']['servers']:
                 quoted_ecs_ris.append({
                     "name": server.get('name', ''),
@@ -55,7 +55,7 @@ def ecs_ri_reconciliation():
                 })
         
         console_ris = []
-        if 'console_ri_export' in project_data and 'servers' in project_data['console_ri_export']:
+        if 'console_ri_export' in project_data and project_data['console_ri_export'] and 'servers' in project_data['console_ri_export']:
             console_ris = project_data['console_ri_export']['servers']
         
         project_region = project_data.get('region') or getattr(customer, 'region', 'la-north-2')
@@ -72,7 +72,14 @@ def ecs_ri_reconciliation():
                 "total_quoted": reconciliation_result["summary"].get("total_quoted", 0),
                 "total_live": reconciliation_result["summary"].get("total_live", 0),
                 "total_bought": reconciliation_result["summary"].get("total_bought", 0),
-                "total_missing": reconciliation_result["summary"].get("total_missing", 0)
+                "total_missing": reconciliation_result["summary"].get("total_missing", 0),
+                "total_live_need_ri": reconciliation_result["summary"].get("total_live_need_ri", 0),
+                "technical_categories": reconciliation_result["summary"].get("technical_categories", {
+                    "not_migrated_provisioned": 0,
+                    "marked_for_deletion": 0,
+                    "pending_config": 0,
+                    "pending_license": 0
+                })
             },
             "diagnostics": reconciliation_result.get("diagnostics", [])
         })
@@ -145,15 +152,48 @@ def upload_ri_quotation():
                 try: qty = int(float(row.get(col_qty)))
                 except: pass
                 
+            # Determine resource type from service column or name
+            resource_type = ''
+            if col_svc:
+                service_val = str(row.get(col_svc, '')).lower()
+                if 'elastic cloud server' in service_val or 'ecs' in service_val:
+                    resource_type = 'ECS'
+                elif 'vpn' in service_val:
+                    resource_type = 'VPN'
+                elif 'nat' in service_val or 'gateway' in service_val:
+                    resource_type = 'NAT Gateway'
+                elif 'elastic ip' in service_val or 'eip' in service_val:
+                    resource_type = 'Elastic IP'
+                elif 'vpc' in service_val:
+                    resource_type = 'VPC'
+                elif 'direct connect' in service_val:
+                    resource_type = 'Direct Connect'
+                elif 'cdn' in service_val:
+                    resource_type = 'CDN'
+                elif 'waf' in service_val:
+                    resource_type = 'WAF'
+                elif 'firewall' in service_val:
+                    resource_type = 'Firewall'
+                elif 'storage' in service_val:
+                    resource_type = 'Storage'
+                elif 'database' in service_val or 'rds' in service_val:
+                    resource_type = 'Database'
+                elif 'redis' in service_val or 'dcs' in service_val:
+                    resource_type = 'Redis'
+                else:
+                    resource_type = service_val.upper()
+            
             ecs_ri_servers.append({
                 'name': req_val,
                 'specification': specification,
-                'quantity': qty
+                'quantity': qty,
+                'type': resource_type
             })
                 
         project = ProjectData.query.get(project_id)
         data = json.loads(project.data)
-        if 'ri_quotation' not in data: data['ri_quotation'] = {}
+        if 'ri_quotation' not in data or data['ri_quotation'] is None:
+            data['ri_quotation'] = {}
         
         summary = {
             'total_servers': len(ecs_ri_servers),
@@ -230,7 +270,8 @@ def upload_ecs_ri_raw():
         
         if project:
             proj_data = json.loads(project.data)
-            if 'ri_quotation' not in proj_data: proj_data['ri_quotation'] = {}
+            if 'ri_quotation' not in proj_data or proj_data['ri_quotation'] is None:
+                proj_data['ri_quotation'] = {}
             proj_data['ri_quotation']['uploaded_at'] = datetime.now().isoformat()
             proj_data['ri_quotation']['servers'] = ecs_ri_servers
             proj_data['ri_quotation']['summary'] = summary

@@ -30,27 +30,48 @@ class MockHttpRequest:
         if parsed.query:
             for k, v in parse_qsl(parsed.query):
                 self.query[k] = v
+        
+        # Huawei SDK expects these attributes for signing
+        self.header_params = headers.copy() if headers else {}
+        self.resource_path = parsed.path if parsed.path else "/"
+        self.path_params = {}
+        self.query_params = self.query
 
 class HuaweiBSSScanner:
-    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2'):
+    def __init__(self, raw_ak: str, raw_sk: str, region: str = 'la-north-2', 
+                 console_cookies: dict = None, console_headers: dict = None):
         self.raw_ak = raw_ak
         self.raw_sk = raw_sk
         self.region = region
+        self.console_cookies = console_cookies or {}
+        self.console_headers = console_headers or {}
 
     def _get_safe_signer(self):
         """Safely instantiates the Huawei Signer regardless of SDK version kwargs"""
         if not Signer:
             return None
         try:
-            return Signer(self.raw_ak, self.raw_sk) # Positional fallback
+            # Try new SDK 3.1.201+ style with BasicCredentials
+            from huaweicloudsdkcore.auth.credentials import BasicCredentials
+            credentials = BasicCredentials(ak=self.raw_ak, sk=self.raw_sk)
+            return Signer(credentials)
         except Exception:
             try:
-                return Signer(key=self.raw_ak, secret=self.raw_sk) # Standard kwargs
+                # Try old positional style
+                return Signer(self.raw_ak, self.raw_sk)
             except Exception:
-                s = Signer()
-                s.Key = self.raw_ak
-                s.Secret = self.raw_sk
-                return s
+                try:
+                    # Try old keyword style
+                    return Signer(key=self.raw_ak, secret=self.raw_sk)
+                except Exception:
+                    # Last resort: try to set attributes directly
+                    try:
+                        s = Signer()
+                        s.Key = self.raw_ak
+                        s.Secret = self.raw_sk
+                        return s
+                    except Exception:
+                        return None
 
     def get_project_id(self, signer) -> str:
         try:
@@ -66,10 +87,115 @@ class HuaweiBSSScanner:
             logger.error(f"Error fetching project ID: {e}")
         return ""
 
+    def _get_active_ris_via_cookies(self) -> tuple:
+        """
+        Try to get RIs using console session cookies
+        This is the most reliable method if we have valid session cookies
+        """
+        diagnostics = []
+        bought_ris = []
+        
+        if not self.console_cookies:
+            diagnostics.append("No console cookies provided, skipping cookie-based method")
+            return bought_ris, diagnostics
+        
+        try:
+            console_url = f"https://{self.region}-console.huaweicloud.com/ecm/rest/cbc/rest/cbc/csborderadapterservice/v1/queryRiInstance"
+            
+            payload = {
+                "tenantId": "",  # Will be filled if we can get it via AK/SK
+                "regionId": self.region,
+                "cloudServiceType": "hws.service.type.ec2",
+                "resourceType": "hws.resource.type.vm",
+                "sortName": "validTime",
+                "sortOrder": "desc",
+                "curPage": 1,
+                "pageSize": 100
+            }
+            
+            # Default headers for console API
+            headers = {
+                "Accept": "application/json, text/plain, */*",
+                "Content-Type": "application/json",
+                "Host": f"{self.region}-console.huaweicloud.com",
+                "Origin": f"https://{self.region}-console.huaweicloud.com",
+                "Referer": f"https://{self.region}-console.huaweicloud.com/ecm/?region={self.region}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0",
+                "X-Language": "en-us",
+                "X-Requested-With": "XMLHttpRequest",
+                "X-Target-Services": "cbc-iam5",
+                "projectname": self.region,
+                "region": self.region,
+            }
+            
+            # Add custom headers if provided
+            if self.console_headers:
+                headers.update(self.console_headers)
+            
+            session = requests.Session()
+            
+            # Set cookies
+            for key, value in self.console_cookies.items():
+                session.cookies.set(key, value)
+            
+            diagnostics.append("Attempting Console API with session cookies...")
+            
+            resp = session.post(console_url, json=payload, headers=headers, timeout=30)
+            
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    ri_instances = data.get('riInstances', [])
+                    total_ris = data.get('page', {}).get('totalRecord', 0)
+                    
+                    diagnostics.append(f"✓ Console API returned {total_ris} RIs via session cookies")
+                    
+                    for ri in ri_instances:
+                        spec = ri.get('specCode', ri.get('flavorName', ri.get('specification', 'Unknown')))
+                        bought_ris.append({
+                            'id': ri.get('reserveInstanceId', 'CONSOLE_RI'),
+                            'name': f"Floating RI ({ri.get('reserveInstanceId', 'Active')})",
+                            'specification': spec,
+                            'billing_mode': 'Floating Reserved',
+                            'charging_mode': '1',
+                            'tags': {},
+                            'created_at': ri.get('validTime', ''),
+                            'status': 'Active'
+                        })
+                    
+                    diagnostics.append(f"Parsed {len(bought_ris)} Active RIs from Console API")
+                    return bought_ris, diagnostics
+                    
+                except json.JSONDecodeError:
+                    diagnostics.append(f"✗ Console API returned non-JSON response (likely expired session)")
+                    return bought_ris, diagnostics
+                    
+            else:
+                diagnostics.append(f"✗ Console API HTTP {resp.status_code}: {resp.text[:200] if resp.text else 'Empty response'}")
+                return bought_ris, diagnostics
+                
+        except Exception as e:
+            diagnostics.append(f"✗ Console API cookie method failed: {str(e)}")
+            return bought_ris, diagnostics
+
     def get_active_ris(self) -> tuple:
         diagnostics = []
         bought_ris = []
         
+        # Try cookie-based method first (most reliable if cookies are valid)
+        if self.console_cookies:
+            diagnostics.append("Attempting cookie-based Console API access...")
+            cookie_ris, cookie_diag = self._get_active_ris_via_cookies()
+            diagnostics.extend(cookie_diag)
+            
+            if cookie_ris:
+                bought_ris = cookie_ris
+                diagnostics.append("✓ Successfully retrieved RIs via console cookies")
+                return bought_ris, diagnostics
+            else:
+                diagnostics.append("✗ Cookie-based method failed, trying V4 signature method...")
+        
+        # Fall back to V4 signature method
         try:
             diagnostics.append("Initiating Console API Hijack (csborderadapterservice)...")
             signer = self._get_safe_signer()

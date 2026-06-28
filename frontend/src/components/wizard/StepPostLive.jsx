@@ -59,6 +59,16 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export?.summary : null);
 
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
+    
+    // Filter state for technical categories
+    const [filters, setFilters] = useState({
+        showNotMigrated: false,
+        showMarkedForDeletion: false,
+        showPendingConfig: false,
+        showPendingLicense: false,
+        showLiveNeedRI: false,
+        showMissingRIs: false
+    });
 
     const handleRunTrueUp = async () => {
         setIsLoading(true);
@@ -269,22 +279,227 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                         {/* Summary Block */}
                         {activeSubsStatus && (
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-inner">
-                                <div className="grid grid-cols-4 gap-4">
+                                <div className="grid grid-cols-4 gap-4 mb-6">
                                     <div className="text-center border-r border-slate-200">
-                                        <div className="text-3xl font-black text-blue-600">{activeSubsStatus.total_quoted || 0}</div>
+                                        <div className="text-3xl font-black text-blue-600">
+                                            {matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + asset.quoted_count, 0)}
+                                        </div>
                                         <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 mt-1">Quoted RIs</div>
                                     </div>
                                     <div className="text-center border-r border-slate-200">
-                                        <div className="text-3xl font-black text-emerald-600">{activeSubsStatus.total_live || 0}</div>
+                                        <div className="text-3xl font-black text-emerald-600">
+                                            {matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + asset.live_count, 0)}
+                                        </div>
                                         <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mt-1">Provisioned (Live ECS)</div>
                                     </div>
                                     <div className="text-center border-r border-slate-200">
-                                        <div className="text-3xl font-black text-purple-600">{activeSubsStatus.total_bought || 0}</div>
+                                        <div className="text-3xl font-black text-purple-600">
+                                            {matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + asset.bought_count, 0)}
+                                        </div>
                                         <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 mt-1">Owned / Prepaid</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className={`text-3xl font-black ${activeSubsStatus.total_missing > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{activeSubsStatus.total_missing || 0}</div>
-                                        <div className={`text-[10px] font-black uppercase tracking-widest mt-1 ${activeSubsStatus.total_missing > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Missing RIs (Deficit)</div>
+                                        <div className={`text-3xl font-black ${matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + Math.max(0, asset.quoted_count - asset.bought_count), 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                            {matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + Math.max(0, asset.quoted_count - asset.bought_count), 0)}
+                                        </div>
+                                        <div className={`text-[10px] font-black uppercase tracking-widest mt-1 ${matrix.filter(asset => {
+                                                if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                    return true;
+                                                }
+                                                const missing = asset.quoted_count - asset.bought_count;
+                                                const liveNeedRI = asset.live_need_ri_count || 0;
+                                                const techCats = asset.technical_categories || {};
+                                                const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                            }).reduce((sum, asset) => sum + Math.max(0, asset.quoted_count - asset.bought_count), 0) > 0 ? 'text-rose-500' : 'text-slate-400'}`}>
+                                            Missing RIs (Deficit)
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Billing Focus & Technical Categories Summary */}
+                                <div className="border-t border-slate-200 pt-4 mt-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                        {/* Billing Focus */}
+                                        <div className="text-center">
+                                            <div className={`text-2xl font-black ${matrix.filter(asset => {
+                                                    if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                        return true;
+                                                    }
+                                                    const missing = asset.quoted_count - asset.bought_count;
+                                                    const liveNeedRI = asset.live_need_ri_count || 0;
+                                                    const techCats = asset.technical_categories || {};
+                                                    const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                    const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                    const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                    const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                    const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                    const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                    return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                                }).reduce((sum, asset) => sum + (asset.live_need_ri_count || 0), 0) > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                                {matrix.filter(asset => {
+                                                    if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                        return true;
+                                                    }
+                                                    const missing = asset.quoted_count - asset.bought_count;
+                                                    const liveNeedRI = asset.live_need_ri_count || 0;
+                                                    const techCats = asset.technical_categories || {};
+                                                    const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                                    const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                                    const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                                    const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                                    const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                                    const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                                    return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                                }).reduce((sum, asset) => sum + (asset.live_need_ri_count || 0), 0)}
+                                            </div>
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-amber-500 mt-1">
+                                                <i className="fas fa-shopping-cart mr-1"></i> Live Need RI
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Technical Categories */}
+                                        {activeSubsStatus.technical_categories && (
+                                            <>
+                                                <div className="text-center">
+                                                    <div className={`text-2xl font-black ${(activeSubsStatus.technical_categories.not_migrated_provisioned || 0) > 0 ? 'text-slate-600' : 'text-slate-400'}`}>
+                                                        {activeSubsStatus.technical_categories.not_migrated_provisioned || 0}
+                                                    </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mt-1">
+                                                        <i className="fas fa-cloud-upload-alt mr-1"></i> Not Migrated
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="text-center">
+                                                    <div className={`text-2xl font-black ${(activeSubsStatus.technical_categories.marked_for_deletion || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                                        {activeSubsStatus.technical_categories.marked_for_deletion || 0}
+                                                    </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-widest text-rose-500 mt-1">
+                                                        <i className="fas fa-trash-alt mr-1"></i> Marked Delete
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="text-center">
+                                                    <div className={`text-2xl font-black ${(activeSubsStatus.technical_categories.pending_config || 0) > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                        {activeSubsStatus.technical_categories.pending_config || 0}
+                                                    </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-widest text-blue-500 mt-1">
+                                                        <i className="fas fa-cog mr-1"></i> Pending Config
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="text-center">
+                                                    <div className={`text-2xl font-black ${(activeSubsStatus.technical_categories.pending_license || 0) > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                        {activeSubsStatus.technical_categories.pending_license || 0}
+                                                    </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-widest text-indigo-500 mt-1">
+                                                        <i className="fas fa-file-contract mr-1"></i> Pending License
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    
+                                    {/* Legend */}
+                                    <div className="mt-4 pt-3 border-t border-slate-200">
+                                        <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-2">LEGEND:</div>
+                                        <div className="flex flex-wrap gap-3">
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></div>
+                                                <span className="text-[9px] text-slate-600">Live servers needing RI purchase</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-slate-100 border border-slate-300"></div>
+                                                <span className="text-[9px] text-slate-600">Not migrated/provisioned</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-rose-100 border border-rose-300"></div>
+                                                <span className="text-[9px] text-slate-600">Marked for deletion</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-blue-100 border border-blue-300"></div>
+                                                <span className="text-[9px] text-slate-600">Pending configuration</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-indigo-100 border border-indigo-300"></div>
+                                                <span className="text-[9px] text-slate-600">Pending license</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -292,7 +507,94 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
 
                         {/* TABLE 1: ANCHORED QUOTED MATRIX */}
                         <div>
-                            <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-3 border-b border-slate-200 pb-2">Procurement Action Matrix (Quoted Baseline)</h4>
+                            <div className="flex justify-between items-center mb-3">
+                                <h4 className="font-black text-sm uppercase tracking-widest text-slate-800 border-b border-slate-200 pb-2">Procurement Action Matrix (Quoted Baseline)</h4>
+                                
+                                {/* Filter Toggles - Interactive Buttons */}
+                                <div className="flex flex-wrap gap-2">
+                                    <button 
+                                        onClick={() => setFilters({...filters, showMissingRIs: !filters.showMissingRIs})}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showMissingRIs ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                    >
+                                        <i className="fas fa-exclamation-triangle mr-1"></i> Missing RIs ({activeSubsStatus?.total_missing || 0})
+                                    </button>
+                                    <button 
+                                        onClick={() => setFilters({...filters, showLiveNeedRI: !filters.showLiveNeedRI})}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showLiveNeedRI ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                    >
+                                        <i className="fas fa-shopping-cart mr-1"></i> Live Need RI ({activeSubsStatus?.total_live_need_ri || 0})
+                                    </button>
+                                    {activeSubsStatus?.technical_categories && (
+                                        <>
+                                            <button 
+                                                onClick={() => setFilters({...filters, showNotMigrated: !filters.showNotMigrated})}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showNotMigrated ? 'bg-slate-200 text-slate-800 border border-slate-400' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                            >
+                                                <i className="fas fa-cloud-upload-alt mr-1"></i> Not Migrated ({activeSubsStatus.technical_categories.not_migrated_provisioned || 0})
+                                            </button>
+                                            <button 
+                                                onClick={() => setFilters({...filters, showMarkedForDeletion: !filters.showMarkedForDeletion})}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showMarkedForDeletion ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                            >
+                                                <i className="fas fa-trash-alt mr-1"></i> Marked Delete ({activeSubsStatus.technical_categories.marked_for_deletion || 0})
+                                            </button>
+                                            <button 
+                                                onClick={() => setFilters({...filters, showPendingConfig: !filters.showPendingConfig})}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showPendingConfig ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                            >
+                                                <i className="fas fa-cog mr-1"></i> Pending Config ({activeSubsStatus.technical_categories.pending_config || 0})
+                                            </button>
+                                            <button 
+                                                onClick={() => setFilters({...filters, showPendingLicense: !filters.showPendingLicense})}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${filters.showPendingLicense ? 'bg-indigo-100 text-indigo-700 border border-indigo-300' : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'}`}
+                                            >
+                                                <i className="fas fa-file-contract mr-1"></i> Pending License ({activeSubsStatus.technical_categories.pending_license || 0})
+                                            </button>
+                                        </>
+                                    )}
+                                    {(filters.showMissingRIs || filters.showLiveNeedRI || filters.showNotMigrated || filters.showMarkedForDeletion || filters.showPendingConfig || filters.showPendingLicense) && (
+                                        <button 
+                                            onClick={() => setFilters({
+                                                showNotMigrated: false,
+                                                showMarkedForDeletion: false,
+                                                showPendingConfig: false,
+                                                showPendingLicense: false,
+                                                showLiveNeedRI: false,
+                                                showMissingRIs: false
+                                            })}
+                                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-slate-800 text-white border border-slate-700 hover:bg-slate-900"
+                                        >
+                                            <i className="fas fa-times mr-1"></i> Clear Filters
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            {/* Filter summary */}
+                            {(filters.showMissingRIs || filters.showLiveNeedRI || filters.showNotMigrated || filters.showMarkedForDeletion || filters.showPendingConfig || filters.showPendingLicense) ? (
+                                <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                    <div className="text-xs font-bold text-slate-700 mb-1">Active Filters:</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {filters.showMissingRIs && <span className="px-2 py-1 bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest rounded border border-rose-300"><i className="fas fa-exclamation-triangle mr-1"></i> Missing RIs</span>}
+                                        {filters.showLiveNeedRI && <span className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-widest rounded border border-amber-300"><i className="fas fa-shopping-cart mr-1"></i> Live Need RI</span>}
+                                        {filters.showNotMigrated && <span className="px-2 py-1 bg-slate-200 text-slate-800 text-[10px] font-bold uppercase tracking-widest rounded border border-slate-400"><i className="fas fa-cloud-upload-alt mr-1"></i> Not Migrated</span>}
+                                        {filters.showMarkedForDeletion && <span className="px-2 py-1 bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest rounded border border-rose-300"><i className="fas fa-trash-alt mr-1"></i> Marked Delete</span>}
+                                        {filters.showPendingConfig && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-widest rounded border border-blue-300"><i className="fas fa-cog mr-1"></i> Pending Config</span>}
+                                        {filters.showPendingLicense && <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-widest rounded border border-indigo-300"><i className="fas fa-file-contract mr-1"></i> Pending License</span>}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 mt-2">
+                                        <i className="fas fa-info-circle mr-1"></i> Showing rows that match any active filter. Click filter buttons to toggle.
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                    <div className="text-xs font-bold text-slate-700 mb-1">All Filters Inactive:</div>
+                                    <div className="text-[10px] text-slate-500">
+                                        <i className="fas fa-info-circle mr-1"></i> Click any filter button above to show specific categories. All rows visible when no filters are active.
+                                    </div>
+                                </div>
+                            )}
+                            
                             <table className="w-full text-left bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm text-sm">
                                 <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
                                     <tr>
@@ -300,16 +602,63 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                         <th className="p-3 text-center bg-blue-50/50">Quoted Baseline</th>
                                         <th className="p-3 text-center bg-emerald-50/50">Provisioned (Live ECS)</th>
                                         <th className="p-3 text-center bg-purple-50/50">Owned / Prepaid</th>
+                                        <th className="p-3 text-center bg-amber-50/50">Live Need RI</th>
+                                        <th className="p-3 text-center">Technical Categories</th>
                                         <th className="p-3 text-center">Status / Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {matrix.length === 0 ? (
-                                        <tr><td colSpan="5" className="text-center p-6 text-slate-400 font-bold">No quoted items found.</td></tr>
-                                    ) : matrix.map((asset, i) => {
+                                        <tr><td colSpan="7" className="text-center p-6 text-slate-400 font-bold">No quoted items found.</td></tr>
+                                    ) : matrix
+                                        // Apply filters
+                                        .filter(asset => {
+                                            if (!filters.showMissingRIs && !filters.showLiveNeedRI && !filters.showNotMigrated && !filters.showMarkedForDeletion && !filters.showPendingConfig && !filters.showPendingLicense) {
+                                                return true; // No filters active, show all
+                                            }
+                                            
+                                            const missing = asset.quoted_count - asset.bought_count;
+                                            const liveNeedRI = asset.live_need_ri_count || 0;
+                                            const techCats = asset.technical_categories || {};
+                                            
+                                            // Check each filter
+                                            const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                            const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                            const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                            const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                            const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                            const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                            
+                                            // Show if any active filter matches
+                                            return hasMissingRIs || hasLiveNeedRI || hasNotMigrated || hasMarkedForDeletion || hasPendingConfig || hasPendingLicense;
+                                        })
+                                        .map((asset, i) => {
                                         const missing = asset.quoted_count - asset.bought_count;
+                                        const liveNeedRI = asset.live_need_ri_count || 0;
+                                        const techCats = asset.technical_categories || {};
+                                        
+                                        // Check which filters this row matches (only when corresponding filter is active)
+                                        const hasMissingRIs = filters.showMissingRIs && missing > 0;
+                                        const hasLiveNeedRI = filters.showLiveNeedRI && liveNeedRI > 0;
+                                        const hasNotMigrated = filters.showNotMigrated && (techCats.not_migrated_provisioned || 0) > 0;
+                                        const hasMarkedForDeletion = filters.showMarkedForDeletion && (techCats.marked_for_deletion || 0) > 0;
+                                        const hasPendingConfig = filters.showPendingConfig && (techCats.pending_config || 0) > 0;
+                                        const hasPendingLicense = filters.showPendingLicense && (techCats.pending_license || 0) > 0;
+                                        
+                                        // Determine row highlighting based on matches (only when filters are active)
+                                        const rowHighlightClass = 
+                                            (filters.showMissingRIs || filters.showLiveNeedRI || filters.showNotMigrated || filters.showMarkedForDeletion || filters.showPendingConfig || filters.showPendingLicense) ? (
+                                                hasMissingRIs ? 'bg-rose-50/50 hover:bg-rose-100' :
+                                                hasLiveNeedRI ? 'bg-amber-50/50 hover:bg-amber-100' :
+                                                hasMarkedForDeletion ? 'bg-rose-50/30 hover:bg-rose-100' :
+                                                hasPendingConfig ? 'bg-blue-50/30 hover:bg-blue-100' :
+                                                hasPendingLicense ? 'bg-indigo-50/30 hover:bg-indigo-100' :
+                                                hasNotMigrated ? 'bg-slate-50/50 hover:bg-slate-100' :
+                                                'hover:bg-slate-50'
+                                            ) : 'hover:bg-slate-50';
+                                        
                                         return (
-                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <tr key={i} className={`${rowHighlightClass} transition-colors`}>
                                             <td className="p-3 text-slate-800 font-mono font-bold text-xs">
                                                 {asset.specification}
                                                 {asset.quoted_servers && asset.quoted_servers.length > 0 && (
@@ -317,7 +666,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                                 )}
                                             </td>
                                             
-                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(name => ({name: name.name || name, id: 'N/A', status: 'Quoted Baseline'}))})}>
+                                            <td className="p-3 text-center font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-all" onClick={() => asset.quoted_count > 0 && setDetailsModal({show: true, title: `Quoted Baseline: ${asset.specification}`, items: asset.quoted_servers.map(server => ({name: server.name || server, id: 'Quoted Server', status: 'Not Yet Provisioned', specification: asset.specification}))})}>
                                                 {asset.quoted_count} {asset.quoted_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
                                             </td>
                                             
@@ -327,6 +676,44 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                             
                                             <td className={`p-3 text-center font-black ${asset.bought_count > 0 ? 'text-purple-700 bg-purple-50/30 cursor-pointer hover:bg-purple-100' : 'text-slate-400 bg-slate-50/30'}`} onClick={() => asset.bought_count > 0 && setDetailsModal({show: true, title: `Owned / Prepaid RIs: ${asset.specification}`, items: asset.bought_ris})}>
                                                 {asset.bought_count} {asset.bought_count > 0 && <i className="fas fa-search-plus ml-1 opacity-50 text-[10px]"></i>}
+                                            </td>
+                                            
+                                            <td className={`p-3 text-center font-black ${liveNeedRI > 0 ? 'text-amber-700 bg-amber-50/30' : 'text-slate-400 bg-slate-50/30'}`}>
+                                                {liveNeedRI > 0 ? (
+                                                    <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest">
+                                                        <i className="fas fa-shopping-cart mr-1"></i> Buy {liveNeedRI}x
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 text-[10px] font-bold">Covered</span>
+                                                )}
+                                            </td>
+                                            
+                                            <td className="p-3 text-center">
+                                                <div className="flex flex-wrap gap-1 justify-center">
+                                                    {techCats.not_migrated_provisioned > 0 && (
+                                                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest" title="Not Migrated/Provisioned">
+                                                            <i className="fas fa-cloud-upload-alt mr-1"></i> {techCats.not_migrated_provisioned}
+                                                        </span>
+                                                    )}
+                                                    {techCats.marked_for_deletion > 0 && (
+                                                        <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest" title="Marked for Deletion">
+                                                            <i className="fas fa-trash-alt mr-1"></i> {techCats.marked_for_deletion}
+                                                        </span>
+                                                    )}
+                                                    {techCats.pending_config > 0 && (
+                                                        <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest" title="Pending Configuration">
+                                                            <i className="fas fa-cog mr-1"></i> {techCats.pending_config}
+                                                        </span>
+                                                    )}
+                                                    {techCats.pending_license > 0 && (
+                                                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest" title="Pending License">
+                                                            <i className="fas fa-file-contract mr-1"></i> {techCats.pending_license}
+                                                        </span>
+                                                    )}
+                                                    {Object.values(techCats).every(v => v === 0) && (
+                                                        <span className="text-slate-400 text-[9px] font-bold">-</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             
                                             <td className="p-3 text-center">

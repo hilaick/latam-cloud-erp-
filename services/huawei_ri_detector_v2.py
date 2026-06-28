@@ -78,9 +78,36 @@ class HuaweiRIDetector:
         # Get all live servers
         live_servers = live_inventory.get("compute", [])
         
+        # Filter quotation_ris to only include ECS resources
+        # Remove VPN, NAT Gateway, and other non-ECS resources
+        ecs_quotation_ris = []
+        non_ecs_count = 0
+        
+        for quoted in quotation_ris:
+            resource_type = str(quoted.get("type", "") or "").lower()
+            resource_name = str(quoted.get("name", "") or "").lower()
+            resource_spec = str(quoted.get("specification", "") or "").lower()
+            
+            # Skip non-ECS resources
+            if resource_type and any(non_ecs in resource_type for non_ecs in ["vpn", "nat gateway", "nat", "gateway", "elastic ip", "eip", "vpc", "direct connect", "cdn", "waf", "firewall", "security", "storage", "database", "rds", "redis", "dcs"]):
+                non_ecs_count += quoted.get("quantity", 1)
+                continue
+            if resource_name and any(non_ecs in resource_name for non_ecs in ["vpn", "nat gateway", "nat", "gateway", "elastic ip", "eip", "vpc", "direct connect", "cdn", "waf", "firewall", "security", "storage", "database", "rds", "redis", "dcs"]):
+                non_ecs_count += quoted.get("quantity", 1)
+                continue
+            if resource_spec and any(non_ecs in resource_spec for non_ecs in ["vpn", "nat gateway", "nat", "gateway", "elastic ip", "eip", "vpc", "direct connect", "cdn", "waf", "firewall", "security", "storage", "database", "rds", "redis", "dcs"]):
+                non_ecs_count += quoted.get("quantity", 1)
+                continue
+                
+            # Include ECS resources
+            ecs_quotation_ris.append(quoted)
+        
+        if non_ecs_count > 0:
+            logger.info(f"Filtered out {non_ecs_count} non-ECS resources from quoted RIs")
+        
         # Initialize results
         results = {
-            "quoted_ris": quotation_ris,
+            "quoted_ris": ecs_quotation_ris,
             "live_servers": [],
             "bought_ris": bought_ris["compute_ris"],
             "reconciliation": [],
@@ -91,15 +118,15 @@ class HuaweiRIDetector:
                 "pending_config": 0         # Quoted, migrated, needs config/license
             },
             "summary": {
-                "total_quoted": len(quotation_ris),
+                "total_quoted": len(ecs_quotation_ris),
                 "total_live": len(live_servers),
                 "total_bought": len(bought_ris["compute_ris"]),
                 "by_specification": {}
             }
         }
         
-        # Process each quoted RI
-        for quoted in quotation_ris:
+        # Process each quoted ECS RI
+        for quoted in ecs_quotation_ris:
             spec = quoted.get("specification", "Unknown")
             quoted_qty = quoted.get("quantity", 1)
             quoted_name = quoted.get("name", "")
