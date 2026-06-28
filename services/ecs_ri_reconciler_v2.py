@@ -95,61 +95,14 @@ class ECSRIReconciler:
         return list(unique_bought)
     
     def _normalize_spec_name(self, spec: str) -> str:
-        """Normalize specification name for matching"""
-        if not spec:
-            return 'Unknown'
-        
-        # Convert to lowercase and strip
-        spec = str(spec).lower().strip()
-        
-        import re
-        
-        # First, extract any flavor pattern from the string
-        flavor_patterns = [
-            # Pattern: m7n.16xlarge.8, ac8.xlarge.4, e7.12xlarge.20
-            r'([a-z][a-z0-9]*\.[a-z0-9]+\.[a-z0-9]+)',
-            # Pattern: x0.8u.16g, x1e.4u.8g
-            r'(x[0-9](?:e?)\.[0-9]+u\.[0-9]+g)',
-            # Pattern: 8u.16g, 4u.6g
-            r'([0-9]+u\.[0-9]+g)',
-        ]
-        
-        for pattern in flavor_patterns:
-            match = re.search(pattern, spec)
-            if match:
-                return match.group(1)
-        
-        # If no flavor pattern found, try to clean up
-        # Remove anything in parentheses
-        spec = re.sub(r'\([^)]*\)', '', spec).strip()
-        
-        # Try to extract from pipe format: "xxx | xxx | flavor"
-        parts = [p.strip() for p in spec.split('|')]
-        if len(parts) >= 3:
-            last_part = parts[-1].strip()
-            if '.' in last_part and any(c.isdigit() for c in last_part):
-                return last_part
-        
-        # Remove common prefixes
-        prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.', 
-                   'ac8.', 'x0.', 'x1e.', 'm7n.', 'e7.', 'memory-optimized', 'large-memory', 
-                   'general computing', 'general computing-plus', 'general computing ', 'general ']
+        if not spec: return 'Unknown'
+        base_spec = spec.split(' ')[0].lower() 
+        prefixes = ['general.', 's2.', 'c3.', 'c6.', 'c7.', 'm2.', 'm3.', 'm6.', 'm7.', 'd2.', 'h3.']
         for prefix in prefixes:
-            if spec.startswith(prefix):
-                spec = spec[len(prefix):].strip()
+            if base_spec.startswith(prefix):
+                base_spec = base_spec[len(prefix):]
                 break
-        
-        # Remove any non-alphanumeric characters at start/end
-        spec = re.sub(r'^[^a-z0-9\.]+|[^a-z0-9\.]+$', '', spec)
-        
-        # Try flavor patterns again after cleaning
-        for pattern in flavor_patterns:
-            match = re.search(pattern, spec)
-            if match:
-                return match.group(1)
-        
-        # If still no match, return the cleaned spec or 'Unknown'
-        return spec if spec else 'Unknown'
+        return base_spec
 
     def reconcile_ecs_ris(self, quoted_ecs_ris: List[Dict], console_ris: List[Dict] = None) -> Dict:
         try:
@@ -199,85 +152,20 @@ class ECSRIReconciler:
                 bought_count = len(bought_by_spec.get(norm_spec, []))
                 display_spec = original_display_names.get(norm_spec, norm_spec)
                 
-                # Analyze live servers for technical categories
-                live_servers = live_by_spec.get(norm_spec, [])
-                marked_for_deletion_count = 0
-                pending_config_count = 0
-                pending_license_count = 0
-                not_migrated_count = quoted_count - live_count if quoted_count > live_count else 0
-                
-                for server in live_servers:
-                    tags = server.get('tags', {})
-                    if isinstance(tags, dict):
-                        if tags.get('marked_for_deletion') == True:
-                            marked_for_deletion_count += 1
-                        if tags.get('pending_config') == True:
-                            pending_config_count += 1
-                        if tags.get('pending_license') == True:
-                            pending_license_count += 1
-                
-                # Calculate billing focus: Live servers that need RI purchases
-                # This is live servers minus already bought RIs for this spec
-                live_need_ri_count = max(0, live_count - bought_count)
-                
+                # 🚨 Ensure Tags are passed to the frontend for Technical Category grouping
                 item = {
                     'specification': display_spec,
                     'quoted_count': quoted_count,
                     'live_count': live_count,
                     'bought_count': bought_count,
                     'missing_ris': max(0, quoted_count - bought_count),
-                    'live_need_ri_count': live_need_ri_count,  # Billing focus
-                    'technical_categories': {
-                        'not_migrated_provisioned': max(0, not_migrated_count),
-                        'marked_for_deletion': marked_for_deletion_count,
-                        'pending_config': pending_config_count,
-                        'pending_license': pending_license_count
-                    },
                     'quoted_servers': quoted_by_spec.get(norm_spec, {}).get('servers', []),
-                    'live_servers': [{
-                        'name': s['name'], 
-                        'id': s.get('id', 'N/A'), 
-                        'status': s.get('status', 'Unknown'), 
-                        'spec': display_spec,
-                        'tags': s.get('tags', {}),
-                        'marked_for_deletion': s.get('tags', {}).get('marked_for_deletion', False),
-                        'pending_config': s.get('tags', {}).get('pending_config', False),
-                        'pending_license': s.get('tags', {}).get('pending_license', False)
-                    } for s in live_by_spec.get(norm_spec, [])],
+                    'live_servers': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': s.get('status', 'Unknown'), 'spec': display_spec, 'tags': s.get('tags', {})} for s in live_by_spec.get(norm_spec, [])],
                     'bought_ris': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': 'Prepaid / RI', 'spec': display_spec} for s in bought_by_spec.get(norm_spec, [])]
                 }
                 
                 if quoted_count > 0: reconciliation_matrix.append(item)
                 elif live_count > 0: unquoted_matrix.append(item)
-            
-            # Log detailed information for debugging
-            self.diagnostics.append(f"Reconciliation matrix: {len(reconciliation_matrix)} specs with quoted RIs")
-            self.diagnostics.append(f"Unquoted matrix: {len(unquoted_matrix)} specs without quoted RIs")
-            
-            # Log bought RIs details
-            bought_specs = {}
-            for ri in bought_ris:
-                spec = ri.get('specification', 'Unknown')
-                norm = self._normalize_spec_name(spec)
-                bought_specs[norm] = bought_specs.get(norm, 0) + 1
-            
-            self.diagnostics.append(f"Bought RIs by normalized spec: {bought_specs}")
-            
-            # Log quoted specs for comparison
-            quoted_specs = {}
-            for quoted in quoted_ecs_ris:
-                spec = quoted.get('specification', 'Unknown')
-                norm = self._normalize_spec_name(spec)
-                quoted_specs[norm] = quoted_specs.get(norm, 0) + quoted.get('quantity', 1)
-            
-            self.diagnostics.append(f"Quoted RIs by normalized spec: {quoted_specs}")
-            
-            # Calculate totals for technical categories
-            total_not_migrated = sum(i['technical_categories']['not_migrated_provisioned'] for i in reconciliation_matrix)
-            total_marked_for_deletion = sum(i['technical_categories']['marked_for_deletion'] for i in reconciliation_matrix)
-            total_pending_config = sum(i['technical_categories']['pending_config'] for i in reconciliation_matrix)
-            total_pending_license = sum(i['technical_categories']['pending_license'] for i in reconciliation_matrix)
-            total_live_need_ri = sum(i['live_need_ri_count'] for i in reconciliation_matrix + unquoted_matrix)
             
             self.diagnostics.append("Matrix construction complete.")
             
@@ -286,14 +174,7 @@ class ECSRIReconciler:
                     'total_quoted': sum(i['quoted_count'] for i in reconciliation_matrix), 
                     'total_live': sum(i['live_count'] for i in reconciliation_matrix + unquoted_matrix), 
                     'total_bought': sum(i['bought_count'] for i in reconciliation_matrix + unquoted_matrix), 
-                    'total_missing': sum(i['missing_ris'] for i in reconciliation_matrix),
-                    'total_live_need_ri': total_live_need_ri,  # Billing focus
-                    'technical_categories': {
-                        'not_migrated_provisioned': total_not_migrated,
-                        'marked_for_deletion': total_marked_for_deletion,
-                        'pending_config': total_pending_config,
-                        'pending_license': total_pending_license
-                    }
+                    'total_missing': sum(i['missing_ris'] for i in reconciliation_matrix)
                 },
                 'matrix': reconciliation_matrix,
                 'unquoted_matrix': unquoted_matrix,
