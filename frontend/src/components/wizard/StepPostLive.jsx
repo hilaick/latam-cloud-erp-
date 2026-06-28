@@ -206,6 +206,11 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         } catch (err) { alert(`Network error: ${err.message}`); } finally { setIsRawImporting(false); }
     };
 
+    const handleHandover = () => {
+        onUpdateProject(activeProject.id, 'lifecycleState', '5_awaiting_commercial');
+        alert("Success! The project has been marked Technically Complete. Delivery SLA timer stopped.");
+    };
+
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in relative">
             <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-8">
