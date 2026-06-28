@@ -126,7 +126,6 @@ class HuaweiDiscovery:
                             if vals and len(vals) > 0 and len(vals[0]) > 0:
                                 private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
                         
-                        # 🚨 FIX: Aggressively target Huawei's exact `metering.chargingMode` keys
                         billing_mode = 'Unknown'
                         charging_mode = 'Unknown'
                         
@@ -139,7 +138,6 @@ class HuaweiDiscovery:
                                 pass
                         
                         is_reserved = False
-                        # Huawei uses '1' for Prepaid / Yearly / Monthly
                         if str(billing_mode) == '1' or str(charging_mode) == '1' or 'prepaid' in str(charging_mode).lower() or 'reserved' in str(billing_mode).lower() or 'reserved' in str(charging_mode).lower():
                             is_reserved = True
                             
@@ -147,6 +145,25 @@ class HuaweiDiscovery:
                         if hasattr(s, 'flavor') and s.flavor:
                             if hasattr(s.flavor, 'id'): flavor_id = s.flavor.id
                             elif isinstance(s.flavor, dict): flavor_id = s.flavor.get('id', 'Unknown')
+                        
+                        # 🚨 FIX: Aggressively pull and parse tags for the FinOps Matrix
+                        server_tags = {}
+                        for tag_src in ['tags', 'sys_tags']:
+                            tags_list = getattr(s, tag_src, [])
+                            if not tags_list: continue
+                            
+                            for t in tags_list:
+                                if isinstance(t, str):
+                                    # Formats like "marked_for_deletion=true"
+                                    if '=' in t:
+                                        k, v = t.split('=', 1)
+                                        server_tags[k.strip()] = v.strip()
+                                    else:
+                                        server_tags[t.strip()] = "true"
+                                elif hasattr(t, 'key') and hasattr(t, 'value'):
+                                    server_tags[str(t.key)] = str(t.value)
+                                elif isinstance(t, dict):
+                                    server_tags[str(t.get('key', ''))] = str(t.get('value', ''))
                         
                         inventory["compute"].append({ 
                             "id": s.id, 
@@ -157,7 +174,8 @@ class HuaweiDiscovery:
                             "billing_mode": billing_mode,
                             "charging_mode": charging_mode,
                             "is_reserved_instance": is_reserved,
-                            "flavor": flavor_id
+                            "flavor": flavor_id,
+                            "tags": server_tags
                         })
                 except Exception as e: 
                     inventory["diagnostics"].append(f"[{target_region}] ECS Connect Error: {str(e)}")
