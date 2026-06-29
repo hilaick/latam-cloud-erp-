@@ -1,7 +1,7 @@
 import React, { useContext, useState, useRef, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
-export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer }) {
+export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -124,6 +124,15 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer }
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Production DB</span>
                 </div>
                 
+                {/* 🚨 NEW: Hermes AI Assistant Button */}
+                <button 
+                    onClick={onOpenHermes}
+                    title="Hermes AI Assistant"
+                    className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-purple-800 border border-purple-700 flex items-center justify-center text-purple-200 hover:bg-purple-700 hover:text-purple-100 hover:border-purple-500 transition-all shadow-md active:scale-95"
+                >
+                    <i className="fas fa-robot text-xs md:text-sm"></i>
+                </button>
+
                 {/* 🚨 NEW: Global Terminal Button */}
                 <button 
                     onClick={onOpenCommandDrawer}

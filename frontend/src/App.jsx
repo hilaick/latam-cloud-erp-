@@ -17,6 +17,7 @@ import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
 import GlobalGlossary from './components/utils/GlobalGlossary';
 import GlobalCommandDrawer from './components/utils/GlobalCommandDrawer'; // 🚨 NEW IMPORT
+import HermesModal from './components/HermesModal'; // 🚨 HERMES AI MODAL
 
 function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -28,6 +29,7 @@ function App() {
     // MODAL STATES
     const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
     const [isCommandDrawerOpen, setIsCommandDrawerOpen] = useState(false); // 🚨 NEW STATE
+    const [isHermesOpen, setIsHermesOpen] = useState(false); // 🚨 HERMES AI MODAL STATE
 
     const { 
         projects, 
@@ -140,6 +142,7 @@ function App() {
                     onLogout={handleLogout} 
                     onOpenGlossary={() => setIsGlossaryOpen(true)} 
                     onOpenCommandDrawer={() => setIsCommandDrawerOpen(true)} // 🚨 PASSED PROP
+                    onOpenHermes={() => setIsHermesOpen(true)} // 🚨 HERMES AI BUTTON
                 />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
@@ -183,6 +186,13 @@ function App() {
                 <GlobalCommandDrawer 
                     isOpen={isCommandDrawerOpen}
                     onClose={() => setIsCommandDrawerOpen(false)}
+                />
+
+                {/* 🚨 HERMES AI MODAL */}
+                <HermesModal 
+                    projectId={activeProjectId}
+                    isOpen={isHermesOpen}
+                    onClose={() => setIsHermesOpen(false)}
                 />
             </main>
         </div>

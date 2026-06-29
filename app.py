@@ -23,6 +23,7 @@ from routes.auth import auth_bp
 from routes.master_pipeline import master_pipeline_bp
 from routes.execution import execution_bp
 from routes.war_evaluation import war_bp
+from routes.hermes import hermes_bp
 
 load_dotenv()
 
@@ -114,7 +115,8 @@ app.register_blueprint(sms_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(master_pipeline_bp)
 app.register_blueprint(execution_bp)
-app.register_blueprint(war_bp) 
+app.register_blueprint(war_bp)
+app.register_blueprint(hermes_bp) 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
