@@ -1,7 +1,7 @@
 import React, { useContext, useState, useRef, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
-export default function TopBar({ onLogout, onOpenGlossary }) {
+export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -49,7 +49,6 @@ export default function TopBar({ onLogout, onOpenGlossary }) {
     };
 
     return (
-        // 🚨 FIX: Changed z-40 to z-[45] so TopBar dropdowns sit above the wizard but below the Sidebar
         <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-[45] shadow-sm shrink-0">
             
             <div className="flex items-center gap-3 relative" ref={projectMenuRef}>
@@ -125,6 +124,15 @@ export default function TopBar({ onLogout, onOpenGlossary }) {
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Production DB</span>
                 </div>
                 
+                {/* 🚨 NEW: Global Terminal Button */}
+                <button 
+                    onClick={onOpenCommandDrawer}
+                    title="Delivery Command Interface"
+                    className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 hover:bg-slate-700 hover:text-emerald-300 hover:border-slate-500 transition-all shadow-md active:scale-95"
+                >
+                    <i className="fas fa-terminal text-xs md:text-sm"></i>
+                </button>
+
                 <div className="relative" ref={profileMenuRef}>
                     <div 
                         onClick={() => setProfileMenuOpen(!profileMenuOpen)}
