@@ -5,7 +5,7 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
     {
       id: 1,
       role: 'assistant',
-      content: "Hello! I'm Hermes, your AI assistant for the Huawei Cloud ERP migration system. I can help you with RI reconciliation, ECS deployment tracking, cost optimization, and technical recommendations. What would you like to know about your project?",
+      content: "Hello! I'm Hermes, your AI assistant powered by DeepSeek. I am securely connected to the ERP context. How can I assist your delivery today?",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -28,9 +28,18 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    // Add user message immediately
+    // 🚨 1. Build the chat history BEFORE updating state
+    const currentInput = input.trim();
+    
+    // Filter out system errors, we only want to send valid conversation history to the LLM
+    const conversationHistory = messages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content }));
+        
+    // Append the message we are about to send
+    conversationHistory.push({ role: 'user', content: currentInput });
+
     setMessages(prev => [...prev, userMessage]);
-    const currentInput = input;
     setInput('');
     setLoading(true);
 
@@ -44,7 +53,7 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
         },
         body: JSON.stringify({
           projectId,
-          query: currentInput
+          messages: conversationHistory // 🚨 2. Send the ENTIRE history to the backend proxy
         })
       });
       
@@ -54,7 +63,6 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
         throw new Error(data.error || 'Failed to get response from Hermes');
       }
       
-      // Add assistant response
       const assistantMessage = {
         id: messages.length + 2,
         role: 'assistant',
@@ -64,11 +72,10 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
       
       setMessages(prev => [...prev, assistantMessage]);
     } catch (err) {
-      // Add error message
       const errorMessage = {
         id: messages.length + 2,
         role: 'system',
-        content: `Error: ${err.message || 'Failed to connect to Hermes'}`,
+        content: `Error: ${err.message || 'Failed to connect to Hermes Backend'}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -90,7 +97,7 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
       {
         id: 1,
         role: 'assistant',
-        content: "Hello! I'm Hermes, your AI assistant for the Huawei Cloud ERP migration system. I can help you with RI reconciliation, ECS deployment tracking, cost optimization, and technical recommendations. What would you like to know about your project?",
+        content: "Memory cleared. How can I help you?",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ]);
@@ -102,14 +109,14 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-900 to-indigo-800 text-white">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
-              <i className="fas fa-robot text-lg"></i>
+              <i className="fas fa-brain text-lg"></i>
             </div>
             <div>
-              <h2 className="text-lg font-bold">Hermes AI Assistant</h2>
-              <p className="text-sm text-purple-100">Conversational AI for Huawei Cloud ERP</p>
+              <h2 className="text-lg font-bold">Hermes Local Agent</h2>
+              <p className="text-sm text-purple-200">DeepSeek v3.2 Core connected to ERP</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -118,7 +125,7 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
               className="px-3 py-1.5 text-sm bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
               title="Clear conversation"
             >
-              <i className="fas fa-eraser mr-1"></i> Clear
+              <i className="fas fa-eraser mr-1"></i> Clear Context
             </button>
             <button
               onClick={onClose}
@@ -133,19 +140,15 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 custom-scrollbar">
           {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-2xl p-4 ${
+            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] rounded-2xl p-4 ${
                   msg.role === 'user'
-                    ? 'bg-blue-600 text-white rounded-br-none'
+                    ? 'bg-indigo-600 text-white rounded-br-none shadow-md'
                     : msg.role === 'assistant'
                     ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-sm'
-                    : 'bg-red-50 border border-red-200 text-red-700 rounded-bl-none'
+                    : 'bg-rose-50 border border-rose-200 text-rose-700 rounded-bl-none'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -153,17 +156,17 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
                     {msg.role === 'user' ? (
                       <i className="fas fa-user text-sm"></i>
                     ) : msg.role === 'assistant' ? (
-                      <i className="fas fa-robot text-sm"></i>
+                      <i className="fas fa-robot text-sm text-purple-600"></i>
                     ) : (
                       <i className="fas fa-exclamation-triangle text-sm"></i>
                     )}
-                    <span className="text-xs font-bold">
-                      {msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Hermes' : 'System'}
+                    <span className={`text-xs font-black uppercase tracking-wider ${msg.role === 'assistant' && 'text-purple-700'}`}>
+                      {msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Hermes' : 'System Alert'}
                     </span>
                   </div>
-                  <span className="text-xs opacity-70">{msg.timestamp}</span>
+                  <span className="text-[10px] font-bold opacity-50">{msg.timestamp}</span>
                 </div>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                <div className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
                   {msg.content}
                 </div>
               </div>
@@ -174,7 +177,7 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
               <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-white border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center space-x-2 mb-2">
                   <i className="fas fa-robot text-sm text-purple-600"></i>
-                  <span className="text-xs font-bold">Hermes</span>
+                  <span className="text-xs font-bold text-purple-700">Hermes</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-purple-600 rounded-full animate-pulse"></div>
@@ -192,49 +195,29 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
           <div className="flex space-x-2">
             <div className="flex-1 relative">
               <textarea
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none pr-10"
-                placeholder="Ask Hermes about your project... (Press Enter to send)"
+                className="w-full p-3 pl-4 pr-12 border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-indigo-500 resize-none transition-colors text-sm"
+                placeholder="Ask Hermes to analyze project matrices or write local code..."
                 rows={2}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={loading}
               />
-              <div className="absolute right-2 bottom-2 text-xs text-gray-400">
-                {loading ? 'Hermes is thinking...' : 'Enter to send'}
-              </div>
             </div>
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 font-bold"
+              className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center transition-transform active:scale-95 shadow-md"
             >
-              {loading ? (
-                <>
-                  <i className="fas fa-spinner fa-spin"></i>
-                  <span>Sending...</span>
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-paper-plane"></i>
-                  <span>Send</span>
-                </>
-              )}
+              {loading ? <i className="fas fa-circle-notch fa-spin text-xl"></i> : <i className="fas fa-paper-plane text-xl"></i>}
             </button>
           </div>
-          <div className="mt-2 text-xs text-gray-500 flex items-center justify-between">
+          <div className="mt-3 text-[10px] font-bold text-slate-400 flex items-center justify-between uppercase tracking-widest">
             <div>
-              <span className="font-medium">Project:</span> {projectId || 'Global'}
+              <span className="text-slate-600">Context Loaded:</span> {projectId && projectId !== 'none' ? `Project ID [${projectId}]` : 'Global Mode'}
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                <span>You</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-purple-600 rounded-full"></div>
-                <span>Hermes AI</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Local Agent Connected
             </div>
           </div>
         </div>
