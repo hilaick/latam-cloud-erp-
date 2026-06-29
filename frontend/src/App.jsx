@@ -16,6 +16,7 @@ import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
 import GlobalGlossary from './components/utils/GlobalGlossary';
+import GlobalCommandDrawer from './components/utils/GlobalCommandDrawer'; // 🚨 NEW IMPORT
 
 function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -24,8 +25,9 @@ function App() {
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     
-    // 🚨 GLOSSARY MODAL STATE
+    // MODAL STATES
     const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+    const [isCommandDrawerOpen, setIsCommandDrawerOpen] = useState(false); // 🚨 NEW STATE
 
     const { 
         projects, 
@@ -36,7 +38,6 @@ function App() {
         refreshData 
     } = useContext(ERPContext);
 
-    // 🚨 FIX: Auto-redirect to Global Dashboard if 'Global' is selected while in a Project Wizard
     useEffect(() => {
         if (activePhase === 'wizard' && (!activeProjectId || activeProjectId === 'global')) {
             setActivePhase('home');
@@ -135,10 +136,10 @@ function App() {
             <Sidebar />
             
             <main className="flex-1 overflow-y-auto relative custom-scrollbar bg-slate-50/50 flex flex-col pb-24 lg:pb-0">
-                {/* 🚨 Pass the Glossary trigger down to TopBar */}
                 <TopBar 
                     onLogout={handleLogout} 
                     onOpenGlossary={() => setIsGlossaryOpen(true)} 
+                    onOpenCommandDrawer={() => setIsCommandDrawerOpen(true)} // 🚨 PASSED PROP
                 />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
@@ -173,10 +174,15 @@ function App() {
                     )}
                 </div>
                 
-                {/* 🚨 Bind the controlled Glossary component */}
                 <GlobalGlossary 
                     isOpen={isGlossaryOpen} 
                     onClose={() => setIsGlossaryOpen(false)} 
+                />
+
+                {/* 🚨 THE GLOBAL SLIDING DRAWER */}
+                <GlobalCommandDrawer 
+                    isOpen={isCommandDrawerOpen}
+                    onClose={() => setIsCommandDrawerOpen(false)}
                 />
             </main>
         </div>
