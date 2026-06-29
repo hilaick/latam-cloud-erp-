@@ -59,8 +59,10 @@ def hermes_query():
         data = request.get_json()
         project_id = data.get('projectId')
         chat_history = data.get('messages', []) # Now receiving the FULL history from React
+        user_query = data.get('query', '') # Extract the current query
         
         # 1. Gather Context
+        context = {}
         if project_id and project_id != 'global' and project_id != 'none':
             context = build_hermes_context(project_id)
             context_string = json.dumps(context, indent=2)
@@ -85,8 +87,15 @@ You are currently in GLOBAL view (no specific project selected). Guide the user 
                 "content": msg.get("content", "")
             })
 
-        # 3. Generate response using the enhanced text generator
-        reply = generate_hermes_response(query, context, chat_history)
+        # 3. Use the enhanced text generator WITH system context
+        # Since we're using the same DeepSeek v3.2 configuration as the current system,
+        # we'll use the enhanced text generator that reads the ERP context
+        
+        # Build the final query with system context
+        final_query = f"{system_instruction}\n\nUser Query: {user_query}"
+        
+        # Generate response using the enhanced text generator
+        reply = generate_hermes_response(user_query, context, chat_history)
         
         return jsonify({
             'response': reply,
