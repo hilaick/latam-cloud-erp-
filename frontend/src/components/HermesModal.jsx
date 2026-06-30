@@ -167,8 +167,21 @@ const HermesModal = ({ projectId, isOpen, onClose }) => {
                   <span className="text-[10px] font-bold opacity-50">{msg.timestamp}</span>
                 </div>
                 <div className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                  {msg.content}
-                </div>
+  {msg.content.split('```').map((part, index) => {
+    // Every odd index is inside a markdown code block (```)
+    if (index % 2 !== 0) {
+      // Remove the language identifier (like 'text' or 'bash') from the first line
+      const lines = part.split('\n');
+      const code = lines.length > 1 ? lines.slice(1).join('\n') : part;
+      return (
+        <div key={index} className="my-3 bg-gray-900 text-green-400 p-3 rounded-lg font-mono text-xs overflow-x-auto shadow-inner border border-gray-700">
+          {code}
+        </div>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  })}
+</div>
               </div>
             </div>
           ))}
