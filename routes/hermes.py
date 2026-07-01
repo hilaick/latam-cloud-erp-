@@ -6,12 +6,12 @@ Streams tokens from the local DeepSeek engine piece-by-piece, removing all timeo
 """
 
 from flask import Blueprint, request, jsonify
-from flask_socketio import emit
+# from flask_socketio import emit  # Temporarily disabled
 import json
 import logging
 import requests
 from models import Customer, ProjectData, db
-from app import socketio  # Hook directly into initialized real-time engine
+# from app import socketio  # Temporarily disabled
 
 logger = logging.getLogger(__name__)
 hermes_bp = Blueprint('hermes', __name__)
@@ -44,7 +44,7 @@ def build_hermes_context(project_id):
             
     return context
 
-@socketio.on('hermes_query_stream')
+# @socketio.on('hermes_query_stream')  # Temporarily disabled
 def handle_hermes_stream(payload):
     """
     Asynchronous message receiver thread. Keeps a persistent connection open
@@ -92,7 +92,7 @@ Break down execution guidelines and delivery methodologies with absolute analyti
         response = requests.post(LOAD_BALANCER_URL, headers=headers, json=llm_payload, stream=True, timeout=180)
         
         if response.status_code != 200:
-            emit('hermes_error', {'error': f"DeepSeek balancing layer rejected frame with code {response.status_code}"})
+#             emit('hermes_error', {'error': f"DeepSeek balancing layer rejected frame with code {response.status_code}"})
             return
 
         # 4. Read incoming network buffer chunks byte-by-byte as they leave the GPU
@@ -109,16 +109,17 @@ Break down execution guidelines and delivery methodologies with absolute analyti
                         token = chunk_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
                         if token:
                             # Transmit text token instantly over the persistent TCP socket
-                            emit('hermes_token', {'text': token})
+                            # emit('hermes_token', {'text': token})
+                            pass  # Temporarily disabled
                     except Exception as parse_err:
                         continue
 
         # Signal clear transmission completion
-        emit('hermes_done', {'status': 'success'})
+#         emit('hermes_done', {'status': 'success'})
 
     except Exception as e:
         logger.error(f"WebSocket streaming pipeline collapsed: {str(e)}", exc_info=True)
-        emit('hermes_error', {'error': f"Kernel Link Exception: {str(e)}"})
+#         emit('hermes_error', {'error': f"Kernel Link Exception: {str(e)}"})
 
 # Keep the original synchronous fallback endpoint for legacy components
 @hermes_bp.route('/api/hermes/query', methods=['POST'])
