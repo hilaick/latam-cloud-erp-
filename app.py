@@ -24,6 +24,9 @@ from routes.master_pipeline import master_pipeline_bp
 from routes.execution import execution_bp
 from routes.war_evaluation import war_bp
 from routes.hermes import hermes_bp
+from routes.hermes_cli_api import hermes_cli_bp
+from routes.telegram_bot_integration import telegram_bot_bp
+from routes.telegram_test import telegram_test_bp
 
 load_dotenv()
 
@@ -33,6 +36,10 @@ mimetypes.add_type('text/css', '.css')
 basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')
 app = Flask(__name__, static_folder=dist_folder)
+
+# Initialize SocketIO for real-time updates
+from routes.telegram_bridge import init_socketio
+socketio = init_socketio(app)
 
 # Cache busting version
 def get_js_version():
@@ -116,7 +123,10 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(master_pipeline_bp)
 app.register_blueprint(execution_bp)
 app.register_blueprint(war_bp)
-app.register_blueprint(hermes_bp) 
+app.register_blueprint(hermes_bp)
+app.register_blueprint(hermes_cli_bp)
+app.register_blueprint(telegram_bot_bp)
+app.register_blueprint(telegram_test_bp) 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -740,4 +750,5 @@ def link_quotation_to_cr():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=9119, debug=True, use_reloader=False)
+    # Run with SocketIO support
+    socketio.run(app, host='0.0.0.0', port=9119, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)

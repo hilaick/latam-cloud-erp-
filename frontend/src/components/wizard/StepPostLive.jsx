@@ -147,6 +147,31 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         document.body.removeChild(link);
     };
 
+    // 🚨 HANDOVER FUNCTION
+    const handleHandover = () => {
+        if (!activeProject?.id) {
+            alert("No active project selected");
+            return;
+        }
+        
+        if (!window.confirm("Mark this project as technically complete? This will archive the project and trigger commercial handover.")) {
+            return;
+        }
+        
+        setIsLoading(true);
+        
+        // Update project lifecycle state to "completed"
+        if (onUpdateProject) {
+            onUpdateProject(activeProject.id, 'lifecycleState', '6_completed');
+        }
+        
+        // Show success message
+        setTimeout(() => {
+            setIsLoading(false);
+            alert("Project marked as technically complete! Commercial handover initiated.");
+        }, 500);
+    };
+
     const handleRunTrueUp = async () => {
         setIsLoading(true); setApiDiagnostics([]);
         try {

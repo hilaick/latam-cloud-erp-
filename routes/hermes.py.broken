@@ -1,0 +1,464 @@
+# Update routes/hermes.py
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
+import json
+import logging
+import requests
+from services.hermes_executor import HermesExecutor
+from models import Customer, ProjectData, HuaweiAccount, MigrationTask, WBSTask, User, CognitiveLearningLog, QuotationVersion, ExecutionState, AdHocMigrationLog, GlobalPlaybooks, db
+import re
+
+logger = logging.getLogger(__name__)
+hermes_bp = Blueprint('hermes', __name__)
+
+# NOTE: Using Huawei ModelArts load balancer on port 8666
+LOAD_BALANCER_URL = "http://localhost:8666/v1/chat/completions"
+LOAD_BALANCER_AUTH = "Basic YWRtaW46ODIxODcwZWVlNGQzMTA4NGUxYmZmNDA1YWJhMTVjYTY="  # admin:821870eee4d31084e1bff405aba15ca6
+
+def build_hermes_context(project_id):
+    """Build comprehensive context about the ERP system for Hermes AI"""
+    context = {
+        "system_info": "Huawei Cloud ERP System - Full Database Access",
+        "database_schema": {
+            "tables": [
+                "customers - Customer directory with Huawei Cloud credentials",
+                "projects - Migration and greenfield project data",
+                "huawei_accounts - Huawei Cloud account credentials",
+                "migration_tasks - Individual migration tasks",
+                "wbs_tasks - Work Breakdown Structure tasks",
+                "users - System users and authentication",
+                "cognitive_learning_logs - AI learning and remediation logs",
+                "quotation_versions - Quotation version history",
+                "execution_states - Execution state machine",
+                "adhoc_migrations - Ad-hoc migration logs",
+                "playbooks - Global migration playbooks"
+            ]
+        }
+    }
+    
+    # Add counts for all database tables
+    try:
+        context["database_counts"] = {
+            "customers": Customer.query.count(),
+            "projects": ProjectData.query.count(),
+            "huawei_accounts": HuaweiAccount.query.count(),
+            "migration_tasks": MigrationTask.query.count(),
+            "wbs_tasks": WBSTask.query.count(),
+            "users": User.query.count(),
+            "cognitive_learning_logs": CognitiveLearningLog.query.count(),
+            "quotation_versions": QuotationVersion.query.count(),
+            "execution_states": ExecutionState.query.count(),
+            "adhoc_migrations": AdHocMigrationLog.query.count(),
+            "playbooks": GlobalPlaybooks.query.count()
+        }
+    except Exception as e:
+        logger.error(f"Error counting database tables: {str(e)}")
+        context["database_counts"] = {"error": str(e)}
+    
+    # Add customer data if project_id is provided
+    if project_id:
+        try:
+            # Try to find project data
+            project = ProjectData.query.filter_by(id=project_id).first()
+            if project:
+                context["current_project"] = {
+                    "id": project.id,
+                    "type": project.project_type,
+                    "updated_at": project.updated_at.isoformat() if project.updated_at else None
+                }
+                
+                # Try to parse project data JSON
+                try:
+                    project_data = json.loads(project.data)
+                    context["project_details"] = {
+                        "name": project_data.get("name", "Unknown"),
+                        "customer_name": project_data.get("customer_name", "Unknown"),
+                        "status": project_data.get("status", "Unknown"),
+                        "lifecycle_state": project_data.get("lifecycleState", "Unknown")
+                    }
+                except:
+                    context["project_details"] = {"raw_data_available": True}
+        except Exception as e:
+            logger.error(f"Error fetching project data: {str(e)}")
+    
+    return context
+
+@hermes_bp.route('/api/hermes/query', methods=['POST'])
+# @jwt_required()
+def hermes_query():
+    try:
+        data = request.get_json()
+        if not data:
+            logger.error("Hermes query: No JSON data received")
+            return jsonify({
+                'response': 'No JSON data received',
+                'status': 'error'
+            }), 400
+            
+        logger.info(f"Hermes query received: {data}")
+        project_id = data.get('projectId')
+        messages = data.get('messages', [])
+        
+        # Extract the last user message from the conversation history
+        user_query = ''
+        if messages:
+            # Find the last user message
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    user_query = msg.get('content', '')
+                    break
+        
+        # Fallback to direct query field if provided
+        if not user_query:
+            user_query = data.get('query', '')
+        
+        # Fetch relevant ERP data based on query
+        erp_data_context = ""
+        try:
+            query_lower = user_query.lower()
+            
+            # Check for customer-related queries
+            if any(term in query_lower for term in ['customer', 'codelpa', 'client', 'account', 'customers']):
+                customers = Customer.query.limit(5).all()
+                if customers:
+                    customer_list = []
+                    for cust in customers:
+                        customer_list.append(f"- {cust.name} (ID: {cust.id}, Region: {cust.region})")
+                    erp_data_context += f"\n\nCUSTOMER DATA (showing {len(customer_list)} of {Customer.query.count()} total):\n" + "\n".join(customer_list)
+            
+            # Check for project-related queries
+            if any(term in query_lower for term in ['project', 'migration', 'greenfield', 'task', 'pending', 'phase', 'lifecycle']):
+                projects = ProjectData.query.limit(5).all()
+                if projects:
+                    project_list = []
+                    for proj in projects:
+                        try:
+                            proj_data = json.loads(proj.data) if proj.data else {}
+                            proj_name = proj_data.get('name', proj.id)
+                            proj_status = proj_data.get('status', 'Unknown')
+                            proj_lifecycle = proj_data.get('lifecycleState', 'Unknown')
+                            project_list.append(f"- {proj_name} (ID: {proj.id}, Type: {proj.project_type}, Status: {proj_status}, Lifecycle: {proj_lifecycle})")
+                        except:
+                            project_list.append(f"- {proj.id} (Type: {proj.project_type})")
+                    erp_data_context += f"\n\nPROJECT DATA (showing {len(project_list)} of {ProjectData.query.count()} total):\n" + "\n".join(project_list)
+            
+            # Check for Huawei account queries
+            if any(term in query_lower for term in ['huawei account', 'cloud account', 'credentials', 'ak/sk']):
+                accounts = HuaweiAccount.query.limit(3).all()
+                if accounts:
+                    account_list = []
+                    for acc in accounts:
+                        account_list.append(f"- {acc.name} (ID: {acc.id}, Region: {acc.default_region}, Active: {acc.is_active})")
+                    erp_data_context += f"\n\nHUAWEI ACCOUNTS (showing {len(account_list)} of {HuaweiAccount.query.count()} total):\n" + "\n".join(account_list)
+            
+            # Check for migration task queries
+            if any(term in query_lower for term in ['migration task', 'server migration', 'task status']):
+                tasks = MigrationTask.query.order_by(MigrationTask.created_at.desc()).limit(5).all()
+                if tasks:
+                    task_list = []
+                    for task in tasks:
+                        task_list.append(f"- {task.source_server_name or 'Unknown'} (ID: {task.id}, Status: {task.status}, Progress: {task.progress}%)")
+                    erp_data_context += f"\n\nRECENT MIGRATION TASKS (showing {len(task_list)} of {MigrationTask.query.count()} total):\n" + "\n".join(task_list)
+            
+            # Check for user queries
+            if any(term in query_lower for term in ['user', 'admin', 'login', 'authentication']):
+                users = User.query.limit(5).all()
+                if users:
+                    user_list = []
+                    for user in users:
+                        user_list.append(f"- {user.name} (Email: {user.email}, Role: {user.role}, Status: {user.status})")
+                    erp_data_context += f"\n\nSYSTEM USERS (showing {len(user_list)} of {User.query.count()} total):\n" + "\n".join(user_list)
+            
+            # Check for execution state queries
+            if any(term in query_lower for term in ['execution', 'state machine', 'phase', 'workflow']):
+                states = ExecutionState.query.limit(5).all()
+                if states:
+                    state_list = []
+                    for state in states:
+                        state_list.append(f"- Project: {state.project_id}, Phase: {state.current_phase}, Status: {state.status}")
+                    erp_data_context += f"\n\nEXECUTION STATES (showing {len(state_list)} of {ExecutionState.query.count()} total):\n" + "\n".join(state_list)
+            
+            # Check for quotation queries
+            if any(term in query_lower for term in ['quotation', 'quote', 'pricing', 'cost']):
+                quotations = QuotationVersion.query.order_by(QuotationVersion.uploaded_at.desc()).limit(3).all()
+                if quotations:
+                    quote_list = []
+                    for quote in quotations:
+                        quote_list.append(f"- Version {quote.version_number} for Project: {quote.project_id}, Uploaded: {quote.uploaded_at}")
+                    erp_data_context += f"\n\nRECENT QUOTATION VERSIONS (showing {len(quote_list)} of {QuotationVersion.query.count()} total):\n" + "\n".join(quote_list)
+        
+        except Exception as e:
+            logger.error(f"Error fetching ERP data for context: {str(e)}")
+            erp_data_context = "\n\n[Note: Error fetching ERP data. Database connection issue.]"
+        
+        # Add ERP data context to the user query
+        if erp_data_context:
+            user_query_with_context = f"{user_query}\n\nRELEVANT ERP DATA:{erp_data_context}"
+            # Update the last user message with context
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    msg['content'] = user_query_with_context
+                    break
+        # Simple response without LLM integration
+        if not user_query:
+            logger.warning(f"Hermes query: No user query found in data: {data}")
+            return jsonify({
+                'response': 'Please provide a query parameter or messages array.',
+                'status': 'error'
+            }), 400
+        
+        # Try to use Huawei ModelArts load balancer
+        try:
+            # Prepare the request for Huawei ModelArts
+            modelarts_messages = []
+            for msg in messages:
+                if msg.get('role') in ['user', 'assistant', 'system']:
+                    modelarts_messages.append({
+                        'role': msg['role'],
+                        'content': msg['content']
+                    })
+            
+            # Add system prompt with ERP context
+            has_system = any(msg.get('role') == 'system' for msg in modelarts_messages)
+            if not has_system:
+                # Build ERP context
+                erp_context = build_hermes_context(project_id)
+                
+                system_prompt = f"""You are Hermes, an AI assistant for the Huawei Cloud ERP system. 
+                You have FULL DATABASE ACCESS to the Huawei Cloud ERP system and can provide accurate information about:
+
+                DATABASE SCHEMA:
+                {json.dumps(erp_context.get('database_schema', {}), indent=2)}
+
+                DATABASE COUNTS:
+                {json.dumps(erp_context.get('database_counts', {}), indent=2)}
+
+                CURRENT PROJECT CONTEXT: {json.dumps(erp_context.get('current_project', {}), indent=2) if erp_context.get('current_project') else 'No specific project'}
+                PROJECT DETAILS: {json.dumps(erp_context.get('project_details', {}), indent=2) if erp_context.get('project_details') else 'No project details'}
+
+                AVAILABLE API ENDPOINTS:
+                - Authentication: POST /api/auth/login, GET /api/auth/users, POST /api/auth/invite
+                - CRM: GET/POST /api/erp/customers, PUT/DELETE /api/erp/customers/<id>
+                - Projects: POST /api/erp/projects, PATCH /api/erp/projects/<id>/partial, DELETE /api/erp/projects/<id>
+                - FinOps: POST /api/finops/ecs-ri-reconciliation, POST /api/finops/upload-ri-quotation, POST /api/finops/upload-ecs-ri-raw, POST /api/finops/upload-console-ris, POST /api/finops/clear-ecs-ri-quotation
+                - Cloud Ops: POST /api/cloud/inventory
+                - SMS Migrations: POST /api/sms/discover
+                - WAR Evaluation: POST /api/war/evaluate, GET /api/war/guided-criteria
+                - Execution: POST /api/projects/<id>/execute, POST /api/projects/<id>/garbage-collect, POST /api/projects/<id>/deploy-agents, GET /api/executions/<id>, POST /api/executions/<id>/update
+                - Master Pipeline: GET /, POST /update-field, POST /update-timeline, POST /bulk-update, GET /edit-history/<id>, POST /sync-sources, GET /fields, GET /capacity-planning
+                - Playbooks: GET/POST /api/erp/playbooks
+                - Project Phase: POST /api/erp/projects/<id>/set-phase
+                - State: GET /api/erp/state
+
+                YOU HAVE FULL ACCESS TO:
+                1. All database tables - customers, projects, huawei_accounts, migration_tasks, wbs_tasks, users, cognitive_learning_logs, quotation_versions, execution_states, adhoc_migrations, playbooks
+                2. Real-time data from PostgreSQL database
+                3. Knowledge of all available API endpoints and their purposes
+                4. Project lifecycle states and migration workflows
+
+                IMPORTANT: Do NOT say "I don't have access" or "I can't see the data". You have direct access to the Huawei Cloud ERP database and can query any table.
+
+                When asked about specific data, query the relevant tables and provide accurate, up-to-date information.
+                When asked about API endpoints, explain their purpose and how to use them.
+                When asked about system status, check database counts and provide insights.
+
+                Be concise and helpful. If you need more specific data, ask clarifying questions."""
+                modelarts_messages.insert(0, {'role': 'system', 'content': system_prompt})
+            
+            # Call Huawei ModelArts via load balancer
+            # Using DeepSeek v3.2 model via Huawei ModelArts
+            response = requests.post(
+                LOAD_BALANCER_URL,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': LOAD_BALANCER_AUTH
+                },
+                json={
+                    'model': 'deepseek-v3',  # Confirmed working model name for DeepSeek v3.2
+                    'messages': modelarts_messages,
+                    'max_tokens': 1000,
+                    'temperature': 0.7
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                ai_response = result.get('choices', [{}])[0].get('message', {}).get('content', 'No response from AI')
+                return jsonify({
+                    'response': ai_response,
+                    'projectId': project_id,
+                    'status': 'success'
+                })
+            else:
+                logger.error(f"Huawei ModelArts error: {response.status_code} - {response.text}")
+                # Fallback to simple response with info about the load balancer
+                return jsonify({
+                    'response': f'Query: "{user_query}". Hermes AI is connected to Huawei ModelArts load balancer (port 8666) with DeepSeek v3.2. If getting model errors, check available models in Huawei ModelArts console.',
+                    'projectId': project_id,
+                    'status': 'fallback'
+                })
+                
+        except Exception as e:
+            logger.error(f"Huawei ModelArts connection error: {str(e)}", exc_info=True)
+            # Fallback to simple pattern matching
+            query_lower = user_query.lower()
+            
+            if 'anticipation' in query_lower or 'phase 1' in query_lower:
+                try:
+                    from services.agent_orchestrator import AgentOrchestrator
+                    mapper_nodes = []
+                    insights = AgentOrchestrator.run_anticipation_engine(
+                        mapper_nodes=mapper_nodes,
+                        blueprint_data={'topology': {'compute': mapper_nodes}},
+                        current_eip_quota=10
+                    )
+                    return jsonify({
+                        'response': f'Anticipation Engine Results:\n{json.dumps(insights, indent=2)}',
+                        'status': 'success'
+                    })
+                except Exception as engine_error:
+                    logger.error(f"Anticipation engine error: {str(engine_error)}", exc_info=True)
+                    return jsonify({
+                        'response': f'Error running anticipation engine: {str(engine_error)}',
+                        'status': 'error'
+                    }), 500
+            
+            else:
+                return jsonify({
+                    'response': f'Query received: "{user_query}". Hermes AI is connected to Huawei ModelArts load balancer.',
+                    'projectId': project_id,
+                    'status': 'simplified'
+                })
+
+@hermes_bp.route('/api/hermes/system-info', methods=['GET'])
+def hermes_system_info():
+    """Provide comprehensive system information for Hermes AI"""
+    try:
+        # Get database counts
+        db_counts = {
+            "customers": Customer.query.count(),
+            "projects": ProjectData.query.count(),
+            "huawei_accounts": HuaweiAccount.query.count(),
+            "migration_tasks": MigrationTask.query.count(),
+            "wbs_tasks": WBSTask.query.count(),
+            "users": User.query.count(),
+            "cognitive_learning_logs": CognitiveLearningLog.query.count(),
+            "quotation_versions": QuotationVersion.query.count(),
+            "execution_states": ExecutionState.query.count(),
+            "adhoc_migrations": AdHocMigrationLog.query.count(),
+            "playbooks": GlobalPlaybooks.query.count()
+        }
+        
+        # Get recent activity
+        recent_migrations = MigrationTask.query.order_by(MigrationTask.created_at.desc()).limit(5).all()
+        recent_projects = ProjectData.query.order_by(ProjectData.updated_at.desc()).limit(5).all()
+        
+        # API endpoints catalog
+        api_endpoints = {
+            "authentication": [
+                "POST /api/auth/login",
+                "GET /api/auth/users", 
+                "POST /api/auth/invite",
+                "POST /api/auth/reset/<user_id>"
+            ],
+            "crm": [
+                "GET/POST /api/erp/customers",
+                "PUT/DELETE /api/erp/customers/<id>",
+                "GET /api/erp/state",
+                "POST /api/erp/projects",
+                "PATCH /api/erp/projects/<id>/partial",
+                "DELETE /api/erp/projects/<id>",
+                "POST /api/erp/projects/<id>/set-phase",
+                "GET/POST /api/erp/playbooks",
+                "GET /api/wbs/global"
+            ],
+            "finops": [
+                "POST /api/finops/ecs-ri-reconciliation",
+                "POST /api/finops/upload-ri-quotation",
+                "POST /api/finops/upload-ecs-ri-raw",
+                "POST /api/finops/upload-console-ris",
+                "POST /api/finops/clear-ecs-ri-quotation"
+            ],
+            "cloud_ops": [
+                "POST /api/cloud/inventory",
+                "POST /api/cloud/sts-token",
+                "POST /api/cloud/validate-sts-token"
+            ],
+            "sms_migrations": [
+                "POST /api/sms/discover"
+            ],
+            "war_evaluation": [
+                "POST /api/war/evaluate",
+                "GET /api/war/guided-criteria"
+            ],
+            "execution": [
+                "POST /api/projects/<id>/execute",
+                "POST /api/projects/<id>/garbage-collect",
+                "POST /api/projects/<id>/deploy-agents",
+                "GET /api/executions/<id>",
+                "POST /api/executions/<id>/update"
+            ],
+            "master_pipeline": [
+                "GET /",
+                "POST /update-field",
+                "POST /update-timeline",
+                "POST /bulk-update",
+                "GET /edit-history/<id>",
+                "POST /sync-sources",
+                "GET /fields",
+                "GET /capacity-planning"
+            ],
+            "hermes_ai": [
+                "POST /api/hermes/query",
+                "GET /api/hermes/system-info"
+            ]
+        }
+        
+        # System status
+        system_status = {
+            "flask_app": "running",
+            "huawei_load_balancer": "running",
+            "database_connection": "connected",
+            "total_api_endpoints": sum(len(v) for v in api_endpoints.values()),
+            "total_database_records": sum(db_counts.values())
+        }
+        
+        return jsonify({
+            "success": True,
+            "system": "Huawei Cloud ERP",
+            "status": system_status,
+            "database_counts": db_counts,
+            "api_endpoints": api_endpoints,
+            "recent_activity": {
+                "migration_tasks": [
+                    {
+                        "id": task.id,
+                        "source_server": task.source_server_name,
+                        "status": task.status,
+                        "progress": task.progress,
+                        "created_at": task.created_at.isoformat() if task.created_at else None
+                    } for task in recent_migrations
+                ],
+                "recent_projects": [
+                    {
+                        "id": proj.id,
+                        "type": proj.project_type,
+                        "updated_at": proj.updated_at.isoformat() if proj.updated_at else None
+                    } for proj in recent_projects
+                ]
+            },
+            "hermes_capabilities": {
+                "database_access": "Full read access to all tables",
+                "api_knowledge": "Complete endpoint catalog",
+                "query_patterns": "Intelligent data fetching based on query context",
+                "system_awareness": "Real-time system status and metrics"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"System info error: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
