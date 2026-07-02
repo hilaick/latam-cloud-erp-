@@ -16,3 +16,5 @@ html5lib==1.1
 beautifulsoup4==4.12.3
 huaweicloudsdkcore>=3.1.92
 huaweicloudsdkbss>=3.1.92
+simple-websocket>=1.1.0
+|

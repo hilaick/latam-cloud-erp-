@@ -335,6 +335,10 @@ def get_live_inventory():
             from services.huawei_discovery import HuaweiDiscovery
             discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=data.get('region', 'la-south-2'), master_password=master_password)
             result = discovery_engine.discover_all()
+
+        else:
+            # Azure/AWS not implemented yet
+            return jsonify({"success": False, "error": f"Provider {provider} discovery not implemented yet"}), 501
         
         if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory")})
         else: return jsonify({"success": False, "error": result.get("error")}), 500

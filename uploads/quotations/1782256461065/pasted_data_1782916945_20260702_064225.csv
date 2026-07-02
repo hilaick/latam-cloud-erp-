@@ -1,0 +1,7 @@
+Required	Service	Description	Region	AZ	Billing Mode	Purchase Amount	Unit	Quantity	Specifications	Unit Price (USD)	Yearly Price (USD)	Monthly Price (USD)
+UCEMOOD02	Elastic Cloud Server 28	UCEMOOD02	LA-Mexico City2	General AZ 	Pay-per-use	730	hours	1	x86 | General computing | x0.8u.32g | 8 vCPUs | 32GiB; Ubuntu | Ubuntu 22.04 server 64bit; General Purpose SSD | 128GB; General Purpose SSD | 3122GB; 	460.27	5,523.24	460.27
+Server Backup	Cloud Backup and Recovery 1	Cloud Backup and Recovery	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Server backup vault | 12000GB; 	5,256.00	5,256.00	438.00
+Connectivity	Virtual Private Network 1	Virtual Private Network	LA-Mexico City2	General AZ 	Pay-per-use	8760	Hours	1	Professional 1 | 1PCSVPN Connection Groups; Traffic | 1GB; Traffic | 1GB; 	2,890.96	2,890.96	240.91
+	Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Dedicated | Dynamic BGP | Traffic | 24TB; 1 ; 	1,977.11	1,977.11	164.76
+Security	Host Security Service 1	Host Security Service	LA-Mexico City2	General AZ 	Monthly	1	month	1	Premium; 	13.80	165.60	13.80
+Support Plan	Support Plans 1	Support Plans	LA-Mexico City2	General AZ 	Monthly	12	month	1	Business | 1300USD/month; 	130.00	1,560.00	130.00

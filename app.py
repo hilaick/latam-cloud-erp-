@@ -25,8 +25,6 @@ from routes.execution import execution_bp
 from routes.war_evaluation import war_bp
 from routes.hermes import hermes_bp
 from routes.hermes_cli_api import hermes_cli_bp
-from routes.telegram_bot_integration import telegram_bot_bp
-from routes.telegram_test import telegram_test_bp
 
 load_dotenv()
 
@@ -37,10 +35,20 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')
 app = Flask(__name__, static_folder=dist_folder)
 
-# Initialize SocketIO for real-time updates
-from routes.telegram_bridge import init_socketio
-socketio = init_socketio(app)
+# Initialize SocketIO explicitly with full CORS and Threading support
+from flask_socketio import SocketIO
 
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",      # Crucial: Unblocks the WebSocket handshake
+    async_mode='threading',        # Crucial: Allows Werkzeug dev server to process WS
+    ping_timeout=120,              # Keeps connection alive during heavy DeepSeek loads
+    ping_interval=25
+)
+
+# Safely register Hermes real-time stream sockets
+from routes.hermes import register_hermes_sockets
+register_hermes_sockets(socketio)
 # -------------------------------------------------------------
 # Safely register Hermes real-time stream sockets here 
 # to explicitly bypass circular imports
@@ -132,9 +140,7 @@ app.register_blueprint(master_pipeline_bp)
 app.register_blueprint(execution_bp)
 app.register_blueprint(war_bp)
 app.register_blueprint(hermes_bp)
-app.register_blueprint(hermes_cli_bp)
-app.register_blueprint(telegram_bot_bp)
-app.register_blueprint(telegram_test_bp) 
+app.register_blueprint(hermes_cli_bp) 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

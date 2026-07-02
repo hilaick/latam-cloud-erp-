@@ -15,8 +15,109 @@ logger = logging.getLogger(__name__)
 def validate_vault_keys():
     data = request.json
     provider = data.get('provider')
-    # Custom validation logic
-    return jsonify({"valid": False, "error": "Unknown provider."})
+    
+    if provider == 'AWS':
+        ak = data.get('ak')
+        sk = data.get('sk')
+        
+        if not ak or not sk:
+            return jsonify({"valid": False, "error": "AWS Access Key and Secret Key are required."})
+        
+        # Basic AWS validation - check if credentials are in correct format
+        if not (ak.startswith('AKIA') and len(ak) == 20):
+            return jsonify({"valid": False, "error": "Invalid AWS Access Key format. Should start with AKIA and be 20 characters."})
+        
+        if len(sk) != 40:
+            return jsonify({"valid": False, "error": "Invalid AWS Secret Key format. Should be 40 characters."})
+        
+        # Note: We don't actually call AWS API here to avoid rate limiting
+        # In a real implementation, we would make a simple API call like list_buckets
+        return jsonify({"valid": True, "level": "Basic format validation passed"})
+    
+    elif provider == 'Azure':
+        tenant_id = data.get('azureTenant')
+        client_id = data.get('azureClient')
+        client_secret = data.get('azureSecret')
+        
+        if not tenant_id or not client_id or not client_secret:
+            return jsonify({"valid": False, "error": "Azure Tenant ID, Client ID, and Client Secret are all required."})
+        
+        # Validate Azure Tenant ID format (GUID)
+        import re
+        tenant_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        client_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        
+        if not re.match(tenant_pattern, tenant_id, re.IGNORECASE):
+            return jsonify({"valid": False, "error": "Invalid Azure Tenant ID format. Should be a GUID like '00000000-0000-0000-0000-000000000000'."})
+        
+        if not re.match(client_pattern, client_id, re.IGNORECASE):
+            return jsonify({"valid": False, "error": "Invalid Azure Client ID format. Should be a GUID like '00000000-0000-0000-0000-000000000000'."})
+        
+        if len(client_secret) < 16:
+            return jsonify({"valid": False, "error": "Azure Client Secret appears too short. Minimum 16 characters recommended."})
+        
+        # Try to authenticate with Azure to validate credentials
+        try:
+            from azure.identity import ClientSecretCredential
+            from azure.mgmt.resource import SubscriptionClient
+            
+            credential = ClientSecretCredential(
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret
+            )
+            
+            # Try to get subscriptions to validate credentials
+            subscription_client = SubscriptionClient(credential)
+            subscriptions = list(subscription_client.subscriptions.list())
+            
+            if subscriptions:
+                subscription_names = [sub.display_name for sub in subscriptions[:3]]
+                return jsonify({
+                    "valid": True, 
+                    "level": "Full authentication successful",
+                    "subscriptions": subscription_names,
+                    "subscription_count": len(subscriptions)
+                })
+            else:
+                return jsonify({"valid": True, "level": "Authentication successful but no subscriptions found"})
+                
+        except ImportError:
+            # Azure SDK not installed - fall back to basic validation
+            return jsonify({"valid": True, "level": "Basic format validation passed (Azure SDK not installed)"})
+        except Exception as e:
+            error_msg = str(e)
+            if "AADSTS700016" in error_msg:
+                return jsonify({"valid": False, "error": "Application not found in tenant. Check Client ID and Tenant ID."})
+            elif "AADSTS7000215" in error_msg:
+                return jsonify({"valid": False, "error": "Invalid client secret provided."})
+            elif "AADSTS50034" in error_msg:
+                return jsonify({"valid": False, "error": "User account does not exist in tenant."})
+            elif "AADSTS50020" in error_msg:
+                return jsonify({"valid": False, "error": "User account is from identity provider 'live.com'."})
+            elif "AADSTS50076" in error_msg:
+                return jsonify({"valid": False, "error": "Multi-factor authentication required."})
+            elif "AADSTS50079" in error_msg:
+                return jsonify({"valid": False, "error": "Multi-factor enrollment required."})
+            elif "AADSTS50126" in error_msg:
+                return jsonify({"valid": False, "error": "Invalid username or password."})
+            elif "AADSTS50173" in error_msg:
+                return jsonify({"valid": False, "error": "Expired password."})
+            elif "AADSTS50058" in error_msg:
+                return jsonify({"valid": False, "error": "User interaction required."})
+            elif "AADSTS90002" in error_msg:
+                return jsonify({"valid": False, "error": "Tenant not found. Check Tenant ID."})
+            elif "AADSTS9002313" in error_msg:
+                return jsonify({"valid": False, "error": "Invalid request. Malformed or empty request."})
+            elif "AADSTS900144" in error_msg:
+                return jsonify({"valid": False, "error": "The request body must contain client_secret."})
+            elif "subscription" in error_msg.lower():
+                return jsonify({"valid": False, "error": f"Authentication successful but subscription access issue: {error_msg}"})
+            else:
+                return jsonify({"valid": False, "error": f"Azure authentication failed: {error_msg}"})
+    
+    else:
+        return jsonify({"valid": False, "error": f"Unknown provider: {provider}. Supported: AWS, Azure"})
 
 @crm_bp.route('/api/erp/state', methods=['GET'])
 @jwt_required()
