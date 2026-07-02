@@ -336,9 +336,18 @@ def get_live_inventory():
             discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=data.get('region', 'la-south-2'), master_password=master_password)
             result = discovery_engine.discover_all()
 
+        elif provider == 'AWS':
+            from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
+            discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
+            result = discovery_engine.run_aws_agentless_discovery(region=data.get('region', 'us-east-1'))
+
+        elif provider == 'Azure':
+            from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
+            discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
+            result = discovery_engine.run_azure_agentless_discovery(subscription_id=data.get('subscription_id'))
+
         else:
-            # Azure/AWS not implemented yet
-            return jsonify({"success": False, "error": f"Provider {provider} discovery not implemented yet"}), 501
+            return jsonify({"success": False, "error": f"Provider {provider} discovery not supported."}), 400
         
         if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory")})
         else: return jsonify({"success": False, "error": result.get("error")}), 500
