@@ -322,12 +322,15 @@ def clear_ecs_ri_quotation():
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
 def get_live_inventory():
+    """Fetches Live Inventory via Provider SDKs using Vault Credentials."""
     try:
         data = request.get_json()
         customer_id = data.get('customer_id')
         provider = data.get('provider', 'Huawei')
         
-        if not customer_id: return jsonify({"success": False, "error": "Customer ID is required."}), 400
+        if not customer_id: 
+            return jsonify({"success": False, "error": "Customer ID is required."}), 400
+            
         customer = Customer.query.get(customer_id)
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
@@ -349,6 +352,41 @@ def get_live_inventory():
         else:
             return jsonify({"success": False, "error": f"Provider {provider} discovery not supported."}), 400
         
-        if result.get("success"): return jsonify({"success": True, "inventory": result.get("inventory")})
-        else: return jsonify({"success": False, "error": result.get("error")}), 500
-    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+        if result.get("success"): 
+            return jsonify({"success": True, "inventory": result.get("inventory")})
+        else: 
+            return jsonify({"success": False, "error": result.get("error")}), 500
+            
+    except Exception as e: 
+        logger.error(f"Live Inventory Discovery Error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@cloud_ops_bp.route('/api/migration/tools', methods=['POST'])
+@jwt_required()
+def get_migration_tools():
+    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
+    try:
+        data = request.get_json()
+        
+        # Support both payload structures depending on how the frontend sends it
+        target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
+        
+        if not target_architecture:
+            return jsonify({
+                "success": False, 
+                "error": "No target architecture nodes provided for analysis."
+            }), 400
+            
+        from services.tool_recommender import ToolRecommender
+        
+        # Run the intelligence engine
+        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
+        
+        return jsonify({
+            "success": True,
+            "data": recommendations
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
