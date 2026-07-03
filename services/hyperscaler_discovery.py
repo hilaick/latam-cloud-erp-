@@ -1,5 +1,7 @@
+import os
 import boto3
 from models import Customer
+from services.credential_manager import get_credential_manager
 
 class HyperscalerDiscoveryEngine:
     def __init__(self, customer_id):
@@ -62,7 +64,19 @@ class HyperscalerDiscoveryEngine:
             return {"success": False, "error": "Azure requires a specific Subscription ID."}
 
         try:
-            credential = ClientSecretCredential(tenant_id=self.customer.azure_tenant_id, client_id=self.customer.azure_client_id, client_secret=self.customer.azure_client_secret)
+            # Decrypt the Azure client secret
+            import json
+            master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+            cm = get_credential_manager(master_password)
+            
+            # The secret is stored as encrypted JSON
+            try:
+                encrypted_data = json.loads(self.customer.azure_client_secret)
+                decrypted_secret = cm.decrypt_credentials(encrypted_data)[0]  # [0] is AK, [1] is SK placeholder
+            except Exception as e:
+                return {"success": False, "error": f"Failed to decrypt Azure credentials: {str(e)}"}
+            
+            credential = ClientSecretCredential(tenant_id=self.customer.azure_tenant_id, client_id=self.customer.azure_client_id, client_secret=decrypted_secret)
             resource_client = ResourceManagementClient(credential, subscription_id)
             inventory = {"compute": [], "databases": [], "network": [], "storage": [], "security": [], "raw_inventory": []}
 

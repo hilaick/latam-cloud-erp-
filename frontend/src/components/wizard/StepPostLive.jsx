@@ -401,6 +401,114 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             </div>
                         )}
                         
+                        {/* COMMERCIAL TRUE-UP RECOMMENDATIONS (NON-RI FOCUS) */}
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 shadow-sm mt-8">
+                            <h4 className="font-black text-lg text-blue-800 mb-4 flex items-center">
+                                <i className="fas fa-chart-line text-blue-600 mr-3"></i> Commercial True-Up Recommendations (Non-RI Focus)
+                            </h4>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* PAY-AS-YOU-GO VALIDATION */}
+                                <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm">
+                                    <h5 className="font-black text-sm text-blue-700 mb-3 flex items-center">
+                                        <i className="fas fa-clock text-blue-500 mr-2"></i> PAYG Billing Validation
+                                    </h5>
+                                    <ul className="space-y-2 text-sm text-slate-700">
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Compute Hours:</strong> Verify ECS instances match quoted runtime (720h/month baseline)</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Storage Usage:</strong> Confirm OBS/CBR consumption aligns with allocated quotas</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Network Traffic:</strong> Validate EIP bandwidth usage vs included traffic</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Service Tiers:</strong> Check HSS/WAF/other services match SOW specifications</span>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                {/* USAGE ANALYSIS & OPTIMIZATION */}
+                                <div className="bg-white rounded-xl border border-indigo-100 p-5 shadow-sm">
+                                    <h5 className="font-black text-sm text-indigo-700 mb-3 flex items-center">
+                                        <i className="fas fa-search-dollar text-indigo-500 mr-2"></i> Usage Analysis & Optimization
+                                    </h5>
+                                    <ul className="space-y-2 text-sm text-slate-700">
+                                        <li className="flex items-start">
+                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Peak vs Off-Peak:</strong> Identify utilization patterns for potential RI conversion</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Storage Tiering:</strong> Analyze access patterns for cold/warm/hot optimization</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Future RI Planning:</strong> Generate data for potential reserved instance purchases</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
+                                            <span><strong>Budget Forecasting:</strong> Refine projections based on actual consumption</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* KEY METRICS FOR NON-RI PROJECTS */}
+                            <div className="mt-6 bg-white rounded-xl border border-slate-200 p-5">
+                                <h5 className="font-black text-sm text-slate-800 mb-4 flex items-center">
+                                    <i className="fas fa-list-check text-slate-600 mr-2"></i> True-Up Checklist (Non-RI Projects)
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-100">
+                                        <div className="text-2xl font-black text-blue-700">1</div>
+                                        <div className="text-xs font-bold uppercase tracking-widest text-blue-600 mt-2">Hourly Compute Validation</div>
+                                        <p className="text-xs text-slate-600 mt-1">Actual runtime vs quoted hours</p>
+                                    </div>
+                                    <div className="text-center p-4 bg-emerald-50 rounded-lg border border-emerald-100">
+                                        <div className="text-2xl font-black text-emerald-700">2</div>
+                                        <div className="text-xs font-bold uppercase tracking-widest text-emerald-600 mt-2">Storage Usage Analysis</div>
+                                        <p className="text-xs text-slate-600 mt-1">Actual consumption vs allocated</p>
+                                    </div>
+                                    <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-100">
+                                        <div className="text-2xl font-black text-purple-700">3</div>
+                                        <div className="text-xs font-bold uppercase tracking-widest text-purple-600 mt-2">Network Traffic Audit</div>
+                                        <p className="text-xs text-slate-600 mt-1">Actual egress vs included quota</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ACTION ITEMS */}
+                            <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <h6 className="font-black text-xs uppercase tracking-widest text-slate-700 mb-2 flex items-center">
+                                    <i className="fas fa-bullseye mr-2"></i> Recommended Actions
+                                </h6>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex items-start">
+                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">1</div>
+                                        <span><strong>Establish Baseline:</strong> Document actual vs quoted consumption for future comparisons</span>
+                                    </div>
+                                    <div className="flex items-start">
+                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">2</div>
+                                        <span><strong>Identify Optimization:</strong> Pinpoint over/under utilization for cost savings</span>
+                                    </div>
+                                    <div className="flex items-start">
+                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">3</div>
+                                        <span><strong>Build Governance:</strong> Create framework for ongoing cost monitoring</span>
+                                    </div>
+                                    <div className="flex items-start">
+                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">4</div>
+                                        <span><strong>Future RI Planning:</strong> Generate data-driven recommendations for reserved instances</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="bg-slate-800 p-6 rounded-xl flex justify-between items-center shadow-lg mt-8">
                             <div>
                                 <h4 className="font-black text-white text-lg">Delivery Exit Gate</h4>

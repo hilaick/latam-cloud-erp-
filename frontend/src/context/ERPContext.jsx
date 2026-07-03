@@ -141,6 +141,42 @@ export const ERPProvider = ({ children }) => {
         }
     }, []);
 
+    // Helper function to determine region based on country
+    const getRegionFromCountry = (country) => {
+        if (!country) return 'la-south-2'; // Default fallback
+        
+        const countryLower = country.toLowerCase();
+        
+        // Mexico
+        if (countryLower.includes('mexico')) return 'la-north-2';
+        
+        // Brazil
+        if (countryLower.includes('brazil')) return 'sa-brazil-1';
+        
+        // Chile
+        if (countryLower.includes('chile')) return 'la-south-2';
+        
+        // Argentina
+        if (countryLower.includes('argentina')) return 'sa-argentina-1';
+        
+        // Central America & Caribbean - default to Mexico
+        const centralAmerica = ['guatemala', 'belize', 'el salvador', 'honduras', 'nicaragua', 'costa rica', 'panama'];
+        const caribbean = ['dominican republic', 'haiti', 'cuba', 'jamaica', 'puerto rico', 'trinidad', 'tobago', 'bahamas', 'barbados', 'dominica', 'grenada', 'saint lucia', 'saint vincent', 'antigua', 'barbuda', 'saint kitts', 'nevis'];
+        
+        if (centralAmerica.some(ca => countryLower.includes(ca)) || 
+            caribbean.some(cb => countryLower.includes(cb))) {
+            return 'la-north-2'; // Mexico region for Central America/Caribbean
+        }
+        
+        // South America (excluding Brazil, Chile, Argentina)
+        const southAmerica = ['colombia', 'venezuela', 'ecuador', 'peru', 'bolivia', 'uruguay', 'paraguay', 'guyana', 'suriname', 'french guiana'];
+        if (southAmerica.some(sa => countryLower.includes(sa))) {
+            return 'sa-brazil-1'; // Brazil region for other South America
+        }
+        
+        return 'la-south-2'; // Default fallback
+    };
+
     const handleUpdateProject = (id, fieldOrObj, value) => {
         const targetProject = projects.find(p => String(p.id) === String(id));
         if (!targetProject) return;
@@ -172,7 +208,8 @@ export const ERPProvider = ({ children }) => {
                 
                 if (!existingCustomer) {
                     const newCust = { 
-                        id: `CUST-${Date.now()}`, name: custName, ak: '', sk: '', region: 'la-south-2', 
+                        id: `CUST-${Date.now()}`, name: custName, ak: '', sk: '', 
+                        region: getRegionFromCountry(modifiedProject.country), // Use country-based region mapping
                         country: modifiedProject.country || 'TBD', sa: modifiedProject.sa || 'TBD', 
                         partner: modifiedProject.partner || 'TBD', techContact: modifiedProject.techContact || 'TBD' 
                     };
@@ -181,9 +218,13 @@ export const ERPProvider = ({ children }) => {
                     fetch('/api/erp/customers', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newCust) });
                     
                     modifiedProject.customerId = newCust.id;
+                    // Inherit region from newly created customer
+                    modifiedProject.region = newCust.region;
                     fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
                 } else {
                     modifiedProject.customerId = existingCustomer.id;
+                    // Inherit region from existing customer
+                    modifiedProject.region = existingCustomer.region || getRegionFromCountry(modifiedProject.country);
                     fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
                 }
             }
@@ -194,12 +235,19 @@ export const ERPProvider = ({ children }) => {
 
     const handleAddProject = (newProject) => {
         const custName = newProject.customerName?.trim();
+        let customerRegion = getRegionFromCountry(newProject.country); // Use country-based mapping
+        
         if (custName) {
             const existingCustomer = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
             if (existingCustomer) {
                 newProject = { ...newProject, customerId: existingCustomer.id };
+                // Inherit region from customer, default to country-based mapping if not set
+                customerRegion = existingCustomer.region || getRegionFromCountry(newProject.country);
             }
         }
+        
+        // Add region to project (inherit from customer or use country-based mapping)
+        newProject = { ...newProject, region: customerRegion };
         
         setProjects(prev => [newProject, ...prev]);
         fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newProject) })

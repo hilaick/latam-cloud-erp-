@@ -347,7 +347,9 @@ def get_live_inventory():
         elif provider == 'Azure':
             from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
             discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
-            result = discovery_engine.run_azure_agentless_discovery(subscription_id=data.get('subscription_id'))
+            # Use subscription_id from request or fall back to customer record
+            subscription_id = data.get('subscription_id') or customer.azure_subscription_id
+            result = discovery_engine.run_azure_agentless_discovery(subscription_id=subscription_id)
 
         else:
             return jsonify({"success": False, "error": f"Provider {provider} discovery not supported."}), 400
@@ -363,6 +365,66 @@ def get_live_inventory():
 
 @cloud_ops_bp.route('/api/migration/tools', methods=['POST'])
 @jwt_required()
+def get_migration_tools():
+    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
+    try:
+        data = request.get_json()
+        
+        # Support both payload structures depending on how the frontend sends it
+        target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
+        
+        if not target_architecture:
+            return jsonify({
+                "success": False, 
+                "error": "No target architecture nodes provided for analysis."
+            }), 400
+            
+        from services.tool_recommender import ToolRecommender
+        
+        # Run the intelligence engine
+        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
+        
+        return jsonify({
+            "success": True,
+            "data": recommendations
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
+@jwt_required()
+def get_migration_recommendations():
+    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
+    try:
+        data = request.get_json()
+        
+        # Support both payload structures depending on how the frontend sends it
+        target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
+        
+        if not target_architecture:
+            return jsonify({
+                "success": False, 
+                "error": "No target architecture nodes provided for analysis."
+            }), 400
+            
+        from services.tool_recommender import ToolRecommender
+        
+        # Run the intelligence engine
+        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
+        
+        return jsonify({
+            "success": True,
+            "data": recommendations
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def get_migration_tools():
     """Analyzes target architecture and recommends Huawei Cloud migration tools."""
     try:

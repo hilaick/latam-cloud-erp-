@@ -1,0 +1,12 @@
+Service	Description	Region	AZ	Billing Mode	Purchase Amount	Unit	Quantity	Specifications	Unit Price (USD)	Discounted Price (USD)
+Elastic Cloud Server 1	ALUCEMOOD02	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | s7n.large.4 | 2 vCPUs | 8GiB; Ubuntu | Ubuntu 22.04 server 64bit; General Purpose SSD | 512GB; 	1,182.25	98.52
+Elastic Cloud Server 4	EgresadosMau02	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | s7n.large.4 | 2 vCPUs | 8GiB; Debian | Debian 11.1.0 64bit; General Purpose SSD | 100GB; 	713.06	59.42
+Elastic Cloud Server 5	EGRESADOSWP-RESTAURADA-2	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | x0.2u.8g | 2 vCPUs | 8GiB; Debian | Debian 11.1.0 64bit; General Purpose SSD | 100GB; 	569.40	47.45
+Elastic Cloud Server 6	REDMINEPNUD03	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | x0.2u.8g | 2 vCPUs | 8GiB; Debian | Debian 11.1.0 64bit; General Purpose SSD | 100GB; 	569.40	47.45
+Elastic Cloud Server 7	SRVCIDIIA	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | s7n.2xlarge.2 | 8 vCPUs | 16GiB; Debian | Debian 11.1.0 64bit; General Purpose SSD | 256GB; 	2,302.83	191.90
+Elastic Cloud Server 17	UCEAZIDIOMAS	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | x0.2u.8g | 2 vCPUs | 8GiB; Ubuntu | Ubuntu 22.04 server 64bit; General Purpose SSD | 256GB; 	747.05	62.25
+Elastic Cloud Server 21	UCEAZREVISTAUC	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	x86 | General computing | x0.2u.8g | 2 vCPUs | 8GiB; Ubuntu | Ubuntu 22.04 server 64bit; General Purpose SSD | 100GB; 	569.40	47.45
+Cloud Backup and Recovery 1	Cloud Backup and Recovery	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Server backup vault | 4000GB; 	1,752.00	146.00
+Host Security Service 1	Host Security Service	LA-Mexico City2	General AZ 	Monthly	1	month	7	Premium; 	13.80	96.60
+Support Plans 1	Support Plans	LA-Mexico City2	General AZ 	Monthly	1	month	1	Business | 1100USD/month; 	110.00	110.00
+Total Price									8,529.19	907.05

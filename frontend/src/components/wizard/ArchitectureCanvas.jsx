@@ -130,7 +130,7 @@ export default function ArchitectureCanvas({ title, nodes = [], onNodeClick, reg
         );
     };
 
-    const displayRegion = regionFilter === 'All' ? 'Cross-Region View' : regionFilter || 'la-south-2';
+    const displayRegion = regionFilter === 'All' ? 'Cross-Region View' : regionFilter || 'Not Specified';
 
     return (
         <div ref={containerRef} className={`w-full h-full flex flex-col relative overflow-hidden bg-[#f8fafc] ${isFullscreen ? 'fixed inset-0 z-[9999]' : ''}`}>

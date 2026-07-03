@@ -143,9 +143,18 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 Go to Post-Live Phase <i className="fas fa-arrow-right"></i>
                             </button>
                         ) : (
-                            <button disabled className="w-full px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
-                                <i className="fas fa-lock"></i> Post-Live Locked
-                            </button>
+                            <div className="flex gap-2">
+                                <button disabled className="flex-1 px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
+                                    <i className="fas fa-lock"></i> Post-Live Locked
+                                </button>
+                                <button 
+                                    onClick={() => updatePhase('COMPLETED', 'DONE')}
+                                    className="px-4 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-transform active:scale-95 flex items-center justify-center gap-2"
+                                    title="Debug: Mark execution as complete"
+                                >
+                                    <i className="fas fa-wrench"></i> Debug Complete
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
