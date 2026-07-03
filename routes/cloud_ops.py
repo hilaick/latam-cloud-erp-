@@ -62,12 +62,24 @@ def ecs_ri_reconciliation():
         
         from services.ecs_ri_reconciler_v2 import ECSRIReconciler
         reconciler = ECSRIReconciler(raw_ak=raw_ak, raw_sk=raw_sk, region=project_region)
-        
         reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris, console_ris)
+        
+        # 🚨 FIX: Trigger the Enhanced Commercial True-Up engine and inject it into the response
+        trueup_recommendations = {}
+        try:
+            from services.enhanced_commercial_trueup import EnhancedCommercialTrueUp
+            if reconciliation_result and 'matrix' in reconciliation_result:
+                trueup_engine = EnhancedCommercialTrueUp(reconciliation_result['matrix'])
+                trueup_recommendations = trueup_engine.generate_recommendations()
+        except ImportError:
+            logger.warning("EnhancedCommercialTrueUp module not found, skipping recommendations.")
+        except Exception as te:
+            logger.error(f"Error generating true-up recommendations: {te}")
         
         return jsonify({
             "success": True,
             "reconciliation": reconciliation_result,
+            "trueup_recommendations": trueup_recommendations,
             "active_subs_status": {
                 "total_quoted": reconciliation_result["summary"].get("total_quoted", 0),
                 "total_live": reconciliation_result["summary"].get("total_live", 0),
@@ -124,7 +136,6 @@ def upload_ri_quotation():
             
         ecs_ri_servers = []
         for _, row in df_ri.iterrows():
-            # STRICT FILTER: Only allow ECS. Ignore EIPs, NATs, Backup Vaults.
             if col_svc:
                 service_val = str(row.get(col_svc, '')).lower()
                 if 'elastic cloud server' not in service_val and 'ecs' not in service_val:
@@ -274,7 +285,6 @@ def upload_console_ris():
             
             spec_raw = str(row[col_spec]).strip() if col_spec else 'Unknown'
             
-            # Reverses Huawei's Backwards "96 vCPUs | 768 GiB | m7n.24xlarge.8" into standard format
             if '|' in spec_raw:
                 parts = [p.strip() for p in spec_raw.split('|')]
                 if len(parts) == 3 and ('vcpu' in parts[0].lower() or 'cpu' in parts[0].lower()):
@@ -322,7 +332,6 @@ def clear_ecs_ri_quotation():
 @cloud_ops_bp.route('/api/cloud/inventory', methods=['POST'])
 @jwt_required()
 def get_live_inventory():
-    """Fetches Live Inventory via Provider SDKs using Vault Credentials."""
     try:
         data = request.get_json()
         customer_id = data.get('customer_id')
@@ -347,7 +356,6 @@ def get_live_inventory():
         elif provider == 'Azure':
             from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
             discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
-            # Use subscription_id from request or fall back to customer record
             subscription_id = data.get('subscription_id') or customer.azure_subscription_id
             result = discovery_engine.run_azure_agentless_discovery(subscription_id=subscription_id)
 
@@ -366,89 +374,32 @@ def get_live_inventory():
 @cloud_ops_bp.route('/api/migration/tools', methods=['POST'])
 @jwt_required()
 def get_migration_tools():
-    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
     try:
         data = request.get_json()
-        
-        # Support both payload structures depending on how the frontend sends it
         target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
-        
         if not target_architecture:
-            return jsonify({
-                "success": False, 
-                "error": "No target architecture nodes provided for analysis."
-            }), 400
+            return jsonify({"success": False, "error": "No target architecture nodes provided for analysis."}), 400
             
         from services.tool_recommender import ToolRecommender
-        
-        # Run the intelligence engine
         recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
         
-        return jsonify({
-            "success": True,
-            "data": recommendations
-        })
-        
+        return jsonify({"success": True, "data": recommendations})
     except Exception as e:
         logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
-
 
 @cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
 @jwt_required()
 def get_migration_recommendations():
-    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
     try:
         data = request.get_json()
-        
-        # Support both payload structures depending on how the frontend sends it
         target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
-        
         if not target_architecture:
-            return jsonify({
-                "success": False, 
-                "error": "No target architecture nodes provided for analysis."
-            }), 400
+            return jsonify({"success": False, "error": "No target architecture nodes provided for analysis."}), 400
             
         from services.tool_recommender import ToolRecommender
-        
-        # Run the intelligence engine
         recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
-        
-        return jsonify({
-            "success": True,
-            "data": recommendations
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-def get_migration_tools():
-    """Analyzes target architecture and recommends Huawei Cloud migration tools."""
-    try:
-        data = request.get_json()
-        
-        # Support both payload structures depending on how the frontend sends it
-        target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
-        
-        if not target_architecture:
-            return jsonify({
-                "success": False, 
-                "error": "No target architecture nodes provided for analysis."
-            }), 400
-            
-        from services.tool_recommender import ToolRecommender
-        
-        # Run the intelligence engine
-        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
-        
-        return jsonify({
-            "success": True,
-            "data": recommendations
-        })
-        
+        return jsonify({"success": True, "data": recommendations})
     except Exception as e:
         logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
