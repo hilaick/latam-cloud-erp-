@@ -118,7 +118,7 @@ export default function LiveCloudNOC() {
 
             {/* Rest of the inventory rendering remains identical to original... */}
             {inventory && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-fade-in">
                     {/* ECS Servers */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
                         <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
@@ -170,6 +170,100 @@ export default function LiveCloudNOC() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                    
+                    {/* EIP Cost Leakage Panel */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <h3 className="font-black text-slate-800"><i className="fas fa-money-bill-wave text-amber-500 mr-2"></i> EIP Cost Leakage</h3>
+                            <span className="bg-amber-100 text-amber-800 px-2 rounded font-black text-xs">
+                                {inventory.network?.filter(n => n.type === "EIP").length || 0} EIPs
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-auto custom-scrollbar">
+                            {inventory.network?.filter(n => n.type === "EIP").length === 0 ? (
+                                <div className="p-8 text-center text-slate-400">
+                                    <i className="fas fa-check-circle text-2xl mb-3 opacity-50"></i>
+                                    <p className="font-bold">No Elastic IPs found</p>
+                                    <p className="text-xs mt-1">All EIPs are properly bound</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Warning banner for unbound EIPs */}
+                                    {inventory.network?.filter(n => n.type === "EIP" && n.is_unbound_risk).length > 0 && (
+                                        <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl">
+                                            <div className="flex items-center mb-2">
+                                                <i className="fas fa-exclamation-triangle text-rose-500 mr-2"></i>
+                                                <span className="font-black text-rose-700 text-sm">COST LEAKAGE DETECTED</span>
+                                            </div>
+                                            <p className="text-xs text-rose-600">
+                                                {inventory.network?.filter(n => n.type === "EIP" && n.is_unbound_risk).length} unbound EIPs costing ~$
+                                                {inventory.network
+                                                    ?.filter(n => n.type === "EIP" && n.is_unbound_risk)
+                                                    .reduce((sum, eip) => sum + (eip.monthly_cost_estimate || 0), 0)
+                                                    .toFixed(2)}/month
+                                            </p>
+                                            <div className="mt-3 flex gap-2">
+                                                <button 
+                                                    onClick={() => window.open('/api/cloud/eip-cleanup-report?projectId=' + projectId + '&customerId=' + selectedCustomerId, '_blank')}
+                                                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-lg transition-colors"
+                                                >
+                                                    <i className="fas fa-file-invoice-dollar mr-1"></i> Cost Report
+                                                </button>
+                                                <button 
+                                                    onClick={() => window.open('/api/cloud/eip-cleanup?projectId=' + projectId + '&customerId=' + selectedCustomerId + '&dryRun=true', '_blank')}
+                                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-black rounded-lg transition-colors"
+                                                >
+                                                    <i className="fas fa-eye mr-1"></i> Dry Run
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0">
+                                            <tr>
+                                                <th className="p-3">IP Address</th>
+                                                <th className="p-3">Status</th>
+                                                <th className="p-3">Cost/Month</th>
+                                                <th className="p-3">Bound To</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {inventory.network
+                                                ?.filter(n => n.type === "EIP")
+                                                .map(eip => (
+                                                    <tr key={eip.id} className={`hover:bg-slate-50 ${eip.is_unbound_risk ? 'bg-rose-50' : ''}`}>
+                                                        <td className="p-3 font-mono text-[10px] font-bold">{eip.public_ip}</td>
+                                                        <td className="p-3">
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
+                                                                eip.status === 'ACTIVE' 
+                                                                    ? (eip.is_unbound_risk ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700')
+                                                                    : 'bg-slate-100 text-slate-600'
+                                                            }`}>
+                                                                {eip.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3 font-bold">
+                                                            ${(eip.monthly_cost_estimate || 0).toFixed(2)}
+                                                            {eip.is_unbound_risk && (
+                                                                <span className="ml-1 text-[8px] text-rose-600 font-black">⚠️ LEAKING</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-3 text-[10px]">
+                                                            {eip.bound_to ? (
+                                                                <span className="text-slate-700">{eip.bound_to}</span>
+                                                            ) : (
+                                                                <span className="text-rose-600 font-bold">UNBOUND</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
