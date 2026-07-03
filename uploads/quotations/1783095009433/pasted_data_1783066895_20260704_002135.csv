@@ -1,0 +1,29 @@
+Service Description Region
+Elastic Cloud Server 1 Servidores LA-Mexico City2
+Type x86 | General computing-basic | t6.large.1 | 2 vCPUs | 2GiB
+Image AlmaLinux | AlmaLinux 9.4 64bit
+System Disk General Purpose SSD | 40GB
+Relational Database Service 1 Relational Database Service LA-Mexico City2
+Type General AZ | MySQL | 5.7 | Single | General-purpose | 2vCPUs, 4GB 
+Storage Cloud SSD | 40GB
+Object Storage Service 1 Object Storage Service LA-Mexico City2
+Storage Space Standard | 2300GB | Single-AZ storage | Object storage | Storage Duration:1month
+Internet Outbound Traffic 0GB
+API requests (read) 0x 10,000 requests
+API requests (write) 0x 10,000 requests
+API requests (delete) 0x 1,000 requests
+Pull Traffic 0GB
+Cross-Region Replication Traffic 0GB
+API Gateway 1 API Gateway LA-Mexico City2
+Edition Basic
+Bandwidth 3Mbit/s
+FunctionGraph 1 FunctionGraph LA-Mexico City2
+Requests (1 million counts/Month) 90
+Metering duration (GB-second) 1125000
+Elastic IP 1 Elastic IP LA-Mexico City2
+Bandwidth Price Dedicated | Dynamic BGP | Traffic | 100GB x3
+EIP Price 3PCS
+Relational Database Service 3 Relational Database Service LA-Mexico City2
+Type General AZ | MySQL | 5.7 | Read replica | General-purpose | 2vCPUs, 4GB 
+Cloud Backup and Recovery 1 Cloud Backup and Recovery LA-Mexico City2
+Vault Type Server backup vault | 1000GB

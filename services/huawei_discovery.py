@@ -217,9 +217,52 @@ class HuaweiDiscovery:
                         eip_region = Region(id=target_region, endpoint=f"https://vpc.{target_region}.myhuaweicloud.com")
                         eip_client = EipClient.new_builder().with_credentials(region_creds).with_region(eip_region).build()
                         for eip in eip_client.list_publicips(ListPublicipsRequest(limit=100)).publicips or []: 
-                            inventory["network"].append({"id": eip.id, "name": eip.alias or eip.public_ip_address, "type": "EIP", "public_ip_address": eip.public_ip_address, "region": target_region})
+                            # Capture EIP binding status
+                            port_id = getattr(eip, 'port_id', None)
+                            is_bound = bool(port_id)
+                            bound_to = None
+                            bound_resource_id = None
+                            bound_resource_name = None
+                            
+                            if is_bound:
+                                # Try to determine what it's bound to
+                                # Check if it's bound to an ECS
+                                for server in inventory["compute"]:
+                                    if server.get("private_ip_address") and hasattr(eip, 'private_ip_address'):
+                                        if server["private_ip_address"] == eip.private_ip_address:
+                                            bound_to = "ECS"
+                                            bound_resource_id = server.get("id")
+                                            bound_resource_name = server.get("name")
+                                            break
+                                # If not ECS, check other resources
+                                if not bound_to:
+                                    bound_to = "ELB/NAT/Gateway"
+                            
+                            # Calculate monthly cost estimate (approximate)
+                            bandwidth_size = getattr(eip, 'bandwidth_size', 0)
+                            monthly_cost_estimate = bandwidth_size * 0.1  # Approx $0.10 per Mbps/month
+                            
+                            inventory["network"].append({
+                                "id": eip.id, 
+                                "name": eip.alias or eip.public_ip_address, 
+                                "type": "EIP", 
+                                "public_ip_address": eip.public_ip_address, 
+                                "region": target_region,
+                                "port_id": port_id,
+                                "is_bound": is_bound,
+                                "bound_to": bound_to,
+                                "bound_resource_id": bound_resource_id,
+                                "bound_resource_name": bound_resource_name,
+                                "status": getattr(eip, 'status', 'Unknown'),
+                                "bandwidth_size": bandwidth_size,
+                                "bandwidth_name": getattr(eip, 'bandwidth_name', 'Unknown'),
+                                "created_at": getattr(eip, 'create_time', 'Unknown'),
+                                "monthly_cost_estimate": round(monthly_cost_estimate, 2),
+                                "is_unbound_risk": not is_bound and bandwidth_size > 0,
+                                "risk_level": "HIGH" if not is_bound and bandwidth_size >= 100 else "MEDIUM" if not is_bound and bandwidth_size >= 50 else "LOW" if not is_bound else "NONE"
+                            })
                     except Exception as e: 
-                        pass
+                        inventory["diagnostics"].append(f"[{target_region}] EIP Error: {str(e)}")
 
                 if HAS_VPN:
                     try:

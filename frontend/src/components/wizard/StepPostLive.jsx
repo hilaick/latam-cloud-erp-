@@ -747,6 +747,91 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                     <div><h4 className="font-black text-emerald-800 text-sm">Technical Scope Validated</h4><p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. Please proceed to Commercial True-Up.</p></div>
                                 </div>
                             )}
+
+                            {/* Unbound EIPs Cost Leakage Warning */}
+                            {hasNocScanned && (() => {
+                                const networkItems = nocData?.raw?.network || [];
+                                const eips = networkItems.filter(item => item.type === 'EIP');
+                                const unboundEips = eips.filter(eip => !eip.is_bound && eip.bandwidth_size > 0);
+                                const totalUnboundBandwidth = unboundEips.reduce((sum, eip) => sum + (eip.bandwidth_size || 0), 0);
+                                const estimatedMonthlyCost = totalUnboundBandwidth * 0.1; // $0.10 per Mbps/month
+                                
+                                if (unboundEips.length > 0) {
+                                    return (
+                                        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6 shadow-inner relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h4 className="font-black text-amber-800 text-lg mb-1"><i className="fas fa-money-bill-wave mr-2"></i> Cost Leakage Detected</h4>
+                                                    <p className="text-xs text-amber-700 font-medium">Unbound EIPs are incurring charges. Review and clean up to optimize costs.</p>
+                                                </div>
+                                                <div className="bg-amber-100 text-amber-800 px-3 py-1 rounded-lg font-black text-sm">
+                                                    {unboundEips.length} Unbound EIPs
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-3 mb-4">
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
+                                                        <div className="text-2xl font-black text-amber-700">{unboundEips.length}</div>
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Unbound EIPs</div>
+                                                    </div>
+                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
+                                                        <div className="text-2xl font-black text-amber-700">{totalUnboundBandwidth} Mbps</div>
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Total Bandwidth</div>
+                                                    </div>
+                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
+                                                        <div className="text-2xl font-black text-amber-700">${estimatedMonthlyCost.toFixed(2)}</div>
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Monthly Cost</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="bg-white border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                                                    <div className="text-xs font-black text-amber-800 uppercase tracking-widest mb-2">Unbound EIPs List</div>
+                                                    <div className="space-y-1">
+                                                        {unboundEips.slice(0, 5).map((eip, idx) => (
+                                                            <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-amber-100 last:border-0">
+                                                                <div className="font-mono font-bold">{eip.public_ip_address}</div>
+                                                                <div className="text-amber-700 font-black">{eip.bandwidth_size} Mbps</div>
+                                                                <div className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                                    eip.bandwidth_size >= 100 ? 'bg-rose-100 text-rose-700' :
+                                                                    eip.bandwidth_size >= 50 ? 'bg-amber-100 text-amber-700' :
+                                                                    'bg-blue-100 text-blue-700'
+                                                                }`}>
+                                                                    {eip.bandwidth_size >= 100 ? 'HIGH' : eip.bandwidth_size >= 50 ? 'MEDIUM' : 'LOW'}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        {unboundEips.length > 5 && (
+                                                            <div className="text-xs text-amber-600 font-bold text-center pt-1">
+                                                                ... and {unboundEips.length - 5} more unbound EIPs
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center pt-4 border-t border-amber-200">
+                                                <div className="text-xs text-amber-700 font-medium">
+                                                    <i className="fas fa-lightbulb mr-1"></i> Run cleanup script: <code className="bg-amber-100 px-2 py-0.5 rounded font-mono">python3 services/eip_cleanup.py</code>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setDetailsModal({ 
+                                                        show: true, 
+                                                        category: 'unbound_eips', 
+                                                        label: 'Unbound EIPs Cost Leakage', 
+                                                        items: unboundEips 
+                                                    })}
+                                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm transition-colors"
+                                                >
+                                                    <i className="fas fa-trash-alt mr-2"></i> View Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
                         </div>
                     )}
                 </div>

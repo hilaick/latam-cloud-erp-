@@ -79,7 +79,14 @@ export default function GlobalDashboard() {
                     <div className="space-y-4">
                         {activeProjects.filter(p=>p.health==='Red').map(p => (
                             <div key={p.id} className="p-5 bg-rose-50 border border-rose-200 rounded-xl flex justify-between items-center shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigateToProject(p.id)}>
-                                <div><div className="font-black text-base text-rose-900">{p.name}</div><div className="text-xs text-rose-700 mt-1 font-medium">{p.blocker}</div></div>
+                                <div>
+                                    <div className="font-black text-base text-rose-900">{p.name}</div>
+                                    <div className="text-xs text-rose-700 mt-1 font-medium flex items-center gap-2">
+                                        <span className="bg-rose-100 px-2 py-0.5 rounded text-rose-800 font-bold">{p.customerName || 'No Customer'}</span>
+                                        <span>•</span>
+                                        <span>{p.blocker}</span>
+                                    </div>
+                                </div>
                                 <div className="font-black text-xl text-rose-800 bg-white px-3 py-1 rounded-lg border border-rose-100 shadow-sm">{fm(p.mrr)}</div>
                             </div>
                         ))}
@@ -91,7 +98,14 @@ export default function GlobalDashboard() {
                     <div className="space-y-4">
                         {activeProjects.filter(p=>p.date && p.date !== 'TBD').slice(0,5).map(p => (
                             <div key={p.id} className="p-5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center shadow-sm cursor-pointer hover:border-emerald-300 transition-colors" onClick={() => onNavigateToProject(p.id)}>
-                                <div><div className="font-black text-base text-slate-800">{p.name}</div><div className="text-xs text-slate-500 mt-1 font-bold">Lead: {p.sa}</div></div>
+                                <div>
+                                    <div className="font-black text-base text-slate-800">{p.name}</div>
+                                    <div className="text-xs text-slate-500 mt-1 font-bold flex items-center gap-2">
+                                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700">{p.customerName || 'No Customer'}</span>
+                                        <span>•</span>
+                                        <span>Lead: {p.sa}</span>
+                                    </div>
+                                </div>
                                 <div className="font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-lg text-sm shadow-sm">{formatShortDate(p.date)}</div>
                             </div>
                         ))}
