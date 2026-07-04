@@ -26,45 +26,17 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         "Anguilla", "Montserrat", "Bermuda", "Other / TBD"
     ];
 
+    // 🚨 FIX: Force all phases to be unlocked for full operations & development freedom
     const getMaxUnlockedPhase = () => {
-        if (!activeProject) return 1;
-        
-        const hasBOM = activeProject?.blueprintData || activeProject?.sowData;
-        const hasMappedNodes = activeProject?.mapperNodes && activeProject.mapperNodes.length > 0;
-        const hasBudget = activeProject?.budget || activeProject?.financials;
-        const hasExecution = activeProject?.execStatus;
-        const isCutoverReady = ['cutover_ready', 'completed'].includes(activeProject?.execStatus);
-        
-        let lifecycleState = activeProject?.lifecycleState;
-        if (!lifecycleState && activeProject?.data) {
-            const data = activeProject.data;
-            if (typeof data === 'string') {
-                try {
-                    const parsed = JSON.parse(data);
-                    lifecycleState = parsed.lifecycleState;
-                } catch (e) {
-                    console.warn('Failed to parse project data:', e);
-                }
-            } else if (typeof data === 'object') {
-                lifecycleState = data.lifecycleState;
-            }
-        }
-        const isPostLive = lifecycleState === '5_postlive' || lifecycleState === '6_completed';
-        const isExecutionPhase = lifecycleState === '4_execution';
-
-        if (isPostLive) return 5;
-        if (isCutoverReady) return 5;
-        if (isExecutionPhase || hasBudget || hasExecution) return 4;
-        if (hasMappedNodes) return 3;
-        if (hasBOM) return 2;
-        return 1;
+        return 5; 
     };
 
     const maxUnlocked = getMaxUnlockedPhase();
 
     useEffect(() => {
-        if (maxUnlocked > 1) setCurrentStep(maxUnlocked);
-    }, [activeProject?.id, maxUnlocked]);
+        // Keep user on the step they clicked instead of auto-forcing them back
+        if (!currentStep) setCurrentStep(1);
+    }, [activeProject?.id]);
 
     const phases = [
         { id: 1, label: "1. ARB Handover", full: "Architecture Review Board & BOM Setup" },
@@ -75,7 +47,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
     ];
 
     const handlePhaseClick = (phaseId) => {
-        if (phaseId <= maxUnlocked) setCurrentStep(phaseId);
+        setCurrentStep(phaseId);
     };
 
     if (!activeProject) {
@@ -111,20 +83,20 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 <div className="flex-1 w-full max-w-5xl overflow-x-auto custom-scrollbar pb-2 xl:pb-0">
                     <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 min-w-[700px]">
                         {phases.map((phase) => {
+                            // Since maxUnlocked is 5, isLocked is always false
                             const isCompleted = phase.id < maxUnlocked;
                             const isCurrent = phase.id === currentStep;
-                            const isLocked = phase.id > maxUnlocked;
+                            const isLocked = false;
 
                             let baseStyle = "flex-1 relative flex items-center justify-center py-2.5 px-3 text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all rounded-lg z-10 text-center cursor-pointer ";
                             
                             if (isLocked) baseStyle += "text-slate-400 bg-transparent cursor-not-allowed opacity-60";
                             else if (isCurrent) baseStyle += "bg-white text-indigo-600 shadow-sm border border-slate-200 scale-[1.02] z-20";
-                            else if (isCompleted) baseStyle += "text-slate-600 hover:bg-slate-200/50 bg-transparent";
+                            else baseStyle += "text-slate-600 hover:bg-slate-200/50 bg-transparent";
 
                             return (
-                                <div key={phase.id} onClick={() => handlePhaseClick(phase.id)} className={baseStyle} title={isLocked ? "Complete previous phases to unlock" : phase.full}>
+                                <div key={phase.id} onClick={() => handlePhaseClick(phase.id)} className={baseStyle} title={phase.full}>
                                     {isCompleted && !isCurrent ? <i className="fas fa-check text-emerald-500 mr-2"></i> : null}
-                                    {isLocked && <i className="fas fa-lock text-slate-300 mr-2"></i>}
                                     <span className="truncate">{phase.label}</span>
                                 </div>
                             );
@@ -138,7 +110,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                 {currentStep === 2 && <StepArchitecture project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(3)} />}
                 {currentStep === 3 && <StepPlanning project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(4)} />}
                 {currentStep === 4 && <StepExecution project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(5)} />}
-                {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} />}
+                {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} isCurrent={true} />}
             </div>
 
             {showConfig && (
