@@ -147,7 +147,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         document.body.removeChild(link);
     };
 
-    // 🚨 HANDOVER FUNCTION
     const handleHandover = () => {
         if (!activeProject?.id) {
             alert("No active project selected");
@@ -159,17 +158,51 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         }
         
         setIsLoading(true);
-        
-        // Update project lifecycle state to "completed"
         if (onUpdateProject) {
             onUpdateProject(activeProject.id, 'lifecycleState', '6_completed');
         }
         
-        // Show success message
         setTimeout(() => {
             setIsLoading(false);
             alert("Project marked as technically complete! Commercial handover initiated.");
         }, 500);
+    };
+
+    // 🚨 THE NEW AUTO-RECONCILE ENGINE (BYPASSES UPLOADS)
+    const handleAutoReconcile = async () => {
+        setIsLoading(true);
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const response = await fetch('/api/finops/ecs-ri-reconciliation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ projectId: activeProject.id })
+            });
+            const data = await response.json();
+            if (data.success) {
+                // Instantly updates the screen with your recommendations and TrueUp matrix
+                if (data.trueup_recommendations) {
+                    onUpdateProject(activeProject.id, 'trueup_recommendations', data.trueup_recommendations);
+                }
+                
+                setMatrix(data.reconciliation.matrix || []);
+                setUnquotedMatrix(data.reconciliation.unquoted_matrix || []);
+                setApiDiagnostics(data.diagnostics || []);
+                
+                onUpdateProject(activeProject.id, 'finops_matrix', { 
+                    matrix: data.reconciliation.matrix || [], 
+                    unquoted_matrix: data.reconciliation.unquoted_matrix || [], 
+                    diagnostics: data.diagnostics || [] 
+                });
+            } else {
+                alert(`Error reconciling: ${data.error}`);
+            }
+        } catch (e) {
+            console.error(e);
+            alert(`Network error: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleRunTrueUp = async () => {
@@ -182,6 +215,10 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             });
             const data = await res.json();
             if (data.success) {
+                if (data.trueup_recommendations) {
+                    onUpdateProject(activeProject.id, 'trueup_recommendations', data.trueup_recommendations);
+                }
+
                 setMatrix(data.reconciliation.matrix || []);
                 setUnquotedMatrix(data.reconciliation.unquoted_matrix || []);
                 setApiDiagnostics(data.diagnostics || []);
@@ -264,6 +301,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                     </div>
                 </div>
 
+                {/* 🚨 THE ONE-CLICK AUTO RECONCILE BUTTON */}
+                <div className="mb-8">
+                    <button onClick={handleAutoReconcile} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-600/30 transition-transform active:scale-95 flex items-center justify-center">
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-3"></i> Generating Intelligence...</> : <><i className="fas fa-magic mr-3"></i> Auto-Generate True-Up Recommendations (Bypass CSV Uploads)</>}
+                    </button>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-5 rounded-bl-full transform translate-x-4 -translate-y-4"></div>
@@ -298,11 +342,26 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                 )}
 
                 {!matrix ? (
-                    <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl"><i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i><h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3><p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quotation Baseline and run the Automated Scan to evaluate Technical Tags and Financial RI matching.</p></div>
+                    <div className="text-center py-12 text-emerald-300 border-2 border-dashed border-emerald-100 rounded-2xl"><i className="fas fa-balance-scale-right text-5xl mb-4 opacity-40"></i><h3 className="font-black text-lg text-emerald-700">Awaiting Cross-Reconciliation</h3><p className="text-xs font-medium mt-2 text-emerald-600/60 max-w-md mx-auto">Upload the Quotation Baseline or click the Auto-Generate button to evaluate Technical Tags and Financial RI matching.</p></div>
                 ) : (
                     <div className="space-y-8 animate-fade-in">
+                        
+                        {/* THE NEW RECOMMENDATION BANNER */}
+                        {activeProject?.trueup_recommendations && activeProject.trueup_recommendations.length > 0 && (
+                            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 shadow-sm mb-6">
+                                <h4 className="font-black text-sm uppercase tracking-widest text-indigo-900 mb-4 border-b border-indigo-200 pb-2"><i className="fas fa-robot mr-2"></i> Automated Intelligence Recommendations</h4>
+                                <div className="space-y-3">
+                                    {activeProject.trueup_recommendations.map((rec, idx) => (
+                                        <div key={idx} className={`p-4 rounded-lg flex items-start gap-3 border ${rec.type === 'action_required' ? 'bg-rose-50 border-rose-200 text-rose-800' : rec.type === 'financial_risk' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-white border-indigo-100 text-indigo-800'}`}>
+                                            <div className="mt-0.5"><i className={`fas ${rec.type === 'action_required' ? 'fa-shopping-cart' : rec.type === 'financial_risk' ? 'fa-fire' : 'fa-info-circle'}`}></i></div>
+                                            <div><div className="font-black text-sm">{rec.message}</div><div className="text-xs mt-1 opacity-80">{rec.action}</div></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 shadow-sm">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-emerald-800 mb-4 border-b border-emerald-200 pb-2"><i className="fas fa-dollar-sign mr-2"></i> A. Billing Focus (RI Procurement)</h4>
                                 <div className="grid grid-cols-3 gap-4">
@@ -401,114 +460,6 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                             </div>
                         )}
                         
-                        {/* COMMERCIAL TRUE-UP RECOMMENDATIONS (NON-RI FOCUS) */}
-                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 shadow-sm mt-8">
-                            <h4 className="font-black text-lg text-blue-800 mb-4 flex items-center">
-                                <i className="fas fa-chart-line text-blue-600 mr-3"></i> Commercial True-Up Recommendations (Non-RI Focus)
-                            </h4>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* PAY-AS-YOU-GO VALIDATION */}
-                                <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm">
-                                    <h5 className="font-black text-sm text-blue-700 mb-3 flex items-center">
-                                        <i className="fas fa-clock text-blue-500 mr-2"></i> PAYG Billing Validation
-                                    </h5>
-                                    <ul className="space-y-2 text-sm text-slate-700">
-                                        <li className="flex items-start">
-                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Compute Hours:</strong> Verify ECS instances match quoted runtime (720h/month baseline)</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Storage Usage:</strong> Confirm OBS/CBR consumption aligns with allocated quotas</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Network Traffic:</strong> Validate EIP bandwidth usage vs included traffic</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-check-circle text-emerald-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Service Tiers:</strong> Check HSS/WAF/other services match SOW specifications</span>
-                                        </li>
-                                    </ul>
-                                </div>
-
-                                {/* USAGE ANALYSIS & OPTIMIZATION */}
-                                <div className="bg-white rounded-xl border border-indigo-100 p-5 shadow-sm">
-                                    <h5 className="font-black text-sm text-indigo-700 mb-3 flex items-center">
-                                        <i className="fas fa-search-dollar text-indigo-500 mr-2"></i> Usage Analysis & Optimization
-                                    </h5>
-                                    <ul className="space-y-2 text-sm text-slate-700">
-                                        <li className="flex items-start">
-                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Peak vs Off-Peak:</strong> Identify utilization patterns for potential RI conversion</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Storage Tiering:</strong> Analyze access patterns for cold/warm/hot optimization</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Future RI Planning:</strong> Generate data for potential reserved instance purchases</span>
-                                        </li>
-                                        <li className="flex items-start">
-                                            <i className="fas fa-lightbulb text-amber-500 mr-2 mt-1 flex-shrink-0"></i>
-                                            <span><strong>Budget Forecasting:</strong> Refine projections based on actual consumption</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            {/* KEY METRICS FOR NON-RI PROJECTS */}
-                            <div className="mt-6 bg-white rounded-xl border border-slate-200 p-5">
-                                <h5 className="font-black text-sm text-slate-800 mb-4 flex items-center">
-                                    <i className="fas fa-list-check text-slate-600 mr-2"></i> True-Up Checklist (Non-RI Projects)
-                                </h5>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-100">
-                                        <div className="text-2xl font-black text-blue-700">1</div>
-                                        <div className="text-xs font-bold uppercase tracking-widest text-blue-600 mt-2">Hourly Compute Validation</div>
-                                        <p className="text-xs text-slate-600 mt-1">Actual runtime vs quoted hours</p>
-                                    </div>
-                                    <div className="text-center p-4 bg-emerald-50 rounded-lg border border-emerald-100">
-                                        <div className="text-2xl font-black text-emerald-700">2</div>
-                                        <div className="text-xs font-bold uppercase tracking-widest text-emerald-600 mt-2">Storage Usage Analysis</div>
-                                        <p className="text-xs text-slate-600 mt-1">Actual consumption vs allocated</p>
-                                    </div>
-                                    <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-100">
-                                        <div className="text-2xl font-black text-purple-700">3</div>
-                                        <div className="text-xs font-bold uppercase tracking-widest text-purple-600 mt-2">Network Traffic Audit</div>
-                                        <p className="text-xs text-slate-600 mt-1">Actual egress vs included quota</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* ACTION ITEMS */}
-                            <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                <h6 className="font-black text-xs uppercase tracking-widest text-slate-700 mb-2 flex items-center">
-                                    <i className="fas fa-bullseye mr-2"></i> Recommended Actions
-                                </h6>
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex items-start">
-                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">1</div>
-                                        <span><strong>Establish Baseline:</strong> Document actual vs quoted consumption for future comparisons</span>
-                                    </div>
-                                    <div className="flex items-start">
-                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">2</div>
-                                        <span><strong>Identify Optimization:</strong> Pinpoint over/under utilization for cost savings</span>
-                                    </div>
-                                    <div className="flex items-start">
-                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">3</div>
-                                        <span><strong>Build Governance:</strong> Create framework for ongoing cost monitoring</span>
-                                    </div>
-                                    <div className="flex items-start">
-                                        <div className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-black mr-2 mt-0.5 flex-shrink-0">4</div>
-                                        <span><strong>Future RI Planning:</strong> Generate data-driven recommendations for reserved instances</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="bg-slate-800 p-6 rounded-xl flex justify-between items-center shadow-lg mt-8">
                             <div>
                                 <h4 className="font-black text-white text-lg">Delivery Exit Gate</h4>
@@ -605,7 +556,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const hasNocScanned = nocData !== null;
 
-    // 🚨 FIX: Force all 5 core standard categories to render, even if the Live count is 0.
     const liveCategories = useMemo(() => {
         const raw = nocData?.raw || {};
         const normalized = {
@@ -628,7 +578,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             ...cat,
             count: normalized[cat.id]?.length || 0,
             items: normalized[cat.id] || []
-        })); // <-- We removed the .filter(c => c.count > 0) so all categories ALWAYS show!
+        })); 
     }, [nocData, hasNocScanned]);
 
     const requiresCR = hasNocScanned && liveCategories.some(cat => {
@@ -747,91 +697,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                     <div><h4 className="font-black text-emerald-800 text-sm">Technical Scope Validated</h4><p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. Please proceed to Commercial True-Up.</p></div>
                                 </div>
                             )}
-
-                            {/* Unbound EIPs Cost Leakage Warning */}
-                            {hasNocScanned && (() => {
-                                const networkItems = nocData?.raw?.network || [];
-                                const eips = networkItems.filter(item => item.type === 'EIP');
-                                const unboundEips = eips.filter(eip => !eip.is_bound && eip.bandwidth_size > 0);
-                                const totalUnboundBandwidth = unboundEips.reduce((sum, eip) => sum + (eip.bandwidth_size || 0), 0);
-                                const estimatedMonthlyCost = totalUnboundBandwidth * 0.1; // $0.10 per Mbps/month
-                                
-                                if (unboundEips.length > 0) {
-                                    return (
-                                        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6 shadow-inner relative overflow-hidden">
-                                            <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                                            <div className="flex justify-between items-start mb-4">
-                                                <div>
-                                                    <h4 className="font-black text-amber-800 text-lg mb-1"><i className="fas fa-money-bill-wave mr-2"></i> Cost Leakage Detected</h4>
-                                                    <p className="text-xs text-amber-700 font-medium">Unbound EIPs are incurring charges. Review and clean up to optimize costs.</p>
-                                                </div>
-                                                <div className="bg-amber-100 text-amber-800 px-3 py-1 rounded-lg font-black text-sm">
-                                                    {unboundEips.length} Unbound EIPs
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="space-y-3 mb-4">
-                                                <div className="grid grid-cols-3 gap-4">
-                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
-                                                        <div className="text-2xl font-black text-amber-700">{unboundEips.length}</div>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Unbound EIPs</div>
-                                                    </div>
-                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
-                                                        <div className="text-2xl font-black text-amber-700">{totalUnboundBandwidth} Mbps</div>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Total Bandwidth</div>
-                                                    </div>
-                                                    <div className="bg-white p-3 rounded-lg border border-amber-200">
-                                                        <div className="text-2xl font-black text-amber-700">${estimatedMonthlyCost.toFixed(2)}</div>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mt-1">Monthly Cost</div>
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="bg-white border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto">
-                                                    <div className="text-xs font-black text-amber-800 uppercase tracking-widest mb-2">Unbound EIPs List</div>
-                                                    <div className="space-y-1">
-                                                        {unboundEips.slice(0, 5).map((eip, idx) => (
-                                                            <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-amber-100 last:border-0">
-                                                                <div className="font-mono font-bold">{eip.public_ip_address}</div>
-                                                                <div className="text-amber-700 font-black">{eip.bandwidth_size} Mbps</div>
-                                                                <div className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
-                                                                    eip.bandwidth_size >= 100 ? 'bg-rose-100 text-rose-700' :
-                                                                    eip.bandwidth_size >= 50 ? 'bg-amber-100 text-amber-700' :
-                                                                    'bg-blue-100 text-blue-700'
-                                                                }`}>
-                                                                    {eip.bandwidth_size >= 100 ? 'HIGH' : eip.bandwidth_size >= 50 ? 'MEDIUM' : 'LOW'}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                        {unboundEips.length > 5 && (
-                                                            <div className="text-xs text-amber-600 font-bold text-center pt-1">
-                                                                ... and {unboundEips.length - 5} more unbound EIPs
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center pt-4 border-t border-amber-200">
-                                                <div className="text-xs text-amber-700 font-medium">
-                                                    <i className="fas fa-lightbulb mr-1"></i> Run cleanup script: <code className="bg-amber-100 px-2 py-0.5 rounded font-mono">python3 services/eip_cleanup.py</code>
-                                                </div>
-                                                <button 
-                                                    onClick={() => setDetailsModal({ 
-                                                        show: true, 
-                                                        category: 'unbound_eips', 
-                                                        label: 'Unbound EIPs Cost Leakage', 
-                                                        items: unboundEips 
-                                                    })}
-                                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm transition-colors"
-                                                >
-                                                    <i className="fas fa-trash-alt mr-2"></i> View Details
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
                         </div>
                     )}
                 </div>
