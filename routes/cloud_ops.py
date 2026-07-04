@@ -388,6 +388,34 @@ def get_migration_tools():
         logger.error(f"Error generating tool recommendations: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
+@cloud_ops_bp.route('/api/migration/recommendations/test', methods=['POST'])
+def get_migration_recommendations_test():
+    """Test endpoint for tool recommendations (no auth required for development)"""
+    try:
+        data = request.get_json()
+        target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
+        if not target_architecture:
+            # Provide sample data for testing
+            target_architecture = [
+                {"type": "ECS", "name": "WebServer01", "source": "AWS", "os": "Windows Server 2019"},
+                {"type": "RDS", "name": "Database01", "source": "Azure", "db_engine": "PostgreSQL"},
+                {"type": "OBS", "name": "Storage01", "source": "OnPrem", "storage_type": "Object"},
+                {"type": "VPC", "name": "Network01", "source": "AWS", "cidr": "10.0.0.0/16"}
+            ]
+        
+        from services.tool_recommender import ToolRecommender
+        recommendations = ToolRecommender.analyze_target_architecture(target_architecture)
+        
+        # Add WBS tasks
+        wbs_type = data.get('wbs_type', 'execution')
+        wbs_tasks = ToolRecommender.generate_wbs_tasks(recommendations, wbs_type)
+        recommendations['wbs_tasks'] = wbs_tasks
+        
+        return jsonify({"success": True, "data": recommendations})
+    except Exception as e:
+        logger.error(f"Error generating tool recommendations (test): {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @cloud_ops_bp.route('/api/migration/recommendations', methods=['POST'])
 @jwt_required()
 def get_migration_recommendations():

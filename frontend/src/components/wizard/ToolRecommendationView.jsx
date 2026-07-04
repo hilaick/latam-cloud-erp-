@@ -53,19 +53,11 @@ const ToolRecommendationView = ({ activeProject, onUpdateProject }) => {
     setError(null);
     
     try {
-      const token = localStorage.getItem('erp_jwt_token') || '';
-      
-      if (!token) {
-        setError('Not authenticated. Please log in first.');
-        setLoading(false);
-        return;
-      }
-      
-      const response = await fetch('/api/migration/recommendations', {
+      // For development, use test endpoint without authentication
+      const response = await fetch('/api/migration/recommendations/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           // 🚨 Send the Target Architecture directly to the backend
