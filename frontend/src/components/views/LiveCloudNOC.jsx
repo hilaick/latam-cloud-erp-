@@ -198,11 +198,7 @@ export default function LiveCloudNOC() {
                                                 <span className="font-black text-rose-700 text-sm">COST LEAKAGE DETECTED</span>
                                             </div>
                                             <p className="text-xs text-rose-600">
-                                                {inventory.network?.filter(n => n.type === "EIP" && n.is_unbound_risk).length} unbound EIPs costing ~$
-                                                {inventory.network
-                                                    ?.filter(n => n.type === "EIP" && n.is_unbound_risk)
-                                                    .reduce((sum, eip) => sum + (eip.monthly_cost_estimate || 0), 0)
-                                                    .toFixed(2)}/month
+                                                {inventory.network?.filter(n => n.type === "EIP" && n.is_unbound_risk).length} unbound EIPs detected
                                             </p>
                                             <div className="mt-3 flex gap-2">
                                                 <button 
@@ -222,45 +218,46 @@ export default function LiveCloudNOC() {
                                     )}
                                     
                                     <table className="w-full text-left text-xs">
-                                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0">
-                                            <tr>
-                                                <th className="p-3">IP Address</th>
-                                                <th className="p-3">Status</th>
-                                                <th className="p-3">Cost/Month</th>
-                                                <th className="p-3">Bound To</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {inventory.network
-                                                ?.filter(n => n.type === "EIP")
-                                                .map(eip => (
-                                                    <tr key={eip.id} className={`hover:bg-slate-50 ${eip.is_unbound_risk ? 'bg-rose-50' : ''}`}>
-                                                        <td className="p-3 font-mono text-[10px] font-bold">{eip.public_ip}</td>
-                                                        <td className="p-3">
-                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
-                                                                eip.status === 'ACTIVE' 
-                                                                    ? (eip.is_unbound_risk ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700')
-                                                                    : 'bg-slate-100 text-slate-600'
-                                                            }`}>
-                                                                {eip.status}
-                                                            </span>
-                                                        </td>
-                                                        <td className="p-3 font-bold">
-                                                            ${(eip.monthly_cost_estimate || 0).toFixed(2)}
-                                                            {eip.is_unbound_risk && (
-                                                                <span className="ml-1 text-[8px] text-rose-600 font-black">⚠️ LEAKING</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="p-3 text-[10px]">
-                                                            {eip.bound_to ? (
-                                                                <span className="text-slate-700">{eip.bound_to}</span>
-                                                            ) : (
-                                                                <span className="text-rose-600 font-bold">UNBOUND</span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                        </tbody>
+                                            <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0">
+                                                <tr>
+                                                    <th className="p-3">IP Address</th>
+                                                    <th className="p-3">Status</th>
+                                                    <th className="p-3">Bound To</th>
+                                                    <th className="p-3">Risk</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {inventory.network
+                                                    ?.filter(n => n.type === "EIP")
+                                                    .map(eip => (
+                                                        <tr key={eip.id} className={`hover:bg-slate-50 ${eip.is_unbound_risk ? 'bg-rose-50' : ''}`}>
+                                                            <td className="p-3 font-mono text-[10px] font-bold">{eip.public_ip}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
+                                                                    eip.status === 'ACTIVE' 
+                                                                        ? (eip.is_unbound_risk ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700')
+                                                                        : 'bg-slate-100 text-slate-600'
+                                                                }`}>
+                                                                    {eip.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-3 text-[10px]">
+                                                                {eip.bound_to ? (
+                                                                    <span className="text-slate-700">{eip.bound_to}</span>
+                                                                ) : (
+                                                                    <span className="text-rose-600 font-bold">UNBOUND</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3">
+                                                                {eip.is_unbound_risk ? (
+                                                                    <span className="px-2 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700">COST LEAKAGE</span>
+                                                                ) : (
+                                                                    <span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">SAFE</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                            </tbody>
                                     </table>
                                 </>
                             )}

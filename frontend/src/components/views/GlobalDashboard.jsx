@@ -61,9 +61,21 @@ export default function GlobalDashboard() {
                                     const stg = stages.find(s => s.id === p.lifecycleState) || stages[0];
                                     return (
                                         <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                                            <div className="flex justify-between items-start mb-2"><div className="font-black text-sm text-slate-800 truncate pr-2">{p.name}</div><div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{fm(p.mrr)}</div></div>
-                                            <div className="text-[10px] text-slate-500 font-bold mb-3 flex items-center gap-2"><i className="fas fa-user-tie"></i> {p.sa} | <i className="fas fa-globe-americas ml-1"></i> {p.country}</div>
-                                            <div className={`p-3 rounded-lg border bg-opacity-30 ${stg.color.split(' ')[0]} ${stg.color.split(' ')[2]}`}><div className="text-[9px] uppercase tracking-widest font-bold mb-1 opacity-70">Next Automated Action</div><div className="text-xs font-black flex items-center gap-2 cursor-pointer hover:underline" onClick={() => onNavigateToProject(p.id)}><i className="fas fa-play-circle"></i> {stg.action}</div></div>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-black text-sm text-slate-800 truncate pr-2">{p.name}</div>
+                                                <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{fm(p.mrr)}</div>
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 font-bold mb-3 flex items-center gap-2">
+                                                <i className="fas fa-user-tie"></i> {p.sa} | 
+                                                <i className="fas fa-globe-americas ml-1"></i> {p.country} |
+                                                <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-bold">{p.customerName || 'No Customer'}</span>
+                                            </div>
+                                            <div className={`p-3 rounded-lg border bg-opacity-30 ${stg.color.split(' ')[0]} ${stg.color.split(' ')[2]}`}>
+                                                <div className="text-[9px] uppercase tracking-widest font-bold mb-1 opacity-70">Next Automated Action</div>
+                                                <div className="text-xs font-black flex items-center gap-2 cursor-pointer hover:underline" onClick={() => onNavigateToProject(p.id)}>
+                                                    <i className="fas fa-play-circle"></i> {stg.action}
+                                                </div>
+                                            </div>
                                         </div>
                                     )
                                 })}
