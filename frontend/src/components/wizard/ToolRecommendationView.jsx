@@ -164,11 +164,162 @@ const ToolRecommendationView = ({ activeProject, onUpdateProject }) => {
           </div>
         )}
 
-        {targetArchitecture.length === 0 && (
-          <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm font-bold">
-            <i className="fas fa-exclamation-triangle mr-2"></i> Your Target Architecture is empty. Go to Phase 2.4 to reconcile and save your blueprint.
+      {targetArchitecture.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm font-bold">
+          <i className="fas fa-exclamation-triangle mr-2"></i> Your Target Architecture is empty. Go to Phase 2.4 to reconcile and save your blueprint.
+        </div>
+      )}
+
+      {/* Huawei Cloud MgC-style Execution Cards */}
+      {targetArchitecture.length > 0 && !recommendations && (
+        <div className="mt-6">
+          <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">
+            <i className="fas fa-cloud mr-2"></i> Huawei Cloud MgC Execution Options
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Card 1: Online Assessment */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                  <i className="fas fa-satellite-dish text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">Online Assessment</h4>
+                  <p className="text-xs text-slate-600 mb-3">Discover resources using cloud APIs, by importing files, or via publicly reachable endpoints.</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded">Cloud APIs</span>
+                    <span className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded">File Import</span>
+                    <span className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded">Public Endpoints</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: On-premises Assessment */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                  <i className="fas fa-server text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">On-premises Assessment</h4>
+                  <p className="text-xs text-slate-600 mb-3">Use lightweight offline tools to gather specifications and configurations from source servers.</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded">Offline Tools</span>
+                    <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded">Agent-based</span>
+                    <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded">Data Import</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Batch Server Migration */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                  <i className="fas fa-server text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">Batch Server Migration</h4>
+                  <p className="text-xs text-slate-600 mb-3">Migrate multiple servers simultaneously with automated scheduling and dependency management.</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded">Parallel Migration</span>
+                    <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded">Dependency Mapping</span>
+                    <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded">Auto-scheduling</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Storage Migration */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <i className="fas fa-hdd text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">Storage Migration</h4>
+                  <p className="text-xs text-slate-600 mb-3">Migrate block storage, file systems, and object storage with minimal downtime.</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded">Block Storage</span>
+                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded">File Systems</span>
+                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded">Object Storage</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5: Cross-AZ Migration */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <i className="fas fa-exchange-alt text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">Cross-AZ Migration</h4>
+                  <p className="text-xs text-slate-600 mb-3">Migrate resources across Availability Zones for high availability and disaster recovery.</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-1 bg-rose-50 text-rose-700 text-[10px] font-bold rounded">AZ-to-AZ</span>
+                    <span className="px-2 py-1 bg-rose-50 text-rose-700 text-[10px] font-bold rounded">DR Planning</span>
+                    <span className="px-2 py-1 bg-rose-50 text-rose-700 text-[10px] font-bold rounded">HA Setup</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 6: Tool Recommendations */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group border-2 border-amber-500 bg-amber-50">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                  <i className="fas fa-tools text-xl"></i>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-slate-800 text-sm mb-1">Generate Tool Recommendations</h4>
+                  <p className="text-xs text-slate-600 mb-3">Click below to analyze your {targetArchitecture.length} target resources and get intelligent tool recommendations.</p>
+                  <button
+                    onClick={fetchRecommendations}
+                    disabled={loading}
+                    className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black uppercase tracking-widest text-xs shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <i className="fas fa-circle-notch fa-spin"></i>
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-magic"></i>
+                        Generate Recommendations
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
+
+          <div className="mt-6 bg-slate-50 border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <i className="fas fa-info-circle text-slate-500 text-lg"></i>
+              <h4 className="font-black text-slate-700 text-sm">How Huawei Cloud MgC Works</h4>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-lg border border-slate-100">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">1. Discovery</div>
+                <div className="text-xs text-slate-700">Automatically discover resources from source environments using APIs or offline tools.</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-slate-100">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">2. Assessment</div>
+                <div className="text-xs text-slate-700">Analyze dependencies, compatibility, and migration complexity for each resource.</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-slate-100">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">3. Planning</div>
+                <div className="text-xs text-slate-700">Generate migration waves, tool recommendations, and execution runbooks.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
 
       {recommendations && (
