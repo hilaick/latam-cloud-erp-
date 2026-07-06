@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 
-export default function ToolRecommendationView({ project, onUpdateProject }) {
+export default function ToolRecommendationView({ project, activeProject, onUpdateProject }) {
+    // Handle both prop names: project or activeProject
+    const currentProject = project || activeProject;
     const [loading, setLoading] = useState(false);
-    const [recommendations, setRecommendations] = useState(project?.toolRecommendations || null);
-    const [executionMode, setExecutionMode] = useState(project?.executionMode || 'manual');
+    const [recommendations, setRecommendations] = useState(currentProject?.toolRecommendations || null);
+    const [executionMode, setExecutionMode] = useState(currentProject?.executionMode || 'manual');
 
     const handleGenerate = async () => {
         setLoading(true);
@@ -17,14 +19,14 @@ export default function ToolRecommendationView({ project, onUpdateProject }) {
                     'Authorization': `Bearer ${token}` 
                 },
                 body: JSON.stringify({
-                    target_architecture: project?.mapperNodes || []
+                    target_architecture: currentProject?.mapperNodes || []
                 })
             });
             const data = await response.json();
             if (data.success) {
                 setRecommendations(data.data);
-                if (onUpdateProject) {
-                    onUpdateProject(project.id, 'toolRecommendations', data.data);
+                if (onUpdateProject && currentProject?.id) {
+                    onUpdateProject(currentProject.id, 'toolRecommendations', data.data);
                 }
             } else {
                 alert(`Error generating recommendations: ${data.error}`);
@@ -39,7 +41,7 @@ export default function ToolRecommendationView({ project, onUpdateProject }) {
 
     const handleModeSelect = (mode) => {
         setExecutionMode(mode);
-        if (onUpdateProject) onUpdateProject(project.id, 'executionMode', mode);
+        if (onUpdateProject && currentProject?.id) onUpdateProject(currentProject.id, 'executionMode', mode);
     };
 
     return (
@@ -53,7 +55,7 @@ export default function ToolRecommendationView({ project, onUpdateProject }) {
                     </div>
                     <button 
                         onClick={handleGenerate}
-                        disabled={loading || !(project?.mapperNodes?.length > 0)}
+                        disabled={loading || !(currentProject?.mapperNodes?.length > 0)}
                         className="mt-4 md:mt-0 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)] disabled:opacity-50"
                     >
                         {loading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Matrix...</> : <><i className="fas fa-bolt mr-2"></i> Generate Recommendations</>}
