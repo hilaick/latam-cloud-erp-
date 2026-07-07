@@ -431,6 +431,79 @@ def revert_quotation_version(version_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/finops/query_price', methods=['POST'])
+@jwt_required()
+def finops_query_price():
+    """Mock endpoint for live pricing - returns estimated costs based on nodes"""
+    try:
+        data = request.get_json()
+        duration_months = data.get('duration_months', 3)
+        nodes = data.get('nodes', [])
+        
+        # Calculate estimated overhead cost based on nodes
+        total_cost = 0
+        bom_items = []
+        
+        for i, node in enumerate(nodes):
+            node_type = str(node.get('type', '')).upper()
+            storage = float(node.get('storage', 0))
+            
+            # Estimate costs based on node type
+            if 'ECS' in node_type:
+                base_cost = 100 * duration_months  # $100/month per ECS
+                storage_cost = storage * 0.10 * duration_months  # $0.10/GB/month
+                item_cost = base_cost + storage_cost
+                
+                bom_items.append({
+                    'id': f'ecs-{i}',
+                    'name': node.get('name', f'ECS-{i}'),
+                    'type': 'ECS',
+                    'spec': f'{storage}GB Storage',
+                    'cost_per_month': round(base_cost + storage_cost, 2),
+                    'selected': True
+                })
+                total_cost += item_cost
+                
+            elif 'RDS' in node_type:
+                base_cost = 200 * duration_months  # $200/month per RDS
+                storage_cost = storage * 0.15 * duration_months  # $0.15/GB/month
+                item_cost = base_cost + storage_cost
+                
+                bom_items.append({
+                    'id': f'rds-{i}',
+                    'name': node.get('name', f'RDS-{i}'),
+                    'type': 'RDS',
+                    'spec': f'{storage}GB Storage',
+                    'cost_per_month': round(base_cost + storage_cost, 2),
+                    'selected': True
+                })
+                total_cost += item_cost
+                
+            elif 'OBS' in node_type:
+                cost = storage * 0.03 * duration_months  # $0.03/GB/month
+                
+                bom_items.append({
+                    'id': f'obs-{i}',
+                    'name': node.get('name', f'OBS-{i}'),
+                    'type': 'OBS',
+                    'spec': f'{storage}GB Storage',
+                    'cost_per_month': round(cost, 2),
+                    'selected': True
+                })
+                total_cost += cost
+        
+        # Add migration service overhead (20% of infrastructure cost)
+        migration_overhead = total_cost * 0.20
+        
+        return jsonify({
+            'success': True,
+            'overhead_cost': round(migration_overhead, 2),
+            'bom_items': bom_items
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/finops/upload-ecs-ri-raw', methods=['POST'])
 @jwt_required()
 def upload_ecs_ri_raw():

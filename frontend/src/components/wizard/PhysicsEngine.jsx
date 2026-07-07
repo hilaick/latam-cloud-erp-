@@ -138,12 +138,91 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
     const nodes = useMemo(() => {
-        return (activeProject?.mapperNodes || []).filter(n => {
-            if (n?.status === 'Quoted Only' && !n.type) return true; 
-            const t = String(n.type || '').toUpperCase();
-            return computeTypes.some(c => t.includes(c)) || dbTypes.some(d => t.includes(d)) || storageTypes.some(s => t.includes(s));
-        });
-    }, [activeProject?.mapperNodes]);
+        // First try mapperNodes (saved reconciled architecture)
+        if (activeProject?.mapperNodes?.length > 0) {
+            return activeProject.mapperNodes.filter(n => {
+                // Include all nodes for physics calculations
+                // Previously filtered to only compute/db/storage, but we need all
+                return true;
+            });
+        }
+        
+        // Fall back to blueprintData (SOW/Quote) if mapperNodes is empty
+        if (activeProject?.blueprintData) {
+            try {
+                const blueprintData = typeof activeProject.blueprintData === 'string' 
+                    ? JSON.parse(activeProject.blueprintData) 
+                    : activeProject.blueprintData;
+                
+                const topology = blueprintData.topology || {};
+                const compute = topology.compute || [];
+                const databases = topology.databases || topology.database || [];
+                const storage = topology.storage || [];
+                
+                // Convert to mapperNodes format
+                const nodesFromBlueprint = [
+                    ...compute.map(item => ({
+                        id: `sow-comp-${item.id || Date.now()}`,
+                        name: item.name || `Compute-${item.id || 'unknown'}`,
+                        type: 'ECS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        os: item.os || 'Unknown',
+                        location: 'Compute-Subnet',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    })),
+                    ...databases.map(item => ({
+                        id: `sow-db-${item.id || Date.now()}`,
+                        name: item.name || `Database-${item.id || 'unknown'}`,
+                        type: 'RDS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        location: 'Data-Subnet',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    })),
+                    ...storage.map(item => ({
+                        id: `sow-stor-${item.id || Date.now()}`,
+                        name: item.name || `Storage-${item.id || 'unknown'}`,
+                        type: 'OBS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        location: 'Global',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    }))
+                ];
+                
+                return nodesFromBlueprint;
+            } catch (e) {
+                console.error("Error parsing blueprintData for PhysicsEngine:", e);
+            }
+        }
+        
+        // Fall back to legacy blueprint field
+        if (activeProject?.blueprint) {
+            try {
+                const blueprint = typeof activeProject.blueprint === 'string' 
+                    ? JSON.parse(activeProject.blueprint) 
+                    : activeProject.blueprint;
+                
+                const resources = blueprint.target_architecture || blueprint.resources || [];
+                return resources.map(resource => ({
+                    ...resource,
+                    status: 'Quoted Only',
+                    config: {}
+                }));
+            } catch (e) {
+                console.error("Error parsing blueprint for PhysicsEngine:", e);
+            }
+        }
+        
+        return [];
+    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
 
     useEffect(() => {
         if (!activeProject) return;
@@ -387,6 +466,22 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     <div className="flex items-center gap-3 mt-1">
                         <p className="text-xs text-slate-500 font-bold">Calculate true SLA timelines using Network, Crypto, and Tooling constraints.</p>
                         <button onClick={() => setShowGuide(true)} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"><i className="fas fa-book-open mr-1"></i> View Guide & Legend</button>
+                    </div>
+                    
+                    {/* Resource Count Display */}
+                    <div className="mt-3 flex items-center gap-3">
+                        <div className="bg-slate-100 border border-slate-300 px-4 py-2 rounded-lg">
+                            <div className="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
+                            <div className="text-lg font-black text-indigo-600">
+                                {activeProject?.mapperNodes?.length || 0}
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                            {activeProject?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                             activeProject?.blueprintData ? "Using SOW/Quote Data (Not Saved)" : 
+                             activeProject?.blueprint ? "Using Blueprint Data (Not Saved)" : 
+                             "No Architecture Data"}
+                        </div>
                     </div>
                 </div>
                 

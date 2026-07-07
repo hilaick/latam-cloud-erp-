@@ -38,7 +38,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     const [localNodes, setLocalNodes] = useState(activeProject?.mapperNodes || []); 
     
-    const [activeTab, setActiveTab] = useState('reconcile'); 
+    const [activeTab, setActiveTab] = useState(activeProject?.mapperNodes?.length > 0 ? 'target' : 'reconcile'); 
     const [reconcileView, setReconcileView] = useState('table'); 
     const [targetView, setTargetView] = useState('list'); 
     
@@ -76,7 +76,50 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
 
     // 🚨 FIX: Configured the save function to execute `onPromote` conditionally
     const saveArchitecture = (shouldPromote = true) => {
-        onUpdateProject(activeProject.id, 'mapperNodes', localNodes);
+        // Check if we have quoted nodes from SOW/Quote
+        const hasQuotedNodes = quotedNodes.length > 0;
+        const hasLiveNodes = liveNodes.length > 0;
+        
+        // If we have quoted nodes but localNodes doesn't include them, auto-merge
+        if (hasQuotedNodes && localNodes.length === 0) {
+            alert("⚠️ No reconciled architecture found. Auto-merging quoted SOW items with live discovery...");
+            finalizeReconciliation();
+            return; // finalizeReconciliation will set localNodes, then user can save again
+        }
+        
+        // Save only filtered nodes based on current filter
+        let nodesToSave = localNodes;
+        
+        // Apply the same filter logic as the UI
+        if (statusFilter !== 'All') {
+            nodesToSave = localNodes.filter(n => {
+                if (statusFilter === 'In SOW') {
+                    return n.status === 'Matched' || n.status === 'Quoted Only';
+                } else if (statusFilter === 'In Discovery') {
+                    return n.status === 'Matched' || n.status === 'Live Only';
+                } else {
+                    return n.status === statusFilter;
+                }
+            });
+        }
+        
+        if (typeFilter !== 'All') {
+            nodesToSave = nodesToSave.filter(n => n.type === typeFilter);
+        }
+        
+        // Validate that we have some nodes to save
+        if (nodesToSave.length === 0) {
+            alert(`❌ No nodes match the current filter (${statusFilter}${typeFilter !== 'All' ? ` + ${typeFilter}` : ''}). Please adjust filters or include all nodes.`);
+            return;
+        }
+        
+        onUpdateProject(activeProject.id, 'mapperNodes', nodesToSave);
+        
+        // Update lifecycle state to indicate architecture is saved
+        onUpdateProject(activeProject.id, 'lifecycleState', '2_architecture');
+        
+        // Show confirmation with filter info
+        alert(`✅ Architecture saved successfully! ${nodesToSave.length} resources saved to Target Architecture (filtered: ${statusFilter}${typeFilter !== 'All' ? ` + ${typeFilter}` : ''}).`);
         
         if (shouldPromote && onPromote) {
             onPromote(); // This fires setSubTab('gov') from StepArchitecture
@@ -321,6 +364,25 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <div className="flex items-center gap-2">
                                 {targetView === 'list' && <button onClick={()=>toggleFullScreen('target-container')} className="py-2 px-4 bg-white text-slate-600 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm hover:bg-slate-50 transition-colors border border-slate-300"><i className="fas fa-expand mr-1"></i> Full Screen</button>}
                                 {targetView === 'list' && <button onClick={handleAddNode} className="py-2 px-4 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"><i className="fas fa-plus mr-1"></i> Add Node</button>}
+                                
+                                {/* Clear Architecture Button */}
+                                <button 
+                                    onClick={() => {
+                                        if (window.confirm("⚠️ Clear entire architecture? This will remove all nodes and cannot be undone.")) {
+                                            setLocalNodes([]);
+                                            // Also clear from database
+                                            if (activeProject?.id) {
+                                                onUpdateProject(activeProject.id, 'mapperNodes', []);
+                                            }
+                                            setActiveTab('reconcile');
+                                            alert("Architecture cleared. Click 'Merge & Review Target' to rebuild from SOW/Quote and Live Discovery.");
+                                        }
+                                    }}
+                                    className="py-2 px-4 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-sm transition-colors"
+                                    title="Clear all nodes and start over"
+                                >
+                                    <i className="fas fa-trash-alt mr-1"></i> Clear
+                                </button>
                                 
                                 {/* 🚨 FIX: Explicitly passes true to saveArchitecture so it saves to DB AND advances tab */}
                                 <button onClick={() => saveArchitecture(true)} className="py-2 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md transition-transform active:scale-95"><i className="fas fa-shield-alt mr-2"></i> Save & Proceed to Governance</button>

@@ -53,7 +53,129 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
 
     const changeRequests = activeProject?.changeRequests || [];
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
-    const totalServers = (activeProject?.mapperNodes || []).filter(n => n.type === 'ECS' || n.type === 'RDS').length;
+    const totalServers = useMemo(() => {
+        // Use mapperNodes if it exists (even if empty array)
+        if (activeProject?.mapperNodes !== undefined) {
+            return activeProject.mapperNodes.filter(n => n.type === 'ECS' || n.type === 'RDS').length;
+        }
+        
+        // Fall back to blueprintData (SOW/Quote) only if mapperNodes doesn't exist
+        if (activeProject?.blueprintData) {
+            try {
+                const blueprintData = typeof activeProject.blueprintData === 'string' 
+                    ? JSON.parse(activeProject.blueprintData) 
+                    : activeProject.blueprintData;
+                
+                const topology = blueprintData.topology || {};
+                const compute = topology.compute || [];
+                const databases = topology.databases || topology.database || [];
+                
+                return compute.length + databases.length;
+            } catch (e) {
+                console.error("Error parsing blueprintData for FinOpsCalculator:", e);
+            }
+        }
+        
+        // Fall back to legacy blueprint field
+        if (activeProject?.blueprint) {
+            try {
+                const blueprint = typeof activeProject.blueprint === 'string' 
+                    ? JSON.parse(activeProject.blueprint) 
+                    : activeProject.blueprint;
+                
+                const resources = blueprint.target_architecture || blueprint.resources || [];
+                return resources.filter(n => {
+                    const type = String(n.type || '').toUpperCase();
+                    return type.includes('ECS') || type.includes('RDS');
+                }).length;
+            } catch (e) {
+                console.error("Error parsing blueprint for FinOpsCalculator:", e);
+            }
+        }
+        
+        return 0;
+    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint]);
+
+    const getNodesForApi = useMemo(() => {
+        // Use mapperNodes if it exists (even if empty array)
+        if (activeProject?.mapperNodes !== undefined) {
+            return activeProject.mapperNodes;
+        }
+        
+        // Fall back to blueprintData (SOW/Quote) only if mapperNodes doesn't exist
+        if (activeProject?.blueprintData) {
+            try {
+                const blueprintData = typeof activeProject.blueprintData === 'string' 
+                    ? JSON.parse(activeProject.blueprintData) 
+                    : activeProject.blueprintData;
+                
+                const topology = blueprintData.topology || {};
+                const compute = topology.compute || [];
+                const databases = topology.databases || topology.database || [];
+                const storage = topology.storage || [];
+                
+                // Convert to mapperNodes format for API
+                return [
+                    ...compute.map(item => ({
+                        id: `sow-comp-${item.id || Date.now()}`,
+                        name: item.name || `Compute-${item.id || 'unknown'}`,
+                        type: 'ECS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        os: item.os || 'Unknown',
+                        location: 'Compute-Subnet',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    })),
+                    ...databases.map(item => ({
+                        id: `sow-db-${item.id || Date.now()}`,
+                        name: item.name || `Database-${item.id || 'unknown'}`,
+                        type: 'RDS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        location: 'Data-Subnet',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    })),
+                    ...storage.map(item => ({
+                        id: `sow-stor-${item.id || Date.now()}`,
+                        name: item.name || `Storage-${item.id || 'unknown'}`,
+                        type: 'OBS',
+                        status: 'Quoted Only',
+                        storage: item.storage || item.metadata?.storage_gb,
+                        location: 'Global',
+                        region: activeProject?.region || 'la-south-2',
+                        ip: 'TBD',
+                        config: {}
+                    }))
+                ];
+            } catch (e) {
+                console.error("Error parsing blueprintData for API:", e);
+            }
+        }
+        
+        // Fall back to legacy blueprint field
+        if (activeProject?.blueprint) {
+            try {
+                const blueprint = typeof activeProject.blueprint === 'string' 
+                    ? JSON.parse(activeProject.blueprint) 
+                    : activeProject.blueprint;
+                
+                const resources = blueprint.target_architecture || blueprint.resources || [];
+                return resources.map(resource => ({
+                    ...resource,
+                    status: 'Quoted Only',
+                    config: {}
+                }));
+            } catch (e) {
+                console.error("Error parsing blueprint for API:", e);
+            }
+        }
+        
+        return [];
+    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
 
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
@@ -77,7 +199,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 const response = await fetch('/api/finops/query_price', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ duration_months: durationMonths, nodes: activeProject?.mapperNodes || [] })
+                    body: JSON.stringify({ duration_months: durationMonths, nodes: getNodesForApi })
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -181,6 +303,22 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     <div>
                         <h3 className="font-black text-lg tracking-wide"><i className="fas fa-file-invoice-dollar text-emerald-400 mr-3"></i> FinOps Ledger & Commercial Modeler</h3>
                         <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Single Source of Financial Truth</p>
+                        
+                        {/* Resource Count Display */}
+                        <div className="mt-3 flex items-center gap-3">
+                            <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 px-4 py-2 rounded-lg">
+                                <div className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
+                                <div className="text-lg font-black text-emerald-400">
+                                    {activeProject?.mapperNodes?.length || 0}
+                                </div>
+                            </div>
+                            <div className="text-xs text-slate-400">
+                                {activeProject?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                 activeProject?.blueprintData ? "Using SOW/Quote Data (Not Saved)" : 
+                                 activeProject?.blueprint ? "Using Blueprint Data (Not Saved)" : 
+                                 "No Architecture Data"}
+                            </div>
+                        </div>
                     </div>
                     <button type="button" onClick={saveContext} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i> Save FinOps</button>
                 </div>

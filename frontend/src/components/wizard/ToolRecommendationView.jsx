@@ -3,6 +3,29 @@ import React, { useState } from 'react';
 export default function ToolRecommendationView({ project, activeProject, onUpdateProject }) {
     // Handle both prop names: project or activeProject
     const currentProject = project || activeProject;
+    
+    // Show loading state if project data hasn't loaded yet
+    if (!currentProject) {
+        return (
+            <div className="space-y-6">
+                <div className="bg-slate-900 rounded-2xl shadow-xl p-8 border border-slate-700 text-white relative overflow-hidden">
+                    <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
+                        <div>
+                            <h2 className="text-2xl font-black flex items-center gap-3"><i className="fas fa-tools text-blue-400"></i> Strategic Execution Tooling</h2>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">Map target resources to Huawei Cloud migration engines</p>
+                        </div>
+                        <button 
+                            disabled={true}
+                            className="mt-4 md:mt-0 px-6 py-3 bg-slate-600 text-slate-300 rounded-xl text-xs font-black uppercase tracking-widest transition-all opacity-50 cursor-not-allowed"
+                        >
+                            <i className="fas fa-spinner fa-spin mr-2"></i> Loading project data...
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    
     const [loading, setLoading] = useState(false);
     const [recommendations, setRecommendations] = useState(currentProject?.toolRecommendations || null);
     const [executionMode, setExecutionMode] = useState(currentProject?.executionMode || 'manual');
@@ -12,14 +35,88 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
         try {
             // FIX: Uses correct endpoint and securely attaches standard JWT token
             const token = localStorage.getItem('erp_jwt_token');
-            const response = await fetch('/api/migration/tools', {
+            
+            // Use blueprintData (from SOW/Quote) if available, otherwise fall back to mapperNodes for backward compatibility
+            let targetArchitecture = [];
+            if (currentProject?.blueprintData) {
+                try {
+                    // blueprintData contains the SOW/Quote topology
+                    const blueprintData = typeof currentProject.blueprintData === 'string' 
+                        ? JSON.parse(currentProject.blueprintData) 
+                        : currentProject.blueprintData;
+                    
+                    // Extract resources from blueprintData.topology
+                    const topology = blueprintData.topology || {};
+                    const compute = topology.compute || [];
+                    const databases = topology.databases || topology.database || [];
+                    const network = topology.network || [];
+                    const storage = topology.storage || [];
+                    const security = topology.security || [];
+                    
+                    // Convert to target architecture format
+                    targetArchitecture = [
+                        ...compute.map(item => ({
+                            type: 'ECS',
+                            name: item.name || `Compute-${item.id || 'unknown'}`,
+                            source: 'SOW',
+                            os: item.os || 'Unknown',
+                            ...item
+                        })),
+                        ...databases.map(item => ({
+                            type: 'RDS',
+                            name: item.name || `Database-${item.id || 'unknown'}`,
+                            source: 'SOW',
+                            db_engine: item.engine || item.type || 'Unknown',
+                            ...item
+                        })),
+                        ...network.map(item => ({
+                            type: 'VPC',
+                            name: item.name || `Network-${item.id || 'unknown'}`,
+                            source: 'SOW',
+                            cidr: item.cidr || '10.0.0.0/16',
+                            ...item
+                        })),
+                        ...storage.map(item => ({
+                            type: 'OBS',
+                            name: item.name || `Storage-${item.id || 'unknown'}`,
+                            source: 'SOW',
+                            storage_type: item.type || 'Object',
+                            ...item
+                        })),
+                        ...security.map(item => ({
+                            type: item.type || 'SG',
+                            name: item.name || `Security-${item.id || 'unknown'}`,
+                            source: 'SOW',
+                            ...item
+                        }))
+                    ];
+                } catch (e) {
+                    console.error("Error parsing blueprintData:", e);
+                    targetArchitecture = currentProject?.mapperNodes || [];
+                }
+            } else if (currentProject?.blueprint) {
+                // Legacy support for blueprint field (deprecated)
+                try {
+                    const blueprint = typeof currentProject.blueprint === 'string' 
+                        ? JSON.parse(currentProject.blueprint) 
+                        : currentProject.blueprint;
+                    targetArchitecture = blueprint.target_architecture || blueprint.resources || [];
+                } catch (e) {
+                    console.error("Error parsing blueprint:", e);
+                    targetArchitecture = currentProject?.mapperNodes || [];
+                }
+            } else {
+                targetArchitecture = currentProject?.mapperNodes || [];
+            }
+            
+            const response = await fetch('/api/migration/recommendations', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}` 
                 },
                 body: JSON.stringify({
-                    target_architecture: currentProject?.mapperNodes || []
+                    target_architecture: targetArchitecture
                 })
             });
             const data = await response.json();
@@ -52,13 +149,31 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                     <div>
                         <h2 className="text-2xl font-black flex items-center gap-3"><i className="fas fa-tools text-blue-400"></i> Strategic Execution Tooling</h2>
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">Map target resources to Huawei Cloud migration engines</p>
+                        
+                        {/* Resource Count Display */}
+                        <div className="mt-3 flex items-center gap-3">
+                            <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 px-4 py-2 rounded-lg">
+                                <div className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
+                                <div className="text-lg font-black text-emerald-400">
+                                    {currentProject?.mapperNodes?.length || 0}
+                                </div>
+                            </div>
+                            <div className="text-xs text-slate-400">
+                                {currentProject?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                 currentProject?.blueprintData ? "Using SOW/Quote Data (Not Saved)" : 
+                                 currentProject?.blueprint ? "Using Blueprint Data (Not Saved)" : 
+                                 "No Architecture Data"}
+                            </div>
+                        </div>
                     </div>
                     <button 
                         onClick={handleGenerate}
-                        disabled={loading || !(currentProject?.mapperNodes?.length > 0)}
+                        disabled={loading || !(currentProject?.blueprintData || currentProject?.blueprint || currentProject?.mapperNodes?.length > 0)}
                         className="mt-4 md:mt-0 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)] disabled:opacity-50"
+                        id="generate-recommendations-btn"
+                        style={loading || !(currentProject?.blueprintData || currentProject?.blueprint || currentProject?.mapperNodes?.length > 0) ? {} : {backgroundColor: '#10b981'}}
                     >
-                        {loading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Matrix...</> : <><i className="fas fa-bolt mr-2"></i> Generate Recommendations</>}
+                        {loading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Analyzing Matrix...</> : <><i className="fas fa-bolt mr-2"></i> Generate Recommendations {currentProject?.blueprintData ? "(SOW)" : currentProject?.blueprint ? "(Blueprint)" : currentProject?.mapperNodes?.length > 0 ? `(${currentProject.mapperNodes.length})` : ""}</>}
                     </button>
                 </div>
             </div>
