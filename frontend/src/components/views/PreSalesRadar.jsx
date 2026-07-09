@@ -126,7 +126,7 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
                             {[
                                 { id: 'turnkey', label: 'Turnkey Migration' },
                                 { id: 'co_delivery', label: 'Co-Delivery' },
-                                { id: 'advisory', label: 'Advisory Only' },
+                                { id: 'advisory', label: 'Partner / Customer Executes' },
                                 { id: 'arch_review', label: 'Arch Review' },
                                 { id: 'security', label: 'Security / SecOps' },
                                 { id: 'post_live', label: 'Post-Live Support' }
