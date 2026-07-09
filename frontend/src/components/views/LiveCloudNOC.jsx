@@ -5,19 +5,14 @@ export default function LiveCloudNOC() {
     const { customers } = useContext(ERPContext);
     
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
-    const [projectId, setProjectId] = useState(''); // Huawei Cloud requires the project ID for scoping
     const [inventory, setInventory] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     
     const activeCustomer = customers?.find(c => String(c.id) === selectedCustomerId);
 
     const fetchInventory = async () => {
-        if (!activeCustomer || !activeCustomer.ak || !activeCustomer.sk) {
-            alert("This customer does not have valid AK/SK credentials stored in the Customer Directory Vault.");
-            return;
-        }
-        if (!projectId) {
-            alert("Please enter the specific Huawei Cloud Project ID to scan.");
+        if (!activeCustomer) {
+            alert("Please select a customer first.");
             return;
         }
 
@@ -35,8 +30,12 @@ export default function LiveCloudNOC() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 }, 
-                // We securely pass the vaulted keys
-                body: JSON.stringify({ ak: activeCustomer.ak, sk: activeCustomer.sk, projectId, region: activeCustomer.region || 'la-south-2' }) 
+                // Uses MASTER AK/SK for target infrastructure monitoring
+                body: JSON.stringify({ 
+                    customer_id: activeCustomer.id, 
+                    region: activeCustomer.region || 'la-south-2',
+                    provider: 'Huawei'
+                }) 
             });
             
             if (res.status === 401) {
@@ -63,7 +62,10 @@ export default function LiveCloudNOC() {
                     <h2 className="text-2xl font-black mb-1">
                         <i className="fas fa-tv text-blue-400 mr-3"></i> Live Cloud NOC
                     </h2>
-                    <p className="text-xs text-slate-400">Read-only global inventory discovery using vaulted customer credentials.</p>
+                    <p className="text-xs text-slate-400">
+                        Real-time monitoring of LIVE target infrastructure using Master AK/SK credentials.
+                        <br /><span className="text-amber-400 font-bold">Phase 5 (PostLive) monitoring dashboard.</span>
+                    </p>
                 </div>
                 
                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-end">
@@ -80,24 +82,13 @@ export default function LiveCloudNOC() {
                             ))}
                         </select>
                     </div>
-
-                    <div className="w-full md:w-48">
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Target Project ID</label>
-                        <input 
-                            type="text" 
-                            value={projectId} 
-                            onChange={e => setProjectId(e.target.value)} 
-                            placeholder="e.g. 0b1234567..." 
-                            className="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 text-sm font-mono text-white outline-none focus:border-blue-500" 
-                        />
-                    </div>
                     
                     <button 
                         onClick={fetchInventory} 
                         disabled={!activeCustomer || isLoading}
                         className="w-full md:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-slate-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors"
                     >
-                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning</> : <><i className="fas fa-search mr-2"></i> Scan Cloud</>}
+                        {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Live Infrastructure</> : <><i className="fas fa-search mr-2"></i> Scan Live Cloud</>}
                     </button>
                 </div>
             </div>
@@ -112,7 +103,7 @@ export default function LiveCloudNOC() {
             {activeCustomer && !activeCustomer.ak && (
                 <div className="p-6 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 font-bold flex items-center shadow-sm">
                     <i className="fas fa-exclamation-triangle text-xl mr-3 text-rose-500"></i>
-                    This customer does not have AK/SK credentials vaulted. Please update their profile in the Customer Directory.
+                    This customer does not have AK/SK credentials vaulted. Source Infrastructure Discovery will fail.
                 </div>
             )}
 

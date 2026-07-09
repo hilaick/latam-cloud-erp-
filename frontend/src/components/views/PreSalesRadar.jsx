@@ -91,9 +91,9 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
                 {/* Step 2 */}
                 {currentStep === 2 && (
                     <div className="animate-fade-in space-y-6">
-                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest border-b border-slate-200 pb-2"><i className="fas fa-server text-indigo-500 mr-2"></i> Target Resource Types</h4>
+                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest border-b border-slate-200 pb-2"><i className="fas fa-arrows-alt-h text-indigo-500 mr-2"></i> Migration Scope</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {['compute', 'storage', 'database', 'network', 'security', 'analytics'].map(opt => (
+                            {['Cross-Region Migration', 'Cross-Cloud Migration', 'On-Premise to Cloud', 'Cloud to Cloud', 'VM Migration', 'Database Migration', 'Application Migration', 'Full Data Center Migration'].map(opt => (
                                 <label key={opt} className={`flex items-center gap-3 p-5 rounded-xl border-2 cursor-pointer transition-colors ${((triage.migrationScope || []).includes(opt)) ? 'bg-indigo-50 border-indigo-400' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                                     <input type="checkbox" checked={(triage.migrationScope || []).includes(opt)} onChange={() => handleMulti('migrationScope', opt)} className="rounded text-indigo-600 w-5 h-5" />
                                     <span className={`text-xs font-black uppercase tracking-widest ${((triage.migrationScope || []).includes(opt)) ? 'text-indigo-800' : 'text-slate-600'}`}>{opt}</span>
@@ -108,7 +108,7 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
                     <div className="animate-fade-in space-y-6">
                         <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest border-b border-slate-200 pb-2"><i className="fas fa-cloud text-sky-500 mr-2"></i> Source Environments</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {['VMware', 'Hyper-V', 'AWS EC2', 'Azure VMs', 'GCP Compute', 'On-Premise Bare Metal', 'Other Cloud'].map(opt => (
+                            {['VMware', 'Hyper-V', 'AWS EC2', 'Azure VMs', 'GCP Compute', 'Huawei Cloud', 'On-Premise Bare Metal', 'Other Cloud'].map(opt => (
                                 <label key={opt} className={`flex items-center gap-3 p-5 rounded-xl border-2 cursor-pointer transition-colors ${((triage.sourceEnvironment || []).includes(opt)) ? 'bg-sky-50 border-sky-400' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                                     <input type="checkbox" checked={(triage.sourceEnvironment || []).includes(opt)} onChange={() => handleMulti('sourceEnvironment', opt)} className="rounded text-sky-600 w-5 h-5" />
                                     <span className={`text-xs font-black uppercase tracking-widest ${((triage.sourceEnvironment || []).includes(opt)) ? 'text-sky-800' : 'text-slate-600'}`}>{opt}</span>
@@ -186,8 +186,12 @@ export default function PreSalesRadar() {
     const [newLeadSA, setNewLeadSA] = useState(""); 
     
     const [triage, setTriage] = useState({
-        project_type: 'standard', businessDrivers: [], migrationScope: ['compute'],
-        sourceEnvironment: ['VMware / On-Premise'], authLevel: ['Read-Only (Customer Managed)'], deliveryScope: 'turnkey' 
+        project_type: '', 
+        businessDrivers: [], 
+        migrationScope: [],
+        sourceEnvironment: [], 
+        authLevel: [], 
+        deliveryScope: '' 
     });
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
@@ -204,19 +208,39 @@ export default function PreSalesRadar() {
         let customerName = newLeadCustomer.trim().toUpperCase();
         if (matchedCustomer) { customerId = matchedCustomer.id; customerName = matchedCustomer.name; } 
 
-        handleAddProject({
-            id: String(Date.now()), name: newLeadName.toUpperCase(), customerName, customerId, 
-            isWaiting: true, waitingStage: "prospect", health: "Yellow", mrr: 0, 
-            sa: newLeadSA.toUpperCase(), country: newLeadCountry, partner: "TBD", techContact: "TBD", 
+        const projectData = {
+            id: editingProject ? editingProject.id : String(Date.now()), 
+            name: newLeadName.toUpperCase(), 
+            customerName, 
+            customerId, 
+            isWaiting: true, 
+            waitingStage: "prospect", 
+            health: "Yellow", 
+            mrr: 0, 
+            sa: newLeadSA.toUpperCase(), 
+            country: newLeadCountry, 
+            partner: "TBD", 
+            techContact: "TBD", 
             sourceEnvironment: Array.isArray(triage.sourceEnvironment) ? triage.sourceEnvironment.join(', ') : triage.sourceEnvironment, 
             authLevel: Array.isArray(triage.authLevel) ? triage.authLevel : [triage.authLevel],
             migrationScope: Array.isArray(triage.migrationScope) ? triage.migrationScope : [triage.migrationScope],
-            deliveryScope: triage.deliveryScope, businessDrivers: triage.businessDrivers,
-            project_type: triage.project_type, lifecycleState: '1_arb'
-        }); 
+            deliveryScope: triage.deliveryScope, 
+            businessDrivers: triage.businessDrivers,
+            project_type: triage.project_type, 
+            lifecycleState: '1_arb'
+        };
+
+        if (editingProject) {
+            // Update existing project
+            handleUpdateProject(editingProject.id, projectData);
+            setEditingProject(null);
+        } else {
+            // Add new project
+            handleAddProject(projectData);
+        }
         
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
-        setTriage({ project_type: 'standard', businessDrivers: [], migrationScope: ['compute'], sourceEnvironment: ['VMware / On-Premise'], authLevel: ['Read-Only (Customer Managed)'], deliveryScope: 'turnkey' });
+        setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: '' });
     };
 
     const executeDelete = () => {
@@ -245,10 +269,28 @@ export default function PreSalesRadar() {
                 
                 {/* HORIZONTAL WIZARD INJECTION */}
                 <HorizontalPresalesWizard triage={triage} setTriage={setTriage} />
-
-                <div className="flex justify-end pt-6 mt-6 border-t border-slate-100">
+                
+                <div className="flex justify-between items-center pt-6 mt-6 border-t border-slate-100">
+                    {editingProject && (
+                        <div className="text-sm font-bold text-blue-700">
+                            <i className="fas fa-edit mr-2"></i> Editing: {editingProject.name}
+                            <button 
+                                onClick={() => {
+                                    setEditingProject(null);
+                                    setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: '' });
+                                    setNewLeadCustomer('');
+                                    setNewLeadName('');
+                                    setNewLeadCountry('');
+                                    setNewLeadSA('');
+                                }}
+                                className="ml-4 text-xs text-slate-500 hover:text-slate-700"
+                            >
+                                <i className="fas fa-times mr-1"></i> Cancel
+                            </button>
+                        </div>
+                    )}
                     <button onClick={handleAddNewLead} className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl text-xs shadow-lg">
-                        <i className="fas fa-plus mr-2"></i> Add Lead to Pipeline
+                        <i className="fas fa-plus mr-2"></i> {editingProject ? 'Update Lead' : 'Add Lead to Pipeline'}
                     </button>
                 </div>
             </div>
@@ -268,7 +310,23 @@ export default function PreSalesRadar() {
                                         <div className="flex flex-col mb-4 border-b border-slate-100 pb-3 gap-3">
                                             <div className="font-black text-base text-slate-800 uppercase">{p.name}</div>
                                             <div className="flex gap-2">
-                                                <button onClick={() => setEditingProject({...p})} className="flex-1 text-[10px] font-black uppercase bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200">Assess</button>
+                                                <button onClick={() => {
+                                                    setEditingProject({...p});
+                                                    // Populate triage form with project data
+                                                    setTriage({
+                                                        project_type: p.project_type || '',
+                                                        businessDrivers: Array.isArray(p.businessDrivers) ? p.businessDrivers : (p.businessDrivers ? [p.businessDrivers] : []),
+                                                        migrationScope: Array.isArray(p.migrationScope) ? p.migrationScope : (p.migrationScope ? [p.migrationScope] : []),
+                                                        sourceEnvironment: Array.isArray(p.sourceEnvironment) ? p.sourceEnvironment : (p.sourceEnvironment ? p.sourceEnvironment.split(', ').filter(Boolean) : []),
+                                                        authLevel: Array.isArray(p.authLevel) ? p.authLevel : (p.authLevel ? [p.authLevel] : []),
+                                                        deliveryScope: p.deliveryScope || ''
+                                                    });
+                                                    // Also populate the basic form fields
+                                                    setNewLeadCustomer(p.customerName || '');
+                                                    setNewLeadName(p.name || '');
+                                                    setNewLeadCountry(p.country || '');
+                                                    setNewLeadSA(p.sa || '');
+                                                }} className="flex-1 text-[10px] font-black uppercase bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200">Assess</button>
                                                 <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-lg border border-rose-200"><i className="fas fa-trash-alt"></i></button>
                                             </div>
                                         </div>

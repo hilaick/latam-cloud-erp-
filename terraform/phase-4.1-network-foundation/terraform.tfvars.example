@@ -1,0 +1,13 @@
+# Huawei Cloud credentials
+# Rename to terraform.tfvars and fill with actual values
+
+project_name = "codelpa-migration"
+region       = "ap-southeast-3"
+vpc_cidr     = "10.100.0.0/16"
+keypair_name = "migration-keypair"
+
+# Huawei Cloud authentication
+# export these environment variables or use provider configuration
+# export HW_ACCESS_KEY="your-access-key"
+# export HW_SECRET_KEY="your-secret-key"
+# export HW_PROJECT_ID="your-project-id"

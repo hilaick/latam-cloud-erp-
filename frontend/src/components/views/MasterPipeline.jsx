@@ -1,5 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { ERPContext } from '../../context/ERPContext';
+import { EditableCell } from '../../utils/helpers';
 
 export default function MasterPipeline() {
     const { projects, handleUpdateProject, handleDeleteProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
@@ -151,11 +152,20 @@ export default function MasterPipeline() {
                                                 <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden shadow-inner">
                                                     <div className={`h-full transition-all ${p.health==='Red'?'bg-rose-500':p.health==='Yellow'?'bg-amber-500':'bg-emerald-500'}`} style={{width: `${progNum}%`}}></div>
                                                 </div>
-                                                <div className="text-[10px] font-black w-10 text-right text-slate-700">{p.progress || '0%'}</div>
+                                                <EditableCell 
+                                                    value={p.progress || '0%'}
+                                                    onSave={(newProgress) => handleUpdateProject(targetId, 'progress', newProgress)}
+                                                    type="text"
+                                                    className="text-[10px] font-black w-10 text-right text-slate-700"
+                                                />
                                             </div>
-                                            <div className={`text-[9px] font-bold mt-1 uppercase tracking-widest ${p.health==='Red'?'text-rose-600':p.health==='Yellow'?'text-amber-600':'text-emerald-600'}`}>
-                                                ● {p.health || 'Green'}
-                                            </div>
+                                            <EditableCell 
+                                                value={p.health || 'Green'}
+                                                onSave={(newHealth) => handleUpdateProject(targetId, 'health', newHealth)}
+                                                type="select"
+                                                placeholder="health"
+                                                className="text-[9px] font-bold uppercase tracking-widest mt-1 w-20"
+                                            />
                                         </td>
                                         <td className="p-4 align-top">
                                             <div className="font-black text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 w-max shadow-sm mb-2">${p.mrr || 0}</div>

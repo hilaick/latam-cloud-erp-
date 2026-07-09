@@ -5,10 +5,14 @@ export default function MasterExecutionHub() {
     const { projects, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [globalTasks, setGlobalTasks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [bulkUpdateProgress, setBulkUpdateProgress] = useState('');
+    const [selectedTasks, setSelectedTasks] = useState(new Set());
 
     // Filters
     const [raciFilter, setRaciFilter] = useState('All');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [projectFilter, setProjectFilter] = useState('All');
+    const [showBulkUpdate, setShowBulkUpdate] = useState(false);
 
     const getAuthHeaders = () => {
         const token = localStorage.getItem('erp_jwt_token');
@@ -21,22 +25,96 @@ export default function MasterExecutionHub() {
         fetch('/api/wbs/global', { headers: getAuthHeaders() })
             .then(r => r.json())
             .then(d => { 
-                if (d.success) setGlobalTasks(d.tasks); 
+                if (d.success) setGlobalTasks(d.tasks || []); 
                 setIsLoading(false);
             })
-            .catch(() => setIsLoading(false));
+            .catch(() => {
+                setGlobalTasks([]);
+                setIsLoading(false);
+            });
     }, []);
 
     const updateTaskProgress = async (taskId, newProgress) => {
         await fetch('/api/wbs/task', { 
             method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ id: taskId, progress: newProgress }) 
         });
-        setGlobalTasks(globalTasks.map(t => t.id === taskId ? { ...t, progress: newProgress } : t));
+        setGlobalTasks((globalTasks || []).map(t => t.id === taskId ? { ...t, progress: newProgress } : t));
+    };
+
+    const updateBulkProgress = async () => {
+        if (!bulkUpdateProgress || selectedTasks.size === 0) return;
+        
+        const updates = Array.from(selectedTasks).map(taskId => ({
+            id: taskId,
+            progress: bulkUpdateProgress
+        }));
+
+        // Update each task
+        for (const task of updates) {
+            await fetch('/api/wbs/task', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(task)
+            });
+        }
+
+        // Update local state
+        setGlobalTasks((globalTasks || []).map(t => 
+            selectedTasks.has(t.id) ? { ...t, progress: bulkUpdateProgress } : t
+        ));
+        
+        // Reset
+        setSelectedTasks(new Set());
+        setBulkUpdateProgress('');
+        setShowBulkUpdate(false);
+        alert(`Updated ${selectedTasks.size} tasks to ${bulkUpdateProgress}`);
+    };
+
+    const toggleTaskSelection = (taskId) => {
+        const newSelected = new Set(selectedTasks);
+        if (newSelected.has(taskId)) {
+            newSelected.delete(taskId);
+        } else {
+            newSelected.add(taskId);
+        }
+        setSelectedTasks(newSelected);
+    };
+
+    const selectAllTasks = () => {
+        const tasks = processedTasks || [];
+        if (selectedTasks.size === tasks.length) {
+            setSelectedTasks(new Set());
+        } else {
+            setSelectedTasks(new Set(tasks.map(t => t.id)));
+        }
     };
 
     const navigateToProject = (id) => {
         setActiveProjectId(id);
         setActivePhase('wizard'); // Teleports user directly to the exact project
+    };
+
+    // Get unique projects for filter dropdown
+    const uniqueProjects = useMemo(() => {
+        const projectMap = new Map();
+        (globalTasks || []).forEach(task => {
+            if (task.project_name && !projectMap.has(task.project_id)) {
+                projectMap.set(task.project_id, task.project_name);
+            }
+        });
+        return Array.from(projectMap.entries()).map(([id, name]) => ({ id, name }));
+    }, [globalTasks]);
+
+    // Get project timeline info
+    const getProjectTimeline = (projectId) => {
+        const project = projects.find(p => String(p.id) === String(projectId));
+        if (!project) return { kickoff: 'TBD', expectedClose: 'TBD' };
+        
+        return {
+            kickoff: project.kickoff || 'TBD',
+            expectedClose: project.expectedCloseDate || project.date || 'TBD',
+            lifecycleState: project.lifecycleState || 'unknown'
+        };
     };
 
     // 🚨 ACTIONABLE PMO LOGIC: Filter and identify overdue tasks
@@ -45,7 +123,7 @@ export default function MasterExecutionHub() {
         // Remove time for strict date comparison
         today.setHours(0,0,0,0);
 
-        return globalTasks.filter(t => {
+        return (globalTasks || []).filter(t => {
             // Check RACI
             if (raciFilter !== 'All' && t.raci !== raciFilter) return false;
             
@@ -53,6 +131,9 @@ export default function MasterExecutionHub() {
             const isComplete = t.progress === '100%';
             if (statusFilter === 'Completed' && !isComplete) return false;
             if (statusFilter === 'In Progress' && isComplete) return false;
+            
+            // Check Project filter
+            if (projectFilter !== 'All' && t.project_id !== projectFilter) return false;
             
             return true;
         }).map(t => {
@@ -66,15 +147,16 @@ export default function MasterExecutionHub() {
             }
             return { ...t, isOverdue };
         });
-    }, [globalTasks, raciFilter, statusFilter]);
+    }, [globalTasks, raciFilter, statusFilter, projectFilter]);
 
     // Statistics for the Header
     const stats = useMemo(() => {
         const total = processedTasks.length;
         const complete = processedTasks.filter(t => t.progress === '100%').length;
         const overdue = processedTasks.filter(t => t.isOverdue).length;
-        return { total, complete, overdue };
-    }, [processedTasks]);
+        const selected = selectedTasks.size;
+        return { total, complete, overdue, selected };
+    }, [processedTasks, selectedTasks]);
 
     return (
         <div className="max-w-[1800px] mx-auto space-y-6 pb-12 animate-fade-in">
@@ -93,6 +175,10 @@ export default function MasterExecutionHub() {
                     
                     <div className="flex gap-4">
                         <div className="bg-slate-800/80 border border-slate-600 p-4 rounded-xl text-center min-w-[120px]">
+                            <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Projects</div>
+                            <div className="text-3xl font-black text-blue-400">{uniqueProjects.length}</div>
+                        </div>
+                        <div className="bg-slate-800/80 border border-slate-600 p-4 rounded-xl text-center min-w-[120px]">
                             <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Active Tasks</div>
                             <div className="text-3xl font-black text-blue-400">{stats.total}</div>
                         </div>
@@ -105,6 +191,12 @@ export default function MasterExecutionHub() {
                             <div className="text-[10px] uppercase tracking-widest text-rose-400 font-bold mb-1">Overdue Delays</div>
                             <div className="text-3xl font-black text-rose-400">{stats.overdue}</div>
                         </div>
+                        {stats.selected > 0 && (
+                            <div className="bg-indigo-900/30 border border-indigo-500/30 p-4 rounded-xl text-center min-w-[120px] animate-pulse">
+                                <div className="text-[10px] uppercase tracking-widest text-indigo-400 font-bold mb-1">Selected</div>
+                                <div className="text-3xl font-black text-indigo-400">{stats.selected}</div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -116,6 +208,14 @@ export default function MasterExecutionHub() {
                     <span className="text-xs font-black uppercase tracking-widest text-slate-600">Filters:</span>
                 </div>
                 
+                {/* Project Filter */}
+                <select value={projectFilter} onChange={e=>setProjectFilter(e.target.value)} className="p-2.5 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50 min-w-[180px] cursor-pointer">
+                    <option value="All">All Projects</option>
+                    {uniqueProjects.map(proj => (
+                        <option key={proj.id} value={proj.id}>{proj.name}</option>
+                    ))}
+                </select>
+
                 <select value={raciFilter} onChange={e=>setRaciFilter(e.target.value)} className="p-2.5 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50 min-w-[180px] cursor-pointer">
                     <option value="All">All RACI Owners</option>
                     <option value="Huawei">Huawei PM / SA</option>
@@ -124,11 +224,95 @@ export default function MasterExecutionHub() {
                 </select>
 
                 <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className="p-2.5 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50 min-w-[180px] cursor-pointer">
-                    <option value="All">All Statuses</option>
-                    <option value="In Progress">Pending / In Progress</option>
-                    <option value="Completed">100% Completed</option>
+                    <option value="All">All Status</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
                 </select>
+
+                {/* Bulk Actions */}
+                <div className="ml-auto flex items-center gap-3">
+                    {selectedTasks.size > 0 && (
+                        <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                            <span className="text-xs font-bold text-blue-700">{selectedTasks.size} selected</span>
+                            <button 
+                                onClick={() => setSelectedTasks(new Set())}
+                                className="text-blue-500 hover:text-blue-700 text-xs font-bold"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    )}
+                    
+                    <button 
+                        onClick={() => setShowBulkUpdate(!showBulkUpdate)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-sm transition-colors flex items-center gap-2"
+                    >
+                        <i className="fas fa-edit"></i>
+                        Bulk Update
+                    </button>
+                </div>
             </div>
+
+            {/* Bulk Update Panel */}
+            {showBulkUpdate && (
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 animate-fade-in">
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-black text-blue-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                            <i className="fas fa-bullhorn"></i>
+                            Bulk Progress Update
+                        </h4>
+                        <button 
+                            onClick={() => setShowBulkUpdate(false)}
+                            className="text-blue-500 hover:text-blue-700"
+                        >
+                            <i className="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                            <label className="text-xs font-bold text-blue-700 uppercase tracking-widest block mb-1">
+                                Set Progress for {selectedTasks.size} Selected Tasks
+                            </label>
+                            <select 
+                                value={bulkUpdateProgress}
+                                onChange={e => setBulkUpdateProgress(e.target.value)}
+                                className="w-full p-2.5 border border-blue-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-white"
+                            >
+                                <option value="">Select Progress Level</option>
+                                <option value="0%">0% Pending</option>
+                                <option value="25%">25% Started</option>
+                                <option value="50%">50% Halfway</option>
+                                <option value="75%">75% Nearing</option>
+                                <option value="100%">100% Done</option>
+                            </select>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={selectAllTasks}
+                                className="px-4 py-2.5 bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 text-xs font-black uppercase tracking-widest rounded-lg shadow-sm transition-colors"
+                            >
+                                {selectedTasks.size === (processedTasks || []).length ? 'Deselect All' : 'Select All'}
+                            </button>
+                            
+                            <button 
+                                onClick={updateBulkProgress}
+                                disabled={!bulkUpdateProgress || selectedTasks.size === 0}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <i className="fas fa-check"></i>
+                                Apply to {selectedTasks.size} Tasks
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <p className="text-xs text-blue-600 mt-3">
+                        <i className="fas fa-info-circle mr-1"></i>
+                        This will update progress for all selected tasks to the same value. Use filters to narrow down tasks first.
+                    </p>
+                </div>
+            )}
 
             {/* Main Action Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -137,7 +321,7 @@ export default function MasterExecutionHub() {
                         <div className="flex items-center justify-center h-64 text-slate-400">
                             <i className="fas fa-circle-notch fa-spin text-3xl mr-3 text-blue-500"></i> Fetching Global Portfolio...
                         </div>
-                    ) : processedTasks.length === 0 ? (
+                    ) : (processedTasks || []).length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400 border-2 border-dashed border-slate-100 m-8 rounded-xl bg-slate-50">
                             <i className="fas fa-clipboard-check text-4xl mb-3 opacity-50"></i>
                             <h4 className="font-black text-lg text-slate-600">No Tasks Match Filters</h4>
@@ -147,6 +331,14 @@ export default function MasterExecutionHub() {
                         <table className="w-full text-left whitespace-nowrap">
                             <thead className="bg-slate-50 text-[10px] uppercase tracking-widest font-black text-slate-500 border-b border-slate-200">
                                 <tr>
+                                    <th className="p-4 w-12">
+                                        <input 
+                                            type="checkbox"
+                                            checked={selectedTasks.size === (processedTasks || []).length && (processedTasks || []).length > 0}
+                                            onChange={selectAllTasks}
+                                            className="w-4 h-4 accent-blue-600 cursor-pointer"
+                                        />
+                                    </th>
                                     <th className="p-4 w-10">Alert</th>
                                     <th className="p-4 w-64">Project Location</th>
                                     <th className="p-4 w-24">WBS ID</th>
@@ -163,6 +355,18 @@ export default function MasterExecutionHub() {
                                     return (
                                         <tr key={t.id} className={`transition-colors group ${t.is_parent ? 'bg-slate-50 border-t-2 border-slate-200' : 'hover:bg-blue-50'} ${t.isOverdue ? 'bg-rose-50 hover:bg-rose-100' : ''}`}>
                                             
+                                            {/* Checkbox for bulk selection */}
+                                            <td className="p-4 text-center">
+                                                {!t.is_parent && (
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedTasks.has(t.id)}
+                                                        onChange={() => toggleTaskSelection(t.id)}
+                                                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                                                    />
+                                                )}
+                                            </td>
+
                                             {/* Alert Indicator */}
                                             <td className="p-4 text-center">
                                                 {t.isOverdue ? <i className="fas fa-exclamation-circle text-rose-500 text-lg animate-pulse" title="Task is past its end date!"></i> : 
@@ -170,10 +374,16 @@ export default function MasterExecutionHub() {
                                                  <i className="fas fa-clock text-slate-300"></i>}
                                             </td>
 
-                                            {/* Project Name */}
+                                            {/* Project Name with Timeline */}
                                             <td className="p-4 font-black text-slate-800 truncate max-w-[250px] cursor-pointer hover:text-blue-600" onClick={() => navigateToProject(t.project_id)} title="Jump to Project">
                                                 {proj ? proj.name : t.project_id}
                                                 <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{proj?.customerName || 'Unknown Customer'}</div>
+                                                <div className="text-[8px] text-slate-400 mt-0.5">
+                                                    {(() => {
+                                                        const timeline = getProjectTimeline(t.project_id);
+                                                        return `Kickoff: ${timeline.kickoff} | Target: ${timeline.expectedClose}`;
+                                                    })()}
+                                                </div>
                                             </td>
 
                                             {/* WBS ID */}

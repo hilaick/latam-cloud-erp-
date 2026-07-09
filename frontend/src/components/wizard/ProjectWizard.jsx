@@ -48,6 +48,19 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
     const handlePhaseClick = (phaseId) => {
         setCurrentStep(phaseId);
+        
+        // Update lifecycleState based on selected phase
+        const phaseMap = {
+            1: '1_arb',
+            2: '2_architecture', 
+            3: '3_planning',
+            4: '4_execution',
+            5: '5_postlive'
+        };
+        
+        if (phaseMap[phaseId] && activeProject?.id) {
+            onUpdateProject(activeProject.id, 'lifecycleState', phaseMap[phaseId]);
+        }
     };
 
     if (!activeProject) {

@@ -194,6 +194,11 @@ export const ERPProvider = ({ children }) => {
         .then(r => { 
             if(r.status === 401 || r.status === 422) handleAuthError();
             else if(!r.ok) throw new Error(`Failed to save project: ${r.status} ${r.statusText}`);
+            
+            // Update local state after successful save
+            setProjects(prev => prev.map(p => 
+                String(p.id) === String(id) ? modifiedProject : p
+            ));
         })
         .catch(err => {
             console.error('Error saving project to DB:', err);

@@ -353,7 +353,8 @@ def update_delete_customer(c_id):
                 ('tier1_ak', 'tier1_sk'),
                 ('tier2_ak', 'tier2_sk'),
                 ('tier3_ak', 'tier3_sk'),
-                ('aws_ak', 'aws_sk')
+                ('aws_ak', 'aws_sk'),
+                ('source_huawei_ak', 'source_huawei_sk')  # Added source Huawei Cloud credentials
             ]
             
             for ak_field, sk_field in ak_sk_pairs:
@@ -402,7 +403,96 @@ def update_delete_customer(c_id):
 @crm_bp.route('/api/wbs/global', methods=['GET'])
 @jwt_required()
 def get_global_wbs():
-    return jsonify({"success": True, "tasks": []})
+    try:
+        from models import ProjectData
+        import json
+        
+        all_tasks = []
+        projects = ProjectData.query.all()
+        
+        for project in projects:
+            try:
+                project_data = json.loads(project.data) if isinstance(project.data, str) else project.data
+                migration_plan = project_data.get('migrationPlan', [])
+                
+                for task in migration_plan:
+                    # Add project_id to each task for reference
+                    task_with_project = dict(task)
+                    task_with_project['project_id'] = str(project.id)
+                    task_with_project['project_name'] = project_data.get('name', 'Unknown Project')
+                    task_with_project['customer_name'] = project_data.get('customerName', 'Unknown Customer')
+                    task_with_project['lifecycle_state'] = project_data.get('lifecycleState', 'unknown')
+                    
+                    # Map field names to match frontend expectations
+                    if 'resp' in task_with_project:
+                        task_with_project['raci'] = task_with_project.pop('resp')
+                    if 'prog' in task_with_project:
+                        task_with_project['progress'] = task_with_project.pop('prog')
+                    if 'start' in task_with_project:
+                        task_with_project['start_date'] = task_with_project.pop('start')
+                    if 'end' in task_with_project:
+                        task_with_project['end_date'] = task_with_project.pop('end')
+                    if 'isParent' in task_with_project:
+                        task_with_project['is_parent'] = task_with_project.pop('isParent')
+                    if 'id' in task_with_project:
+                        task_with_project['wbs_id'] = task_with_project.pop('id')
+                    
+                    all_tasks.append(task_with_project)
+            except Exception as e:
+                print(f"Error parsing project {project.id}: {e}")
+                continue
+        
+        return jsonify({"success": True, "tasks": all_tasks})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@crm_bp.route('/api/wbs/task', methods=['POST'])
+@jwt_required()
+def update_wbs_task():
+    try:
+        data = request.json
+        task_id = data.get('id')
+        new_progress = data.get('progress')
+        
+        if not task_id or not new_progress:
+            return jsonify({"success": False, "error": "Task ID and progress required"}), 400
+        
+        # Since WBS tasks are stored in project.migrationPlan, we need to find and update
+        from models import ProjectData
+        import json
+        
+        updated = False
+        projects = ProjectData.query.all()
+        
+        for project in projects:
+            try:
+                project_data = json.loads(project.data) if isinstance(project.data, str) else project.data
+                migration_plan = project_data.get('migrationPlan', [])
+                
+                for i, task in enumerate(migration_plan):
+                    if task.get('id') == task_id:
+                        # Update the task progress
+                        migration_plan[i]['prog'] = new_progress
+                        project_data['migrationPlan'] = migration_plan
+                        project.data = json.dumps(project_data, ensure_ascii=False)
+                        db.session.commit()
+                        updated = True
+                        break
+                
+                if updated:
+                    break
+            except Exception as e:
+                print(f"Error updating task in project {project.id}: {e}")
+                continue
+        
+        if updated:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Task not found"}), 404
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @crm_bp.route('/api/erp/playbooks', methods=['GET', 'POST'])
 @jwt_required()

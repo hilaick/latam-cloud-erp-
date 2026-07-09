@@ -469,6 +469,19 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
                                 <button onClick={handleExportCSV} className="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-slate-600">
                                     <i className="fas fa-file-csv mr-2"></i> Export Procurement Report
                                 </button>
+                                <button onClick={() => {
+                                    // Save the current state including matrix, unquotedMatrix, and diagnostics
+                                    const finopsData = {
+                                        matrix: matrix || [],
+                                        unquoted_matrix: unquotedMatrix || [],
+                                        diagnostics: apiDiagnostics || [],
+                                        saved_at: new Date().toISOString()
+                                    };
+                                    onUpdateProject(activeProject.id, 'finops_matrix', finopsData);
+                                    alert('Commercial True-Up state saved successfully!');
+                                }} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-blue-500">
+                                    <i className="fas fa-save mr-2"></i> Save State
+                                </button>
                                 <button onClick={handleHandover} className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md border border-emerald-400">
                                     Mark Technically Complete <i className="fas fa-arrow-right ml-2"></i>
                                 </button>

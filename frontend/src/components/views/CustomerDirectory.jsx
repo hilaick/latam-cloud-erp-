@@ -25,7 +25,9 @@ export default function CustomerDirectory() {
             ak: '', sk: '', 
             tier1AK: '', tier1SK: '', tier2AK: '', tier2SK: '', tier3AK: '', tier3SK: '', 
             awsAK: '', awsSK: '', azureTenant: '', azureClient: '', azureSecret: '', azureSubscriptionId: '', vCenterHost: '',
-            osDomain: '', osUser: '', osPassword: ''
+            osDomain: '', osUser: '', osPassword: '',
+            // Source Huawei Cloud credentials for cross-account/region migrations
+            source_huawei_ak: '', source_huawei_sk: '', source_huawei_region: '', source_huawei_project_id: '', source_huawei_domain_id: ''
         });
         setIsCreating(true);
         setValidationStatus({});
@@ -220,6 +222,27 @@ export default function CustomerDirectory() {
                                         <div className="grid grid-cols-2 gap-4">
                                             <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier2AK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier2AK: e.target.value})} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
                                             <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier2SK || ''} onChange={e=>setEditingCustomer({...editingCustomer, tier2SK: e.target.value})} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Source Huawei Cloud Credentials for Cross-Account/Region Migrations */}
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 relative shadow-sm">
+                                        <h4 className="font-black text-blue-800 text-sm mb-1 flex items-center">
+                                            <i className="fas fa-exchange-alt text-blue-500 mr-2"></i>
+                                            Source Huawei Cloud (Cross-Account/Region)
+                                            <span className="ml-2 bg-blue-100 text-blue-700 text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest">Migration Only</span>
+                                        </h4>
+                                        <p className="text-[10px] text-blue-600 mb-3">Use these credentials for Huawei Cloud → Huawei Cloud migrations (different account/region)</p>
+                                        
+                                        <div className="grid grid-cols-2 gap-4 mb-3">
+                                            <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Access Key (AK)</label><input type="password" value={editingCustomer.source_huawei_ak || ''} onChange={e=>setEditingCustomer({...editingCustomer, source_huawei_ak: e.target.value})} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                                            <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Secret Key (SK)</label><input type="password" value={editingCustomer.source_huawei_sk || ''} onChange={e=>setEditingCustomer({...editingCustomer, source_huawei_sk: e.target.value})} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-3 gap-4">
+                                            <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><input type="text" value={editingCustomer.source_huawei_region || ''} onChange={e=>setEditingCustomer({...editingCustomer, source_huawei_region: e.target.value})} placeholder="ap-southeast-3" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                                            <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e=>setEditingCustomer({...editingCustomer, source_huawei_project_id: e.target.value})} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                                            <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e=>setEditingCustomer({...editingCustomer, source_huawei_domain_id: e.target.value})} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                                         </div>
                                     </div>
                                 </div>

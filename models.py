@@ -83,6 +83,13 @@ class Customer(db.Model):
     os_user = db.Column(db.String(120))
     os_password = db.Column(db.Text)  # Already Text for encrypted ciphertext
 
+    # 4. MIGRATION SOURCE CREDENTIALS (For Huawei Cloud cross-account/region migrations)
+    source_huawei_ak = db.Column(db.Text)  # Source Huawei Cloud AK for migration discovery
+    source_huawei_sk = db.Column(db.Text)  # Source Huawei Cloud SK for migration discovery
+    source_huawei_region = db.Column(db.String(50))  # Source region (if different from target)
+    source_huawei_project_id = db.Column(db.String(100))  # Source project ID (if different from target)
+    source_huawei_domain_id = db.Column(db.String(100))  # Source domain ID (if different from target)
+
 class HuaweiAccount(db.Model):
     __tablename__ = 'huawei_accounts'
     id = db.Column(db.String(50), primary_key=True)

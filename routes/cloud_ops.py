@@ -336,6 +336,7 @@ def get_live_inventory():
         data = request.get_json()
         customer_id = data.get('customer_id')
         provider = data.get('provider', 'Huawei')
+        region = data.get('region', 'la-south-2')
         
         if not customer_id: 
             return jsonify({"success": False, "error": "Customer ID is required."}), 400
@@ -343,9 +344,25 @@ def get_live_inventory():
         customer = Customer.query.get(customer_id)
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
+        # LIVE CLOUD NOC - ALWAYS use MASTER AK/SK for target infrastructure monitoring
+        # This is for Phase 5 (PostLive) monitoring, NOT for discovery
+        logger.info(f"LIVE CLOUD NOC: Using MASTER credentials for customer_id={customer_id}")
+        
+        if not customer or not customer.ak or not customer.sk:
+            return jsonify({"success": False, "error": "Customer Master AK/SK missing from Vault."}), 400
+            
         if provider == 'Huawei':
             from services.huawei_discovery import HuaweiDiscovery
-            discovery_engine = HuaweiDiscovery(encrypted_ak_data=customer.ak, encrypted_sk_data=customer.sk, region=data.get('region', 'la-south-2'), master_password=master_password)
+            
+            # Always use master credentials for Live Cloud NOC (target infrastructure)
+            discovery_engine = HuaweiDiscovery(
+                encrypted_ak_data=customer.ak, 
+                encrypted_sk_data=customer.sk, 
+                region=region, 
+                master_password=master_password
+            )
+            logger.info(f"LIVE CLOUD NOC: Scanning target infrastructure in region {region}")
+            
             result = discovery_engine.discover_all()
 
         elif provider == 'AWS':
@@ -371,10 +388,15 @@ def get_live_inventory():
         logger.error(f"Live Inventory Discovery Error: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
-@cloud_ops_bp.route('/api/migration/tools', methods=['POST'])
+@cloud_ops_bp.route('/api/migration/tools', methods=['POST', 'GET'])
 @jwt_required()
 def get_migration_tools():
     try:
+        if request.method == 'GET':
+            # For GET requests, return empty recommendations or default data
+            return jsonify({"success": True, "data": [], "message": "No target architecture provided. Use POST with target_architecture or mapperNodes for recommendations."})
+        
+        # POST request logic
         data = request.get_json()
         target_architecture = data.get('target_architecture') or data.get('mapperNodes', [])
         if not target_architecture:

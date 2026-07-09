@@ -270,6 +270,81 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                 )}
             </div>
             {/* Tool Matrix omitted for brevity, it stays exactly the same */}
+
+            {/* Help Guide Modal */}
+            {showDiscoveryHelp && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowDiscoveryHelp(false)}></div>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl relative z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 bg-blue-600 text-white flex justify-between items-center shrink-0">
+                            <h3 className="font-black text-lg"><i className="fas fa-question-circle mr-2"></i> Source Infrastructure Discovery Help Guide</h3>
+                            <button onClick={() => setShowDiscoveryHelp(false)} className="text-blue-200 hover:text-white transition-colors"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+                        
+                        <div className="p-8 overflow-y-auto bg-slate-50 flex-1">
+                            <div className="space-y-6">
+                                <div>
+                                    <h4 className="font-black text-lg text-slate-800 mb-3">Live Vault Sync</h4>
+                                    <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                                        Uses Customer Vault AK/SK credentials to securely query live infrastructure via Huawei Cloud APIs.
+                                    </p>
+                                    <ul className="text-slate-600 text-sm space-y-2 ml-4">
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>Huawei Cloud</b>: Uses source Huawei Cloud credentials for cross-account/region migrations</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>AWS</b>: Requires AWS Access Key/Secret in Customer Vault</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-check-circle text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>Azure</b>: Requires Azure Subscription ID (optional if saved in Vault)</span>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div>
+                                    <h4 className="font-black text-lg text-slate-800 mb-3">Offline File Import</h4>
+                                    <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                                        When API access is blocked or unavailable, upload customer infrastructure data from:
+                                    </p>
+                                    <ul className="text-slate-600 text-sm space-y-2 ml-4">
+                                        <li className="flex items-start">
+                                            <i className="fas fa-file-excel text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>vCenter/Hyper-V exports</b>: CSV or Excel files</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-file-excel text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>Cloud provider exports</b>: AWS Cost Explorer, Azure Cost Management</span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <i className="fas fa-file-excel text-emerald-500 mt-1 mr-2"></i>
+                                            <span><b>Manual inventory</b>: Custom spreadsheets with server details</span>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                    <h4 className="font-black text-blue-800 mb-2 flex items-center">
+                                        <i className="fas fa-lightbulb mr-2"></i> Pro Tip
+                                    </h4>
+                                    <p className="text-blue-700 text-sm">
+                                        For Huawei Cloud cross-account/region migrations, ensure the customer has <b>Source Huawei Cloud credentials</b> saved in their profile. 
+                                        The system will automatically use these instead of master credentials when <code>sourceEnvironment</code> is set to <code>huawei_cross_account</code> or <code>huawei_cross_region</code>.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
+                            <button onClick={() => setShowDiscoveryHelp(false)} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md transition-colors">
+                                Got it!
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

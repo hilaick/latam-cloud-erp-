@@ -7,7 +7,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
     const [subTab, setSubTab] = useState('intake');
     const [showUploader, setShowUploader] = useState(false);
     
-    const blueprintData = project.blueprintData;
+    const blueprintData = project.blueprintData || (project.mapperNodes && project.mapperNodes.length > 0 ? { topology: { compute: project.mapperNodes.filter(n => n.type === 'ECS'), databases: project.mapperNodes.filter(n => n.type === 'RDS'), network: project.mapperNodes.filter(n => n.type === 'VPC'), storage: project.mapperNodes.filter(n => n.type === 'EVS') } } : null);
     
     const [artefacts, setArtefacts] = useState(project.artefacts || { hld: false, targetArch: false, sow: !!blueprintData });
 

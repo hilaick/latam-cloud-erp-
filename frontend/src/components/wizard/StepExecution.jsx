@@ -430,7 +430,7 @@ function GovernanceView({ project, onUpdateProject }) {
                     <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer"><input type="checkbox" className="w-5 h-5 accent-amber-500" /><span className="text-xs font-bold text-slate-700">mig_worker securely destroyed from Target VPC.</span></label>
                 </div>
 
-                <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '5_post_live'); alert("Phase Completed! Moving to Post-Live Governance.");}} className="px-8 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg transition-transform active:scale-95">
+                <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '5_postlive'); alert("Phase Completed! Moving to Post-Live Governance.");}} className="px-8 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg transition-transform active:scale-95">
                     Sign Off & Proceed to True-Up <i className="fas fa-arrow-right ml-2"></i>
                 </button>
             </div>
