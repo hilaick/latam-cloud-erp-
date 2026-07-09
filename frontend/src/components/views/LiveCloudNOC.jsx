@@ -114,13 +114,13 @@ export default function LiveCloudNOC() {
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
                         <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <h3 className="font-black text-slate-800"><i className="fas fa-server text-blue-500 mr-2"></i> Compute (ECS)</h3>
-                            <span className="bg-blue-100 text-blue-800 px-2 rounded font-black text-xs">{inventory.ecs.length}</span>
+                            <span className="bg-blue-100 text-blue-800 px-2 rounded font-black text-xs">{(inventory.compute || []).length}</span>
                         </div>
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left text-xs">
                                 <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Flavor</th><th className="p-3">Status</th></tr></thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {inventory.ecs.map(s => (
+                                    {(inventory.compute || []).map(s => (
                                         <tr key={s.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{s.name}</td><td className="p-3 font-mono text-[10px]">{s.flavor?.id}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-[9px] font-black ${s.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{s.status}</span></td></tr>
                                     ))}
                                 </tbody>
@@ -132,13 +132,13 @@ export default function LiveCloudNOC() {
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
                         <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <h3 className="font-black text-slate-800"><i className="fas fa-network-wired text-purple-500 mr-2"></i> Networks (VPC)</h3>
-                            <span className="bg-purple-100 text-purple-800 px-2 rounded font-black text-xs">{inventory.vpc.length}</span>
+                            <span className="bg-purple-100 text-purple-800 px-2 rounded font-black text-xs">{inventory.network?.filter(n => n.type === 'VPC').length || 0}</span>
                         </div>
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left text-xs">
                                 <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">CIDR</th><th className="p-3">Status</th></tr></thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {inventory.vpc.map(v => (
+                                    {inventory.network?.filter(n => n.type === 'VPC').map(v => (
                                         <tr key={v.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{v.name}</td><td className="p-3 font-mono text-[10px]">{v.cidr}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{v.status}</span></td></tr>
                                     ))}
                                 </tbody>
@@ -150,13 +150,13 @@ export default function LiveCloudNOC() {
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[500px] flex flex-col">
                         <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <h3 className="font-black text-slate-800"><i className="fas fa-database text-rose-500 mr-2"></i> Databases (RDS)</h3>
-                            <span className="bg-rose-100 text-rose-800 px-2 rounded font-black text-xs">{inventory.rds.length}</span>
+                            <span className="bg-rose-100 text-rose-800 px-2 rounded font-black text-xs">{(inventory.databases || []).length}</span>
                         </div>
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left text-xs">
                                 <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th className="p-3">Name</th><th className="p-3">Engine</th><th className="p-3">Status</th></tr></thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {inventory.rds.map(r => (
+                                    {(inventory.databases || []).map(r => (
                                         <tr key={r.id} className="hover:bg-slate-50"><td className="p-3 font-bold">{r.name}</td><td className="p-3 font-mono text-[10px]">{r.datastore?.type}</td><td className="p-3"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-700">{r.status}</span></td></tr>
                                     ))}
                                 </tbody>
