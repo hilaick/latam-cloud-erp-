@@ -13,7 +13,7 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
         if (step === 1) return !!triage.project_type && (triage.businessDrivers && triage.businessDrivers.length > 0);
         if (step === 2) return triage.migrationScope && triage.migrationScope.length > 0;
         if (step === 3) return triage.sourceEnvironment && triage.sourceEnvironment.length > 0;
-        if (step === 4) return !!triage.deliveryScope;
+        if (step === 4) return triage.deliveryScope && triage.deliveryScope.length > 0;
         if (step === 5) return triage.authLevel && triage.authLevel.length > 0;
         return false;
     };
@@ -108,7 +108,7 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
                     <div className="animate-fade-in space-y-6">
                         <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest border-b border-slate-200 pb-2"><i className="fas fa-cloud text-sky-500 mr-2"></i> Source Environments</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {['VMware', 'Hyper-V', 'AWS EC2', 'Azure VMs', 'GCP Compute', 'Huawei Cloud', 'On-Premise Bare Metal', 'Other Cloud'].map(opt => (
+                            {['ON-PREMISE VMWARE', 'ON-PREMISE HYPER-V', 'AWS', 'AZURE', 'GOOGLE CLOUD', 'Huawei Cloud', 'On-Premise Bare Metal', 'Other Cloud'].map(opt => (
                                 <label key={opt} className={`flex items-center gap-3 p-5 rounded-xl border-2 cursor-pointer transition-colors ${((triage.sourceEnvironment || []).includes(opt)) ? 'bg-sky-50 border-sky-400' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                                     <input type="checkbox" checked={(triage.sourceEnvironment || []).includes(opt)} onChange={() => handleMulti('sourceEnvironment', opt)} className="rounded text-sky-600 w-5 h-5" />
                                     <span className={`text-xs font-black uppercase tracking-widest ${((triage.sourceEnvironment || []).includes(opt)) ? 'text-sky-800' : 'text-slate-600'}`}>{opt}</span>
@@ -131,9 +131,10 @@ function HorizontalPresalesWizard({ triage, setTriage }) {
                                 { id: 'security', label: 'Security / SecOps' },
                                 { id: 'post_live', label: 'Post-Live Support' }
                             ].map(opt => (
-                                <div key={opt.id} onClick={() => handleSingle('deliveryScope', opt.id)} className={`p-5 rounded-xl border-2 cursor-pointer flex items-center justify-center text-center transition-all ${triage.deliveryScope === opt.id ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                                    <span className="text-xs font-black uppercase tracking-widest">{opt.label}</span>
-                                </div>
+                                <label key={opt.id} className={`flex items-center gap-3 p-5 rounded-xl border-2 cursor-pointer transition-colors ${((triage.deliveryScope || []).includes(opt.id)) ? 'bg-purple-50 border-purple-400' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                    <input type="checkbox" checked={(triage.deliveryScope || []).includes(opt.id)} onChange={() => handleMulti('deliveryScope', opt.id)} className="rounded text-purple-600 w-5 h-5" />
+                                    <span className={`text-xs font-black uppercase tracking-widest ${((triage.deliveryScope || []).includes(opt.id)) ? 'text-purple-800' : 'text-slate-600'}`}>{opt.label}</span>
+                                </label>
                             ))}
                         </div>
                     </div>
@@ -191,7 +192,7 @@ export default function PreSalesRadar() {
         migrationScope: [],
         sourceEnvironment: [], 
         authLevel: [], 
-        deliveryScope: '' 
+        deliveryScope: [] 
     });
 
     const [expanded, setExpanded] = useState({ prospect: true, sizing: true, ready: true });
@@ -232,7 +233,7 @@ export default function PreSalesRadar() {
             sourceEnvironment: Array.isArray(triage.sourceEnvironment) ? triage.sourceEnvironment.join(', ') : triage.sourceEnvironment, 
             authLevel: Array.isArray(triage.authLevel) ? triage.authLevel : [triage.authLevel],
             migrationScope: Array.isArray(triage.migrationScope) ? triage.migrationScope : [triage.migrationScope],
-            deliveryScope: triage.deliveryScope, 
+            deliveryScope: Array.isArray(triage.deliveryScope) ? triage.deliveryScope.join(', ') : triage.deliveryScope, 
             businessDrivers: triage.businessDrivers,
             project_type: triage.project_type, 
             lifecycleState: '1_arb'
@@ -248,7 +249,7 @@ export default function PreSalesRadar() {
         }
         
         setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
-        setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: '' });
+        setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: [] });
     };
 
     const executeDelete = () => {
@@ -285,7 +286,7 @@ export default function PreSalesRadar() {
                             <button 
                                 onClick={() => {
                                     setEditingProject(null);
-                                    setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: '' });
+                                    setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: [] });
                                     setNewLeadCustomer('');
                                     setNewLeadName('');
                                     setNewLeadCountry('');
@@ -327,7 +328,7 @@ export default function PreSalesRadar() {
                                                         migrationScope: Array.isArray(p.migrationScope) ? p.migrationScope : (p.migrationScope ? [p.migrationScope] : []),
                                                         sourceEnvironment: Array.isArray(p.sourceEnvironment) ? p.sourceEnvironment : (p.sourceEnvironment ? p.sourceEnvironment.split(', ').filter(Boolean) : []),
                                                         authLevel: Array.isArray(p.authLevel) ? p.authLevel : (p.authLevel ? [p.authLevel] : []),
-                                                        deliveryScope: p.deliveryScope || ''
+                                                        deliveryScope: Array.isArray(p.deliveryScope) ? p.deliveryScope : (p.deliveryScope ? p.deliveryScope.split(', ').filter(Boolean) : [])
                                                     });
                                                     // Also populate the basic form fields
                                                     setNewLeadCustomer(p.customerName || '');
