@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function MasterExecutionHub() {
@@ -103,7 +103,7 @@ export default function MasterExecutionHub() {
     };
 
     // Calculate credential status for a customer
-    const getCustomerCredentialStatus = useCallback((customer) => {
+    const getCustomerCredentialStatus = (customer) => {
         if (!customer) return { hasAny: false, types: [], count: 0, badge: null };
         
         const hasHuaweiMaster = customer.ak && customer.sk;
@@ -147,7 +147,7 @@ export default function MasterExecutionHub() {
                 </span>
             )
         };
-    }, []);
+    };
 
     // Memoized credential status by customer ID
     const credentialStatusByCustomerId = useMemo(() => {
@@ -156,7 +156,7 @@ export default function MasterExecutionHub() {
             statusMap[customer.id] = getCustomerCredentialStatus(customer);
         });
         return statusMap;
-    }, [customers, getCustomerCredentialStatus]);
+    }, [customers]);
 
     // Calculate credential summary statistics
     const credentialSummary = useMemo(() => {
@@ -176,10 +176,9 @@ export default function MasterExecutionHub() {
                 return;
             }
             
-            const customer = customers.find(c => c.id === project.customerId);
-            const status = getCustomerCredentialStatus(customer);
+            const status = credentialStatusByCustomerId[project.customerId];
             
-            if (!status.hasAny) {
+            if (!status?.hasAny) {
                 projectsWithNoCreds++;
             } else if (status.count === 4) {
                 projectsWithFullCreds++;
@@ -194,7 +193,7 @@ export default function MasterExecutionHub() {
             withPartialCreds: projectsWithPartialCreds,
             withNoCreds: projectsWithNoCreds
         };
-    }, [customers, projects, processedTasks, getCustomerCredentialStatus]);
+    }, [customers, projects, processedTasks]);
 
     // Get unique projects for filter dropdown
     const uniqueProjects = useMemo(() => {
@@ -245,10 +244,10 @@ export default function MasterExecutionHub() {
                 const customer = customers?.find(c => c.id === proj.customerId);
                 if (!customer) return false;
                 
-                const status = getCustomerCredentialStatus(customer);
+                const status = credentialStatusByCustomerId[proj.customerId];
                 
-                if (credentialsFilter === 'Has Credentials' && !status.hasAny) return false;
-                if (credentialsFilter === 'No Credentials' && status.hasAny) return false;
+                if (credentialsFilter === 'Has Credentials' && !status?.hasAny) return false;
+                if (credentialsFilter === 'No Credentials' && status?.hasAny) return false;
             }
             
             return true;
