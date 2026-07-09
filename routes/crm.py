@@ -219,9 +219,22 @@ def manage_customers():
                     
                     # We are intentionally NOT sending keys to the frontend.
                     # We only send boolean indicators so the UI knows if a key exists.
-                    "ak": True if c.ak else False, 
-                    "awsAK": True if c.aws_ak else False,
-                    "azureTenant": True if c.azure_tenant_id else False,
+                    "ak": True if c.ak else False,
+                    "sk": True if c.sk else False,
+                    "source_ak": True if c.source_huawei_ak else False,
+                    "source_sk": True if c.source_huawei_sk else False,
+                    "tier1_ak": True if c.tier1_ak else False,
+                    "tier1_sk": True if c.tier1_sk else False,
+                    "tier2_ak": True if c.tier2_ak else False,
+                    "tier2_sk": True if c.tier2_sk else False,
+                    "tier3_ak": True if c.tier3_ak else False,
+                    "tier3_sk": True if c.tier3_sk else False,
+                    "aws_ak": True if c.aws_ak else False,
+                    "aws_sk": True if c.aws_sk else False,
+                    "azure_client_id": True if c.azure_client_id else False,
+                    "azure_client_secret": True if c.azure_client_secret else False,
+                    "azure_tenant_id": True if c.azure_tenant_id else False,
+                    "azure_subscription_id": True if c.azure_subscription_id else False,
                     
                     "os_domain": c.os_domain, 
                     "os_user": c.os_user, 

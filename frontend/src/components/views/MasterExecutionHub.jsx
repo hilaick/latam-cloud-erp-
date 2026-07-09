@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function MasterExecutionHub() {
@@ -102,6 +102,100 @@ export default function MasterExecutionHub() {
         setActivePhase('wizard'); // Teleports user directly to the exact project
     };
 
+    // Calculate credential status for a customer
+    const getCustomerCredentialStatus = useCallback((customer) => {
+        if (!customer) return { hasAny: false, types: [], count: 0, badge: null };
+        
+        const hasHuaweiMaster = customer.ak && customer.sk;
+        const hasSourceHuawei = customer.source_ak && customer.source_sk;
+        const hasHuaweiTiers = customer.tier1_ak || customer.tier2_ak || customer.tier3_ak;
+        const hasMultiCloud = customer.aws_ak || customer.azure_client_id;
+        const hasAnyCredentials = hasHuaweiMaster || hasSourceHuawei || hasHuaweiTiers || hasMultiCloud;
+        
+        if (!hasAnyCredentials) {
+            return {
+                hasAny: false,
+                types: [],
+                count: 0,
+                badge: (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-rose-300" title="No customer credentials">
+                        <i className="fas fa-exclamation-triangle"></i> No Creds
+                    </span>
+                )
+            };
+        }
+        
+        const credentialTypes = [];
+        if (hasHuaweiMaster) credentialTypes.push('Huawei Master');
+        if (hasSourceHuawei) credentialTypes.push('Source Huawei');
+        if (hasHuaweiTiers) credentialTypes.push('Huawei Tiers');
+        if (hasMultiCloud) credentialTypes.push('Multi-Cloud');
+        
+        const title = `Credentials: ${credentialTypes.join(', ')}`;
+        const badgeColor = credentialTypes.length === 4 ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                           credentialTypes.length === 3 ? 'bg-purple-100 text-purple-700 border-purple-300' :
+                           credentialTypes.length === 2 ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                           'bg-amber-100 text-amber-700 border-amber-300';
+        
+        return {
+            hasAny: true,
+            types: credentialTypes,
+            count: credentialTypes.length,
+            badge: (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${badgeColor} text-[8px] font-black uppercase tracking-widest rounded-full border`} title={title}>
+                    <i className="fas fa-key"></i> {credentialTypes.length} Creds
+                </span>
+            )
+        };
+    }, []);
+
+    // Memoized credential status by customer ID
+    const credentialStatusByCustomerId = useMemo(() => {
+        const statusMap = {};
+        customers.forEach(customer => {
+            statusMap[customer.id] = getCustomerCredentialStatus(customer);
+        });
+        return statusMap;
+    }, [customers, getCustomerCredentialStatus]);
+
+    // Calculate credential summary statistics
+    const credentialSummary = useMemo(() => {
+        if (!customers.length) return null;
+        
+        let projectsWithFullCreds = 0;
+        let projectsWithPartialCreds = 0;
+        let projectsWithNoCreds = 0;
+        
+        // Get unique projects from processedTasks
+        const uniqueProjectIds = [...new Set(processedTasks.map(t => t.project_id))];
+        
+        uniqueProjectIds.forEach(projectId => {
+            const project = projects.find(p => p.id === projectId);
+            if (!project || !project.customerId) {
+                projectsWithNoCreds++;
+                return;
+            }
+            
+            const customer = customers.find(c => c.id === project.customerId);
+            const status = getCustomerCredentialStatus(customer);
+            
+            if (!status.hasAny) {
+                projectsWithNoCreds++;
+            } else if (status.count === 4) {
+                projectsWithFullCreds++;
+            } else {
+                projectsWithPartialCreds++;
+            }
+        });
+        
+        return {
+            totalProjects: uniqueProjectIds.length,
+            withFullCreds: projectsWithFullCreds,
+            withPartialCreds: projectsWithPartialCreds,
+            withNoCreds: projectsWithNoCreds
+        };
+    }, [customers, projects, processedTasks, getCustomerCredentialStatus]);
+
     // Get unique projects for filter dropdown
     const uniqueProjects = useMemo(() => {
         const projectMap = new Map();
@@ -148,17 +242,13 @@ export default function MasterExecutionHub() {
                 const proj = projects.find(p => p.id === t.project_id);
                 if (!proj || !proj.customerId) return false;
                 
-                const customer = (customers || []).find(c => c.id === proj.customerId);
+                const customer = customers?.find(c => c.id === proj.customerId);
                 if (!customer) return false;
                 
-                const hasHuaweiMaster = customer.ak && customer.sk;
-                const hasSourceHuawei = customer.source_ak && customer.source_sk;
-                const hasHuaweiTiers = customer.tier1_ak || customer.tier2_ak || customer.tier3_ak;
-                const hasMultiCloud = customer.aws_ak || customer.azure_client_id;
-                const hasAnyCredentials = hasHuaweiMaster || hasSourceHuawei || hasHuaweiTiers || hasMultiCloud;
+                const status = getCustomerCredentialStatus(customer);
                 
-                if (credentialsFilter === 'Has Credentials' && !hasAnyCredentials) return false;
-                if (credentialsFilter === 'No Credentials' && hasAnyCredentials) return false;
+                if (credentialsFilter === 'Has Credentials' && !status.hasAny) return false;
+                if (credentialsFilter === 'No Credentials' && status.hasAny) return false;
             }
             
             return true;
@@ -226,6 +316,109 @@ export default function MasterExecutionHub() {
                     </div>
                 </div>
             </div>
+
+            {/* Credential Summary Panel */}
+            {credentialSummary && (
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-3 mb-4">
+                        <i className="fas fa-key text-slate-500"></i>
+                        <h3 className="text-lg font-black text-slate-800">Credential Coverage</h3>
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                            {credentialSummary.totalProjects} Projects
+                        </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Full Credentials */}
+                        <div className={`p-4 rounded-xl border ${credentialSummary.withFullCreds > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${credentialSummary.withFullCreds > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                                    <span className="text-sm font-bold text-slate-700">Complete Credentials</span>
+                                </div>
+                                <span className={`text-2xl font-black ${credentialSummary.withFullCreds > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    {credentialSummary.withFullCreds}
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                                All 4 credential categories (Huawei Master, Source Huawei, Huawei Tiers, Multi-Cloud)
+                            </div>
+                            {credentialSummary.withFullCreds > 0 && (
+                                <button 
+                                    onClick={() => {
+                                        // Filter to show only projects with full credentials
+                                        // This would require tracking which projects have which credential status
+                                        alert('Filtering by credential status would require additional implementation');
+                                    }}
+                                    className="mt-2 text-xs font-bold text-emerald-600 hover:text-emerald-800"
+                                >
+                                    <i className="fas fa-filter mr-1"></i> Filter
+                                </button>
+                            )}
+                        </div>
+                        
+                        {/* Partial Credentials */}
+                        <div className={`p-4 rounded-xl border ${credentialSummary.withPartialCreds > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${credentialSummary.withPartialCreds > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}></div>
+                                    <span className="text-sm font-bold text-slate-700">Partial Credentials</span>
+                                </div>
+                                <span className={`text-2xl font-black ${credentialSummary.withPartialCreds > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    {credentialSummary.withPartialCreds}
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                                1-3 credential categories configured
+                            </div>
+                            {credentialSummary.withPartialCreds > 0 && (
+                                <button 
+                                    onClick={() => {
+                                        alert('Filtering by credential status would require additional implementation');
+                                    }}
+                                    className="mt-2 text-xs font-bold text-amber-600 hover:text-amber-800"
+                                >
+                                    <i className="fas fa-filter mr-1"></i> Filter
+                                </button>
+                            )}
+                        </div>
+                        
+                        {/* No Credentials */}
+                        <div className={`p-4 rounded-xl border ${credentialSummary.withNoCreds > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${credentialSummary.withNoCreds > 0 ? 'bg-rose-500' : 'bg-slate-300'}`}></div>
+                                    <span className="text-sm font-bold text-slate-700">No Credentials</span>
+                                </div>
+                                <span className={`text-2xl font-black ${credentialSummary.withNoCreds > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                    {credentialSummary.withNoCreds}
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                                Missing all credential categories
+                            </div>
+                            {credentialSummary.withNoCreds > 0 && (
+                                <button 
+                                    onClick={() => setCredentialsFilter('No Credentials')}
+                                    className="mt-2 text-xs font-bold text-rose-600 hover:text-rose-800"
+                                >
+                                    <i className="fas fa-filter mr-1"></i> Filter
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                        <div className="text-sm text-slate-600">
+                            <span className="font-bold">Credential Categories:</span>{' '}
+                            <span className="text-emerald-600 font-medium">Huawei Master</span>,{' '}
+                            <span className="text-purple-600 font-medium">Source Huawei</span>,{' '}
+                            <span className="text-blue-600 font-medium">Huawei Tiers</span>,{' '}
+                            <span className="text-amber-600 font-medium">Multi-Cloud</span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Controls & Filters */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
@@ -411,43 +604,7 @@ export default function MasterExecutionHub() {
                                             <td className="p-4 font-black text-slate-800 truncate max-w-[250px] cursor-pointer hover:text-blue-600" onClick={() => navigateToProject(t.project_id)} title="Jump to Project">
                                                 <div className="flex items-center gap-2">
                                                     <span>{proj ? proj.name : t.project_id}</span>
-                                                    {proj && proj.customerId && (() => {
-                                                        const customer = (customers || []).find(c => c.id === proj.customerId);
-                                                        if (!customer) return null;
-                                                        
-                                                        const hasHuaweiMaster = customer.ak && customer.sk;
-                                                        const hasSourceHuawei = customer.source_ak && customer.source_sk;
-                                                        const hasHuaweiTiers = customer.tier1_ak || customer.tier2_ak || customer.tier3_ak;
-                                                        const hasMultiCloud = customer.aws_ak || customer.azure_client_id;
-                                                        const hasAnyCredentials = hasHuaweiMaster || hasSourceHuawei || hasHuaweiTiers || hasMultiCloud;
-                                                        
-                                                        if (!hasAnyCredentials) {
-                                                            return (
-                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-rose-300" title="No customer credentials">
-                                                                    <i className="fas fa-exclamation-triangle"></i> No Creds
-                                                                </span>
-                                                            );
-                                                        }
-                                                        
-                                                        // Show which credentials are available
-                                                        const credentialTypes = [];
-                                                        if (hasHuaweiMaster) credentialTypes.push('Huawei Master');
-                                                        if (hasSourceHuawei) credentialTypes.push('Source Huawei');
-                                                        if (hasHuaweiTiers) credentialTypes.push('Huawei Tiers');
-                                                        if (hasMultiCloud) credentialTypes.push('Multi-Cloud');
-                                                        
-                                                        const title = `Credentials: ${credentialTypes.join(', ')}`;
-                                                        const badgeColor = credentialTypes.length === 4 ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
-                                                                           credentialTypes.length === 3 ? 'bg-purple-100 text-purple-700 border-purple-300' :
-                                                                           credentialTypes.length === 2 ? 'bg-blue-100 text-blue-700 border-blue-300' :
-                                                                           'bg-amber-100 text-amber-700 border-amber-300';
-                                                        
-                                                        return (
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${badgeColor} text-[8px] font-black uppercase tracking-widest rounded-full border`} title={title}>
-                                                                <i className="fas fa-key"></i> {credentialTypes.length} Creds
-                                                            </span>
-                                                        );
-                                                    })()}
+                                                    {proj && proj.customerId && credentialStatusByCustomerId[proj.customerId]?.badge}
                                                 </div>
                                                 <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{proj?.customerName || 'Unknown Customer'}</div>
                                                 <div className="text-[8px] text-slate-400 mt-0.5">

@@ -134,6 +134,40 @@ def diagnostic():
         }
     })
 
+@app.route('/api/debug/customers-test')
+def debug_customers_test():
+    """Debug endpoint to check customer data without auth"""
+    try:
+        from models import Customer
+        customers = Customer.query.all()
+        result = []
+        for c in customers:
+            result.append({
+                "id": c.id,
+                "name": c.name,
+                "has_ak": bool(c.ak),
+                "has_sk": bool(c.sk),
+                "has_source_ak": bool(c.source_huawei_ak),
+                "has_source_sk": bool(c.source_huawei_sk),
+                "has_tier1_ak": bool(c.tier1_ak),
+                "has_tier1_sk": bool(c.tier1_sk),
+                "has_tier2_ak": bool(c.tier2_ak),
+                "has_tier2_sk": bool(c.tier2_sk),
+                "has_tier3_ak": bool(c.tier3_ak),
+                "has_tier3_sk": bool(c.tier3_sk),
+                "has_aws_ak": bool(c.aws_ak),
+                "has_aws_sk": bool(c.aws_sk),
+                "has_azure_client_id": bool(c.azure_client_id),
+                "has_azure_client_secret": bool(c.azure_client_secret),
+            })
+        return jsonify({
+            "success": True,
+            "count": len(result),
+            "customers": result
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok', 'timestamp': time.time()})
