@@ -102,7 +102,8 @@ export default function MasterExecutionHub() {
         setActivePhase('wizard'); // Teleports user directly to the exact project
     };
 
-    // Calculate credential status for a customer
+    // Calculate credential status for a customer - Temporarily disabled for debugging
+    /*
     const getCustomerCredentialStatus = (customer) => {
         if (!customer) return { hasAny: false, types: [], count: 0, badge: null };
         
@@ -149,7 +150,7 @@ export default function MasterExecutionHub() {
         };
     };
 
-    // Memoized credential status by customer ID
+    // Memoized credential status by customer ID - Temporarily disabled for debugging
     const credentialStatusByCustomerId = useMemo(() => {
         const statusMap = {};
         (customers || []).forEach(customer => {
@@ -158,7 +159,7 @@ export default function MasterExecutionHub() {
         return statusMap;
     }, [customers]);
 
-    // Calculate credential summary statistics
+    // Calculate credential summary statistics - Temporarily disabled for debugging
     const credentialSummary = useMemo(() => {
         if (!customers || !customers.length) return null;
         
@@ -194,6 +195,7 @@ export default function MasterExecutionHub() {
             withNoCreds: projectsWithNoCreds
         };
     }, [customers, projects, processedTasks, credentialStatusByCustomerId]);
+    */
 
     // Get unique projects for filter dropdown
     const uniqueProjects = useMemo(() => {
@@ -236,7 +238,8 @@ export default function MasterExecutionHub() {
             // Check Project filter
             if (projectFilter !== 'All' && t.project_id !== projectFilter) return false;
             
-            // Check Credentials filter
+            // Check Credentials filter - Temporarily disabled for debugging
+            /*
             if (credentialsFilter !== 'All') {
                 const proj = (projects || []).find(p => p.id === t.project_id);
                 if (!proj || !proj.customerId) return false;
@@ -249,6 +252,7 @@ export default function MasterExecutionHub() {
                 if (credentialsFilter === 'Has Credentials' && !status?.hasAny) return false;
                 if (credentialsFilter === 'No Credentials' && status?.hasAny) return false;
             }
+            */
             
             return true;
         }).map(t => {
@@ -262,7 +266,7 @@ export default function MasterExecutionHub() {
             }
             return { ...t, isOverdue };
         });
-    }, [globalTasks, raciFilter, statusFilter, projectFilter, credentialsFilter, projects, customers, credentialStatusByCustomerId]);
+    }, [globalTasks, raciFilter, statusFilter, projectFilter, credentialsFilter, projects, customers]);
 
     // Statistics for the Header
     const stats = useMemo(() => {
@@ -316,7 +320,8 @@ export default function MasterExecutionHub() {
                 </div>
             </div>
 
-            {/* Credential Summary Panel */}
+            {/* Credential Summary Panel - TEMPORARILY COMMENTED OUT FOR DEBUGGING */}
+            {/*
             {credentialSummary && (
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <div className="flex items-center gap-3 mb-4">
@@ -328,7 +333,7 @@ export default function MasterExecutionHub() {
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Full Credentials */}
+                        {/* Full Credentials *//*}
                         <div className={`p-4 rounded-xl border ${credentialSummary.withFullCreds > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -356,7 +361,7 @@ export default function MasterExecutionHub() {
                             )}
                         </div>
                         
-                        {/* Partial Credentials */}
+                        {/* Partial Credentials *//*}
                         <div className={`p-4 rounded-xl border ${credentialSummary.withPartialCreds > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -382,7 +387,7 @@ export default function MasterExecutionHub() {
                             )}
                         </div>
                         
-                        {/* No Credentials */}
+                        {/* No Credentials *//*}
                         <div className={`p-4 rounded-xl border ${credentialSummary.withNoCreds > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -418,6 +423,7 @@ export default function MasterExecutionHub() {
                     </div>
                 </div>
             )}
+            */}
 
             {/* Controls & Filters */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
@@ -447,12 +453,13 @@ export default function MasterExecutionHub() {
                     <option value="Completed">Completed</option>
                 </select>
 
-                {/* Credentials Filter */}
+                {/* Credentials Filter - Temporarily disabled for debugging
                 <select value={credentialsFilter} onChange={e=>setCredentialsFilter(e.target.value)} className="p-2.5 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50 min-w-[180px] cursor-pointer">
                     <option value="All">All Credentials</option>
                     <option value="Has Credentials">Has Credentials</option>
                     <option value="No Credentials">No Credentials</option>
                 </select>
+                */}
 
                 {/* Bulk Actions */}
                 <div className="ml-auto flex items-center gap-3">
@@ -603,7 +610,7 @@ export default function MasterExecutionHub() {
                                             <td className="p-4 font-black text-slate-800 truncate max-w-[250px] cursor-pointer hover:text-blue-600" onClick={() => navigateToProject(t.project_id)} title="Jump to Project">
                                                 <div className="flex items-center gap-2">
                                                     <span>{proj ? proj.name : t.project_id}</span>
-                                                    {proj && proj.customerId && credentialStatusByCustomerId[proj.customerId]?.badge}
+                                                    {/* Temporarily disabled for debugging: {proj && proj.customerId && credentialStatusByCustomerId[proj.customerId]?.badge} */}
                                                 </div>
                                                 <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{proj?.customerName || 'Unknown Customer'}</div>
                                                 <div className="text-[8px] text-slate-400 mt-0.5">
