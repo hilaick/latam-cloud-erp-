@@ -184,7 +184,10 @@ export default function PreSalesRadar() {
     const [newLeadCustomer, setNewLeadCustomer] = useState("");
     const [newLeadName, setNewLeadName] = useState(""); 
     const [newLeadCountry, setNewLeadCountry] = useState("");
-    const [newLeadSA, setNewLeadSA] = useState(""); 
+    const [newLeadSA, setNewLeadSA] = useState("");
+    const [newLeadMRR, setNewLeadMRR] = useState(0);
+    const [newLeadPartner, setNewLeadPartner] = useState("TBD");
+    const [newLeadTechContact, setNewLeadTechContact] = useState("TBD"); 
     
     const [triage, setTriage] = useState({
         project_type: '', 
@@ -225,18 +228,19 @@ export default function PreSalesRadar() {
             isWaiting: true, 
             waitingStage: "prospect", 
             health: "Yellow", 
-            mrr: 0, 
+            mrr: newLeadMRR || 0, 
             sa: newLeadSA.toUpperCase(), 
             country: newLeadCountry, 
-            partner: "TBD", 
-            techContact: "TBD", 
+            partner: newLeadPartner || "TBD", 
+            techContact: newLeadTechContact || "TBD", 
             sourceEnvironment: Array.isArray(triage.sourceEnvironment) ? triage.sourceEnvironment.join(', ') : triage.sourceEnvironment, 
             authLevel: Array.isArray(triage.authLevel) ? triage.authLevel : [triage.authLevel],
             migrationScope: Array.isArray(triage.migrationScope) ? triage.migrationScope : [triage.migrationScope],
             deliveryScope: Array.isArray(triage.deliveryScope) ? triage.deliveryScope.join(', ') : triage.deliveryScope, 
             businessDrivers: triage.businessDrivers,
             project_type: triage.project_type, 
-            lifecycleState: '1_arb'
+            createdAt: editingProject ? editingProject.createdAt : new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
 
         if (editingProject) {
@@ -248,7 +252,8 @@ export default function PreSalesRadar() {
             handleAddProject(projectData);
         }
         
-        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadSA(""); setNewLeadCountry(""); 
+        setNewLeadCustomer(""); setNewLeadName(""); setNewLeadCountry(""); setNewLeadSA(""); 
+        setNewLeadMRR(0); setNewLeadPartner("TBD"); setNewLeadTechContact("TBD");
         setTriage({ project_type: '', businessDrivers: [], migrationScope: [], sourceEnvironment: [], authLevel: [], deliveryScope: [] });
     };
 
@@ -276,6 +281,23 @@ export default function PreSalesRadar() {
                     <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Sales Architect *</label><input type="text" list="sas" value={newLeadSA} onChange={e=>setNewLeadSA(e.target.value.toUpperCase())} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full bg-slate-50 font-bold uppercase outline-none focus:border-blue-500" /><datalist id="sas">{uniqueSAs.map(sa => <option key={sa} value={sa} />)}</datalist></div>
                 </div>
                 
+                {/* Additional Project Details */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">MRR ($)</label>
+                        <input type="number" min="0" step="1000" value={newLeadMRR} onChange={e=>setNewLeadMRR(parseInt(e.target.value) || 0)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full font-bold outline-none focus:border-blue-500" placeholder="0" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Partner</label>
+                        <input type="text" list="partners" value={newLeadPartner} onChange={e=>setNewLeadPartner(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full font-bold outline-none focus:border-blue-500" placeholder="TBD" />
+                        <datalist id="partners">{uniquePartners.map(partner => <option key={partner} value={partner} />)}</datalist>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Tech Contact</label>
+                        <input type="text" value={newLeadTechContact} onChange={e=>setNewLeadTechContact(e.target.value)} className="p-3 border-2 border-slate-200 rounded-xl text-xs w-full font-bold outline-none focus:border-blue-500" placeholder="TBD" />
+                    </div>
+                </div>
+                
                 {/* HORIZONTAL WIZARD INJECTION */}
                 <HorizontalPresalesWizard triage={triage} setTriage={setTriage} />
                 
@@ -291,6 +313,9 @@ export default function PreSalesRadar() {
                                     setNewLeadName('');
                                     setNewLeadCountry('');
                                     setNewLeadSA('');
+                                    setNewLeadMRR(0);
+                                    setNewLeadPartner('TBD');
+                                    setNewLeadTechContact('TBD');
                                 }}
                                 className="ml-4 text-xs text-slate-500 hover:text-slate-700"
                             >
@@ -335,6 +360,9 @@ export default function PreSalesRadar() {
                                                     setNewLeadName(p.name || '');
                                                     setNewLeadCountry(p.country || '');
                                                     setNewLeadSA(p.sa || '');
+                                                    setNewLeadMRR(p.mrr || 0);
+                                                    setNewLeadPartner(p.partner || 'TBD');
+                                                    setNewLeadTechContact(p.techContact || 'TBD');
                                                 }} className="flex-1 text-[10px] font-black uppercase bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-lg border border-blue-200">Assess</button>
                                                 <button onClick={() => setProjectToDelete(p.id)} className="text-[10px] font-black uppercase bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-lg border border-rose-200"><i className="fas fa-trash-alt"></i></button>
                                             </div>
