@@ -4,6 +4,7 @@ import { ERPContext } from '../../context/ERPContext';
 export default function MasterExecutionHub() {
     const { projects, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [globalTasks, setGlobalTasks] = useState([]);
+    const [customers, setCustomers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [bulkUpdateProgress, setBulkUpdateProgress] = useState('');
     const [selectedTasks, setSelectedTasks] = useState(new Set());
@@ -33,6 +34,12 @@ export default function MasterExecutionHub() {
                 setGlobalTasks([]);
                 setIsLoading(false);
             });
+
+        // Fetch customers for credential checking
+        fetch('/api/erp/customers', { headers: getAuthHeaders() })
+            .then(r => r.json())
+            .then(data => setCustomers(data))
+            .catch(err => console.error('Failed to fetch customers:', err));
     }, []);
 
     const updateTaskProgress = async (taskId, newProgress) => {
@@ -145,9 +152,10 @@ export default function MasterExecutionHub() {
                 if (!customer) return false;
                 
                 const hasHuaweiMaster = customer.ak && customer.sk;
+                const hasSourceHuawei = customer.source_ak && customer.source_sk;
                 const hasHuaweiTiers = customer.tier1_ak || customer.tier2_ak || customer.tier3_ak;
                 const hasMultiCloud = customer.aws_ak || customer.azure_client_id;
-                const hasAnyCredentials = hasHuaweiMaster || hasHuaweiTiers || hasMultiCloud;
+                const hasAnyCredentials = hasHuaweiMaster || hasSourceHuawei || hasHuaweiTiers || hasMultiCloud;
                 
                 if (credentialsFilter === 'Has Credentials' && !hasAnyCredentials) return false;
                 if (credentialsFilter === 'No Credentials' && hasAnyCredentials) return false;
@@ -408,9 +416,10 @@ export default function MasterExecutionHub() {
                                                         if (!customer) return null;
                                                         
                                                         const hasHuaweiMaster = customer.ak && customer.sk;
+                                                        const hasSourceHuawei = customer.source_ak && customer.source_sk;
                                                         const hasHuaweiTiers = customer.tier1_ak || customer.tier2_ak || customer.tier3_ak;
                                                         const hasMultiCloud = customer.aws_ak || customer.azure_client_id;
-                                                        const hasAnyCredentials = hasHuaweiMaster || hasHuaweiTiers || hasMultiCloud;
+                                                        const hasAnyCredentials = hasHuaweiMaster || hasSourceHuawei || hasHuaweiTiers || hasMultiCloud;
                                                         
                                                         if (!hasAnyCredentials) {
                                                             return (
@@ -423,11 +432,13 @@ export default function MasterExecutionHub() {
                                                         // Show which credentials are available
                                                         const credentialTypes = [];
                                                         if (hasHuaweiMaster) credentialTypes.push('Huawei Master');
+                                                        if (hasSourceHuawei) credentialTypes.push('Source Huawei');
                                                         if (hasHuaweiTiers) credentialTypes.push('Huawei Tiers');
                                                         if (hasMultiCloud) credentialTypes.push('Multi-Cloud');
                                                         
                                                         const title = `Credentials: ${credentialTypes.join(', ')}`;
-                                                        const badgeColor = credentialTypes.length === 3 ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                                        const badgeColor = credentialTypes.length === 4 ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                                                           credentialTypes.length === 3 ? 'bg-purple-100 text-purple-700 border-purple-300' :
                                                                            credentialTypes.length === 2 ? 'bg-blue-100 text-blue-700 border-blue-300' :
                                                                            'bg-amber-100 text-amber-700 border-amber-300';
                                                         

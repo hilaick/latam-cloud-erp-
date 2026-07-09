@@ -59,10 +59,16 @@ register_hermes_sockets(socketio)
 
 # Cache busting version
 def get_js_version():
-    js_path = os.path.join(dist_folder, 'assets', 'index-CB_R2RlF.js')
-    if os.path.exists(js_path):
-        with open(js_path, 'rb') as f:
-            return hashlib.md5(f.read()).hexdigest()[:8]
+    # Dynamically find the JS file in assets folder
+    if dist_folder and os.path.exists(dist_folder):
+        assets_dir = os.path.join(dist_folder, 'assets')
+        if os.path.exists(assets_dir):
+            js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
+            if js_files:
+                js_path = os.path.join(assets_dir, js_files[0])
+                if os.path.exists(js_path):
+                    with open(js_path, 'rb') as f:
+                        return hashlib.md5(f.read()).hexdigest()[:8]
     return str(int(time.time()))
 
 @app.after_request
@@ -155,12 +161,18 @@ def serve(path):
     if os.path.exists(index_path):
         with open(index_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
-            # Add version parameter to JS file
-            version = get_js_version()
-            html_content = html_content.replace(
-                'src=\"/assets/index-BJU6pUef.js\"',
-                f'src=\"/assets/index-CB_R2RlF.js?v={version}\"'
-            )
+            # Dynamically find and add version parameter to JS file
+            if app.static_folder:
+                assets_dir = os.path.join(app.static_folder, 'assets')
+                if os.path.exists(assets_dir):
+                    js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
+                    if js_files:
+                        actual_js_file = js_files[0]
+                        # Find and replace the JS file reference in the HTML
+                        import re
+                        pattern = r'src=\"/assets/index-[^"]+\.js\"'
+                        replacement = f'src=\"/assets/{actual_js_file}?v={get_js_version()}\"'
+                        html_content = re.sub(pattern, replacement, html_content)
             return html_content
     return send_from_directory(app.static_folder, 'index.html')
 
