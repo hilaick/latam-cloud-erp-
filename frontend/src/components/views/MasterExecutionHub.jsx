@@ -193,7 +193,7 @@ export default function MasterExecutionHub() {
             withPartialCreds: projectsWithPartialCreds,
             withNoCreds: projectsWithNoCreds
         };
-    }, [customers, projects, processedTasks]);
+    }, [customers, projects, processedTasks, credentialStatusByCustomerId]);
 
     // Get unique projects for filter dropdown
     const uniqueProjects = useMemo(() => {
@@ -262,7 +262,7 @@ export default function MasterExecutionHub() {
             }
             return { ...t, isOverdue };
         });
-    }, [globalTasks, raciFilter, statusFilter, projectFilter, credentialsFilter, projects, customers]);
+    }, [globalTasks, raciFilter, statusFilter, projectFilter, credentialsFilter, projects, customers, credentialStatusByCustomerId]);
 
     // Statistics for the Header
     const stats = useMemo(() => {
