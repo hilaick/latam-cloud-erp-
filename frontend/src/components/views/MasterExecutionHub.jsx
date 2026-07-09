@@ -12,6 +12,7 @@ export default function MasterExecutionHub() {
     const [raciFilter, setRaciFilter] = useState('All');
     const [statusFilter, setStatusFilter] = useState('All');
     const [projectFilter, setProjectFilter] = useState('All');
+    const [credentialsFilter, setCredentialsFilter] = useState('All');
     const [showBulkUpdate, setShowBulkUpdate] = useState(false);
 
     const getAuthHeaders = () => {
@@ -135,6 +136,17 @@ export default function MasterExecutionHub() {
             // Check Project filter
             if (projectFilter !== 'All' && t.project_id !== projectFilter) return false;
             
+            // Check Credentials filter
+            if (credentialsFilter !== 'All') {
+                const proj = projects.find(p => p.id === t.project_id);
+                if (!proj) return false;
+                
+                const hasCredentials = proj.source_huawei_ak || proj.source_azure_client_id || proj.source_aws_access_key;
+                
+                if (credentialsFilter === 'Has Credentials' && !hasCredentials) return false;
+                if (credentialsFilter === 'No Credentials' && hasCredentials) return false;
+            }
+            
             return true;
         }).map(t => {
             // Calculate if task is OVERDUE (End date has passed and progress is not 100%)
@@ -147,7 +159,7 @@ export default function MasterExecutionHub() {
             }
             return { ...t, isOverdue };
         });
-    }, [globalTasks, raciFilter, statusFilter, projectFilter]);
+    }, [globalTasks, raciFilter, statusFilter, projectFilter, credentialsFilter, projects]);
 
     // Statistics for the Header
     const stats = useMemo(() => {
@@ -227,6 +239,13 @@ export default function MasterExecutionHub() {
                     <option value="All">All Status</option>
                     <option value="In Progress">In Progress</option>
                     <option value="Completed">Completed</option>
+                </select>
+
+                {/* Credentials Filter */}
+                <select value={credentialsFilter} onChange={e=>setCredentialsFilter(e.target.value)} className="p-2.5 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:border-blue-500 bg-slate-50 min-w-[180px] cursor-pointer">
+                    <option value="All">All Credentials</option>
+                    <option value="Has Credentials">Has Credentials</option>
+                    <option value="No Credentials">No Credentials</option>
                 </select>
 
                 {/* Bulk Actions */}
@@ -374,9 +393,21 @@ export default function MasterExecutionHub() {
                                                  <i className="fas fa-clock text-slate-300"></i>}
                                             </td>
 
-                                            {/* Project Name with Timeline */}
+                                            {/* Project Name with Timeline & Credentials Badge */}
                                             <td className="p-4 font-black text-slate-800 truncate max-w-[250px] cursor-pointer hover:text-blue-600" onClick={() => navigateToProject(t.project_id)} title="Jump to Project">
-                                                {proj ? proj.name : t.project_id}
+                                                <div className="flex items-center gap-2">
+                                                    <span>{proj ? proj.name : t.project_id}</span>
+                                                    {proj && (proj.source_huawei_ak || proj.source_azure_client_id || proj.source_aws_access_key) && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-emerald-300" title="Has source credentials">
+                                                            <i className="fas fa-key"></i> Creds
+                                                        </span>
+                                                    )}
+                                                    {proj && !proj.source_huawei_ak && !proj.source_azure_client_id && !proj.source_aws_access_key && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-rose-300" title="No source credentials">
+                                                            <i className="fas fa-exclamation-triangle"></i> No Creds
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{proj?.customerName || 'Unknown Customer'}</div>
                                                 <div className="text-[8px] text-slate-400 mt-0.5">
                                                     {(() => {
