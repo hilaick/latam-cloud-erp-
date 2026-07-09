@@ -152,7 +152,7 @@ export default function MasterExecutionHub() {
     // Memoized credential status by customer ID
     const credentialStatusByCustomerId = useMemo(() => {
         const statusMap = {};
-        customers.forEach(customer => {
+        (customers || []).forEach(customer => {
             statusMap[customer.id] = getCustomerCredentialStatus(customer);
         });
         return statusMap;
@@ -160,7 +160,7 @@ export default function MasterExecutionHub() {
 
     // Calculate credential summary statistics
     const credentialSummary = useMemo(() => {
-        if (!customers.length) return null;
+        if (!customers || !customers.length) return null;
         
         let projectsWithFullCreds = 0;
         let projectsWithPartialCreds = 0;
@@ -170,7 +170,7 @@ export default function MasterExecutionHub() {
         const uniqueProjectIds = [...new Set(processedTasks.map(t => t.project_id))];
         
         uniqueProjectIds.forEach(projectId => {
-            const project = projects.find(p => p.id === projectId);
+            const project = (projects || []).find(p => p.id === projectId);
             if (!project || !project.customerId) {
                 projectsWithNoCreds++;
                 return;
@@ -208,7 +208,7 @@ export default function MasterExecutionHub() {
 
     // Get project timeline info
     const getProjectTimeline = (projectId) => {
-        const project = projects.find(p => String(p.id) === String(projectId));
+        const project = (projects || []).find(p => String(p.id) === String(projectId));
         if (!project) return { kickoff: 'TBD', expectedClose: 'TBD' };
         
         return {
@@ -238,10 +238,10 @@ export default function MasterExecutionHub() {
             
             // Check Credentials filter
             if (credentialsFilter !== 'All') {
-                const proj = projects.find(p => p.id === t.project_id);
+                const proj = (projects || []).find(p => p.id === t.project_id);
                 if (!proj || !proj.customerId) return false;
                 
-                const customer = customers?.find(c => c.id === proj.customerId);
+                const customer = (customers || []).find(c => c.id === proj.customerId);
                 if (!customer) return false;
                 
                 const status = credentialStatusByCustomerId[proj.customerId];
@@ -576,7 +576,7 @@ export default function MasterExecutionHub() {
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-xs">
                                 {processedTasks.map(t => {
-                                    const proj = projects.find(p => p.id === t.project_id);
+                                    const proj = (projects || []).find(p => p.id === t.project_id);
                                     return (
                                         <tr key={t.id} className={`transition-colors group ${t.is_parent ? 'bg-slate-50 border-t-2 border-slate-200' : 'hover:bg-blue-50'} ${t.isOverdue ? 'bg-rose-50 hover:bg-rose-100' : ''}`}>
                                             
