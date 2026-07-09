@@ -38,7 +38,7 @@ export default function MasterExecutionHub() {
         // Fetch customers for credential checking
         fetch('/api/erp/customers', { headers: getAuthHeaders() })
             .then(r => r.json())
-            .then(data => setCustomers(data))
+            .then(data => setCustomers(data.customers || []))
             .catch(err => console.error('Failed to fetch customers:', err));
     }, []);
 
@@ -148,7 +148,7 @@ export default function MasterExecutionHub() {
                 const proj = projects.find(p => p.id === t.project_id);
                 if (!proj || !proj.customerId) return false;
                 
-                const customer = customers?.find(c => c.id === proj.customerId);
+                const customer = (customers || []).find(c => c.id === proj.customerId);
                 if (!customer) return false;
                 
                 const hasHuaweiMaster = customer.ak && customer.sk;
@@ -412,7 +412,7 @@ export default function MasterExecutionHub() {
                                                 <div className="flex items-center gap-2">
                                                     <span>{proj ? proj.name : t.project_id}</span>
                                                     {proj && proj.customerId && (() => {
-                                                        const customer = customers?.find(c => c.id === proj.customerId);
+                                                        const customer = (customers || []).find(c => c.id === proj.customerId);
                                                         if (!customer) return null;
                                                         
                                                         const hasHuaweiMaster = customer.ak && customer.sk;
