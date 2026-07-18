@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { formatShortDate } from '../../utils/helpers';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
-    const [subTab, setSubTab] = useState('commercial'); 
+    const [subTab, setSubTab] = useState('diff'); 
 
     return (
         <div className="animate-fade-in pb-12">

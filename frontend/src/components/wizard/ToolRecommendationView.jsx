@@ -29,6 +29,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
     const [loading, setLoading] = useState(false);
     const [recommendations, setRecommendations] = useState(currentProject?.toolRecommendations || null);
     const [executionMode, setExecutionMode] = useState(currentProject?.executionMode || 'manual');
+    const [filterCategory, setFilterCategory] = useState(null); // compute, database, storage, dr, null for all
 
     const handleGenerate = async () => {
         setLoading(true);
@@ -178,49 +179,168 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                 </div>
             </div>
 
-            {/* Strategic Tooling Modules */}
+                        {/* Strategic Tooling Modules with Filtering */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div 
+                    onClick={() => setFilterCategory(filterCategory === 'compute' ? null : 'compute')}
+                    className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${filterCategory === 'compute' ? 'border-indigo-500 bg-indigo-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-indigo-300'}`}
+                >
                     <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 mb-4"><i className="fas fa-server text-lg"></i></div>
                     <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Compute Migration</h3>
-                    <p className="text-xs text-slate-500 font-medium mb-3">SMS (Server Migration Service) for Block-Level Windows/Linux synchronization.</p>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 mb-4"><i className="fas fa-database text-lg"></i></div>
-                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Database Migration</h3>
-                    <p className="text-xs text-slate-500 font-medium mb-3">DRS & UGO for Zero-Downtime logical replication and schema conversion.</p>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 mb-4"><i className="fas fa-hdd text-lg"></i></div>
-                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Storage Migration</h3>
-                    <p className="text-xs text-slate-500 font-medium mb-3">OMS (Object) and CDM (Data) for large scale parallel volume transport.</p>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600 mb-4"><i className="fas fa-project-diagram text-lg"></i></div>
-                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Cross-AZ DR / HA</h3>
-                    <p className="text-xs text-slate-500 font-medium mb-3">CBR & SDRS for continuous replication and high availability architecture.</p>
-                </div>
-            </div>
-
-            {recommendations && (
-                <div className="bg-indigo-50 border border-indigo-200 p-6 rounded-2xl shadow-sm animate-slide-up">
-                    <h3 className="font-black text-indigo-900 text-sm mb-4 uppercase tracking-widest"><i className="fas fa-clipboard-check mr-2"></i> Tooling Matrix Generated</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {(recommendations.recommendations || []).map((rec, idx) => (
-                            <div key={idx} className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex items-start gap-3">
-                                <div className="mt-1"><i className="fas fa-check-circle text-indigo-500"></i></div>
-                                <div>
-                                    <div className="font-black text-slate-800 text-sm">{rec.resource_name}</div>
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Primary Tool: <span className="text-indigo-600">{rec.primary_tool.toUpperCase()}</span></div>
-                                    <div className="text-xs text-slate-600 mt-2">{rec.primary_reason}</div>
-                                </div>
-                            </div>
-                        ))}
+                    <p className="text-xs text-slate-500 font-medium mb-2">SMS (Server Migration Service) for Block-Level Windows/Linux synchronization.</p>
+                    <div className="text-xs font-black text-indigo-600">
+                        {recommendations?.recommendations?.filter(r => 
+                            ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'].some(t => r.resource_type?.toUpperCase().includes(t))
+                        ).length || 0} resources
                     </div>
                 </div>
-            )}
-
-            {/* Execution Phase Strategy Setup Build-up */}
+                <div 
+                    onClick={() => setFilterCategory(filterCategory === 'database' ? null : 'database')}
+                    className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${filterCategory === 'database' ? 'border-emerald-500 bg-emerald-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-emerald-300'}`}
+                >
+                    <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 mb-4"><i className="fas fa-database text-lg"></i></div>
+                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Database Migration</h3>
+                    <p className="text-xs text-slate-500 font-medium mb-2">DRS & UGO for Zero-Downtime logical replication and schema conversion.</p>
+                    <div className="text-xs font-black text-emerald-600">
+                        {recommendations?.recommendations?.filter(r => 
+                            ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'].some(t => r.resource_type?.toUpperCase().includes(t))
+                        ).length || 0} resources
+                    </div>
+                </div>
+                <div 
+                    onClick={() => setFilterCategory(filterCategory === 'storage' ? null : 'storage')}
+                    className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${filterCategory === 'storage' ? 'border-amber-500 bg-amber-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-amber-300'}`}
+                >
+                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 mb-4"><i className="fas fa-hdd text-lg"></i></div>
+                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Storage Migration</h3>
+                    <p className="text-xs text-slate-500 font-medium mb-2">OMS (Object) and CDM (Data) for large scale parallel volume transport.</p>
+                    <div className="text-xs font-black text-amber-600">
+                        {recommendations?.recommendations?.filter(r => 
+                            ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'].some(t => r.resource_type?.toUpperCase().includes(t))
+                        ).length || 0} resources
+                    </div>
+                </div>
+                <div 
+                    onClick={() => setFilterCategory(filterCategory === 'dr' ? null : 'dr')}
+                    className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${filterCategory === 'dr' ? 'border-rose-500 bg-rose-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-rose-300'}`}
+                >
+                    <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600 mb-4"><i className="fas fa-project-diagram text-lg"></i></div>
+                    <h3 className="font-black text-slate-800 text-sm mb-1 uppercase tracking-widest">Cross-AZ DR / HA</h3>
+                    <p className="text-xs text-slate-500 font-medium mb-2">CBR & SDRS for continuous replication and high availability architecture.</p>
+                    <div className="text-xs font-black text-rose-600">
+                        {recommendations?.recommendations?.filter(r => 
+                            ['CBR', 'SDRS', 'DR', 'HA'].some(t => r.resource_type?.toUpperCase().includes(t))
+                        ).length || 0} resources
+                    </div>
+                </div>
+            </div>             {recommendations && (
+                <div className="bg-indigo-50 border border-indigo-200 p-6 rounded-2xl shadow-sm animate-slide-up">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-black text-indigo-900 text-sm uppercase tracking-widest"><i className="fas fa-clipboard-check mr-2"></i> Tooling Matrix Generated</h3>
+                        {filterCategory && (
+                            <button 
+                                onClick={() => setFilterCategory(null)}
+                                className="text-xs font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1"
+                            >
+                                <i className="fas fa-times"></i> Clear Filter
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(recommendations.recommendations || [])
+                            .filter(rec => {
+                                if (!filterCategory) return true;
+                                const type = rec.resource_type?.toUpperCase() || '';
+                                if (filterCategory === 'compute') {
+                                    return ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'database') {
+                                    return ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'storage') {
+                                    return ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'dr') {
+                                    return ['CBR', 'SDRS', 'DR', 'HA'].some(t => type.includes(t));
+                                }
+                                return true;
+                            })
+                            .map((rec, idx) => {
+                                const type = rec.resource_type?.toUpperCase() || '';
+                                let category = 'other';
+                                let categoryColor = 'gray';
+                                let categoryText = 'Other';
+                                
+                                if (['ECS', 'BMS', 'VM', 'CCE', 'SERVER'].some(t => type.includes(t))) {
+                                    category = 'compute';
+                                    categoryColor = 'indigo';
+                                    categoryText = 'Compute';
+                                } else if (['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'].some(t => type.includes(t))) {
+                                    category = 'database';
+                                    categoryColor = 'emerald';
+                                    categoryText = 'Database';
+                                } else if (['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'].some(t => type.includes(t))) {
+                                    category = 'storage';
+                                    categoryColor = 'amber';
+                                    categoryText = 'Storage';
+                                } else if (['CBR', 'SDRS', 'DR', 'HA'].some(t => type.includes(t))) {
+                                    category = 'dr';
+                                    categoryColor = 'rose';
+                                    categoryText = 'DR/HA';
+                                }
+                                
+                                return (
+                                    <div key={idx} className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex items-start gap-3">
+                                        <div className={`mt-1 text-${categoryColor}-500`}>
+                                            <i className="fas fa-check-circle"></i>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between items-start">
+                                                <div className="font-black text-slate-800 text-sm">{rec.resource_name}</div>
+                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-${categoryColor}-100 text-${categoryColor}-700`}>
+                                                    {categoryText}
+                                                </span>
+                                            </div>
+                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                                                Primary Tool: <span className="text-indigo-600">{rec.primary_tool?.toUpperCase() || 'N/A'}</span>
+                                            </div>
+                                            <div className="text-xs text-slate-600 mt-2">{rec.primary_reason}</div>
+                                            {rec.fallback_tool && (
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                                                    Fallback: <span className="text-slate-600">{rec.fallback_tool.toUpperCase()}</span>
+                                                    <span className="text-slate-500 ml-2">{rec.fallback_reason}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        }
+                    </div>
+                    
+                    {filterCategory && (
+                        <div className="mt-4 text-xs text-slate-500 text-center">
+                            Showing {recommendations.recommendations?.filter(rec => {
+                                const type = rec.resource_type?.toUpperCase() || '';
+                                if (filterCategory === 'compute') {
+                                    return ['ECS', 'BMS', 'VM', 'CCE', 'SERVER'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'database') {
+                                    return ['RDS', 'GAUSSDB', 'DB', 'DATABASE', 'DCS'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'storage') {
+                                    return ['OBS', 'SFS', 'EVS', 'CBR', 'STORAGE'].some(t => type.includes(t));
+                                }
+                                if (filterCategory === 'dr') {
+                                    return ['CBR', 'SDRS', 'DR', 'HA'].some(t => type.includes(t));
+                                }
+                                return false;
+                            }).length || 0} of {recommendations.recommendations?.length || 0} resources
+                        </div>
+                    )}
+                </div>
+            )} {/* Execution Phase Strategy Setup Build-up */}
             <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 bg-slate-50">
                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest"><i className="fas fa-play-circle text-blue-500 mr-2"></i> Setup Phase 4 Execution Mode</h3>

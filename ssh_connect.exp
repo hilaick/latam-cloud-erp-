@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+
+set timeout 15
+set host "121.91.157.66"
+set user "root"
+set password "17c10af29A3"
+
+spawn ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=yes $user@$host
+
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "Permission denied" {
+        send_user "Permission denied\n"
+        exit 1
+    }
+    "$ " {
+        send_user "Logged in successfully\n"
+        send "hostname\r"
+        expect "$ "
+        send "whoami\r"
+        expect "$ "
+        send "pwd\r"
+        expect "$ "
+        send "exit\r"
+    }
+    timeout {
+        send_user "Connection timeout\n"
+        exit 1
+    }
+    eof {
+        send_user "Connection closed\n"
+    }
+}

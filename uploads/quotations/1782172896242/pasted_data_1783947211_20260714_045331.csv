@@ -1,0 +1,11 @@
+Service	Description	Region	AZ	Billing Mode	Purchase Amount	Unit	Quantity	Specifications	Unit Price (USD)	Discounted Unit Price (USD)	Original Price (USD)	Discount Amount (USD)	Discounted Price (USD)
+Elastic Cloud Server 1	Application Server	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	x86 | General computing | x0.4u.16g | 4 vCPUs | 16GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; High I/O | 256GB; 	46.82	46.82	46.82	0.00	46.82
+Elastic Cloud Server 2	DB Server	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	x86 | Memory-optimized | m6.2xlarge.8 | 8 vCPUs | 64GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; High I/O | 256GB; 	180.45	180.45	180.45	0.00	180.45
+Elastic Cloud Server 3	Integration Server	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	x86 | General computing | x0.2u.4g | 2 vCPUs | 4GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; High I/O | 100GB; 	20.35	20.35	20.35	0.00	20.35
+Elastic Cloud Server 4	Terminal Server	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	x86 | General computing | x0.2u.8g | 2 vCPUs | 8GiB; Huawei Cloud EulerOS | Huawei Cloud EulerOS 2.0 Standard 64 bit; High I/O | 100GB; 	22.66	22.66	22.66	0.00	22.66
+Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	Dedicated | Dynamic BGP | Traffic | 10GB; 1 ; 	2.73	2.73	2.73	0.00	2.73
+Host Security Service 1	Host Security Service	LA-Mexico City2	General AZ 	Monthly	1	month	1	Premium; 	13.80	13.80	13.80	0.00	13.80
+Virtual Private Network 1	Virtual Private Network	LA-Mexico City2	General AZ 	Pay-per-use	288	Hours	1	Professional 1 | 1PCSVPN Connection Groups; Traffic | 10GB; Traffic | 10GB; 	96.66	96.66	96.66	0.00	96.66
+Cloud Backup and Recovery 1	Cloud Backup and Recovery	LA-Mexico City2	General AZ 	Pay-per-use	384	hours	1	Server backup vault | 800GB; 	15.36	15.36	15.36	0.00	15.36
+Total Price									398.82	398.82	398.82	0.00	398.82
+Total Price													398.82

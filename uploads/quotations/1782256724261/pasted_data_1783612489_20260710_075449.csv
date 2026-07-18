@@ -1,0 +1,34 @@
+Service	Description	Region	AZ	Billing Mode	Purchase Amount	Unit	Quantity	Specifications	Unit Price (USD)	Discounted Unit Price (USD)	Original Price (USD)	Discount Amount (USD)	Discounted Price (USD)
+Elastic Cloud Server 1	Frontend Usuarios Dev	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.2u.4g | 2 vCPUs | 4GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	393.30	393.30	393.30	0.00	393.30
+Elastic Cloud Server 2	Backend Dev	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.2u.4g | 2 vCPUs | 4GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	393.30	393.30	393.30	0.00	393.30
+Elastic Cloud Server 3	Workers/Jobs Dev	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.2u.4g | 2 vCPUs | 4GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	393.30	393.30	393.30	0.00	393.30
+Relational Database Service 1	PostgreSQL RDS Dev	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	General AZ | PostgreSQL | 17 | Single | General-purpose | 2vCPUs, 4GB ; Cloud SSD | 40GB; 	653.50	653.50	653.50	0.00	653.50
+DCS (for Redis) 1	DCS (for Redis) Dev	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Basic | 7.0 | Single-node | X86 | DRAM | 4 GB | Quantity：1; 1Mbit/s; 	598.57	598.57	598.57	0.00	598.57
+Object Storage Service 1	Object Storage Service Dev	LA-Mexico City2	General AZ 	Monthly	12	month	1	100GB; 	22.68	22.68	22.68	0.00	22.68
+Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Dedicated | Dynamic BGP | Traffic | 2TB; 1 ; 	209.69	209.69	209.69	0.00	209.69
+Elastic Cloud Server 4	Frontend Usuarios QA	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.4u.8g | 4 vCPUs | 8GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	729.66	729.66	729.66	0.00	729.66
+Elastic Cloud Server 5	Backend QA	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.4u.8g | 4 vCPUs | 8GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	729.66	729.66	729.66	0.00	729.66
+Elastic Cloud Server 6	Workers/Jobs QA	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.4u.8g | 4 vCPUs | 8GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	729.66	729.66	729.66	0.00	729.66
+Relational Database Service 2	PostgreSQL RDS QA	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	General AZ | PostgreSQL | 17 | Single | General-purpose | 4vCPUs, 8GB ; Cloud SSD | 100GB; 	1,699.44	1,699.44	1,699.44	0.00	1,699.44
+DCS (for Redis) 2	DCS (for Redis) QA	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Basic | 7.0 | Single-node | X86 | DRAM | 4 GB | Quantity：1; 1Mbit/s; 	598.57	598.57	598.57	0.00	598.57
+Object Storage Service 2	Object Storage Service QA	LA-Mexico City2	General AZ 	Monthly	12	month	1	100GB; 	22.68	22.68	22.68	0.00	22.68
+Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Dedicated | Dynamic BGP | Traffic | 2TB; 1 ; 	209.69	209.69	209.69	0.00	209.69
+Elastic Load Balance 1	Elastic Load Balance QA	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	General AZ | 10 LCU; 	608.82	608.82	608.82	0.00	608.82
+Elastic Cloud Server 7	Frontend Usuarios PRD	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.8u.16g | 8 vCPUs | 16GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	1,402.50	1,402.50	1,402.50	0.00	1,402.50
+Elastic Cloud Server 8	Backend PRD	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.4u.8g | 4 vCPUs | 8GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	729.66	729.66	729.66	0.00	729.66
+Elastic Cloud Server 9	Workers/Jobs PRD	LA-Mexico City2	General AZ 	 RI	1		1	CentOS | CentOS 8.2 64bit; x86 | General computing-plus | x1e.4u.8g | 4 vCPUs | 8GiB | No Upfront | 1 Year; General Purpose SSD | 50GB; 	729.66	729.66	729.66	0.00	729.66
+Relational Database Service 3	PostgreSQL RDS PRD	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	General AZ | PostgreSQL | 17 | Primary/Standby | General-purpose | 8vCPUs, 16GB	6,762.72	6,762.72	6,762.72	0.00	6,762.72
+DCS (for Redis) 3	DCS (for Redis) PRD	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Basic | 7.0 | Single-node | X86 | DRAM | 8 GB | Quantity：1; 1Mbit/s; 	1,185.49	1,185.49	1,185.49	0.00	1,185.49
+Object Storage Service 2	Object Storage Service PRD	LA-Mexico City2	General AZ 	Monthly	12	month	1	100GB; 	22.68	22.68	22.68	0.00	22.68
+Elastic IP 1	Elastic IP	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Dedicated | Dynamic BGP | Traffic | 2TB; 1 ; 	209.69	209.69	209.69	0.00	209.69
+Elastic Load Balance 2	Elastic Load Balance PRD	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	General AZ | 20 LCU; 	1,217.64	1,217.64	1,217.64	0.00	1,217.64
+Cloud Backup and Recovery 1	Cloud Backup and Recovery	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	Server backup vault | 1000GB; 	438.00	438.00	438.00	0.00	438.00
+Host Security Service 1	Host Security Service	LA-Mexico City2	General AZ 	Monthly	12	month	9	Premium; 	13.80	13.80	1,490.40	0.00	1,490.40
+Web Application Firewall 1	Web Application Firewall	LA-Mexico City2	General AZ 	Pay-per-use	8760	hours	1	5amounts; 50amounts; 50Million times; 	3,323.76	3,323.76	3,323.76	0.00	3,323.76
+CodeArts 1	CodeArts	LA-Mexico City2	General AZ 	Monthly	12	month	1	Package | CodeArts Package | CodeArts Basic | 50; 	3,600.00	3,600.00	3,600.00	0.00	3,600.00
+Log Tank Service 1	Log Tank Service	LA-Mexico City2	General AZ 	Pay-per-use	1	month	1	59.51 GB; 299.51 GB; 299.51 GB; 300.00 GB; 300.00 GB; 	72.64	72.64	72.64	0.00	72.64
+FunctionGraph 1	FunctionGraph	LA-Mexico City2	General AZ 	Pay-per-use	1		1	20; 527343.75; 	5.92	5.92	5.92	0.00	5.92
+Support Plans 1	Support Plans	LA-Mexico City2	General AZ 	Yearly	1	Year	1	Developer | 0USD/month; 	312.00	312.00	312.00	0.00	312.00
+Content Delivery Network 1	Content Delivery Network	Global	General AZ 	Pay-per-use	1		12	International | 2 TB; 	235.52	235.52	2,826.24	0.00	2,826.24
+Total Price									28,254.20	28,254.20	32,321.52	0.00	32,321.52
+Total Price													32,321.52

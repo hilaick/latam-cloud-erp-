@@ -80,46 +80,90 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const hasQuotedNodes = quotedNodes.length > 0;
         const hasLiveNodes = liveNodes.length > 0;
         
-        // If we have quoted nodes but localNodes doesn't include them, auto-merge
+        // If we have quoted nodes but localNodes doesn't include them, auto-merge AND SAVE
         if (hasQuotedNodes && localNodes.length === 0) {
             alert("⚠️ No reconciled architecture found. Auto-merging quoted SOW items with live discovery...");
-            finalizeReconciliation();
-            return; // finalizeReconciliation will set localNodes, then user can save again
-        }
-        
-        // Save only filtered nodes based on current filter
-        let nodesToSave = localNodes;
-        
-        // Apply the same filter logic as the UI
-        if (statusFilter !== 'All') {
-            nodesToSave = localNodes.filter(n => {
-                if (statusFilter === 'In SOW') {
-                    return n.status === 'Matched' || n.status === 'Quoted Only';
-                } else if (statusFilter === 'In Discovery') {
-                    return n.status === 'Matched' || n.status === 'Live Only';
-                } else {
-                    return n.status === statusFilter;
-                }
-            });
-        }
-        
-        if (typeFilter !== 'All') {
-            nodesToSave = nodesToSave.filter(n => n.type === typeFilter);
-        }
-        
-        // Validate that we have some nodes to save
-        if (nodesToSave.length === 0) {
-            alert(`❌ No nodes match the current filter (${statusFilter}${typeFilter !== 'All' ? ` + ${typeFilter}` : ''}). Please adjust filters or include all nodes.`);
+            const mergedNodes = finalizeReconciliation();
+            
+            // 🚨 FIX: Save the auto-merged nodes immediately
+            if (mergedNodes.length > 0) {
+                // Save all nodes (including the auto-merged ones)
+                saveNodesToDatabase(mergedNodes, shouldPromote);
+            } else {
+                alert("❌ Failed to auto-merge architecture. Please add resources manually.");
+            }
             return;
         }
         
-        onUpdateProject(activeProject.id, 'mapperNodes', nodesToSave);
+        // 🚨 FIX: Save ALL localNodes, not filtered nodes
+        // The filter is only for UI display, we should save everything
+        const nodesToSave = [...localNodes];
         
-        // Update lifecycle state to indicate architecture is saved
-        onUpdateProject(activeProject.id, 'lifecycleState', '2_architecture');
+        // Validate that we have some nodes to save
+        if (nodesToSave.length === 0) {
+            alert("❌ No architecture nodes to save. Please add resources or reconcile SOW with discovery.");
+            return;
+        }
         
-        // Show confirmation with filter info
-        alert(`✅ Architecture saved successfully! ${nodesToSave.length} resources saved to Target Architecture (filtered: ${statusFilter}${typeFilter !== 'All' ? ` + ${typeFilter}` : ''}).`);
+        saveNodesToDatabase(nodesToSave, shouldPromote);
+    };
+    
+    // 🚨 FIX: Helper function to save nodes to database
+    const saveNodesToDatabase = (nodesToSave, shouldPromote) => {
+        // 🚨 CRITICAL FIX: Update ALL fields in ONE API call to avoid overwriting
+        const updates = {
+            mapperNodes: nodesToSave,
+            lifecycleState: '2_architecture'
+        };
+        
+        // Parse existing blueprint (could be string or object)
+        let existingBlueprint = activeProject?.blueprint;
+        let blueprintObj = {};
+        if (existingBlueprint) {
+            if (typeof existingBlueprint === 'string' && existingBlueprint.trim() !== '') {
+                try {
+                    blueprintObj = JSON.parse(existingBlueprint);
+                } catch (e) {
+                    console.error('Error parsing blueprint:', e);
+                    blueprintObj = {};
+                }
+            } else if (typeof existingBlueprint === 'object') {
+                blueprintObj = { ...existingBlueprint };
+            }
+        }
+        
+        // Update blueprint with target_architecture (merge with existing data)
+        updates.blueprint = {
+            ...blueprintObj,
+            target_architecture: nodesToSave
+        };
+        
+        // Also update blueprintData.target_architecture if blueprintData exists
+        if (activeProject?.blueprintData) {
+            let blueprintDataObj = {};
+            const blueprintData = activeProject.blueprintData;
+            if (typeof blueprintData === 'string' && blueprintData.trim() !== '') {
+                try {
+                    blueprintDataObj = JSON.parse(blueprintData);
+                } catch (e) {
+                    console.error('Error parsing blueprintData:', e);
+                    blueprintDataObj = {};
+                }
+            } else if (typeof blueprintData === 'object') {
+                blueprintDataObj = { ...blueprintData };
+            }
+            
+            updates.blueprintData = {
+                ...blueprintDataObj,
+                target_architecture: nodesToSave
+            };
+        }
+        
+        // Send ALL updates in ONE API call
+        onUpdateProject(activeProject.id, updates);
+        
+        // Show confirmation
+        alert(`✅ Architecture saved successfully! ${nodesToSave.length} resources saved to Target Architecture.`);
         
         if (shouldPromote && onPromote) {
             onPromote(); // This fires setSubTab('gov') from StepArchitecture
@@ -223,6 +267,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         
         setActiveTab('target');
         setTargetView('list');
+        
+        return merged; // 🚨 FIX: Return the merged nodes so we can save them
     };
 
     const handleUpdateNode = (id, field, value) => setLocalNodes(localNodes.map(n => n.id === id ? { ...n, [field]: value } : n));
@@ -373,6 +419,55 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                             // Also clear from database
                                             if (activeProject?.id) {
                                                 onUpdateProject(activeProject.id, 'mapperNodes', []);
+                                                
+                                                // 🚨 FIX: Also clear target_architecture from blueprint for backward compatibility
+                                                let existingBlueprint = activeProject?.blueprint;
+                                                let blueprintObj = {};
+                                                if (existingBlueprint) {
+                                                    if (typeof existingBlueprint === 'string' && existingBlueprint.trim() !== '') {
+                                                        try {
+                                                            blueprintObj = JSON.parse(existingBlueprint);
+                                                        } catch (e) {
+                                                            console.error('Error parsing blueprint:', e);
+                                                            blueprintObj = {};
+                                                        }
+                                                    } else if (typeof existingBlueprint === 'object') {
+                                                        blueprintObj = { ...existingBlueprint };
+                                                    }
+                                                }
+                                                
+                                                // Remove target_architecture from blueprint (keep other data)
+                                                const { target_architecture, ...updatedBlueprint } = blueprintObj;
+                                                
+                                                // Also clear from blueprintData if it exists
+                                                let updatedBlueprintData = null;
+                                                if (activeProject?.blueprintData) {
+                                                    let blueprintDataObj = {};
+                                                    const blueprintData = activeProject.blueprintData;
+                                                    if (typeof blueprintData === 'string' && blueprintData.trim() !== '') {
+                                                        try {
+                                                            blueprintDataObj = JSON.parse(blueprintData);
+                                                        } catch (e) {
+                                                            console.error('Error parsing blueprintData:', e);
+                                                            blueprintDataObj = {};
+                                                        }
+                                                    } else if (typeof blueprintData === 'object') {
+                                                        blueprintDataObj = { ...blueprintData };
+                                                    }
+                                                    
+                                                    const { target_architecture: _, ...bdWithoutTarget } = blueprintDataObj;
+                                                    updatedBlueprintData = bdWithoutTarget;
+                                                }
+                                                
+                                                // Send ALL updates in ONE API call
+                                                const updates = {
+                                                    mapperNodes: [],
+                                                    blueprint: updatedBlueprint
+                                                };
+                                                if (updatedBlueprintData !== null) {
+                                                    updates.blueprintData = updatedBlueprintData;
+                                                }
+                                                onUpdateProject(activeProject.id, updates);
                                             }
                                             setActiveTab('reconcile');
                                             alert("Architecture cleared. Click 'Merge & Review Target' to rebuild from SOW/Quote and Live Discovery.");

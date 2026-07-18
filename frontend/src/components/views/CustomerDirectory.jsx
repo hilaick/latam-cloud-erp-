@@ -202,6 +202,9 @@ export default function CustomerDirectory() {
                                                     <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
                                                     <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
                                                 </optgroup>
+                                                <optgroup label="Africa">
+                                                    <option value="af-south-1">Johannesburg, South Africa (af-south-1)</option>
+                                                </optgroup>
                                             </select>
                                         </div>
                                     </div>

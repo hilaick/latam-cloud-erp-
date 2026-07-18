@@ -102,10 +102,10 @@ export default function MasterExecutionHub() {
         setActivePhase('wizard'); // Teleports user directly to the exact project
     };
 
-    // Calculate credential status for a customer - Temporarily disabled for debugging
+    // Calculate credential status for a customer - TEMPORARILY DISABLED
     /*
     const getCustomerCredentialStatus = (customer) => {
-        if (!customer) return { hasAny: false, types: [], count: 0, badge: null };
+        if (!customer) return { hasAny: false, count: 0, badge: null };
         
         const hasHuaweiMaster = customer.ak && customer.sk;
         const hasSourceHuawei = customer.source_ak && customer.source_sk;
@@ -116,7 +116,6 @@ export default function MasterExecutionHub() {
         if (!hasAnyCredentials) {
             return {
                 hasAny: false,
-                types: [],
                 count: 0,
                 badge: (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-rose-300" title="No customer credentials">
@@ -140,7 +139,6 @@ export default function MasterExecutionHub() {
         
         return {
             hasAny: true,
-            types: credentialTypes,
             count: credentialTypes.length,
             badge: (
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${badgeColor} text-[8px] font-black uppercase tracking-widest rounded-full border`} title={title}>
@@ -150,7 +148,7 @@ export default function MasterExecutionHub() {
         };
     };
 
-    // Memoized credential status by customer ID - Temporarily disabled for debugging
+    // Memoized credential status by customer ID - TEMPORARILY DISABLED
     const credentialStatusByCustomerId = useMemo(() => {
         const statusMap = {};
         (customers || []).forEach(customer => {
@@ -159,7 +157,7 @@ export default function MasterExecutionHub() {
         return statusMap;
     }, [customers]);
 
-    // Calculate credential summary statistics - Temporarily disabled for debugging
+    // Calculate credential summary statistics - TEMPORARILY DISABLED
     const credentialSummary = useMemo(() => {
         if (!customers || !customers.length) return null;
         
@@ -610,7 +608,7 @@ export default function MasterExecutionHub() {
                                             <td className="p-4 font-black text-slate-800 truncate max-w-[250px] cursor-pointer hover:text-blue-600" onClick={() => navigateToProject(t.project_id)} title="Jump to Project">
                                                 <div className="flex items-center gap-2">
                                                     <span>{proj ? proj.name : t.project_id}</span>
-                                                    {/* Temporarily disabled for debugging: {proj && proj.customerId && credentialStatusByCustomerId[proj.customerId]?.badge} */}
+                                                    {/* Temporarily disabled: {proj && proj.customerId && credentialStatusByCustomerId[proj.customerId]?.badge} */}
                                                 </div>
                                                 <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{proj?.customerName || 'Unknown Customer'}</div>
                                                 <div className="text-[8px] text-slate-400 mt-0.5">

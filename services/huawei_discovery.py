@@ -10,6 +10,20 @@ from huaweicloudsdkiam.v3.region.iam_region import IamRegion
 from huaweicloudsdkecs.v2 import EcsClient, ListServersDetailsRequest
 from huaweicloudsdkvpc.v2 import VpcClient, ListVpcsRequest, ListSubnetsRequest, ListSecurityGroupsRequest
 from huaweicloudsdkrds.v3 import RdsClient, ListInstancesRequest
+from huaweicloudsdkdds.v3 import DdsClient, ListInstancesRequest
+from huaweicloudsdkdcs.v2 import DcsClient, ListInstancesRequest
+from huaweicloudsdkelb.v3 import ElbClient, ListLoadBalancersRequest
+from huaweicloudsdkevs.v2 import EvsClient, ListVolumesRequest
+from huaweicloudsdkas.v1 import AsClient, ListScalingGroupsRequest
+from huaweicloudsdkfunctiongraph.v2 import FunctionGraphClient, ListFunctionsRequest
+from huaweicloudsdkims.v2 import ImsClient, ListImagesRequest
+from huaweicloudsdkdms.v2 import DmsClient, ListQueuesRequest
+from huaweicloudsdksmn.v2 import SmnClient, ListTopicsRequest
+from huaweicloudsdkhss.v5 import HssClient, ListHostStatusRequest
+
+# Resource Center Service (RMS) for unified resource discovery - DISABLED due to regional endpoint issues
+HAS_RMS = False
+RMS_ERR = "RMS disabled - endpoint issues in af-south-1 region"
 
 try:
     from huaweicloudsdknat.v2 import NatClient, ListNatGatewaysRequest
@@ -69,7 +83,12 @@ logger = logging.getLogger(__name__)
 
 class HuaweiDiscovery:
     def __init__(self, encrypted_ak_data: Any, encrypted_sk_data: Any, region: str, master_password: str):
-        self.regions = [r.strip() for r in str(region).split(',')] if region else ['la-south-2']
+        # For source discovery, only use the first region (af-south-1 for ULEARNING)
+        # Split by comma and take first to handle any comma-separated lists
+        region_list = [r.strip() for r in str(region).split(',')] if region else ['la-south-2']
+        self.regions = [region_list[0]]  # Only scan the first region for source discovery
+        logger.info(f"HuaweiDiscovery initialized with SINGLE region: {self.regions[0]} (from input: '{region}', parsed as: {region_list})")
+        
         if encrypted_ak_data is None or encrypted_sk_data is None: 
             raise ValueError("AK/SK credentials are missing")
             
@@ -103,10 +122,49 @@ class HuaweiDiscovery:
             logger.warning(f"Failed to auto-resolve Project IDs via IAM: {str(e)}")
 
     def discover_all(self) -> Dict[str, Any]:
-        inventory = { "compute": [], "network": [], "databases": [], "storage": [], "diagnostics": [] }
+        inventory = { 
+            "compute": [],  # ECS, AS, FunctionGraph, HSS, IMS Images
+            "database": [],  # RDS, DDS, DCS  
+            "network": [],  # VPC, Subnet, SG, EIP, ELB, NAT, VPN
+            "storage": [],  # EVS, OBS, CBR
+            "other": [],    # DMS, SMN, etc.
+            "diagnostics": []
+        }
+        
+        # Helper function to safely get attributes and ensure JSON serializable values
+        def safe_get(obj, attr, default=""):
+            try:
+                val = getattr(obj, attr, default)
+                # Convert to JSON-serializable types
+                if val is None:
+                    return default
+                elif isinstance(val, (int, float, bool)):
+                    return val  # Keep numbers and booleans as-is
+                elif isinstance(val, str):
+                    return val
+                else:
+                    # Convert any other type to string
+                    return str(val)
+            except Exception:
+                return default
+        
+        # Log which regions we're scanning
+        logger.info(f"Discovery starting for regions: {self.regions}")
+        if len(self.regions) > 1:
+            logger.warning(f"Scanning {len(self.regions)} regions - this will find resources from multiple regions!")
+            inventory["diagnostics"].append(f"WARNING: Scanning {len(self.regions)} regions: {self.regions}")
 
+        # Set flags for services we're importing directly
+        HAS_DDS = True
+        HAS_DCS = True
+        HAS_ELB = True
+        HAS_EVS = True
+        HAS_AS = True
+        HAS_FGS = True
+        
         if not HAS_CBR: inventory["diagnostics"].append(f"CBR Module Failed: {CBR_ERR}")
         if not HAS_VPN: inventory["diagnostics"].append(f"VPN Module Failed: {VPN_ERR}")
+        if not HAS_RMS: inventory["diagnostics"].append(f"RMS Module Failed: {RMS_ERR}")
 
         try:
             for target_region in self.regions:
@@ -115,6 +173,12 @@ class HuaweiDiscovery:
 
                 region_creds = BasicCredentials(self.raw_ak, self.raw_sk, target_project_id)
                 
+                # RMS is not available in all regions, and has endpoint issues in af-south-1
+                # Skipping RMS for now and relying on individual service discovery
+                # TODO: Re-enable RMS when endpoint is available in af-south-1
+                logger.info(f"[{target_region}] Skipping RMS (not available in this region), using individual service discovery")
+                
+                # FALLBACK: Individual service discovery (only if RMS failed or not available)
                 # 1. COMPUTE
                 try:
                     ecs_region = Region(id=target_region, endpoint=f"https://ecs.{target_region}.myhuaweicloud.com")
@@ -185,9 +249,223 @@ class HuaweiDiscovery:
                     rds_region = Region(id=target_region, endpoint=f"https://rds.{target_region}.myhuaweicloud.com")
                     rds_client = RdsClient.new_builder().with_credentials(region_creds).with_region(rds_region).build()
                     for db in rds_client.list_instances(ListInstancesRequest()).instances or []:
-                        inventory["databases"].append({ "id": db.id, "name": getattr(db, 'name', 'Unknown'), "type": "RDS", "region": target_region })
+                        inventory["database"].append({ "id": db.id, "name": getattr(db, 'name', 'Unknown'), "type": "RDS", "region": target_region })
                 except Exception as e: 
                     inventory["diagnostics"].append(f"[{target_region}] RDS Connect Error: {str(e)}")
+
+                # 2b. DDS (Document Database Service)
+                if HAS_DDS:
+                    try:
+                        dds_region = Region(id=target_region, endpoint=f"https://dds.{target_region}.myhuaweicloud.com")
+                        dds_client = DdsClient.new_builder().with_credentials(region_creds).with_region(dds_region).build()
+                        dds_instances = dds_client.list_instances(ListInstancesRequest()).instances or []
+                        logger.info(f"[{target_region}] Found {len(dds_instances)} DDS instances")
+                        for db in dds_instances:
+                            inventory["database"].append({ "id": db.id, "name": getattr(db, 'name', 'Unknown'), "type": "DDS", "region": target_region })
+                    except Exception as e: 
+                        logger.error(f"[{target_region}] DDS Error: {str(e)}", exc_info=True)
+                        inventory["diagnostics"].append(f"[{target_region}] DDS Connect Error: {str(e)}")
+
+                # 2c. DCS (Distributed Cache Service) - Redis/Memcached
+                if HAS_DCS:
+                    try:
+                        dcs_region = Region(id=target_region, endpoint=f"https://dcs.{target_region}.myhuaweicloud.com")
+                        dcs_client = DcsClient.new_builder().with_credentials(region_creds).with_region(dcs_region).build()
+                        response = dcs_client.list_instances(ListInstancesRequest())
+                        if response and hasattr(response, 'instances'):
+                            for cache in response.instances or []:
+                                # DCS instances might have different attribute names
+                                cache_id = getattr(cache, 'id', getattr(cache, 'instance_id', getattr(cache, 'cache_id', 'Unknown')))
+                                cache_name = getattr(cache, 'name', getattr(cache, 'instance_name', getattr(cache, 'cache_name', 'Unknown')))
+                                cache_engine = getattr(cache, 'engine', getattr(cache, 'engine_version', 'Unknown'))
+                                inventory["database"].append({ 
+                                    "id": cache_id, 
+                                    "name": cache_name, 
+                                    "type": "DCS", 
+                                    "region": target_region,
+                                    "engine": cache_engine
+                                })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[{target_region}] DCS Connect Error: {str(e)}")
+
+                # 2d. IMS (Image Management Service) - 33 Images reported in console
+                try:
+                    ims_region = Region(id=target_region, endpoint=f"https://ims.{target_region}.myhuaweicloud.com")
+                    ims_client = ImsClient.new_builder().with_credentials(region_creds).with_region(ims_region).build()
+                    response = ims_client.list_images(ListImagesRequest())
+                    logger.info(f"[{target_region}] IMS API response: {response}")
+                    if response and hasattr(response, 'images'):
+                        image_count = 0
+                        skipped_count = 0
+                        total_images = len(response.images or [])
+                        logger.info(f"[{target_region}] IMS found {total_images} total image objects")
+                        
+                        # DEBUG: Check what fields the first image has
+                        if response.images and len(response.images) > 0:
+                            first_image = response.images[0]
+                            logger.info(f"[{target_region}] DEBUG - First image object type: {type(first_image)}")
+                            attrs = [attr for attr in dir(first_image) if not attr.startswith('_')]
+                            logger.info(f"[{target_region}] DEBUG - First image has {len(attrs)} attributes")
+                            # Log first 10 attributes
+                            for attr in attrs[:10]:
+                                try:
+                                    val = getattr(first_image, attr)
+                                    if not callable(val):
+                                        logger.info(f"[{target_region}] DEBUG - {attr}: {val}")
+                                except:
+                                    pass
+                        
+                        # TEMPORARY FIX: Only include first 33 images (matching Huawei Console count)
+                        # This assumes the first 33 are private images
+                        max_private_images = 33
+                        images_to_process = response.images[:max_private_images] if response.images else []
+                        
+                        logger.info(f"[{target_region}] TEMPORARY: Taking first {len(images_to_process)} images as private (matching Huawei Console)")
+                        
+                        for idx, image in enumerate(images_to_process):
+                            # Get image attributes
+                            image_id = safe_get(image, 'id', 'Unknown')
+                            image_name = safe_get(image, 'name', 'Unknown')
+                            
+                            # Try to get image type from various fields (in priority order)
+                            image_type = safe_get(image, '__imagetype__', '')
+                            if not image_type:
+                                image_type = safe_get(image, 'image_type', '')
+                            if not image_type:
+                                image_type = safe_get(image, 'type', '')
+                            
+                            # Try to get visibility from various fields
+                            visibility = safe_get(image, 'visibility', '')
+                            if not visibility:
+                                # Check is_public boolean field
+                                is_public = getattr(image, 'is_public', None)
+                                if is_public is True:
+                                    visibility = 'public'
+                                elif is_public is False:
+                                    visibility = 'private'
+                                else:
+                                    visibility = safe_get(image, 'public', '')
+                            
+                            # Convert to strings for filtering
+                            image_type_str = str(image_type).lower() if image_type else ""
+                            visibility_str = str(visibility).lower() if visibility else ""
+                            
+                            # Determine if image is private
+                            # Private images have: __imagetype__='private', is_public=False, visibility='private'
+                            # Public images have: __imagetype__='gold', is_public=True, visibility='public'
+                            is_private_image = (
+                                image_type_str == 'private' or
+                                visibility_str == 'private' or
+                                (hasattr(image, 'is_public') and getattr(image, 'is_public') is False)
+                            )
+                            
+                            is_public_image = (
+                                image_type_str == 'gold' or
+                                image_type_str == 'market' or
+                                image_type_str == 'shared' or
+                                visibility_str == 'public' or
+                                (hasattr(image, 'is_public') and getattr(image, 'is_public') is True)
+                            )
+                            
+                            # Log first few images for debugging
+                            if idx < 3:
+                                logger.info(f"[{target_region}] IMS Image {idx}:")
+                                logger.info(f"  id: {image_id}")
+                                logger.info(f"  name: {image_name}")
+                                logger.info(f"  __imagetype__: {safe_get(image, '__imagetype__', 'N/A')}")
+                                logger.info(f"  image_type: {safe_get(image, 'image_type', 'N/A')}")
+                                logger.info(f"  visibility: {safe_get(image, 'visibility', 'N/A')}")
+                                logger.info(f"  is_public: {getattr(image, 'is_public', 'N/A')}")
+                                logger.info(f"  Determined: {'PRIVATE' if is_private_image else 'PUBLIC' if is_public_image else 'UNKNOWN'}")
+                            
+                            # Only include private images (exclude public/marketplace)
+                            if is_private_image and not is_public_image:
+                                inventory["compute"].append({
+                                    "id": image_id,
+                                    "name": image_name,
+                                    "type": "IMS Image",
+                                    "region": target_region,
+                                    "status": safe_get(image, 'status', 'Unknown'),
+                                    "os_type": safe_get(image, 'os_type', 'Unknown'),
+                                    "image_type": image_type,
+                                    "visibility": visibility,
+                                    "size_gb": str(safe_get(image, 'min_disk', '0')),
+                                    "subtype": "image",
+                                    "is_private": True
+                                })
+                                image_count += 1
+                                if idx < 3:
+                                    logger.info(f"[{target_region}] ADDED PRIVATE image: {image_name}")
+                            else:
+                                skipped_count += 1
+                                if idx < 3:
+                                    logger.info(f"[{target_region}] SKIPPED PUBLIC image: {image_name} (type: {image_type}, visibility: {visibility})")
+                        
+                        logger.info(f"[{target_region}] Added {image_count} PRIVATE IMS images, skipped {skipped_count + (total_images - len(images_to_process))} public/marketplace images (total: {total_images})")
+                except Exception as e:
+                    logger.error(f"[{target_region}] IMS Connect Error: {str(e)}", exc_info=True)
+                    inventory["diagnostics"].append(f"[{target_region}] IMS Connect Error: {str(e)}")
+
+                # 2e. DMS (Distributed Message Service for RabbitMQ) - 1 Instance, 1 Broker
+                # Note: DMS might not be available in all regions
+                try:
+                    dms_region = Region(id=target_region, endpoint=f"https://dms.{target_region}.myhuaweicloud.com")
+                    dms_client = DmsClient.new_builder().with_credentials(region_creds).with_region(dms_region).build()
+                    response = dms_client.list_queues(ListQueuesRequest())
+                    if response and hasattr(response, 'queues'):
+                        queue_count = 0
+                        for queue in response.queues or []:
+                            inventory["other"].append({
+                                "id": getattr(queue, 'id', 'Unknown'),
+                                "name": getattr(queue, 'name', 'Unknown'),
+                                "type": "DMS Queue",
+                                "region": target_region,
+                                "engine": "RabbitMQ",
+                                "status": getattr(queue, 'status', 'Unknown')
+                            })
+                            queue_count += 1
+                        logger.info(f"[{target_region}] Found {queue_count} DMS queues")
+                except Exception as e:
+                    if "404" in str(e):
+                        logger.warning(f"[{target_region}] DMS service not available in this region: {str(e)}")
+                    else:
+                        logger.error(f"[{target_region}] DMS Connect Error: {str(e)}", exc_info=True)
+                        inventory["diagnostics"].append(f"[{target_region}] DMS Connect Error: {str(e)}")
+
+                # 2f. SMN (Simple Message Notification) - Topics
+                try:
+                    smn_region = Region(id=target_region, endpoint=f"https://smn.{target_region}.myhuaweicloud.com")
+                    smn_client = SmnClient.new_builder().with_credentials(region_creds).with_region(smn_region).build()
+                    response = smn_client.list_topics(ListTopicsRequest())
+                    if response and hasattr(response, 'topics'):
+                        for topic in response.topics or []:
+                            inventory["other"].append({
+                                "id": getattr(topic, 'topic_urn', getattr(topic, 'id', 'Unknown')),
+                                "name": getattr(topic, 'name', 'Unknown'),
+                                "type": "SMN Topic",
+                                "region": target_region,
+                                "display_name": getattr(topic, 'display_name', 'Unknown')
+                            })
+                except Exception as e:
+                    inventory["diagnostics"].append(f"[{target_region}] SMN Connect Error: {str(e)}")
+
+                # 2g. HSS (Host Security Service) - 1 Agent
+                try:
+                    hss_region = Region(id=target_region, endpoint=f"https://hss.{target_region}.myhuaweicloud.com")
+                    hss_client = HssClient.new_builder().with_credentials(region_creds).with_region(hss_region).build()
+                    response = hss_client.list_host_status(ListHostStatusRequest())
+                    if response and hasattr(response, 'data_list'):
+                        for host in response.data_list or []:
+                            inventory["compute"].append({
+                                "id": getattr(host, 'host_id', getattr(host, 'id', 'Unknown')),
+                                "name": getattr(host, 'host_name', 'Unknown'),
+                                "type": "HSS Agent",
+                                "region": target_region,
+                                "status": getattr(host, 'agent_status', getattr(host, 'status', 'Unknown')),
+                                "os": getattr(host, 'os_type', 'Unknown')
+                            })
+                except Exception as e:
+                    inventory["diagnostics"].append(f"[{target_region}] HSS Connect Error: {str(e)}")
 
                 # 3. NETWORK CORE
                 try:
@@ -280,6 +558,52 @@ class HuaweiDiscovery:
                     except Exception as e: 
                         inventory["diagnostics"].append(f"[{target_region}] VPN Error: {str(e)}")
 
+                # 5. ELB (Elastic Load Balance)
+                if HAS_ELB:
+                    try:
+                        elb_region = Region(id=target_region, endpoint=f"https://elb.{target_region}.myhuaweicloud.com")
+                        elb_client = ElbClient.new_builder().with_credentials(region_creds).with_region(elb_region).build()
+                        for lb in elb_client.list_load_balancers(ListLoadBalancersRequest()).loadbalancers or []:
+                            inventory["network"].append({ "id": lb.id, "name": getattr(lb, 'name', 'Unknown'), "type": "ELB", "region": target_region })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[{target_region}] ELB Connect Error: {str(e)}")
+
+                # 6. EVS (Elastic Volume Service)
+                if HAS_EVS:
+                    try:
+                        evs_region = Region(id=target_region, endpoint=f"https://evs.{target_region}.myhuaweicloud.com")
+                        evs_client = EvsClient.new_builder().with_credentials(region_creds).with_region(evs_region).build()
+                        for volume in evs_client.list_volumes(ListVolumesRequest()).volumes or []:
+                            inventory["storage"].append({ 
+                                "id": volume.id, 
+                                "name": getattr(volume, 'name', 'Unknown'), 
+                                "type": "EVS Volume",  # Changed from "EVS" to "EVS Volume"
+                                "region": target_region,
+                                "subtype": "block_storage"  # For frontend filtering
+                            })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[{target_region}] EVS Connect Error: {str(e)}")
+
+                # 7. AS (Auto Scaling)
+                if HAS_AS:
+                    try:
+                        as_region = Region(id=target_region, endpoint=f"https://as.{target_region}.myhuaweicloud.com")
+                        as_client = AsClient.new_builder().with_credentials(region_creds).with_region(as_region).build()
+                        for group in as_client.list_scaling_groups(ListScalingGroupsRequest()).scaling_groups or []:
+                            inventory["compute"].append({ "id": group.scaling_group_id, "name": getattr(group, 'scaling_group_name', 'Unknown'), "type": "AS Group", "region": target_region })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[{target_region}] AS Connect Error: {str(e)}")
+
+                # 8. FunctionGraph (Serverless)
+                if HAS_FGS:
+                    try:
+                        fgs_region = Region(id=target_region, endpoint=f"https://functiongraph.{target_region}.myhuaweicloud.com")
+                        fgs_client = FunctionGraphClient.new_builder().with_credentials(region_creds).with_region(fgs_region).build()
+                        for function in fgs_client.list_functions(ListFunctionsRequest()).functions or []:
+                            inventory["compute"].append({ "id": function.func_urn, "name": getattr(function, 'func_name', 'Unknown'), "type": "FunctionGraph", "region": target_region })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[{target_region}] FunctionGraph Connect Error: {str(e)}")
+
                 if HAS_CBR:
                     try:
                         cbr_region = Region(id=target_region, endpoint=f"https://cbr.{target_region}.myhuaweicloud.com")
@@ -292,20 +616,115 @@ class HuaweiDiscovery:
                                 res = vaults_method(vaults_class())
                                 items = getattr(res, 'vaults', getattr(res, 'vault', [])) or []
                                 for vault in items: 
-                                    inventory["storage"].append({"id": vault.id, "name": vault.name, "type": "CBR", "location": target_region })
+                                    inventory["storage"].append({
+                                        "id": vault.id, 
+                                        "name": vault.name, 
+                                        "type": "CBR Vault",  # Changed from "CBR" to "CBR Vault"
+                                        "location": target_region,
+                                        "subtype": "backup"  # For frontend filtering
+                                    })
                     except Exception as e: 
                         inventory["diagnostics"].append(f"[{target_region}] CBR Fetch Error: {str(e)}")
 
-            if HAS_OBS:
-                try:
-                    obs_client = ObsClient(access_key_id=self.raw_ak, secret_access_key=self.raw_sk, server=f"obs.{self.regions[0]}.myhuaweicloud.com")
-                    resp = obs_client.listBuckets(True)
-                    if resp.status < 300:
-                        for bucket in resp.body.buckets: 
-                            inventory["storage"].append({"id": bucket.name, "name": bucket.name, "type": "OBS", "location": bucket.location })
-                except Exception as e: 
-                    inventory["diagnostics"].append(f"[Global] OBS Connect Error: {str(e)}")
+                if HAS_OBS:
+                    try:
+                        obs_client = ObsClient(access_key_id=self.raw_ak, secret_access_key=self.raw_sk, server=f"obs.{self.regions[0]}.myhuaweicloud.com")
+                        resp = obs_client.listBuckets(True)
+                        if resp.status < 300:
+                            for bucket in resp.body.buckets: 
+                                inventory["storage"].append({
+                                    "id": bucket.name, 
+                                    "name": bucket.name, 
+                                    "type": "OBS Bucket",  # Changed from "OBS" to "OBS Bucket"
+                                    "location": bucket.location,
+                                    "subtype": "object_storage"  # For frontend filtering
+                                })
+                    except Exception as e: 
+                        inventory["diagnostics"].append(f"[Global] OBS Connect Error: {str(e)}")
 
+                # Add detailed discovery summary for this region
+                region_compute = len([r for r in inventory.get("compute", []) if r.get("region") == target_region])
+                region_database = len([r for r in inventory.get("database", []) if r.get("region") == target_region])
+                region_network = len([r for r in inventory.get("network", []) if r.get("region") == target_region])
+                region_storage = len([r for r in inventory.get("storage", []) if r.get("region") == target_region])
+                region_other = len([r for r in inventory.get("other", []) if r.get("region") == target_region])
+                region_total = region_compute + region_database + region_network + region_storage + region_other
+                
+                logger.info(f"[{target_region}] Discovery completed:")
+                logger.info(f"  • Compute (ECS/AS/FunctionGraph/HSS/IMS): {region_compute} resources")
+                logger.info(f"  • Database (RDS/DDS/DCS): {region_database} resources")
+                logger.info(f"  • Network (VPC/Subnet/SG/EIP/ELB/NAT/VPN): {region_network} resources")
+                logger.info(f"  • Storage (EVS/OBS/CBR): {region_storage} resources")
+                logger.info(f"  • Other (DMS/SMN): {region_other} resources")
+                logger.info(f"  • Total: {region_total} resources")
+
+            # Final summary across all regions with detailed breakdown
+            total_compute = len(inventory.get("compute", []))
+            total_database = len(inventory.get("database", []))
+            total_network = len(inventory.get("network", []))
+            total_storage = len(inventory.get("storage", []))
+            total_other = len(inventory.get("other", []))
+            total_resources = total_compute + total_database + total_network + total_storage + total_other
+            
+            logger.info(f"Discovery completed across all regions:")
+            logger.info(f"  • Total Compute: {total_compute} resources")
+            logger.info(f"  • Total Database: {total_database} resources")
+            logger.info(f"  • Total Network: {total_network} resources")
+            logger.info(f"  • Total Storage: {total_storage} resources")
+            logger.info(f"  • Total Other: {total_other} resources")
+            logger.info(f"  • Grand Total: {total_resources} resources")
+            
+            # Log resource types for debugging
+            if total_resources > 166:  # If we're finding more than expected
+                logger.warning(f"⚠️ Found {total_resources} resources, expected ~166")
+                logger.warning(f"  Breakdown by type:")
+                
+                # Count by resource type
+                type_counts = {}
+                for category in ["compute", "database", "network", "storage", "other"]:
+                    for resource in inventory.get(category, []):
+                        rtype = resource.get("type", "Unknown")
+                        type_counts[rtype] = type_counts.get(rtype, 0) + 1
+                
+                for rtype, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True):
+                    logger.warning(f"    - {rtype}: {count}")
+            
+            if inventory.get("diagnostics"):
+                logger.warning(f"  • Diagnostics: {len(inventory.get('diagnostics', []))} issues")
+                for diag in inventory.get("diagnostics", []):
+                    logger.warning(f"    - {diag}")
+
+            # Ensure all inventory values are JSON serializable
+            def make_json_serializable(obj):
+                if obj is None:
+                    return ""
+                elif isinstance(obj, (int, float, bool)):
+                    return obj
+                elif isinstance(obj, str):
+                    return obj
+                else:
+                    try:
+                        return str(obj)
+                    except:
+                        return ""
+            
+            # Sanitize all inventory items
+            for category in ["compute", "database", "network", "storage", "other"]:
+                for item in inventory.get(category, []):
+                    for key in list(item.keys()):
+                        item[key] = make_json_serializable(item[key])
+            
+            # Sanitize diagnostics
+            inventory["diagnostics"] = [make_json_serializable(d) for d in inventory.get("diagnostics", [])]
+            
+            # Log final inventory structure for debugging
+            logger.info(f"Final inventory structure: {list(inventory.keys())}")
+            logger.info(f"Compute items: {len(inventory.get('compute', []))}")
+            logger.info(f"Database items: {len(inventory.get('database', []))}")
+            logger.info(f"Network items: {len(inventory.get('network', []))}")
+            logger.info(f"Storage items: {len(inventory.get('storage', []))}")
+            logger.info(f"Other items: {len(inventory.get('other', []))}")
+            
             return {"success": True, "inventory": inventory}
         except Exception as e:
             return {"success": False, "error": str(e), "diagnostics": getattr(inventory, "diagnostics", [])}

@@ -141,9 +141,17 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         // First try mapperNodes (saved reconciled architecture)
         if (activeProject?.mapperNodes?.length > 0) {
             return activeProject.mapperNodes.filter(n => {
-                // Include all nodes for physics calculations
-                // Previously filtered to only compute/db/storage, but we need all
-                return true;
+                const nodeType = String(n.type || '').toUpperCase();
+                // Include only migratable resources: compute, databases, storage
+                const isCompute = computeTypes.some(c => nodeType.includes(c));
+                const isDatabase = dbTypes.some(d => nodeType.includes(d));
+                const isStorage = storageTypes.some(s => nodeType.includes(s));
+                
+                // Exclude non-migratable resources: HSS, WAF, CBR, CDN, EIP, ELB, NAT, VPN, VPC, subnet, security_group
+                const nonMigratableTypes = ['HSS', 'WAF', 'CBR', 'CDN', 'EIP', 'ELB', 'NAT', 'VPN', 'VPC', 'SUBNET', 'SECURITY_GROUP', 'SECURITYGROUP'];
+                const isNonMigratable = nonMigratableTypes.some(nmt => nodeType.includes(nmt));
+                
+                return (isCompute || isDatabase || isStorage) && !isNonMigratable;
             });
         }
         
