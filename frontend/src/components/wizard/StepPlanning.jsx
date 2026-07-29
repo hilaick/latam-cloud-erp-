@@ -9,6 +9,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     // 🚨 REORDERED: Default tab is now 'wbs' (3.1)
     const [subTab, setSubTab] = useState('wbs');
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [executionMode, setExecutionMode] = useState(project?.executionMode || 'manual');
 
     // 🚨 REORDERED: Menu Items logical flow
     const menuItems = [
@@ -78,6 +79,100 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                 <p className="text-xs text-amber-700/80 mt-1 font-medium">Determine exactly WHICH tools will migrate WHICH workloads before calculating transfer physics.</p>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                {/* 🚨 NEW: 3.2 Execution Mode Selector */}
+                                <div className="p-6 border-b border-slate-100">
+                                    <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-4">
+                                        <i className="fas fa-sliders-h mr-2 text-indigo-600"></i> Setup Phase 4 Execution Mode
+                                    </h5>
+                                    <p className="text-xs text-slate-500 mb-5">
+                                        Select how workloads will be processed by the delivery team or orchestration engine.
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {/* Manual Pipeline */}
+                                        <button
+                                            onClick={() => {
+                                                setExecutionMode('manual');
+                                                onUpdateProject(project.id, 'executionMode', 'manual');
+                                            }}
+                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
+                                                executionMode === 'manual'
+                                                    ? 'border-blue-600 bg-blue-50 shadow-md shadow-blue-200/50'
+                                                    : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                                                executionMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                <i className="fas fa-tasks text-lg"></i>
+                                            </div>
+                                            <h6 className="font-black text-sm text-slate-800 mb-1">Manual Pipeline</h6>
+                                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                                Standard step-by-step Kanban execution. Teams manually update cards and trigger APIs per server.
+                                            </p>
+                                            {executionMode === 'manual' && (
+                                                <span className="inline-block mt-3 bg-blue-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
+                                                    <i className="fas fa-check mr-1"></i> Selected
+                                                </span>
+                                            )}
+                                        </button>
+
+                                        {/* Agentic Orchestration */}
+                                        <button
+                                            onClick={() => {
+                                                setExecutionMode('agentic');
+                                                onUpdateProject(project.id, 'executionMode', 'agentic');
+                                            }}
+                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
+                                                executionMode === 'agentic'
+                                                    ? 'border-purple-600 bg-purple-50 shadow-md shadow-purple-200/50'
+                                                    : 'border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                                                executionMode === 'agentic' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                <i className="fas fa-robot text-lg"></i>
+                                            </div>
+                                            <h6 className="font-black text-sm text-slate-800 mb-1">Agentic Orchestration</h6>
+                                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                                Hermes autonomous engine takes control of the entire wave, deploying agents and syncing tasks automatically.
+                                            </p>
+                                            {executionMode === 'agentic' && (
+                                                <span className="inline-block mt-3 bg-purple-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
+                                                    <i className="fas fa-check mr-1"></i> Selected
+                                                </span>
+                                            )}
+                                        </button>
+
+                                        {/* Individual Tasks */}
+                                        <button
+                                            onClick={() => {
+                                                setExecutionMode('individual');
+                                                onUpdateProject(project.id, 'executionMode', 'individual');
+                                            }}
+                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
+                                                executionMode === 'individual'
+                                                    ? 'border-emerald-600 bg-emerald-50 shadow-md shadow-emerald-200/50'
+                                                    : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                                                executionMode === 'individual' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                <i className="fas fa-cube text-lg"></i>
+                                            </div>
+                                            <h6 className="font-black text-sm text-slate-800 mb-1">Individual Tasks</h6>
+                                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                                Isolate workloads into standalone ad-hoc tasks. Ideal for tiny batches or specific database true-ups.
+                                            </p>
+                                            {executionMode === 'individual' && (
+                                                <span className="inline-block mt-3 bg-emerald-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
+                                                    <i className="fas fa-check mr-1"></i> Selected
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
                                 <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
                             </div>
                         </div>

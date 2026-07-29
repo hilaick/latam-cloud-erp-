@@ -152,6 +152,76 @@ def system_info():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@hermes_cli_bp.route('/api/hermes-cli/delegate-task', methods=['POST'])
+# @jwt_required()
+def hermes_delegate_task():
+    """
+    Agentic Orchestration endpoint: spawns a Hermes agent with the configured
+    execution profile to autonomously handle a migration workload.
+    
+    Supports multi-model delegation via Hermes profiles.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data received'}), 400
+            
+        goal = data.get('goal', '').strip()
+        context = data.get('context', '')
+        profile = data.get('profile', 'exec')
+        model_override = data.get('model')
+        provider_override = data.get('provider')
+        
+        if not goal:
+            return jsonify({'success': False, 'error': 'Task goal required'}), 400
+            
+        # Build a self-contained prompt for the subagent
+        full_prompt = goal
+        if context:
+            full_prompt = f"{goal}\n\nContext:\n{context}"
+            
+        logger.info(f"Spawning Hermes agent via profile '{profile}' for goal: {goal[:100]}...")
+        
+        # Build the hermes command with the execution profile
+        cmd = ['hermes', 'chat', '-q', full_prompt, '--profile', profile, '--quiet']
+        
+        if model_override:
+            cmd.extend(['--model', model_override])
+        if provider_override:
+            cmd.extend(['--provider', provider_override])
+            
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180
+        )
+        
+        if result.returncode == 0:
+            return jsonify({
+                'success': True,
+                'response': result.stdout.strip(),
+                'profile': profile,
+                'goal': goal[:200]
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f"Hermes execution failed: {result.stderr.strip()}"
+            }), 500
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'error': 'Task timed out after 180 seconds. Consider splitting into smaller workloads.'
+        }), 504
+    except Exception as e:
+        logger.error(f"Delegate Task Error: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f"Orchestration error: {str(e)}"
+        }), 500
+
 @hermes_cli_bp.route('/api/hermes-cli/health', methods=['GET'])
 def health():
     """Health check endpoint"""

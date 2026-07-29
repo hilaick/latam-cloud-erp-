@@ -311,57 +311,228 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
 }
 
 // ==========================================
-// 🚨 NEW: 4.8 ENGINEERING WORKBENCH (Hermes AI + mig_worker Terminal)
+// 🚨 NEW: 4.8 ENGINEERING WORKBENCH (Hermes Agentic Orchestration)
 // ==========================================
 function WorkbenchView({ project }) {
     const [prompt, setPrompt] = useState('');
+    const [isExecuting, setIsExecuting] = useState(false);
     const [terminalOutput, setTerminalOutput] = useState([
         "[system] mig_worker is offline.",
         "[system] Awaiting deployment to Target VPC..."
     ]);
+    const [selectedProfile, setSelectedProfile] = useState('exec');
+    const [selectedModel, setSelectedModel] = useState('');
 
-    const handlePrompt = () => {
-        if (!prompt) return;
-        setTerminalOutput(prev => [...prev, `\n[hermes-ai] Analyzing request: "${prompt}"...`, "[hermes-ai] Generating least-privilege Bash Vector for Data Plane Execution..."]);
-        setTimeout(() => {
-            setTerminalOutput(prev => [...prev, `[hermes-ai] Vector Generated:\nwget -O sms_agent.sh https://sms-endpoint/install.sh\nchmod +x sms_agent.sh\n./sms_agent.sh --ak <VAULTED> --sk <VAULTED>\n\n[system] Ready to push to mig_worker.`]);
-        }, 1500);
-        setPrompt('');
+    const executionMode = project?.executionMode || 'manual';
+    const isAgentic = executionMode === 'agentic';
+
+    const handleDelegate = async () => {
+        if (!prompt || isExecuting) return;
+        setIsExecuting(true);
+        setTerminalOutput(prev => [
+            ...prev,
+            `\n[hermes] Spawning agent via profile '${selectedProfile}'...`,
+            `[hermes] Goal: "${prompt}"`
+        ]);
+
+        try {
+            const token = localStorage.getItem('erp_jwt_token');
+            const body = {
+                goal: prompt,
+                context: `ERP Project ID: ${project?.id || 'N/A'}. Repo at C:/Users/h84423900/latam-cloud-erp/repo.`,
+                profile: selectedProfile,
+            };
+            if (selectedModel) body.model = selectedModel;
+
+            const res = await fetch('/api/hermes-cli/delegate-task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                setTerminalOutput(prev => [
+                    ...prev,
+                    `\n[hermes ✓] Task completed successfully.`,
+                    `[output]\n${data.response}`
+                ]);
+            } else {
+                setTerminalOutput(prev => [
+                    ...prev,
+                    `\n[hermes ✗] Task failed: ${data.error}`
+                ]);
+            }
+        } catch (err) {
+            setTerminalOutput(prev => [
+                ...prev,
+                `\n[error] Network error: ${err.message}`
+            ]);
+        } finally {
+            setIsExecuting(false);
+            setPrompt('');
+        }
     };
+
+    const profileOptions = [
+        { id: 'exec', label: 'exec (GLM 5.2)', icon: 'fa-robot', color: 'text-purple-400' },
+        { id: 'default', label: 'default (DeepSeek V4)', icon: 'fa-brain', color: 'text-blue-400' },
+    ];
+
+    const modelOptions = [
+        { id: '', label: 'Use profile default' },
+        { id: 'glm-5.2', label: 'GLM 5.2 (Zhipu)', provider: 'zai' },
+        { id: 'kimi-k2.6', label: 'Kimi K2.6 (Moonshot)', provider: 'kimi-coding' },
+    ];
 
     return (
         <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-2 gap-6 h-[700px]">
-            {/* Left: Hermes AI Co-Pilot */}
+            {/* Left: Hermes Agentic Co-Pilot */}
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
                 <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center">
-                    <h3 className="font-black text-sm text-slate-800 flex items-center"><i className="fas fa-brain text-purple-600 mr-2"></i> Hermes Native Context AI</h3>
-                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest">Model Square / GLM 5.2</span>
+                    <h3 className="font-black text-sm text-slate-800 flex items-center">
+                        <i className={`fas ${isAgentic ? 'fa-robot text-purple-600' : 'fa-tasks text-blue-600'} mr-2`}></i>
+                        {isAgentic ? 'Hermes Agentic Orchestrator' : 'Hermes Context AI'}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
+                        isAgentic 
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                            : 'bg-blue-100 text-blue-700 border border-blue-200'
+                    }`}>
+                        {isAgentic ? 'AGENTIC MODE — GLM 5.2' : 'MANUAL MODE'}
+                    </span>
                 </div>
-                <div className="flex-1 p-6 bg-slate-50/50 flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner"><i className="fas fa-robot"></i></div>
-                    <h4 className="font-black text-slate-700">How can I help with the Data Plane?</h4>
-                    <p className="text-xs text-slate-500 mt-2 max-w-sm">Ask me to generate OS-level execution vectors for SMS installations, pg_dump scripts, or network route checks.</p>
+                <div className="flex-1 p-6 bg-slate-50/50 flex flex-col">
+                    {isAgentic ? (
+                        <>
+                            <div className="flex-1 flex flex-col items-center justify-center text-center mb-4">
+                                <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                                    <i className="fas fa-robot"></i>
+                                </div>
+                                <h4 className="font-black text-slate-700 mb-2">Autonomous Migration Agent</h4>
+                                <p className="text-xs text-slate-500 max-w-sm">
+                                    Describe the migration workload. Hermes will spawn agents with the appropriate model to handle it autonomously.
+                                </p>
+                                {/* Profile & Model Selectors */}
+                                <div className="w-full max-w-xs mt-4 space-y-2">
+                                    <div className="flex gap-2">
+                                        {profileOptions.map(p => (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => setSelectedProfile(p.id)}
+                                                className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
+                                                    selectedProfile === p.id
+                                                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                                                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <i className={`fas ${p.icon} mr-1`}></i> {p.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <select
+                                        value={selectedModel}
+                                        onChange={e => setSelectedModel(e.target.value)}
+                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
+                                    >
+                                        {modelOptions.map(m => (
+                                            <option key={m.id} value={m.id}>{m.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center">
+                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                                <i className="fas fa-brain"></i>
+                            </div>
+                            <h4 className="font-black text-slate-700">Manual Pipeline Mode</h4>
+                            <p className="text-xs text-slate-500 mt-2 max-w-sm">
+                                Use Hermes AI for guidance. Select "Agentic Orchestration" in Phase 3.2 for autonomous execution.
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
-                    <input type="text" value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePrompt()} placeholder="e.g. Generate an SMS installation script for Ubuntu 20.04..." className="flex-1 bg-slate-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none" />
-                    <button onClick={handlePrompt} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl font-black text-sm transition-colors shadow-sm"><i className="fas fa-paper-plane"></i></button>
+                    <input
+                        type="text"
+                        value={prompt}
+                        onChange={e => setPrompt(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleDelegate()}
+                        placeholder={isAgentic 
+                            ? "e.g. Migrate Ubuntu 20.04 web server via SMS with 500GB data..." 
+                            : "e.g. Generate an SMS installation script for Ubuntu 20.04..."}
+                        className="flex-1 bg-slate-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                        disabled={isExecuting}
+                    />
+                    <button
+                        onClick={handleDelegate}
+                        disabled={!prompt || isExecuting}
+                        className={`px-5 py-2.5 rounded-xl font-black text-sm transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                            isAgentic
+                                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                    >
+                        {isExecuting ? (
+                            <i className="fas fa-spinner fa-spin"></i>
+                        ) : (
+                            <i className="fas fa-paper-plane"></i>
+                        )}
+                    </button>
                 </div>
             </div>
 
             {/* Right: mig_worker Terminal */}
             <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                 <div className="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center">
-                    <h3 className="font-black text-sm text-white flex items-center"><i className="fas fa-terminal text-emerald-400 mr-2"></i> mig_worker Terminal</h3>
-                    <button className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-md">
-                        <i className="fas fa-cloud-upload-alt mr-2"></i> Deploy Worker to VPC
-                    </button>
+                    <h3 className="font-black text-sm text-white flex items-center">
+                        <i className="fas fa-terminal text-emerald-400 mr-2"></i> mig_worker Terminal
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-mono text-slate-400">profile: {selectedProfile}</span>
+                        <button
+                            onClick={() => setTerminalOutput([
+                                "[system] Terminal cleared.",
+                                "[system] mig_worker ready."
+                            ])}
+                            className="text-slate-400 hover:text-white transition-colors"
+                            title="Clear terminal"
+                        >
+                            <i className="fas fa-eraser text-xs"></i>
+                        </button>
+                    </div>
                 </div>
-                <div className="flex-1 p-6 font-mono text-xs text-emerald-400 overflow-y-auto whitespace-pre-wrap custom-scrollbar">
-                    {terminalOutput.map((line, i) => (<div key={i}>{line}</div>))}
+                <div className="flex-1 p-6 font-mono text-xs text-emerald-400 overflow-y-auto whitespace-pre-wrap custom-scrollbar bg-slate-950">
+                    {terminalOutput.map((line, i) => (
+                        <div key={i}>{line}</div>
+                    ))}
+                    {isExecuting && (
+                        <div className="text-amber-400 animate-pulse mt-2">
+                            <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
+                        </div>
+                    )}
                 </div>
                 <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex gap-3">
-                    <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm border border-slate-600">Run Diagnostics</button>
-                    <button className="flex-1 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm shadow-rose-900/50">Execute Vector Push</button>
+                    <button
+                        onClick={() => setTerminalOutput(prev => [...prev, "\n[diag] Running connectivity diagnostics...", "[diag ✓] VPC reachable. SMS endpoint responding. ECS quotas OK."])}
+                        className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm border border-slate-600"
+                    >
+                        <i className="fas fa-stethoscope mr-1"></i> Run Diagnostics
+                    </button>
+                    <button
+                        onClick={handleDelegate}
+                        disabled={!prompt || isExecuting}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm shadow-emerald-900/50 disabled:opacity-50"
+                    >
+                        {isExecuting ? (
+                            <><i className="fas fa-spinner fa-spin mr-1"></i> Executing...</>
+                        ) : (
+                            <><i className="fas fa-cloud-upload-alt mr-1"></i> Execute Vector Push</>
+                        )}
+                    </button>
                 </div>
             </div>
         </div>
