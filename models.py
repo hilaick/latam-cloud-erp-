@@ -188,3 +188,48 @@ class ExecutionState(db.Model):
     migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
     execution_logs = db.Column(db.Text, default='[]') 
     last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# 🚨 Hermes AI Configuration — Global settings store
+class HermesConfig(db.Model):
+    __tablename__ = 'hermes_config'
+    id = db.Column(db.String(50), primary_key=True, default='singleton')
+    # Connection mode: 'cli' = local subprocess, 'http' = loadbalancer API
+    mode = db.Column(db.String(10), default='cli')
+    # CLI mode settings
+    hermes_binary_path = db.Column(db.String(500))
+    # HTTP/Loadbalancer mode settings
+    lb_url = db.Column(db.String(500))          # e.g. http://localhost:8666/v1/chat/completions
+    lb_auth = db.Column(db.String(500))         # e.g. Basic <base64>
+    # Model configuration
+    global_provider = db.Column(db.String(50))  # e.g. deepseek, zai, kimi-coding
+    global_model = db.Column(db.String(100))    # e.g. deepseek-v4-pro, glm-5.2
+    delegation_provider = db.Column(db.String(50))
+    delegation_model = db.Column(db.String(100))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get_config():
+        """Returns the singleton HermesConfig, creating defaults if missing."""
+        config = HermesConfig.query.get('singleton')
+        if not config:
+            config = HermesConfig(
+                id='singleton',
+                mode='cli',
+                hermes_binary_path='/usr/local/lib/hermes-agent/venv/bin/hermes',
+                lb_url='http://localhost:8666/v1/chat/completions',
+                lb_auth='Basic YWRtaW46ODIxODcwZWVlNGQzMTA4NGUxYmZmNDA1YWJhMTVjYTY=',
+                global_provider='deepseek',
+                global_model='deepseek-v4-pro',
+                delegation_provider='zai',
+                delegation_model='glm-5.2'
+            )
+            db.session.add(config)
+            db.session.commit()
+        return config
+
+    def to_dict(self):
+        return {k: getattr(self, k) for k in [
+            'mode', 'hermes_binary_path', 'lb_url', 'lb_auth',
+            'global_provider', 'global_model',
+            'delegation_provider', 'delegation_model'
+        ]}
