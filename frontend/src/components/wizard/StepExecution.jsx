@@ -101,6 +101,11 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
     if (isLoadingState) return <div className="p-12 text-center text-slate-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i> Initializing State Machine...</div>;
     const isLocked = executionState?.currentPhase === 'PHASE_4_0';
+    const executionMode = project?.executionMode || 'manual';
+    const isIndividual = executionMode === 'individual';
+    const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
+    // Workbench unlocked when: pipeline complete (manual/agentic) OR individual prereqs passed
+    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated);
 
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
@@ -126,14 +131,30 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     {menuItems.map((item) => (
                         <button 
                             key={item.id}
-                            onClick={() => { if (isLocked && item.id !== 'readiness') return alert("Please complete the 4.0 Readiness Gateway to unlock Execution."); setSubTab(item.id); }}
-                            className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${isLocked && item.id !== 'readiness' ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' : subTab === item.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                            onClick={() => { 
+                                if (isLocked && item.id !== 'readiness') return alert("Please complete the 4.0 Readiness Gateway to unlock Execution."); 
+                                if ((item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked) 
+                                    return alert(isIndividual 
+                                        ? "Validate prerequisites in the Orchestrator tab first to unlock Workbench & Command Center." 
+                                        : "Complete the 7-phase pipeline to unlock Workbench & Command Center."); 
+                                setSubTab(item.id); 
+                            }}
+                            className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
+                                isLocked && item.id !== 'readiness' ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' : 
+                                (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
+                                subTab === item.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                            }`}
                         >
                             <div className="flex items-center gap-3">
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${isLocked && item.id !== 'readiness' ? 'bg-slate-200 text-slate-400' : subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>{item.num}</div>
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${
+                                    isLocked && item.id !== 'readiness' ? 'bg-slate-200 text-slate-400' : 
+                                    (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'bg-slate-200 text-slate-400' :
+                                    subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                                }`}>{item.num}</div>
                                 <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
                             </div>
                             {isLocked && item.id !== 'readiness' && <i className="fas fa-lock text-slate-300"></i>}
+                            {(item.id === 'workbench' || item.id === 'hub') && !isLocked && !workbenchUnlocked && <i className="fas fa-lock text-slate-300"></i>}
                         </button>
                     ))}
                     
@@ -161,10 +182,10 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
-                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleGarbageCollection={handleGarbageCollection} />}
+                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
                     {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
                     {subTab === 'workbench' && <WorkbenchView project={project} />}
-                    {subTab === 'hub' && <CommandCenterView project={project} />}
+                    {subTab === 'hub' && <CommandCenterView project={project} executionState={executionState} executionMode={executionMode} />}
                     {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
                 </div>
             </div>
@@ -173,9 +194,18 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 }
 
 // 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
-function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleGarbageCollection }) {
+// 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
+function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
+    const [autoOrchestrating, setAutoOrchestrating] = useState(false);
+    const [orchestrationLog, setOrchestrationLog] = useState([]);
+    const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
+    const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
+
+    const isAgentic = executionMode === 'agentic';
+    const isIndividual = executionMode === 'individual';
+    const isManual = !isAgentic && !isIndividual;
 
     const handleSimulateCR = () => { setCrState('pending'); };
     const handleApproveCR = () => {
@@ -184,15 +214,200 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         updatePhase('PHASE_4_3', 'PENDING');
     };
 
+    // 🚨 AGENTIC: Orchestrate entire pipeline with simulated auto-chaining
+    const handleOrchestrateAll = async () => {
+        setAutoOrchestrating(true);
+        setOrchestrationLog([]);
+        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
+
+        const chain = [
+            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', delay: 1500 },
+            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', delay: 1000 },
+            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', delay: 2000 },
+            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', delay: 1500 },
+            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', delay: 3000 },
+            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', delay: 2000 },
+            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', delay: 1500 },
+        ];
+
+        for (let i = 0; i < chain.length; i++) {
+            const step = chain[i];
+            log(`[agentic] Starting Phase ${step.phase}: ${step.label}...`);
+            updatePhase(step.phase, 'IN_PROGRESS');
+
+            // 🚨 In production: call delegate_task API
+            // await fetch('/api/hermes-cli/delegate-task', {
+            //     method: 'POST',
+            //     body: JSON.stringify({ goal: step.label, context: `ERP Phase ${step.phase}`, profile: 'exec' })
+            // });
+
+            await new Promise(resolve => setTimeout(resolve, step.delay));
+            log(`[agentic ✓] ${step.label} — complete.`);
+        }
+
+        updatePhase('COMPLETED', 'DONE');
+        log('[agentic ✓] All 7 phases completed. Pipeline finished.');
+        setAutoOrchestrating(false);
+    };
+
+    // 🚨 INDIVIDUAL: Validate minimum prerequisites for ad-hoc task execution
+    const handleCheckPrereqs = () => {
+        // Check: Wave 0 (PHASE_4_1) must be done for network fabric
+        const wave0Done = executionState.currentPhase > 'PHASE_4_1' || executionState.currentPhase === 'COMPLETED';
+        // Check: Agents (PHASE_4_4) must be deployed for migration tooling
+        const agentsDone = executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED';
+
+        setPrereqChecked(true);
+        if (wave0Done && agentsDone) {
+            setPrereqPassed(true);
+            onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
+        } else {
+            setPrereqPassed(false);
+        }
+    };
+
+    const handleForcePrereqs = async () => {
+        // Quick-run: execute Wave 0 + Agents in sequence, then unlock
+        setAutoOrchestrating(true);
+        updatePhase('PHASE_4_1', 'IN_PROGRESS');
+        await new Promise(r => setTimeout(r, 2000)); // simulate terraform
+        updatePhase('PHASE_4_4', 'PENDING'); // skip 4.2, 4.3
+        await new Promise(r => setTimeout(r, 1500)); // simulate agent push
+        updatePhase('PHASE_4_5', 'PENDING'); // mark sync ready
+        setPrereqPassed(true);
+        setPrereqChecked(true);
+        onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
+        setAutoOrchestrating(false);
+    };
+
     return (
         <div className="space-y-6 animate-fade-in">
+            {/* 🚨 MODE BANNER */}
+            <div className={`p-4 rounded-xl border-2 flex items-center justify-between ${
+                isAgentic ? 'bg-purple-50 border-purple-300' :
+                isIndividual ? 'bg-emerald-50 border-emerald-300' :
+                'bg-blue-50 border-blue-300'
+            }`}>
+                <div className="flex items-center gap-3">
+                    <i className={`fas ${isAgentic ? 'fa-robot text-purple-600 text-xl' : isIndividual ? 'fa-cube text-emerald-600 text-xl' : 'fa-tasks text-blue-600 text-xl'}`}></i>
+                    <div>
+                        <div className={`font-black text-sm uppercase tracking-widest ${
+                            isAgentic ? 'text-purple-800' : isIndividual ? 'text-emerald-800' : 'text-blue-800'
+                        }`}>
+                            {isAgentic ? 'Agentic Orchestration Active' : isIndividual ? 'Individual Tasks Mode' : 'Manual Pipeline Mode'}
+                        </div>
+                        <p className="text-[10px] font-medium text-slate-500">
+                            {isAgentic ? 'Hermes will autonomously execute all 7 phases. Lock individual controls during run.' :
+                             isIndividual ? 'Validate minimum prerequisites, then use Workbench for ad-hoc migration tasks.' :
+                             'Standard step-by-step Kanban execution. Team triggers each phase manually.'}
+                        </p>
+                    </div>
+                </div>
+                <span className={`px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
+                    isAgentic ? 'bg-purple-200 text-purple-700 border border-purple-300' :
+                    isIndividual ? 'bg-emerald-200 text-emerald-700 border border-emerald-300' :
+                    'bg-blue-200 text-blue-700 border border-blue-300'
+                }`}>
+                    {executionMode.toUpperCase()}
+                </span>
+            </div>
+
+            {/* 🚨 AGENTIC: Orchestrate All button */}
+            {isAgentic && (
+                <div className="bg-white border-2 border-purple-200 rounded-2xl shadow-lg p-6">
+                    <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest mb-3">
+                        <i className="fas fa-robot mr-2"></i> Autonomous Pipeline Execution
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-5">
+                        The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
+                    </p>
+                    {autoOrchestrating ? (
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
+                                <i className="fas fa-spinner fa-spin text-xl"></i>
+                                Orchestration in progress...
+                            </div>
+                            <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
+                                {orchestrationLog.map((line, i) => (
+                                    <div key={i} className={line.includes('✓') ? 'text-emerald-400' : 'text-purple-300'}>{line}</div>
+                                ))}
+                                <div className="text-amber-400 animate-pulse mt-2">
+                                    <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleOrchestrateAll}
+                            disabled={executionState?.currentPhase === 'COMPLETED'}
+                            className={`w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
+                                executionState?.currentPhase === 'COMPLETED'
+                                    ? 'bg-emerald-500 text-white cursor-default'
+                                    : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
+                            }`}
+                        >
+                            {executionState?.currentPhase === 'COMPLETED' 
+                                ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
+                                : <><i className="fas fa-play mr-2"></i> Orchestrate All 7 Phases</>
+                            }
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* 🚨 INDIVIDUAL: Prerequisite Check */}
+            {isIndividual && (
+                <div className="bg-white border-2 border-emerald-200 rounded-2xl shadow-lg p-6">
+                    <h4 className="font-black text-emerald-800 text-sm uppercase tracking-widest mb-3">
+                        <i className="fas fa-clipboard-check mr-2"></i> Prerequisite Validation
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-5">
+                        Individual task mode requires network fabric (Wave 0) and migration agents to be in place before ad-hoc workloads.
+                    </p>
+                    {!prereqChecked ? (
+                        <div className="flex gap-3">
+                            <button onClick={handleCheckPrereqs} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors">
+                                <i className="fas fa-stethoscope mr-2"></i> Check Prerequisites
+                            </button>
+                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
+                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
+                            </button>
+                        </div>
+                    ) : prereqPassed ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
+                            <i className="fas fa-check-circle text-emerald-600 text-2xl"></i>
+                            <div>
+                                <div className="font-black text-emerald-800 text-sm">Prerequisites Validated</div>
+                                <p className="text-[10px] text-emerald-700 font-medium">Network fabric + agents confirmed. Engineering Workbench is unlocked.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <i className="fas fa-times-circle text-rose-600 text-2xl"></i>
+                                <div>
+                                    <div className="font-black text-rose-800 text-sm">Prerequisites Not Met</div>
+                                    <p className="text-[10px] text-rose-700 font-medium">Required: Wave 0 network fabric + deployed migration agents.</p>
+                                </div>
+                            </div>
+                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
+                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* 🚨 PIPELINE PHASES (visible in all modes, locked during agentic run) */}
             <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-8">
                 {isGreenfield ? (
                     <div>Greenfield Pipeline...</div>
                 ) : (
                     <>
                         {/* PHASE 4.1: WAVE 0 */}
-                        <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${executionState.currentPhase === 'PHASE_4_1' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : executionState.currentPhase > 'PHASE_4_1' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
+                        <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${
+                            executionState.currentPhase === 'PHASE_4_1' ? 'border-blue-500 bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.2)]' :
+                            executionState.currentPhase > 'PHASE_4_1' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div>
                                     <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Phase 4.1</div>
@@ -200,9 +415,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <p className="text-xs text-slate-400">Executes Terraform to build isolated Transit VPCs, Subnets, and Security Groups.</p>
                                 </div>
                                 {executionState.currentPhase === 'PHASE_4_1' ? (
-                                    <button onClick={() => setShowWaveZeroModal(true)} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-network-wired mr-2"></i> Configure & Execute</button>
+                                    <button
+                                        onClick={() => setShowWaveZeroModal(true)}
+                                        disabled={autoOrchestrating}
+                                        className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md transition-colors ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                                        <i className="fas fa-network-wired mr-2"></i> Configure & Execute
+                                    </button>
                                 ) : <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_1' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.2: PRE-FLIGHT WITH CR GATE */}
@@ -224,49 +447,64 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 <div><label className="block text-[9px] font-black uppercase text-rose-400 mb-1">Commercial Approver (SA/BD)</label><input type="text" value={crForm.approver} onChange={e=>setCrForm({...crForm, approver: e.target.value})} className="w-full p-2 bg-slate-900 border border-rose-500/50 rounded text-xs text-white outline-none focus:border-rose-400" placeholder="e.g. John Doe" /></div>
                                                 <div><label className="block text-[9px] font-black uppercase text-rose-400 mb-1">Approval Ticket / Email Ref</label><input type="text" value={crForm.ticket} onChange={e=>setCrForm({...crForm, ticket: e.target.value})} className="w-full p-2 bg-slate-900 border border-rose-500/50 rounded text-xs text-white outline-none focus:border-rose-400" placeholder="e.g. Jira-9942" /></div>
                                             </div>
-                                            <button onClick={handleApproveCR} className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest shadow-md">Acknowledge Financial Risk & Override <i className="fas fa-unlock ml-2"></i></button>
+                                            <button onClick={handleApproveCR} disabled={autoOrchestrating} className={`px-6 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700 text-white'}`}>Acknowledge Financial Risk & Override <i className="fas fa-unlock ml-2"></i></button>
                                         </div>
                                     )}
                                 </div>
                                 {executionState.currentPhase === 'PHASE_4_2' && crState === 'idle' ? (
                                     <div className="flex gap-2">
-                                        <button onClick={handleSimulateCR} className="px-4 py-2 border border-slate-600 hover:bg-slate-700 text-slate-400 rounded-lg text-xs font-black uppercase shadow-md" title="Simulate HANA Out-of-Stock">Simulate CR Failure</button>
-                                        <button onClick={() => updatePhase('PHASE_4_3', 'PENDING')} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-microscope mr-2"></i> Run OS Diagnostics</button>
+                                        <button onClick={handleSimulateCR} disabled={autoOrchestrating} className={`px-4 py-2 border rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'border-slate-500 text-slate-500 cursor-not-allowed' : 'border-slate-600 hover:bg-slate-700 text-slate-400'}`} title="Simulate HANA Out-of-Stock">Simulate CR Failure</button>
+                                        <button onClick={() => updatePhase('PHASE_4_3', 'PENDING')} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}><i className="fas fa-microscope mr-2"></i> Run OS Diagnostics</button>
                                     </div>
                                 ) : executionState.currentPhase > 'PHASE_4_2' || executionState.currentPhase === 'COMPLETED' ? <div className="text-amber-500 flex flex-col items-end"><i className="fas fa-check-circle text-2xl"></i>{crState==='approved' && <span className="text-[8px] font-black uppercase text-rose-500 mt-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">CR Overridden</span>}</div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_2' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.3: LANDING ZONE */}
                         <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${executionState.currentPhase === 'PHASE_4_3' ? 'border-purple-500 bg-slate-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : executionState.currentPhase > 'PHASE_4_3' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div><div className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1">Phase 4.3</div><h4 className="text-lg font-black text-white mb-2">Build App Landing Zone</h4><p className="text-xs text-slate-400">Provisions application VPCs, target ECS instances, and empty PaaS databases.</p></div>
-                                {executionState.currentPhase === 'PHASE_4_3' ? <button onClick={() => handleExecuteTerraform(null)} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-cogs mr-2"></i> Deploy Infrastructure</button> : executionState.currentPhase > 'PHASE_4_3' || executionState.currentPhase === 'COMPLETED' ? <div className="text-purple-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
+                                {executionState.currentPhase === 'PHASE_4_3' ? <button onClick={() => handleExecuteTerraform(null)} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}><i className="fas fa-cogs mr-2"></i> Deploy Infrastructure</button> : executionState.currentPhase > 'PHASE_4_3' || executionState.currentPhase === 'COMPLETED' ? <div className="text-purple-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_3' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.4: AGENTS */}
                         <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${executionState.currentPhase === 'PHASE_4_4' ? 'border-fuchsia-500 bg-slate-800 shadow-[0_0_15px_rgba(217,70,239,0.2)]' : executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div><div className="text-[10px] font-black text-fuchsia-500 uppercase tracking-widest mb-1">Phase 4.4</div><h4 className="text-lg font-black text-white mb-2">Deploy Data Plane Agents</h4><p className="text-xs text-slate-400">Pushes SMS/DRS agents over the established Wave 0 network.</p></div>
-                                {executionState.currentPhase === 'PHASE_4_4' ? <button onClick={() => updatePhase('PHASE_4_5', 'PENDING')} className="px-6 py-2.5 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-satellite-dish mr-2"></i> Push Agents</button> : executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED' ? <div className="text-fuchsia-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
+                                {executionState.currentPhase === 'PHASE_4_4' ? <button onClick={() => updatePhase('PHASE_4_5', 'PENDING')} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white'}`}><i className="fas fa-satellite-dish mr-2"></i> Push Agents</button> : executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED' ? <div className="text-fuchsia-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_4' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.5: SYNC */}
                         <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${executionState.currentPhase === 'PHASE_4_5' ? 'border-indigo-500 bg-slate-800 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : executionState.currentPhase > 'PHASE_4_5' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div><div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Phase 4.5</div><h4 className="text-lg font-black text-white mb-2">Continuous Sync Monitor</h4><p className="text-xs text-slate-400">Awaiting 100% byte-by-byte synchronization. Lock state before Cutover.</p></div>
-                                {executionState.currentPhase === 'PHASE_4_5' ? <button onClick={() => updatePhase('PHASE_4_6', 'PENDING')} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-lock mr-2"></i> Lock Sync & Proceed</button> : executionState.currentPhase > 'PHASE_4_5' || executionState.currentPhase === 'COMPLETED' ? <div className="text-indigo-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
+                                {executionState.currentPhase === 'PHASE_4_5' ? <button onClick={() => updatePhase('PHASE_4_6', 'PENDING')} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}><i className="fas fa-lock mr-2"></i> Lock Sync & Proceed</button> : executionState.currentPhase > 'PHASE_4_5' || executionState.currentPhase === 'COMPLETED' ? <div className="text-indigo-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_5' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.6: CUTOVER */}
                         <div className={`p-6 rounded-xl border-2 transition-all mb-6 ${executionState.currentPhase === 'PHASE_4_6' ? 'border-rose-500 bg-slate-800 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : executionState.currentPhase > 'PHASE_4_6' || executionState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div><div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Phase 4.6</div><h4 className="text-lg font-black text-white mb-2">Cold Cutover & VPC Promotion</h4><p className="text-xs text-slate-400">Severs on-premise connection and modifies Huawei Cloud VPC bindings.</p></div>
-                                {executionState.currentPhase === 'PHASE_4_6' ? <button onClick={() => updatePhase('PHASE_4_7', 'PENDING')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-power-off mr-2"></i> Execute Network Swap</button> : executionState.currentPhase === 'COMPLETED' || executionState.currentPhase > 'PHASE_4_6' ? <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
+                                {executionState.currentPhase === 'PHASE_4_6' ? <button onClick={() => updatePhase('PHASE_4_7', 'PENDING')} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700 text-white'}`}><i className="fas fa-power-off mr-2"></i> Execute Network Swap</button> : executionState.currentPhase === 'COMPLETED' || executionState.currentPhase > 'PHASE_4_6' ? <div className="text-rose-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_6' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
 
                         {/* PHASE 4.7: GARBAGE COLLECTION */}
@@ -278,9 +516,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <p className="text-xs text-slate-400">Destroys transient migration resources (Factory VMs, EIPs, Staging Disks) to drop PPU costs to quoted baseline.</p>
                                 </div>
                                 {executionState.currentPhase === 'PHASE_4_7' ? (
-                                    <button onClick={handleGarbageCollection} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black uppercase shadow-md"><i className="fas fa-trash-alt mr-2"></i> Destroy Transient Resources</button>
+                                    <button onClick={handleGarbageCollection} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}><i className="fas fa-trash-alt mr-2"></i> Destroy Transient Resources</button>
                                 ) : executionState.currentPhase === 'COMPLETED' ? <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
+                            {autoOrchestrating && executionState.currentPhase === 'PHASE_4_7' && (
+                                <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
                         </div>
                     </>
                 )}
@@ -542,44 +783,149 @@ function WorkbenchView({ project }) {
 // ==========================================
 // 🚨 NEW: 4.9 DELIVERY COMMAND CENTER (Telemetry)
 // ==========================================
-function CommandCenterView({ project }) {
+function CommandCenterView({ project, executionState, executionMode }) {
+    const isAgentic = executionMode === 'agentic';
+    const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
+
+    // Build dynamic rows from project delegate tasks and execution state
+    const delegateTasks = project?.delegateTasks || [];
+    const hasDelegates = delegateTasks.length > 0;
+
+    // Phase status mapping
+    const phaseLabels = {
+        'PHASE_4_0': 'Readiness Gateway',
+        'PHASE_4_1': 'Wave 0: Network',
+        'PHASE_4_2': 'OS Pre-Flight',
+        'PHASE_4_3': 'Landing Zone',
+        'PHASE_4_4': 'Agent Deployment',
+        'PHASE_4_5': 'Sync Monitor',
+        'PHASE_4_6': 'Cutover',
+        'PHASE_4_7': 'Garbage Collection',
+    };
+    const currentPhase = executionState?.currentPhase;
+    const phaseLabel = phaseLabels[currentPhase] || 'Idle';
+
     return (
         <div className="animate-fade-in space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-                <h4 className="font-black text-lg text-slate-800 mb-6 flex items-center"><i className="fas fa-satellite-dish text-emerald-500 mr-3"></i> SMS Migration Telemetry</h4>
-                
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
-                            <tr><th className="p-4">Source Target</th><th className="p-4">Job Type</th><th className="p-4">Sync Progress</th><th className="p-4 text-center">Status</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            <tr className="hover:bg-slate-50">
-                                <td className="p-4 font-bold text-slate-800 text-xs">AWS-Web-Prod-01 <i className="fas fa-arrow-right mx-2 text-slate-300"></i> HW-ECS-01</td>
-                                <td className="p-4 text-xs font-mono text-slate-500">SMS Full Sync</td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-[45%]"></div></div>
-                                        <span className="text-[10px] font-black text-blue-600">45%</span>
-                                    </div>
-                                </td>
-                                <td className="p-4 text-center"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-spinner fa-spin mr-1"></i> Syncing</span></td>
-                            </tr>
-                            <tr className="hover:bg-slate-50">
-                                <td className="p-4 font-bold text-slate-800 text-xs">AWS-DB-Prod-01 <i className="fas fa-arrow-right mx-2 text-slate-300"></i> HW-RDS-01</td>
-                                <td className="p-4 text-xs font-mono text-slate-500">DRS Incremental</td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 w-[100%]"></div></div>
-                                        <span className="text-[10px] font-black text-emerald-600">100%</span>
-                                    </div>
-                                </td>
-                                <td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest"><i className="fas fa-check mr-1"></i> Cutover Ready</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
+            {/* 🚨 STATUS SUMMARY */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${isAgentic ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                        <i className={`fas ${isAgentic ? 'fa-robot' : 'fa-tasks'}`}></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution Mode</div>
+                        <div className="font-black text-sm text-slate-800">{executionMode?.toUpperCase() || 'MANUAL'}</div>
+                    </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                        pipelineComplete ? 'bg-emerald-100 text-emerald-600' : 
+                        currentPhase && currentPhase !== 'PHASE_4_0' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                        <i className={`fas ${pipelineComplete ? 'fa-check-circle' : 'fa-spinner fa-spin'}`}></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pipeline Status</div>
+                        <div className="font-black text-sm text-slate-800">{pipelineComplete ? 'COMPLETED' : phaseLabel}</div>
+                    </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${hasDelegates ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <i className="fas fa-network-wired"></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Active Delegates</div>
+                        <div className="font-black text-sm text-slate-800">{hasDelegates ? delegateTasks.length : '0'} running</div>
+                    </div>
                 </div>
             </div>
+
+            {/* 🚨 DELEGATE TASK MONITOR */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+                <h4 className="font-black text-lg text-slate-800 mb-6 flex items-center">
+                    <i className="fas fa-satellite-dish text-emerald-500 mr-3"></i> 
+                    {isAgentic ? 'Agentic Orchestration Telemetry' : 'Migration Delegate Telemetry'}
+                </h4>
+                
+                {!hasDelegates ? (
+                    <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl">
+                        <i className="fas fa-inbox text-5xl text-slate-300 mb-4"></i>
+                        <h5 className="font-black text-slate-500 text-sm mb-2">No Active Delegates</h5>
+                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                            {isAgentic 
+                                ? 'Click "Orchestrate All" in the Orchestrator tab to spawn autonomous migration agents. Delegate status will appear here in real-time.'
+                                : 'When migration delegates are spawned via the Orchestrator or Workbench, their status will appear here.'}
+                        </p>
+                        {pipelineComplete && (
+                            <div className="mt-4 text-emerald-600 text-xs font-bold">
+                                <i className="fas fa-check-circle mr-1"></i> Pipeline complete — all phases finished successfully.
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
+                                <tr>
+                                    <th className="p-4">Target</th>
+                                    <th className="p-4">Phase / Job</th>
+                                    <th className="p-4">Provider / Model</th>
+                                    <th className="p-4 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {delegateTasks.map((task, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                        <td className="p-4 font-bold text-slate-800 text-xs">{task.target || 'N/A'}</td>
+                                        <td className="p-4 text-xs font-mono text-slate-500">{task.phase || task.goal || '—'}</td>
+                                        <td className="p-4 text-xs text-slate-500">{task.model || task.profile || 'exec'}</td>
+                                        <td className="p-4 text-center">
+                                            <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${
+                                                task.status === 'RUNNING' ? 'bg-blue-100 text-blue-700' :
+                                                task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                                                task.status === 'FAILED' ? 'bg-rose-100 text-rose-700' :
+                                                'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                {task.status === 'RUNNING' && <i className="fas fa-spinner fa-spin mr-1"></i>}
+                                                {task.status === 'COMPLETED' && <i className="fas fa-check mr-1"></i>}
+                                                {task.status === 'FAILED' && <i className="fas fa-times mr-1"></i>}
+                                                {task.status || 'UNKNOWN'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* 🚨 QUICK REFERENCE: Pipeline Phase Map */}
+            {isAgentic && hasDelegates && (
+                <div className="bg-slate-900 rounded-2xl border border-slate-700 p-6">
+                    <h4 className="font-black text-white text-sm uppercase tracking-widest mb-4">
+                        <i className="fas fa-project-diagram mr-2 text-purple-400"></i> Pipeline Execution Map
+                    </h4>
+                    <div className="grid grid-cols-7 gap-2">
+                        {['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7'].map((phase, i) => {
+                            const phaseKey = `PHASE_4_${i+1}`;
+                            const isDone = executionState?.currentPhase > phaseKey || executionState?.currentPhase === 'COMPLETED';
+                            const isActive = executionState?.currentPhase === phaseKey;
+                            return (
+                                <div key={phase} className={`p-3 rounded-lg text-center border transition-all ${
+                                    isDone ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
+                                    isActive ? 'bg-purple-500/20 border-purple-500 text-purple-300 animate-pulse' :
+                                    'bg-slate-800 border-slate-600 text-slate-500'
+                                }`}>
+                                    <div className="text-[10px] font-black">{phase}</div>
+                                    <i className={`fas ${isDone ? 'fa-check' : isActive ? 'fa-spinner fa-spin' : 'fa-circle'} text-[8px] mt-1`}></i>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

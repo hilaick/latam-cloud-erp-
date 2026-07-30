@@ -10,6 +10,9 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [subTab, setSubTab] = useState('wbs');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [executionMode, setExecutionMode] = useState(project?.executionMode || 'manual');
+    const [showGateModal, setShowGateModal] = useState(false);
+    const [gateWarnings, setGateWarnings] = useState([]);
+    const [gatePassed, setGatePassed] = useState(false);
 
     // 🚨 REORDERED: Menu Items logical flow
     const menuItems = [
@@ -19,6 +22,68 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         { id: 'finops', num: '3.4', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
         { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
+
+    // 🚨 NEW: Phase 3 → Phase 4 Gate — validate prerequisites & build ExecutionPlan
+    const handleGateCheck = () => {
+        const warnings = [];
+        let data = {};
+        try { data = JSON.parse(project?.data || '{}'); } catch(e) {}
+
+        // REQUIRED: execution mode
+        const mode = project?.executionMode || executionMode;
+        if (!mode) {
+            warnings.push({ level: 'required', tab: 'tools', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.2 Strategic Tooling.' });
+        }
+
+        // RECOMMENDED: WBS & RACI populated
+        if (!project?.wbsMatrix && !data?.wbs) {
+            warnings.push({ level: 'recommended', tab: 'wbs', msg: 'WBS & RACI Matrix not populated. Visit 3.1 to define detailed work breakdown.' });
+        }
+
+        // RECOMMENDED: tool assignments
+        if (!data?.toolAssignments && !data?.recommendations) {
+            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Scroll down in 3.2 to run tool recommendations.' });
+        }
+
+        // RECOMMENDED: wave plan
+        if (!data?.waves && !data?.runbook) {
+            warnings.push({ level: 'recommended', tab: 'runbook', msg: 'Wave cutover plan not created. Visit 3.5 to group servers into waves.' });
+        }
+
+        // OPTIONAL: physics calculated
+        if (!data?.physics) {
+            warnings.push({ level: 'optional', tab: 'physics', msg: 'Delivery physics not calculated. Visit 3.3 for time/bandwidth estimates.' });
+        }
+
+        // OPTIONAL: finops budget
+        if (!data?.finopsBudget && !data?.finops) {
+            warnings.push({ level: 'optional', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.4 for cost envelopes.' });
+        }
+
+        const hasBlocking = warnings.some(w => w.level === 'required');
+        setGatePassed(!hasBlocking);
+        setGateWarnings(warnings);
+        setShowGateModal(true);
+    };
+
+    const handleProceedToExecution = () => {
+        // Build ExecutionPlan contract
+        const executionPlan = {
+            mode: project?.executionMode || executionMode || 'manual',
+            planningCompletedAt: new Date().toISOString(),
+            warnings: gateWarnings.filter(w => w.level !== 'required').map(w => w.msg),
+            sourceData: {
+                wbs: project?.wbsMatrix || null,
+                topology: project?.mapperNodes || null,
+                riskScore: project?.ora?.riskScore || null,
+            }
+        };
+
+        onUpdateProject(project.id, 'executionPlan', executionPlan);
+        onUpdateProject(project.id, 'executionMode', executionPlan.mode);
+        setShowGateModal(false);
+        onPromote && onPromote('execution');
+    };
 
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
@@ -62,8 +127,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     ))}
                     
                     <div className="pt-8">
-                        <button onClick={() => onPromote && onPromote('execution')} className="w-full px-4 py-3.5 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
-                            Go to Execution Phase <i className="fas fa-arrow-right"></i>
+                        <button onClick={handleGateCheck} className="w-full px-4 py-3.5 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                            <i className="fas fa-tasks-check mr-1"></i> Review & Advance to Execution <i className="fas fa-arrow-right"></i>
                         </button>
                     </div>
                 </div>
@@ -202,6 +267,103 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     )}
                 </div>
             </div>
+
+            {/* 🚨 GATE MODAL: Phase 3 → Phase 4 Validation */}
+            {showGateModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in border border-slate-200">
+                        <div className={`p-6 border-b ${gatePassed ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
+                            <div className="flex justify-between items-center">
+                                <h3 className={`font-black text-lg ${gatePassed ? 'text-emerald-800' : 'text-rose-800'}`}>
+                                    <i className={`fas ${gatePassed ? 'fa-check-circle text-emerald-600' : 'fa-exclamation-triangle text-rose-600'} mr-2`}></i>
+                                    {gatePassed ? 'Execution Readiness Review' : 'Prerequisites Not Met'}
+                                </h3>
+                                <button onClick={() => setShowGateModal(false)} className="text-slate-400 hover:text-slate-600 text-xl">
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <p className={`text-xs mt-1 font-medium ${gatePassed ? 'text-emerald-700/80' : 'text-rose-700/80'}`}>
+                                {gatePassed 
+                                    ? 'All required prerequisites satisfied. Review recommendations below and proceed.' 
+                                    : 'The following items must be completed before advancing to Execution.'}
+                            </p>
+                        </div>
+
+                        <div className="p-6 max-h-[400px] overflow-y-auto custom-scrollbar">
+                            {gateWarnings.length === 0 ? (
+                                <div className="text-center py-6 text-emerald-600">
+                                    <i className="fas fa-check-circle text-4xl mb-3"></i>
+                                    <p className="font-black text-sm">All checks passed!</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {gateWarnings.map((w, i) => (
+                                        <div key={i} className={`p-4 rounded-xl border flex items-start gap-3 ${
+                                            w.level === 'required' 
+                                                ? 'bg-rose-50 border-rose-200 text-rose-800' 
+                                                : w.level === 'recommended'
+                                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                                        }`}>
+                                            <div className="mt-0.5 shrink-0">
+                                                <i className={`fas ${
+                                                    w.level === 'required' 
+                                                        ? 'fa-times-circle text-rose-500' 
+                                                        : w.level === 'recommended'
+                                                            ? 'fa-exclamation-circle text-amber-500'
+                                                            : 'fa-info-circle text-slate-400'
+                                                } text-lg`}></i>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
+                                                        w.level === 'required'
+                                                            ? 'bg-rose-200 text-rose-700'
+                                                            : w.level === 'recommended'
+                                                                ? 'bg-amber-200 text-amber-700'
+                                                                : 'bg-slate-200 text-slate-500'
+                                                    }`}>{w.level}</span>
+                                                    <button 
+                                                        onClick={() => { setSubTab(w.tab); setShowGateModal(false); }}
+                                                        className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 underline uppercase tracking-wider"
+                                                    >
+                                                        <i className="fas fa-arrow-right mr-1"></i> Go to 3.{menuItems.find(m => m.id === w.tab)?.num?.split('.')[1] || w.tab}
+                                                    </button>
+                                                </div>
+                                                <p className="text-xs font-medium leading-relaxed">{w.msg}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex gap-3">
+                            <button 
+                                onClick={() => setShowGateModal(false)} 
+                                className="flex-1 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-black uppercase tracking-widest text-[10px] rounded-xl transition-colors"
+                            >
+                                <i className="fas fa-arrow-left mr-1"></i> Back to Planning
+                            </button>
+                            {gatePassed ? (
+                                <button 
+                                    onClick={handleProceedToExecution} 
+                                    className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg transition-colors"
+                                >
+                                    Proceed to Execution <i className="fas fa-rocket ml-1"></i>
+                                </button>
+                            ) : (
+                                <button 
+                                    disabled
+                                    className="flex-1 px-4 py-2.5 bg-slate-300 text-slate-500 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed"
+                                >
+                                    <i className="fas fa-lock mr-1"></i> Execution Locked
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
