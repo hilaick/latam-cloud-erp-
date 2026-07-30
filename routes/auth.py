@@ -17,7 +17,7 @@ from flask_jwt_extended import (
     get_jwt_identity, get_jwt, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, AuditLog
+from models import db, User, AuditLog, InvalidToken
 from authlib.rbac import require_role
 from datetime import datetime, timedelta
 import logging

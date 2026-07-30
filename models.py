@@ -1,4 +1,5 @@
 import os
+import json
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
@@ -318,6 +319,19 @@ class EditSession(db.Model):
     heartbeat_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'entity_type', 'entity_id', name='uq_edit_session_entity'),
-        db.Index('ix_edit_sessions_heartbeat', 'heartbeat_at'),
+        db.Index('ix_edit_sessions_active', 'project_id', 'entity_type', 'entity_id'),
+    )
+
+
+class InvalidToken(db.Model):
+    """Blacklist table for revoked JWT tokens (logout)."""
+    __tablename__ = 'invalid_tokens'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    jti = db.Column(db.String(36), unique=True, nullable=False, index=True)  # JWT ID
+    token_type = db.Column(db.String(10), default='refresh')  # 'access' or 'refresh'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    revoked_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)  # when the token itself expires (auto-cleanup)
+    __table_args__ = (
+        db.Index('ix_invalid_tokens_jti', 'jti'),
     )
