@@ -29,11 +29,13 @@ def execute_privileged_engine_command(query, project_id="global"):
     """
     Communicates with the background root daemon or falls back to direct binary execution
     using the configured HermesConfig settings.
-    """
-    hc = _get_hc()
     
+    Tier 1 (primary):   socket → 127.0.0.1:5005  (no DB dependency)
+    Tier 2 (fallback):  subprocess → hermes chat  (reads HermesConfig from Postgres)
+    """
     try:
-        # Attempt connection to the persistent high-privilege daemon layer
+        # ── Tier 1: persistent high-privilege daemon layer ──
+        # No database dependency — daemon is self-contained
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.settimeout(15)
         client_socket.connect(("127.0.0.1", 5005))
@@ -61,10 +63,13 @@ def execute_privileged_engine_command(query, project_id="global"):
     except Exception as daemon_err:
         logger.warning(f"Local daemon socket unreachable ({str(daemon_err)}). Falling back to direct elevated binary fork.")
         
-        # Fallback: use the configured CLI binary with configured global model
-        binary = hc.hermes_binary_path or 'hermes'
-        model = hc.global_model or 'deepseek-v4-pro'
-        provider = hc.global_provider or 'deepseek'
+        # ── Tier 2: fallback — read config from Postgres, spawn subprocess ──
+        # HermesConfig is a singleton row in the Postgres database
+        hc = HermesConfig.get_config()
+        
+        binary = hc.hermes_binary_path if hc and hc.hermes_binary_path else 'hermes'
+        model = hc.global_model if hc else 'deepseek-v4-pro'
+        provider = hc.global_provider if hc else 'deepseek'
         
         cmd = [
             binary,
