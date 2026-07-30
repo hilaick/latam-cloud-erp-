@@ -29,10 +29,18 @@ def setup_db(app):
 class ProjectData(db.Model):
     __tablename__ = 'projects'
     id = db.Column(db.String(50), primary_key=True)
-    # 🚨 CLOUD-NATIVE FORK: Differentiates between 'migration' and 'greenfield'
-    project_type = db.Column(db.String(50), default='migration') 
-    data = db.Column(db.Text, nullable=False) 
+    project_type = db.Column(db.String(50), default='migration')
+    # Multi-tenancy: ownership & locking
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    locked_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    locked_at = db.Column(db.DateTime, nullable=True)
+    data = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship: project members
+    members = db.relationship('ProjectMember', backref='project', lazy='dynamic',
+                               cascade='all, delete-orphan')
 
 class GlobalPlaybooks(db.Model):
     __tablename__ = 'playbooks'
@@ -143,12 +151,28 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(50), nullable=False, default="Sales")
-    status = db.Column(db.String(50), nullable=False, default="Pending")
+    role = db.Column(db.String(50), nullable=False, default="Viewer")
+    status = db.Column(db.String(50), nullable=False, default="Active")  # Active, Pending, Suspended
     is_2fa = db.Column(db.Boolean, default=False)
+    # Multi-tenancy fields
+    department = db.Column(db.String(120))        # Internal: Engineering, Sales, PMO
+    partner_org = db.Column(db.String(200))        # External: "Deloitte", "Accenture", None=internal
+    is_active = db.Column(db.Boolean, default=True)
     last_login = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    project_memberships = db.relationship('ProjectMember', backref='user', lazy='dynamic')
+    owned_projects = db.relationship('ProjectData', backref='owner', lazy='dynamic',
+                                      foreign_keys='ProjectData.owner_id')
+    
     def to_dict(self):
-        return {'id': self.id, 'name': self.name, 'email': self.email, 'role': self.role, 'status': self.status, 'is_2fa': self.is_2fa, 'last_login': self.last_login.strftime('%Y-%m-%d %H:%M') if self.last_login else "Never"}
+        return {
+            'id': self.id, 'name': self.name, 'email': self.email,
+            'role': self.role, 'status': self.status, 'is_2fa': self.is_2fa,
+            'department': self.department, 'partner_org': self.partner_org,
+            'last_login': self.last_login.strftime('%Y-%m-%d %H:%M') if self.last_login else "Never"
+        }
 
 class CognitiveLearningLog(db.Model):
     __tablename__ = 'cognitive_learning_logs'
@@ -233,3 +257,67 @@ class HermesConfig(db.Model):
             'global_provider', 'global_model',
             'delegation_provider', 'delegation_model'
         ]}
+
+
+# ═══════════════════════════════════════════════════
+# MULTI-TENANCY MODELS
+# ═══════════════════════════════════════════════════
+
+class ProjectMember(db.Model):
+    """Many-to-many: which users can access which projects with what role."""
+    __tablename__ = 'project_members'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), nullable=False, index=True)
+    role = db.Column(db.String(50), default='Viewer')  # Owner, Editor, Viewer
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (db.UniqueConstraint('user_id', 'project_id', name='uq_user_project'),)
+
+
+class AuditLog(db.Model):
+    """Immutable audit trail: every mutation is logged."""
+    __tablename__ = 'audit_logs'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)  # None for system actions
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), nullable=True, index=True)
+    action = db.Column(db.String(100), nullable=False, index=True)  # e.g. 'project.updated', 'task.created'
+    entity_type = db.Column(db.String(100))      # e.g. 'Project', 'WBSTask', 'HermesConfig'
+    entity_id = db.Column(db.String(100))         # primary key of the affected entity
+    changes_json = db.Column(db.Text)             # JSON diff {field: {old: ..., new: ...}}
+    ip_address = db.Column(db.String(45))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    @staticmethod
+    def log(user_id, project_id, action, entity_type, entity_id, changes, ip=None):
+        """Convenience: create and flush an audit entry."""
+        entry = AuditLog(
+            user_id=int(user_id) if user_id else None,
+            project_id=project_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=str(entity_id) if entity_id else None,
+            changes_json=json.dumps(changes) if changes else None,
+            ip_address=ip
+        )
+        db.session.add(entry)
+        # Flush to get ID but don't commit — caller controls transaction
+        db.session.flush()
+        return entry
+
+
+class EditSession(db.Model):
+    """Tracks who is currently editing what — heartbeat-based."""
+    __tablename__ = 'edit_sessions'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), nullable=False)
+    entity_type = db.Column(db.String(100), nullable=False)  # e.g. 'project_config', 'wbs_task'
+    entity_id = db.Column(db.String(100), nullable=False)
+    session_start = db.Column(db.DateTime, default=datetime.utcnow)
+    heartbeat_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'entity_type', 'entity_id', name='uq_edit_session_entity'),
+        db.Index('ix_edit_sessions_heartbeat', 'heartbeat_at'),
+    )

@@ -1,8 +1,10 @@
 import React, { useContext, useState, useRef, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
+    const { user } = useAuth();
     
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
     const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -26,9 +28,9 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const userStr = localStorage.getItem('erp_user');
-    const user = userStr ? JSON.parse(userStr) : { name: "System User", role: "Unknown" };
-    const initials = (user?.name || "System User").split(' ').map(n => n[0] || '').join('').substring(0, 2).toUpperCase();
+    const userName = user?.name || 'System User';
+    const userRole = user?.role || 'Unknown';
+    const initials = userName.split(' ').map(n => n[0] || '').join('').substring(0, 2).toUpperCase();
 
     const currentProject = activeProjects.find(p => String(p.id) === String(activeProjectId));
     const currentProjectDisplay = currentProject 
@@ -153,8 +155,8 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                     {profileMenuOpen && (
                         <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-slide-up">
                             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-                                <div className="font-black text-sm text-slate-800">{user.name}</div>
-                                <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1">{user.role}</div>
+                                <div className="font-black text-sm text-slate-800">{userName}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1">{userRole}</div>
                             </div>
                             <div className="p-2">
                                 <button 
