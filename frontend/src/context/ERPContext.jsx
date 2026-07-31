@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 const DEFAULT_PLAYBOOKS = {
     "default_vm": {
@@ -124,14 +125,13 @@ export const ERPProvider = ({ children }) => {
         }
     };
 
+    const { isAuthenticated } = useAuth();
+
     useEffect(() => {
-        const token = sessionStorage.getItem('hermes_access_token');
-        if (token && token !== 'null' && token !== 'undefined') {
+        if (isAuthenticated) {
             fetchState();
-        } else {
-            handleAuthError();
         }
-    }, []);
+    }, [isAuthenticated]);
 
     // Helper function to determine region based on country
     const getRegionFromCountry = (country) => {
