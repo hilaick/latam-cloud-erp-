@@ -736,7 +736,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             {/* MODALS */}
             {showDossier && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[calc(100vh-2rem)] min-h-[400px] flex flex-col relative print:shadow-none print:min-h-0 print:max-h-none animate-slide-up">
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-pdf text-rose-500 mr-2"></i> Handover Dossier Generated</h3>
                             <div className="space-x-3"><button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow transition-colors"><i className="fas fa-print mr-2"></i> Print / Save PDF</button><button onClick={()=>setShowDossier(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow transition-colors"><i className="fas fa-times mr-2"></i> Close</button></div>
@@ -773,7 +773,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             )}
             {showDetailedReport && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[calc(100vh-2rem)] min-h-[400px] flex flex-col relative print:shadow-none print:min-h-0 print:max-h-none animate-slide-up">
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-contract text-indigo-600 mr-2"></i> Detailed Handover Report Generated</h3>
                             <div className="space-x-3"><button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow"><i className="fas fa-print mr-2"></i> Print / Save PDF</button><button onClick={()=>setShowDetailedReport(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow"><i className="fas fa-times mr-2"></i> Close</button></div>
@@ -782,21 +782,78 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                             <div className="prose prose-slate max-w-none">
                                 <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">INFRASTRUCTURE VERIFICATION REPORT<br/><span className="text-blue-600 text-xl">{project?.customerName || 'Customer Name'}</span><span className="text-slate-400 text-lg ml-4">| {project?.name || 'Project Name'}</span></h1>
                                                                 <h4>1. Objective</h4><p className="text-sm">This document provides a detailed itemized list of all cloud resources successfully provisioned and verified in the Target Cloud environment against the SOW Baseline. For commercial validation (Quoted vs Delivered vs Reserved), see the <strong>Procurement &amp; PO Handover</strong> tab.</p>
-                                <h4>2. Provisioned Resources (Live API Telemetry)</h4>
+                                <h4>2. Delivery Verification — Live Resources vs SOW Baseline</h4>
+                                <p className="text-sm text-slate-600 mb-4">Validates each provisioned resource category against the original Statement of Work. Shows what was actually built in the target cloud environment versus what was contracted.</p>
                                 {hasNocScanned && nocData?.raw ? (
-                                    Object.entries(nocData.raw).map(([category, items]) => {
-                                        if (!items || items.length === 0) return null;
-                                        return (
-                                            <div key={category} className="mb-6">
-                                                <h5 className="uppercase text-xs font-black tracking-widest text-slate-500 mb-2 border-b border-slate-100 pb-1">{category}</h5>
-                                                <table className="w-full text-left text-xs border border-slate-200">
-                                                    <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Resource Name/ID</th><th className="p-2 border-b border-slate-200">Specification</th><th className="p-2 border-b border-slate-200">IP / Meta</th></tr></thead>
-                                                    <tbody>{items.map((item, idx) => (<tr key={idx}><td className="p-2 border-b border-slate-100 font-bold">{item.name || item.id || `Item ${idx}`}</td><td className="p-2 border-b border-slate-100 text-slate-600">{item.type || item.flavor || item.engine || item.bandwidth || 'Standard'}</td><td className="p-2 border-b border-slate-100 font-mono text-slate-500">{item.ip || item.private_ip_address || item.cidr || 'N/A'}</td></tr>))}</tbody>
-                                                </table>
-                                            </div>
-                                        )
-                                    })
-                                ) : (<p className="text-sm text-slate-500 italic">No telemetry data available. Please run Final NOC Scan.</p>)}
+                                    (() => {
+                                        const raw = nocData.raw;
+                                        const normalized = {
+                                            'Compute (ECS)': [...(raw.compute || []), ...(raw.ecs || []), ...(raw.server || [])],
+                                            'Databases (RDS/GaussDB)': [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
+                                            'Network (VPC/EIP/NAT)': [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
+                                            'Storage (OBS/CBR)': [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
+                                            'Security (WAF/Shield)': [...(raw.security || []), ...(raw.waf || [])]
+                                        };
+                                        const topo = project?.blueprintData?.topology || {};
+                                        const topoMap = {
+                                            'Compute (ECS)': (topo.compute || []).length,
+                                            'Databases (RDS/GaussDB)': (topo.databases || []).length,
+                                            'Network (VPC/EIP/NAT)': (topo.network || []).length,
+                                            'Storage (OBS/CBR)': (topo.storage || []).length,
+                                            'Security (WAF/Shield)': (topo.security || []).length
+                                        };
+                                        return Object.entries(normalized).map(([catLabel, items]) => {
+                                            if (!items || items.length === 0) return null;
+                                            const quotedCount = topoMap[catLabel] || 0;
+                                            const deliveredCount = items.length;
+                                            let statusColor, statusLabel, statusIcon;
+                                            if (quotedCount === 0 && deliveredCount > 0) {
+                                                statusColor = 'bg-amber-100 text-amber-700'; statusLabel = 'Extra (not in SOW)'; statusIcon = 'fa-plus-circle';
+                                            } else if (deliveredCount >= quotedCount && quotedCount > 0) {
+                                                statusColor = 'bg-emerald-100 text-emerald-700'; statusLabel = 'Fully Delivered'; statusIcon = 'fa-check-circle';
+                                            } else if (deliveredCount > 0 && deliveredCount < quotedCount) {
+                                                statusColor = 'bg-blue-100 text-blue-700'; statusLabel = 'Partially Delivered'; statusIcon = 'fa-exclamation-circle';
+                                            } else {
+                                                statusColor = 'bg-rose-100 text-rose-700'; statusLabel = 'Not Delivered'; statusIcon = 'fa-times-circle';
+                                            }
+                                            const delta = deliveredCount - quotedCount;
+                                            const deltaStr = delta > 0 ? `+${delta}` : `${delta}`;
+                                            const deltaColor = delta >= 0 ? 'text-emerald-600' : 'text-rose-600';
+                                            return (
+                                                <div key={catLabel} className="mb-6">
+                                                    <h5 className="uppercase text-xs font-black tracking-widest text-slate-500 mb-2 border-b border-slate-100 pb-1 flex justify-between">
+                                                        <span>{catLabel}</span>
+                                                        <span className="flex gap-3 text-[10px]">
+                                                            <span className="text-slate-400">Quoted: <strong className="text-slate-700">{quotedCount}</strong></span>
+                                                            <span className="text-slate-400">Live: <strong className="text-slate-700">{deliveredCount}</strong></span>
+                                                            <span className={deltaColor}>Δ: <strong>{deltaStr}</strong></span>
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black ${statusColor}`}><i className={`fas ${statusIcon} mr-1`}></i>{statusLabel}</span>
+                                                        </span>
+                                                    </h5>
+                                                    <table className="w-full text-left text-xs border border-slate-200">
+                                                        <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Resource Name / ID</th><th className="p-2 border-b border-slate-200">Live Specification</th><th className="p-2 border-b border-slate-200">IP / Location</th><th className="p-2 border-b border-slate-200 text-center w-24">Status</th></tr></thead>
+                                                        <tbody>{items.map((item, idx) => {
+                                                            const specStr = item.type || item.flavor || item.engine || item.bandwidth || '—';
+                                                            const ipStr = item.ip || item.private_ip_address || item.cidr || item.region || '—';
+                                                            const isCompute = catLabel.startsWith('Compute');
+                                                            let itemStatus = 'bg-slate-100 text-slate-500';
+                                                            let itemLabel = 'Provisioned';
+                                                            if (item.techStatus === 'Ready') { itemStatus = 'bg-emerald-100 text-emerald-700'; itemLabel = 'Active'; }
+                                                            else if (item.techStatus === 'Pending') { itemStatus = 'bg-blue-100 text-blue-700'; itemLabel = 'Pending'; }
+                                                            else if (item.techStatus === 'Deleting') { itemStatus = 'bg-slate-200 text-slate-400 line-through'; itemLabel = 'Deleting'; }
+                                                            return (<tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                                                <td className="p-2 border-b border-slate-100 font-bold text-slate-800">{item.name || item.id || `Resource-${idx + 1}`}</td>
+                                                                <td className="p-2 border-b border-slate-100 font-mono text-slate-600">{specStr}</td>
+                                                                <td className="p-2 border-b border-slate-100 font-mono text-slate-500">{ipStr}</td>
+                                                                <td className="p-2 border-b border-slate-100 text-center"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${itemStatus}`}>{itemLabel}</span></td>
+                                                            </tr>);
+                                                        })}</tbody>
+                                                    </table>
+                                                </div>
+                                            );
+                                        });
+                                    })()
+                                ) : (<p className="text-sm text-slate-500 italic">No telemetry data available. Run Final NOC Scan to populate delivery verification.</p>)}
 
                                 <h4>3. 3-Way Diff Matrix (With Resource Specifications)</h4>
                                 <p className="text-sm text-slate-600">Comparing Quoted Baseline vs Live Environment vs Reserved Instance coverage, with detailed CPU/RAM specifications per resource type.</p>
