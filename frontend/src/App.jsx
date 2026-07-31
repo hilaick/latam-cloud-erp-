@@ -40,7 +40,7 @@ function App() {
 
     // ── Redirect to home if wizard project is unset ──
     useEffect(() => {
-        if (activePhase === 'wizard' && (!activeProjectId || activeProjectId === 'global')) {
+        if (activePhase === 'wizard' && (!activeProjectId || activeProjectId === 'global' || activeProjectId === 'none')) {
             setActivePhase('home');
         }
     }, [activePhase, activeProjectId, setActivePhase]);
