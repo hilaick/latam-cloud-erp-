@@ -20,10 +20,10 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
             </div>
 
             <div className="px-4 md:px-8 flex flex-wrap gap-2 border-b border-slate-200 pb-4 mb-6">
-                <button onClick={() => setSubTab('diff')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Diff Matrix</button>
+                <button onClick={() => setSubTab('diff')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'diff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-balance-scale mr-2"></i> 1. 3-Way Infrastructure Diff</button>
                 <button onClick={() => setSubTab('constellation')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'constellation' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-meteor mr-2"></i> 2. Target Constellation</button>
                 <button onClick={() => setSubTab('war')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'war' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-shield-alt mr-2"></i> 3. WAR Sign-Off</button>
-                <button onClick={() => setSubTab('commercial')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}><i className="fas fa-shopping-cart mr-2"></i> 4. Commercial True-Up</button>
+                <button onClick={() => setSubTab('commercial')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${subTab === 'commercial' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}><i className="fas fa-shopping-cart mr-2"></i> 4. Procurement &amp; PO Handover</button>
             </div>
             
             <div className="px-4 md:px-8">
@@ -37,7 +37,7 @@ export default function StepPostLive({ project, onUpdateProject, onPromote, isCu
 }
 
 // ==========================================
-// 🚨 4. COMMERCIAL TRUE-UP (THE EXIT GATE)
+// 🚨 4. PROCUREMENT & PO HANDOVER (COMMERCIAL TRUE-UP)
 // ==========================================
 function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const [isLoading, setIsLoading] = useState(false);
@@ -735,13 +735,13 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
             {/* MODALS */}
             {showDossier && (
-                <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-pdf text-rose-500 mr-2"></i> Handover Dossier Generated</h3>
                             <div className="space-x-3"><button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow transition-colors"><i className="fas fa-print mr-2"></i> Print / Save PDF</button><button onClick={()=>setShowDossier(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow transition-colors"><i className="fas fa-times mr-2"></i> Close</button></div>
                         </div>
-                        <div className="p-12 print:p-0 bg-white flex-1 print:bg-transparent" id="printable-dossier">
+                        <div className="p-12 print:p-0 bg-white flex-1 overflow-y-auto print:bg-transparent custom-scrollbar" id="printable-dossier">
                             <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                                 <div><h1 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">LATAM Cloud</h1><h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Executive Infrastructure Handover</h2></div>
                                 <div className="text-right"><div className="font-black text-lg text-slate-800">{project.name}</div><div className="text-xs text-slate-500 mt-1">Generated: {new Date().toLocaleDateString()}</div></div>
@@ -760,20 +760,28 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                 </div>
                             </div>
                         </div>
+                        <div className="px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-between items-center shrink-0 print:hidden">
+                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                                <i className="fas fa-check-circle mr-1 text-emerald-500"></i> Executive Infrastructure Handover Dossier
+                            </div>
+                            <button onClick={() => setShowDossier(false)} className="px-6 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md">
+                                <i className="fas fa-times mr-2"></i>Close Dossier
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
             {showDetailedReport && (
-                <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl min-h-[800px] flex flex-col relative print:shadow-none print:min-h-0 animate-slide-up">
                         <div className="px-6 py-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center print:hidden rounded-t-xl">
                             <h3 className="font-black text-slate-800"><i className="fas fa-file-contract text-indigo-600 mr-2"></i> Detailed Handover Report Generated</h3>
                             <div className="space-x-3"><button onClick={handlePrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded shadow"><i className="fas fa-print mr-2"></i> Print / Save PDF</button><button onClick={()=>setShowDetailedReport(false)} className="px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs font-bold rounded shadow"><i className="fas fa-times mr-2"></i> Close</button></div>
                         </div>
-                        <div className="p-12 print:p-0 bg-white flex-1 print:bg-transparent" id="printable-detailed-report">
+                        <div className="p-12 print:p-0 bg-white flex-1 overflow-y-auto print:bg-transparent custom-scrollbar" id="printable-detailed-report">
                             <div className="prose prose-slate max-w-none">
-                                <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">COMPLETE MIGRATION HANDOVER<br/><span className="text-blue-600 text-xl">{project?.customerName || 'Customer Name'}</span><span className="text-slate-400 text-lg ml-4">| {project?.name || 'Project Name'}</span></h1>
-                                <h4>1. Objective</h4><p className="text-sm">This document provides a detailed itemized list of all cloud resources successfully provisioned and verified in the Target Cloud environment, enriched with resource specifications and commercial validation.</p>
+                                <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">INFRASTRUCTURE VERIFICATION REPORT<br/><span className="text-blue-600 text-xl">{project?.customerName || 'Customer Name'}</span><span className="text-slate-400 text-lg ml-4">| {project?.name || 'Project Name'}</span></h1>
+                                                                <h4>1. Objective</h4><p className="text-sm">This document provides a detailed itemized list of all cloud resources successfully provisioned and verified in the Target Cloud environment against the SOW Baseline. For commercial validation (Quoted vs Delivered vs Reserved), see the <strong>Procurement &amp; PO Handover</strong> tab.</p>
                                 <h4>2. Provisioned Resources (Live API Telemetry)</h4>
                                 {hasNocScanned && nocData?.raw ? (
                                     Object.entries(nocData.raw).map(([category, items]) => {
@@ -895,13 +903,13 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         );
                                     })()
                                 ) : (
-                                    <p className="text-sm text-slate-500 italic">Commercial True-Up data not yet available. Run Auto-Reconcile in Commercial True-Up tab first to generate the comparison.</p>
+                                    <p className="text-sm text-slate-500 italic">Commercial True-Up data not yet available. Run Auto-Reconcile in Commercial True-Up tab.</p>
                                 )}
 
                                 {trueupData?.procurement_actions?.length > 0 && (
                                     <div className="mt-6">
                                         <h4>5. Procurement Actions & PO Handover</h4>
-                                        <p className="text-sm text-slate-600">Recommended actions derived from the Commercial True-Up gap analysis.</p>
+                                        <p className="text-xs text-slate-500 mb-2">These actions are also detailed in the <strong>Commercial True-Up</strong> tab under Procurement &amp; PO Handover.</p>
                                         <table className="w-full text-left text-xs border border-slate-200">
                                             <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Action</th><th className="p-2 border-b border-slate-200 text-center">Priority</th><th className="p-2 border-b border-slate-200">Specification</th><th className="p-2 border-b border-slate-200 text-center">Qty</th><th className="p-2 border-b border-slate-200">Description</th></tr></thead>
                                             <tbody>
@@ -914,6 +922,14 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                        <div className="px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-between items-center shrink-0 print:hidden">
+                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest max-w-md">
+                                <i className="fas fa-info-circle mr-1 text-indigo-500"></i> Sections 4–5 (Procurement &amp; PO Handover) → Commercial True-Up tab
+                            </div>
+                            <button onClick={() => setShowDetailedReport(false)} className="px-6 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md">
+                                <i className="fas fa-times mr-2"></i>Close Report
+                            </button>
                         </div>
                     </div>
                 </div>
