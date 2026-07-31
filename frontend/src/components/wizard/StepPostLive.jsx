@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { formatShortDate } from '../../utils/helpers';
+import { parseResourceSpec } from '../../utils/specParser';
 
 export default function StepPostLive({ project, onUpdateProject, onPromote, isCurrent }) {
     const [subTab, setSubTab] = useState('diff'); 
@@ -833,7 +834,8 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                     <table className="w-full text-left text-xs border border-slate-200">
                                                         <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Resource Name / ID</th><th className="p-2 border-b border-slate-200">Live Specification</th><th className="p-2 border-b border-slate-200">IP / Location</th><th className="p-2 border-b border-slate-200 text-center w-24">Status</th></tr></thead>
                                                         <tbody>{items.map((item, idx) => {
-                                                            const specStr = item.type || item.flavor || item.engine || item.bandwidth || '—';
+                                                            const parsed = parseResourceSpec(item, catLabel);
+                                                            const specStr = parsed.displayStr;
                                                             const ipStr = item.ip || item.private_ip_address || item.cidr || item.region || '—';
                                                             const isCompute = catLabel.startsWith('Compute');
                                                             let itemStatus = 'bg-slate-100 text-slate-500';
