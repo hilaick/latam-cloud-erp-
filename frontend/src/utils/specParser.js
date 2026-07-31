@@ -102,14 +102,14 @@ export function parseDatabaseSpec(item) {
   const storageItem = item.storage || item;
 
   // Engine from type string
-  const engineMatch = type.match(/(MySQL|PostgreSQL|GaussDB|SQL\s*Server|MariaDB|MongoDB)/i);
+  const engineMatch = type.match(/(MySQL|PostgreSQL|GaussDB|SQL\s*Server|MariaDB|MongoDB|RDS|DDS)/i);
   if (engineMatch && !result.engine) result.engine = engineMatch[1];
 
   const versionMatch = type.match(/(\d+\.\d+)/);
   if (versionMatch && !result.version) result.version = versionMatch[1];
 
-  if (/Primary\/Standby|Single|Cluster|Replica/i.test(type) && !result.mode)
-    result.mode = type.match(/Primary\/Standby|Single|Cluster|Replica/i)[0];
+  if (/Primary\/Standby|Single|Cluster|Replica|HA/i.test(type) && !result.mode)
+    result.mode = type.match(/Primary\/Standby|Single|Cluster|Replica|HA/i)[0];
 
   // vCPU/RAM from text
   const vcpuMatch = (type + '|' + flavor).match(/(\d+)\s*vCPU/i);
@@ -124,6 +124,9 @@ export function parseDatabaseSpec(item) {
     if (!result.disk_gb) result.disk_gb = parseInt(diskMatch[1]);
     if (!result.disk_type) result.disk_type = diskMatch[2];
   }
+
+  // Ultimate fallback: use raw type as engine if nothing was found
+  if (!result.engine && item.type) result.engine = item.type;
 
   return result;
 }
@@ -228,9 +231,10 @@ export function parseResourceSpec(item, category = 'compute') {
 
 function buildDisplayString(p, cat) {
   const parts = [];
+  const c = (cat || '').toLowerCase();
 
   // Compute: "x0.2u.4g | 2vCPUs | 4GB"
-  if (cat.includes('comput') || cat.includes('ecs') || cat.includes('server')) {
+  if (c.includes('comput') || c.includes('ecs') || c.includes('server')) {
     if (p.flavorName) parts.push(p.flavorName);
     if (p.vcpu) parts.push(`${p.vcpu}vCPUs`);
     if (p.ram_gb) parts.push(`${p.ram_gb}GB RAM`);
@@ -240,7 +244,7 @@ function buildDisplayString(p, cat) {
     if (p.bandwidth_mbps) parts.push(`${p.bandwidth_mbps}Mbps`);
   }
   // Database: "MySQL 8.0 | 2vCPUs, 8GB | Cloud SSD 150GB"
-  else if (cat.includes('data') || cat.includes('rds')) {
+  else if (c.includes('data') || c.includes('rds') || c.includes('sql') || c.includes('gauss')) {
     let eng = p.engine || '';
     if (p.version) eng += ` ${p.version}`;
     if (p.mode) eng += ` ${p.mode}`;
@@ -249,18 +253,18 @@ function buildDisplayString(p, cat) {
     if (p.disk_type && p.disk_gb) parts.push(`${p.disk_type} ${p.disk_gb}GB`);
   }
   // Network: "Dynamic BGP | 1TB Traffic"
-  else if (cat.includes('net') || cat.includes('eip')) {
+  else if (c.includes('net') || c.includes('eip') || c.includes('vpc') || c.includes('nat') || c.includes('elb') || c.includes('cdn')) {
     if (p.type) parts.push(p.type);
     if (p.bandwidth_mbps) parts.push(`${p.bandwidth_mbps}Mbps`);
     if (p.traffic_tb) parts.push(`${p.traffic_tb}TB Traffic`);
   }
   // Storage: "Server backup vault 1024GB"
-  else if (cat.includes('stor')) {
+  else if (c.includes('stor') || c.includes('obs') || c.includes('cbr') || c.includes('backup')) {
     if (p.type) parts.push(p.type);
     if (p.size_gb) parts.push(`${p.size_gb}GB`);
   }
   // Security: "WAF Premium"
-  else if (cat.includes('sec')) {
+  else if (c.includes('sec') || c.includes('waf') || c.includes('shield') || c.includes('hss')) {
     if (p.type) parts.push(p.type);
     if (p.edition) parts.push(p.edition);
   }
