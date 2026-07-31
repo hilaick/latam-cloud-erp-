@@ -172,7 +172,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const handleAutoReconcile = async () => {
         setIsLoading(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch('/api/finops/ecs-ri-reconciliation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -208,7 +208,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     const handleRunTrueUp = async () => {
         setIsLoading(true); setApiDiagnostics([]);
         try {
-            const token = localStorage.getItem('erp_jwt_token'); 
+            const token = sessionStorage.getItem('hermes_access_token'); 
             const res = await fetch('/api/finops/ecs-ri-reconciliation', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ projectId: activeProject.id })
@@ -236,7 +236,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         setIsUploading(true);
         const formData = new FormData(); formData.append('file', file); formData.append('projectId', activeProject.id); 
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch(endpoint, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
             const data = await res.json();
             if (data.success) {
@@ -251,7 +251,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         if (!window.confirm('Are you sure you want to clear the uploaded quotation and matrix data?')) return;
         setIsClearing(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             await fetch('/api/finops/clear-ecs-ri-quotation', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: activeProject.id }) });
             onUpdateProject(activeProject.id, 'ri_quotation', null); onUpdateProject(activeProject.id, 'finops_matrix', null); onUpdateProject(activeProject.id, 'console_ri_export', null);
             setMatrix(null); setUnquotedMatrix([]); setRIQuotationSummary(null); setConsoleRISummary(null); setApiDiagnostics([]);
@@ -262,7 +262,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
         if (!rawData.trim()) { alert('Please paste TSV/CSV data'); return; }
         setIsRawImporting(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/finops/upload-ecs-ri-raw', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: activeProject.id, data: rawData, format: 'csv' }) });
             const data = await res.json();
             if (data.success) {
@@ -569,6 +569,24 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
 
     const hasNocScanned = nocData !== null;
 
+    // Extract reconciliation matrix & trueup data for the Detailed Report
+    const reconciliationMatrix = useMemo(() => {
+        try {
+            const stored = project?.finops_matrix;
+            if (stored?.matrix) return stored.matrix;
+            if (project?.data) {
+                const parsed = JSON.parse(project.data);
+                return parsed?.finops_matrix?.matrix || [];
+            }
+        } catch(e) { /* ignore */ }
+        return [];
+    }, [project]);
+
+    const trueupData = useMemo(() => {
+        if (project?.trueup_recommendations) return project.trueup_recommendations;
+        return null;
+    }, [project]);
+
     const liveCategories = useMemo(() => {
         const raw = nocData?.raw || {};
         const normalized = {
@@ -608,7 +626,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
         if (!project.customerId) { alert("NOC Scan Error: No Customer linked to this project."); return; }
         setIsScanningNoc(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/cloud/inventory', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ customer_id: project.customerId, projectId: project.id, region: project.region || 'la-north-2', provider: 'Huawei' })
@@ -755,7 +773,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                         <div className="p-12 print:p-0 bg-white flex-1 print:bg-transparent" id="printable-detailed-report">
                             <div className="prose prose-slate max-w-none">
                                 <h1 className="text-3xl font-black mb-8 border-b-2 border-slate-200 pb-4 uppercase text-slate-900">COMPLETE MIGRATION HANDOVER<br/><span className="text-blue-600 text-xl">{project?.customerName || 'Customer Name'}</span><span className="text-slate-400 text-lg ml-4">| {project?.name || 'Project Name'}</span></h1>
-                                <h4>1. Objective</h4><p className="text-sm">This document provides a detailed itemized list of all cloud resources successfully provisioned and verified in the Target Cloud environment.</p>
+                                <h4>1. Objective</h4><p className="text-sm">This document provides a detailed itemized list of all cloud resources successfully provisioned and verified in the Target Cloud environment, enriched with resource specifications and commercial validation.</p>
                                 <h4>2. Provisioned Resources (Live API Telemetry)</h4>
                                 {hasNocScanned && nocData?.raw ? (
                                     Object.entries(nocData.raw).map(([category, items]) => {
@@ -771,6 +789,130 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         )
                                     })
                                 ) : (<p className="text-sm text-slate-500 italic">No telemetry data available. Please run Final NOC Scan.</p>)}
+
+                                <h4>3. 3-Way Diff Matrix (With Resource Specifications)</h4>
+                                <p className="text-sm text-slate-600">Comparing Quoted Baseline vs Live Environment vs Reserved Instance coverage, with detailed CPU/RAM specifications per resource type.</p>
+                                {reconciliationMatrix.length > 0 ? (
+                                    <div className="mb-6">
+                                        <table className="w-full text-left text-xs border border-slate-200">
+                                            <thead className="bg-slate-50"><tr>
+                                                <th className="p-2 border-b border-slate-200">Specification / Flavor</th>
+                                                <th className="p-2 border-b border-slate-200 text-center">Quoted</th>
+                                                <th className="p-2 border-b border-slate-200 text-center">Live</th>
+                                                <th className="p-2 border-b border-slate-200 text-center">RI Owned</th>
+                                                <th className="p-2 border-b border-slate-200 text-center">Missing RI</th>
+                                                <th className="p-2 border-b border-slate-200">vCPU / RAM / Disk</th>
+                                            </tr></thead>
+                                            <tbody>
+                                                {reconciliationMatrix.map((row, i) => {
+                                                    const quotedSpecs = row.quoted_specs || row.live_servers?.[0]?.resource_specs || {};
+                                                    const liveSpecs = row.live_servers_detailed?.[0]?.specs || row.live_servers?.[0]?.resource_specs || {};
+                                                    const specDetail = quotedSpecs.vcpu
+                                                        ? `${quotedSpecs.vcpu}vCPU / ${quotedSpecs.ram_gb || '?'}GB RAM`
+                                                        : liveSpecs.vcpu
+                                                        ? `${liveSpecs.vcpu}vCPU / ${liveSpecs.ram_gb || '?'}GB RAM (from live)`
+                                                        : '—';
+                                                    return (<tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                                        <td className="p-2 border-b border-slate-100 font-bold">{row.specification || 'Unknown'}</td>
+                                                        <td className="p-2 border-b border-slate-100 text-center font-black text-emerald-700">{row.quoted_count}</td>
+                                                        <td className="p-2 border-b border-slate-100 text-center font-black text-blue-700">{row.live_count}</td>
+                                                        <td className="p-2 border-b border-slate-100 text-center font-black text-purple-700">{row.bought_count}</td>
+                                                        <td className="p-2 border-b border-slate-100 text-center font-black text-rose-600">{row.missing_ris || 0}</td>
+                                                        <td className="p-2 border-b border-slate-100 font-mono text-slate-600">{specDetail}</td>
+                                                    </tr>);
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-slate-500 italic">Reconciliation matrix not yet generated. Run Auto-Reconcile in Commercial True-Up tab first.</p>
+                                )}
+
+                                <h4>4. Commercial True-Up — Quoted vs Delivered Validation</h4>
+                                <p className="text-sm text-slate-600">Validates what was originally quoted against what was actually delivered — runs even without Technical Tags or Active Reserved Instances.</p>
+                                {trueupData?.commercial_trueup ? (
+                                    (() => {
+                                        const ct = trueupData.commercial_trueup;
+                                        const dStatus = ct.delivery_status || {};
+                                        const qBaseline = ct.quoted_baseline || {};
+                                        const dActual = ct.delivered_actual || {};
+                                        const riCov = ct.ri_coverage || {};
+                                        const items = ct.items || {};
+                                        return (
+                                            <div className="space-y-4 mb-6">
+                                                <div className="grid grid-cols-3 gap-4 mb-4">
+                                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                                                        <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Quoted SOW Baseline</div>
+                                                        <div className="text-2xl font-black text-slate-800">{qBaseline.total_resources}</div>
+                                                    </div>
+                                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                                                        <div className="text-[10px] uppercase tracking-widest text-blue-600 font-bold">Delivered Actual</div>
+                                                        <div className="text-2xl font-black text-blue-700">{dActual.total_resources} <span className="text-sm">({dActual.delivery_pct}%)</span></div>
+                                                    </div>
+                                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                                                        <div className="text-[10px] uppercase tracking-widest text-purple-600 font-bold">RI Coverage</div>
+                                                        <div className="text-2xl font-black text-purple-700">{riCov.total_ris} <span className="text-sm">({riCov.coverage_pct}%)</span></div>
+                                                    </div>
+                                                </div>
+
+                                                <h5 className="uppercase text-xs font-black tracking-widest text-rose-600 mt-4 mb-2">Delivery Status Breakdown</h5>
+                                                <table className="w-full text-left text-xs border border-slate-200">
+                                                    <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Status</th><th className="p-2 border-b border-slate-200 text-center">Count</th></tr></thead>
+                                                    <tbody>
+                                                        <tr><td className="p-2 border-b border-slate-100 font-bold text-emerald-700">Fully Delivered</td><td className="p-2 border-b border-slate-100 text-center font-black">{dStatus.fully_delivered || 0}</td></tr>
+                                                        <tr><td className="p-2 border-b border-slate-100 font-bold text-amber-700">Partially Delivered</td><td className="p-2 border-b border-slate-100 text-center font-black">{dStatus.partially_delivered || 0}</td></tr>
+                                                        <tr><td className="p-2 border-b border-slate-100 font-bold text-rose-700">Not Delivered</td><td className="p-2 border-b border-slate-100 text-center font-black">{dStatus.not_delivered || 0}</td></tr>
+                                                        <tr><td className="p-2 border-b border-slate-100 font-bold text-orange-700">Over Delivered (Scope Creep)</td><td className="p-2 border-b border-slate-100 text-center font-black">{dStatus.over_delivered || 0}</td></tr>
+                                                    </tbody>
+                                                </table>
+
+                                                {items.undelivered?.length > 0 && (
+                                                    <div className="mt-4">
+                                                        <h5 className="uppercase text-xs font-black tracking-widest text-rose-600 mb-2">⚠ Not Delivered Resources</h5>
+                                                        <table className="w-full text-left text-xs border border-rose-200">
+                                                            <thead className="bg-rose-50"><tr><th className="p-2 border-b border-rose-100">Specification</th><th className="p-2 border-b border-rose-100 text-center">Quoted</th><th className="p-2 border-b border-rose-100 text-center">Delivered</th><th className="p-2 border-b border-rose-100 text-center">Shortfall</th></tr></thead>
+                                                            <tbody>{items.undelivered.map((item, j) => (<tr key={j}><td className="p-2 border-b border-rose-100 font-bold">{item.specification}</td><td className="p-2 border-b border-rose-100 text-center font-black">{item.quoted}</td><td className="p-2 border-b border-rose-100 text-center font-black text-rose-600">0</td><td className="p-2 border-b border-rose-100 text-center font-black text-rose-600">−{item.shortfall}</td></tr>))}</tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+
+                                                {items.overdelivered?.length > 0 && (
+                                                    <div className="mt-4">
+                                                        <h5 className="uppercase text-xs font-black tracking-widest text-orange-600 mb-2">⚠ Over-Delivered Resources (Scope Creep)</h5>
+                                                        <table className="w-full text-left text-xs border border-orange-200">
+                                                            <thead className="bg-orange-50"><tr><th className="p-2 border-b border-orange-100">Specification</th><th className="p-2 border-b border-orange-100 text-center">Quoted</th><th className="p-2 border-b border-orange-100 text-center">Delivered</th><th className="p-2 border-b border-orange-100 text-center">Excess</th></tr></thead>
+                                                            <tbody>{items.overdelivered.map((item, j) => (<tr key={j}><td className="p-2 border-b border-orange-100 font-bold">{item.specification}</td><td className="p-2 border-b border-orange-100 text-center font-black">{item.quoted}</td><td className="p-2 border-b border-orange-100 text-center font-black text-blue-600">{item.delivered}</td><td className="p-2 border-b border-orange-100 text-center font-black text-orange-600">+{item.overdelivered}</td></tr>))}</tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+
+                                                {ct.validation_note && (
+                                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4 text-xs text-blue-800 font-medium">
+                                                        <i className="fas fa-info-circle mr-2"></i>{ct.validation_note}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()
+                                ) : (
+                                    <p className="text-sm text-slate-500 italic">Commercial True-Up data not yet available. Run Auto-Reconcile in Commercial True-Up tab first to generate the comparison.</p>
+                                )}
+
+                                {trueupData?.procurement_actions?.length > 0 && (
+                                    <div className="mt-6">
+                                        <h4>5. Procurement Actions & PO Handover</h4>
+                                        <p className="text-sm text-slate-600">Recommended actions derived from the Commercial True-Up gap analysis.</p>
+                                        <table className="w-full text-left text-xs border border-slate-200">
+                                            <thead className="bg-slate-50"><tr><th className="p-2 border-b border-slate-200">Action</th><th className="p-2 border-b border-slate-200 text-center">Priority</th><th className="p-2 border-b border-slate-200">Specification</th><th className="p-2 border-b border-slate-200 text-center">Qty</th><th className="p-2 border-b border-slate-200">Description</th></tr></thead>
+                                            <tbody>
+                                                {trueupData.procurement_actions.map((act, i) => {
+                                                    const priColors = {HIGH: 'bg-rose-100 text-rose-700', MEDIUM: 'bg-amber-100 text-amber-700', LOW: 'bg-slate-100 text-slate-600'};
+                                                    return (<tr key={i}><td className="p-2 border-b border-slate-100 font-bold">{act.action}</td><td className="p-2 border-b border-slate-100 text-center"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${priColors[act.priority] || ''}`}>{act.priority}</span></td><td className="p-2 border-b border-slate-100 font-mono">{act.specification}</td><td className="p-2 border-b border-slate-100 text-center font-black">{act.quantity}</td><td className="p-2 border-b border-slate-100 text-slate-600">{act.description}</td></tr>);
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

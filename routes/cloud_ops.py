@@ -64,12 +64,15 @@ def ecs_ri_reconciliation():
         reconciler = ECSRIReconciler(raw_ak=raw_ak, raw_sk=raw_sk, region=project_region)
         reconciliation_result = reconciler.reconcile_ecs_ris(quoted_ecs_ris, console_ris)
         
-        # 🚨 FIX: Trigger the Enhanced Commercial True-Up engine and inject it into the response
+        # 🚨 Generate Commercial True-Up recommendations from the reconciliation matrix
         trueup_recommendations = {}
         try:
             from services.enhanced_commercial_trueup import EnhancedCommercialTrueUp
             if reconciliation_result and 'matrix' in reconciliation_result:
-                trueup_engine = EnhancedCommercialTrueUp(reconciliation_result['matrix'])
+                trueup_engine = EnhancedCommercialTrueUp(
+                    customer_region=project_region,
+                    reconciliation_matrix=reconciliation_result['matrix']
+                )
                 trueup_recommendations = trueup_engine.generate_recommendations()
         except ImportError:
             logger.warning("EnhancedCommercialTrueUp module not found, skipping recommendations.")

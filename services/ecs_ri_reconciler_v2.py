@@ -2,6 +2,7 @@ import logging
 from typing import Dict, List, Any
 from services.huawei_discovery import HuaweiDiscovery
 from services.huawei_bss_scanner import HuaweiBSSScanner
+from services.enhanced_commercial_trueup import _parse_flavor_specs
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -153,15 +154,52 @@ class ECSRIReconciler:
                 display_spec = original_display_names.get(norm_spec, norm_spec)
                 
                 # Ensure Tags are passed to the frontend for Technical Category grouping
+                # Also include quoted_specs for the 3-Way Diff Detailed Report
+                quoted_servers_for_spec = quoted_by_spec.get(norm_spec, {}).get('servers', [])
+                quoted_specs = {}
+                if quoted_servers_for_spec:
+                    first_quoted = quoted_servers_for_spec[0]
+                    quoted_spec_name = first_quoted.get('specification', first_quoted.get('name', display_spec))
+                    quoted_specs = _parse_flavor_specs(quoted_spec_name)
+                
                 item = {
                     'specification': display_spec,
                     'quoted_count': quoted_count,
+                    'quoted_specs': quoted_specs,
                     'live_count': live_count,
                     'bought_count': bought_count,
                     'missing_ris': max(0, quoted_count - bought_count),
-                    'quoted_servers': quoted_by_spec.get(norm_spec, {}).get('servers', []),
-                    'live_servers': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': s.get('status', 'Unknown'), 'spec': display_spec, 'tags': s.get('tags', {})} for s in live_by_spec.get(norm_spec, [])],
-                    'bought_ris': [{'name': s['name'], 'id': s.get('id', 'N/A'), 'status': 'Prepaid / RI', 'spec': display_spec} for s in bought_by_spec.get(norm_spec, [])]
+                    'quoted_servers': [
+                        {
+                            'name': s.get('name', 'Unknown'),
+                            'id': s.get('id', 'N/A'),
+                            'status': 'Quoted Baseline',
+                            'spec': s.get('specification', display_spec),
+                            'resource_specs': _parse_flavor_specs(s.get('specification', display_spec))
+                        }
+                        for s in quoted_servers_for_spec
+                    ],
+                    'live_servers': [
+                        {
+                            'name': s['name'],
+                            'id': s.get('id', 'N/A'),
+                            'status': s.get('status', 'Unknown'),
+                            'spec': display_spec,
+                            'tags': s.get('tags', {}),
+                            'resource_specs': _parse_flavor_specs(s.get('specification', display_spec))
+                        }
+                        for s in live_by_spec.get(norm_spec, [])
+                    ],
+                    'bought_ris': [
+                        {
+                            'name': s['name'],
+                            'id': s.get('id', 'N/A'),
+                            'status': 'Prepaid / RI',
+                            'spec': display_spec,
+                            'resource_specs': _parse_flavor_specs(s.get('specification', display_spec))
+                        }
+                        for s in bought_by_spec.get(norm_spec, [])
+                    ]
                 }
                 
                 if quoted_count > 0: reconciliation_matrix.append(item)
