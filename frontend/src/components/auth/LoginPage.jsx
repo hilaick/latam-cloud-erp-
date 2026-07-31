@@ -18,8 +18,8 @@ export default function LoginPage() {
     try {
       if (mode === 'login') {
         await login(email, password);
-        // Redirect to app — handled by App.jsx routing
-        window.location.reload();  // Force clean state reset
+        // Redirect to main app via hash navigation (no page reload)
+        window.location.hash = '#phase=home&proj=none';
       } else {
         // Register mode (requires Admin token — won't work for first user, but 
         // first Admin user is seeded via DB migration script)

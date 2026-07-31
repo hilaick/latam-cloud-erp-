@@ -32,9 +32,8 @@ export const ERPProvider = ({ children }) => {
     const [activeProjectId, setActiveProjectIdState] = useState(initialParams.proj);
 
     const getAuthHeaders = () => {
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');  // Match AuthContext
         const headers = { 'Content-Type': 'application/json' };
-        // 🚨 STRICT VALIDATION: Do not send "null" or "undefined" strings
         if (token && token !== 'null' && token !== 'undefined') {
             headers['Authorization'] = `Bearer ${token}`;
         }
@@ -55,17 +54,10 @@ export const ERPProvider = ({ children }) => {
     const setActiveProjectId = (proj) => { setActiveProjectIdState(proj); setHashParams(activePhase, proj); };
 
     const handleAuthError = () => {
-        localStorage.removeItem('erp_jwt_token');
-        localStorage.removeItem('erp_user');
-        const lastReload = localStorage.getItem('erp_last_reload');
-        const now = Date.now();
-        
-        if (!lastReload || (now - parseInt(lastReload)) > 5000) { 
-            localStorage.setItem('erp_last_reload', now.toString());
-            window.location.reload();
-        } else {
-            console.warn('Preventing rapid reload loop');
-        }
+        sessionStorage.removeItem('hermes_access_token');
+        sessionStorage.removeItem('hermes_user');
+        // 🚨 Redirect to login instead of reloading (prevents rapid reload loop)
+        window.location.hash = '#phase=login&proj=none';
     };
 
     const [lastFetchTime, setLastFetchTime] = useState(0);
@@ -78,7 +70,7 @@ export const ERPProvider = ({ children }) => {
         }
         
         setLastFetchTime(now);
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         if (!token || token === 'null' || token === 'undefined') {
             handleAuthError();
             return;
@@ -133,7 +125,7 @@ export const ERPProvider = ({ children }) => {
     };
 
     useEffect(() => {
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         if (token && token !== 'null' && token !== 'undefined') {
             fetchState();
         } else {
