@@ -88,32 +88,41 @@ export function parseDatabaseSpec(item) {
     disk_gb: null, disk_type: null, category: 'databases'
   };
 
+  // Direct fields from enhanced backend discovery (preferred)
+  if (item.vcpu) result.vcpu = typeof item.vcpu === 'string' ? parseInt(item.vcpu) : item.vcpu;
+  if (item.ram_gb) result.ram_gb = typeof item.ram_gb === 'string' ? parseFloat(item.ram_gb) : item.ram_gb;
+  if (item.engine) result.engine = item.engine;
+  if (item.version) result.version = item.version;
+  if (item.disk_gb) result.disk_gb = typeof item.disk_gb === 'string' ? parseInt(item.disk_gb) : item.disk_gb;
+  if (item.disk_type) result.disk_type = item.disk_type;
+
+  // Fallback: parse from text fields if direct fields unavailable
   const type = item.type || item.engine || '';
   const flavor = item.flavor || '';
+  const storageItem = item.storage || item;
 
-  // Engine: "MySQL | 8.0 | Primary/Standby"
+  // Engine from type string
   const engineMatch = type.match(/(MySQL|PostgreSQL|GaussDB|SQL\s*Server|MariaDB|MongoDB)/i);
-  if (engineMatch) result.engine = engineMatch[1];
+  if (engineMatch && !result.engine) result.engine = engineMatch[1];
 
   const versionMatch = type.match(/(\d+\.\d+)/);
-  if (versionMatch) result.version = versionMatch[1];
+  if (versionMatch && !result.version) result.version = versionMatch[1];
 
-  if (/Primary\/Standby|Single|Cluster|Replica/i.test(type))
+  if (/Primary\/Standby|Single|Cluster|Replica/i.test(type) && !result.mode)
     result.mode = type.match(/Primary\/Standby|Single|Cluster|Replica/i)[0];
 
-  // vCPU/RAM: "2vCPUs, 8GB" or "4vCPUs | 16GB"
+  // vCPU/RAM from text
   const vcpuMatch = (type + '|' + flavor).match(/(\d+)\s*vCPU/i);
-  if (vcpuMatch) result.vcpu = parseInt(vcpuMatch[1]);
+  if (vcpuMatch && !result.vcpu) result.vcpu = parseInt(vcpuMatch[1]);
 
   const ramMatch = (type + '|' + flavor).match(/(\d+)\s*GB/i);
-  if (ramMatch) result.ram_gb = parseInt(ramMatch[1]);
+  if (ramMatch && !result.ram_gb) result.ram_gb = parseInt(ramMatch[1]);
 
-  // Storage
-  const storageItem = item.storage || item;
-  const diskMatch = (storageItem.type + '|' + storageItem.spec).match(/(\d+)\s*GB\s*(SSD|SAS|Cloud)/i);
+  // Storage from text
+  const diskMatch = (storageItem.type + '|' + (storageItem.spec || '')).match(/(\d+)\s*GB\s*(SSD|SAS|Cloud)/i);
   if (diskMatch) {
-    result.disk_gb = parseInt(diskMatch[1]);
-    result.disk_type = diskMatch[2];
+    if (!result.disk_gb) result.disk_gb = parseInt(diskMatch[1]);
+    if (!result.disk_type) result.disk_type = diskMatch[2];
   }
 
   return result;

@@ -249,7 +249,24 @@ class HuaweiDiscovery:
                     rds_region = Region(id=target_region, endpoint=f"https://rds.{target_region}.myhuaweicloud.com")
                     rds_client = RdsClient.new_builder().with_credentials(region_creds).with_region(rds_region).build()
                     for db in rds_client.list_instances(ListInstancesRequest()).instances or []:
-                        inventory["database"].append({ "id": db.id, "name": getattr(db, 'name', 'Unknown'), "type": "RDS", "region": target_region })
+                        ds = getattr(db, 'datastore', None)
+                        vol = getattr(db, 'volume', None)
+                        inventory["database"].append({
+                            "id": db.id,
+                            "name": getattr(db, 'name', 'Unknown'),
+                            "type": "RDS",
+                            "region": target_region,
+                            "engine": getattr(ds, 'type', None) if ds else None,
+                            "version": getattr(ds, 'version', None) if ds else None,
+                            "flavor": getattr(db, 'flavor_ref', None),
+                            "vcpu": getattr(db, 'cpu', None),
+                            "ram_gb": getattr(db, 'mem', None),
+                            "disk_type": getattr(vol, 'type', None) if vol else None,
+                            "disk_gb": getattr(vol, 'size', None) if vol else None,
+                            "vpc_id": getattr(db, 'vpc_id', None),
+                            "port": getattr(db, 'port', None),
+                            "status": getattr(db, 'status', None),
+                        })
                 except Exception as e: 
                     inventory["diagnostics"].append(f"[{target_region}] RDS Connect Error: {str(e)}")
 
@@ -261,7 +278,16 @@ class HuaweiDiscovery:
                         dds_instances = dds_client.list_instances(ListInstancesRequest()).instances or []
                         logger.info(f"[{target_region}] Found {len(dds_instances)} DDS instances")
                         for db in dds_instances:
-                            inventory["database"].append({ "id": db.id, "name": getattr(db, 'name', 'Unknown'), "type": "DDS", "region": target_region })
+                            inventory["database"].append({
+                                "id": db.id,
+                                "name": getattr(db, 'name', 'Unknown'),
+                                "type": "DDS",
+                                "region": target_region,
+                                "engine": "MongoDB",
+                                "flavor": getattr(db, 'flavor_ref', None),
+                                "disk_gb": getattr(db, 'storage', None),
+                                "status": getattr(db, 'status', None),
+                            })
                     except Exception as e: 
                         logger.error(f"[{target_region}] DDS Error: {str(e)}", exc_info=True)
                         inventory["diagnostics"].append(f"[{target_region}] DDS Connect Error: {str(e)}")

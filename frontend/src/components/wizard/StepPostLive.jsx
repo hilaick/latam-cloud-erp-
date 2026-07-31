@@ -905,6 +905,42 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                         const dActual = ct.delivered_actual || {};
                                         const riCov = ct.ri_coverage || {};
                                         const items = ct.items || {};
+                                        const isAllZero = (qBaseline.total_resources || 0) === 0 && (dActual.total_resources || 0) === 0 && (riCov.total_ris || 0) === 0;
+                                        const topo = project?.blueprintData?.topology;
+                                        const topoTotal = topo ? Object.values(topo).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0;
+
+                                        // ── Zero-values with topology: show available baseline ──
+                                        if (isAllZero && topo && topoTotal > 0) {
+                                            const nocCount = nocData?.raw ? Object.values(nocData.raw).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0;
+                                            return (
+                                                <div className="space-y-4 mb-6">
+                                                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-800 font-medium mb-3">
+                                                        <i className="fas fa-exclamation-triangle mr-2"></i>
+                                                        RI Reconciliation has not been run or returned no data. Showing available Topology Baseline below.
+                                                        Run <strong>Auto-Reconcile</strong> in the Commercial True-Up tab with a valid RI Quotation for full financial comparison.
+                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-4 mb-4">
+                                                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                                                            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Quoted SOW Baseline</div>
+                                                            <div className="text-2xl font-black text-slate-800">{topoTotal} <span className="text-[10px] font-normal text-amber-600">(Topology)</span></div>
+                                                        </div>
+                                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                                                            <div className="text-[10px] uppercase tracking-widest text-blue-600 font-bold">Delivered Actual</div>
+                                                            <div className="text-2xl font-black text-blue-700">{nocCount} <span className="text-[10px] font-normal text-slate-500">(Live Scan)</span></div>
+                                                        </div>
+                                                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                                                            <div className="text-[10px] uppercase tracking-widest text-purple-600 font-bold">RI Coverage</div>
+                                                            <div className="text-2xl font-black text-purple-700">— <span className="text-[10px] font-normal text-slate-400">Pending</span></div>
+                                                        </div>
+                                                    </div>
+                                                    {ct.validation_note && (
+                                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4 text-xs text-blue-800 font-medium">
+                                                            <i className="fas fa-info-circle mr-2"></i>{ct.validation_note}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
                                         return (
                                             <div className="space-y-4 mb-6">
                                                 <div className="grid grid-cols-3 gap-4 mb-4">
