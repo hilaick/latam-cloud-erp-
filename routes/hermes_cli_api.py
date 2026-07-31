@@ -98,7 +98,7 @@ def execute_privileged_engine_command(query, project_id="global"):
             return f"Kernel Terminal Error: Failed to execute underlying binary - {str(fallback_err)}"
 
 @hermes_cli_bp.route('/api/hermes-cli/query', methods=['POST'])
-# @jwt_required()
+@jwt_required()
 def hermes_cli_query():
     """
     Main endpoint for Web UI queries. All hardcoded keyword blocks have been purged.
@@ -135,6 +135,7 @@ def hermes_cli_query():
         }), 500
 
 @hermes_cli_bp.route('/api/hermes-cli/system-info', methods=['GET'])
+@jwt_required()
 def system_info():
     """Get comprehensive system information (Preserved for Web UI Dashboards)"""
     try:
@@ -163,7 +164,7 @@ def system_info():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @hermes_cli_bp.route('/api/hermes-cli/delegate-task', methods=['POST'])
-# @jwt_required()
+@jwt_required()
 def hermes_delegate_task():
     """
     Agentic Orchestration endpoint: spawns a Hermes agent with the configured
@@ -301,6 +302,7 @@ def health():
 # ── Hermes Configuration Management ──
 
 @hermes_cli_bp.route('/api/hermes-config', methods=['GET'])
+@jwt_required()
 def get_hermes_config():
     """Get the current Hermes AI configuration."""
     try:
@@ -315,6 +317,7 @@ def get_hermes_config():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @hermes_cli_bp.route('/api/hermes-config', methods=['PUT'])
+@jwt_required()
 def update_hermes_config():
     """Update the Hermes AI configuration."""
     try:

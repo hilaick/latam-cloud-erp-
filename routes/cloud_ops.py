@@ -462,6 +462,7 @@ def get_migration_tools():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @cloud_ops_bp.route('/api/migration/recommendations/test', methods=['POST'])
+@jwt_required()
 def get_migration_recommendations_test():
     """Test endpoint for tool recommendations (no auth required for development)"""
     try:
