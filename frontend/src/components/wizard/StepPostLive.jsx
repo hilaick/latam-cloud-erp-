@@ -563,10 +563,13 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
 function PhaseThreeWayDiff({ project, onUpdateProject }) {
     const [isScanningNoc, setIsScanningNoc] = useState(false);
     const [nocData, setNocData] = useState(project?.nocData || null);
+    const [hybridData, setHybridData] = useState(project?.hybridData || null);
     const [crApproved, setCrApproved] = useState(project?.crApproved || false);
     const [showDossier, setShowDossier] = useState(false);
     const [showDetailedReport, setShowDetailedReport] = useState(false);
-    const [detailsModal, setDetailsModal] = useState({ show: false, category: '', label: '', items: [] });
+    const [detailsModal, setDetailsModal] = useState({ show: false, category: '', label: '', items: [], source: 'target' });
+    const [credStatus, setCredStatus] = useState({ master: 'unknown', source: 'unknown' });
+    const [scanDiagnostics, setScanDiagnostics] = useState([]);
 
     const hasNocScanned = nocData !== null;
 
@@ -626,44 +629,121 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
     const runFinalNocScan = async () => {
         if (!project.customerId) { alert("NOC Scan Error: No Customer linked to this project."); return; }
         setIsScanningNoc(true);
+        setScanDiagnostics([]);
+        setCredStatus({ master: 'checking', source: 'checking' });
         try {
             const token = sessionStorage.getItem('hermes_access_token');
+            // ─── HYBRID MODE: Run target + source discovery simultaneously ───
             const res = await fetch('/api/cloud/inventory', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ customer_id: project.customerId, region: project.region || 'la-north-2', provider: 'Huawei', use_source_credentials: false })
+                body: JSON.stringify({
+                    customer_id: project.customerId,
+                    region: project.region || 'la-north-2',
+                    provider: 'Huawei',
+                    mode: 'hybrid'
+                })
             });
             const data = await res.json();
             if (data.success) {
-                const finalNoc = { raw: data.inventory || {} };
+                // Store hybrid data (target + source side-by-side)
+                const hybrid = data.hybrid || {};
+                setHybridData(hybrid);
+                onUpdateProject(project.id, 'hybridData', hybrid);
+                
+                // Derive NOC data from target scan for backward compat
+                const targetInv = hybrid.target || {};
+                const finalNoc = { raw: targetInv };
                 setNocData(finalNoc);
                 onUpdateProject(project.id, 'nocData', finalNoc);
-                alert("Final NOC Scan Complete. Actual Built infrastructure verified via live API.");
+
+                // Set credential status from diagnostics
+                const statuses = { master: 'unknown', source: 'unknown' };
+                const diags = data.diagnostics || [];
+                setScanDiagnostics(diags);
+                
+                if (diags.length === 0) {
+                    statuses.master = 'valid';
+                    statuses.source = 'valid';
+                } else {
+                    const hasTargetError = diags.some(d => d.toLowerCase().includes('target'));
+                    const hasSourceError = diags.some(d => d.toLowerCase().includes('source'));
+                    statuses.master = hasTargetError ? 'invalid' : (hybrid.target && !hybrid.target.error ? 'valid' : 'unknown');
+                    statuses.source = hasSourceError ? 'invalid' : (hybrid.source && !hybrid.source.error ? 'valid' : 'unknown');
+                }
+                setCredStatus(statuses);
+                alert(`NOC Hybrid Scan Complete.\nTarget: ${statuses.master === 'valid' ? '✓ Valid' : '✗ Issues'}\nSource: ${statuses.source === 'valid' ? '✓ Valid' : '✗ Issues'}`);
             } else { alert(`NOC Scan Error: ${data.error}`); }
-        } catch (err) { alert(`Network error occurred during NOC scan: ${err.message}`); } finally { setIsScanningNoc(false); }
+        } catch (err) { alert(`Network error during NOC scan: ${err.message}`); } finally { setIsScanningNoc(false); }
     };
 
     const handleSaveState = () => { onUpdateProject(project.id, 'crApproved', crApproved); alert("3-Way Diff State Saved."); };
     const handlePrint = () => window.print();
 
+    const CredBadge = ({ type, status }) => {
+        const colors = {
+            valid: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+            invalid: 'bg-rose-100 text-rose-700 border-rose-200',
+            checking: 'bg-amber-100 text-amber-700 border-amber-200 animate-pulse',
+            unknown: 'bg-slate-100 text-slate-500 border-slate-200'
+        };
+        const icons = {
+            valid: 'fa-check-circle',
+            invalid: 'fa-exclamation-circle',
+            checking: 'fa-spinner fa-spin',
+            unknown: 'fa-question-circle'
+        };
+        return (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${colors[status] || colors.unknown}`}>
+                <i className={`fas ${icons[status] || icons.unknown}`}></i>
+                {type}: {status.toUpperCase()}
+            </span>
+        );
+    };
+
     return (
-        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6">
-            <div className="px-8 py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center rounded-2xl gap-4 shadow-sm border">
+        <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 relative">
+            {/* ─── FULL-PAGE LOCK OVERLAY during scan ─── */}
+            {isScanningNoc && (
+                <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-6">
+                    <div className="w-16 h-16 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="text-white text-center space-y-2">
+                        <h2 className="font-black text-2xl tracking-wide"><i className="fas fa-satellite-dish mr-3 text-indigo-300"></i>NOC Hybrid Scan In Progress</h2>
+                        <p className="text-slate-300 text-sm font-medium">Querying BOTH target (Master AK/SK) and source (Source AK/SK) cloud APIs…</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-4">DO NOT navigate away — all actions are locked</p>
+                    </div>
+                </div>
+            )}
+
+            <div className={`px-8 py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center rounded-2xl gap-4 shadow-sm border ${isScanningNoc ? 'pointer-events-none opacity-40' : ''}`}>
                 <div>
-                    <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-balance-scale text-indigo-500 mr-2"></i> 3-Way Infrastructure Diff</h3>
-                    <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">Verify live telemetry against the SOW Baseline.</p>
+                    <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-balance-scale text-indigo-500 mr-2"></i> 3-Way Infrastructure Diff <span className="text-[9px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full ml-2">HYBRID</span></h3>
+                    <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">TARGET (Master) vs SOURCE (Legacy) infrastructure comparison.</p>
+                    <div className="flex items-center gap-3 mt-2">
+                        <CredBadge type="Master" status={credStatus.master} />
+                        <CredBadge type="Source" status={credStatus.source} />
+                    </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                    <button onClick={()=>setShowDossier(true)} disabled={!hasNocScanned} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-file-pdf mr-2"></i> Standard Dossier</button>
-                    <button onClick={()=>setShowDetailedReport(true)} disabled={!hasNocScanned} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-file-contract mr-2"></i> Detailed Report</button>
-                    <button onClick={handleSaveState} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Save State</button>
+                    <button onClick={()=>setShowDossier(true)} disabled={!hasNocScanned || isScanningNoc} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-file-pdf mr-2"></i> Standard Dossier</button>
+                    <button onClick={()=>setShowDetailedReport(true)} disabled={!hasNocScanned || isScanningNoc} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95"><i className="fas fa-file-contract mr-2"></i> Detailed Report</button>
+                    <button onClick={handleSaveState} disabled={isScanningNoc} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95 disabled:opacity-40">Save State</button>
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            {scanDiagnostics.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+                    <h4 className="font-black text-amber-800 text-xs uppercase tracking-wider mb-2"><i className="fas fa-triangle-exclamation mr-2"></i> Scan Diagnostics</h4>
+                    <ul className="text-[10px] text-amber-700 font-medium space-y-0.5">
+                        {scanDiagnostics.map((d, i) => <li key={i}>• {d}</li>)}
+                    </ul>
+                </div>
+            )}
+
+            <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col ${isScanningNoc ? 'pointer-events-none opacity-40' : ''}`}>
                 <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-black text-base text-slate-800"><i className="fas fa-search text-indigo-500 mr-2"></i> Telemetry Scan Engine</h3>
                     <button onClick={runFinalNocScan} disabled={isScanningNoc} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center">
-                        {isScanningNoc ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target API</> : <><i className="fas fa-radar mr-2"></i> Run Final NOC Scan</>}
+                        {isScanningNoc ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target + Source APIs</> : <><i className="fas fa-radar mr-2"></i> Run Hybrid NOC Scan</>}
                     </button>
                 </div>
 
@@ -671,64 +751,140 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     {!hasNocScanned ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400 min-h-[300px]">
                             <i className="fas fa-search-dollar text-6xl mb-4 opacity-30"></i>
-                            <h3 className="font-black text-lg">Awaiting Final Cloud Scan</h3>
-                            <p className="text-xs font-medium mt-2 max-w-sm text-center">Run the Final NOC Scan to verify exactly what was built in the cloud against the original Sales Quotation.</p>
+                            <h3 className="font-black text-lg">Awaiting Hybrid Cloud Scan</h3>
+                            <p className="text-xs font-medium mt-2 max-w-sm text-center">Run the NOC Scan to verify actual cloud infrastructure against the SOW baseline — comparing BOTH target and source accounts.</p>
                         </div>
                     ) : (
                         <div className="animate-fade-in space-y-6">
+                            {/* ─── HYBRID SIDE-BY-SIDE COMPARISON TABLE ─── */}
                             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-slate-100 text-[10px] uppercase text-slate-500">
                                         <tr>
-                                            <th className="p-3">Resource Category</th>
-                                            <th className="p-3 text-center border-l border-slate-200 bg-slate-50">1. As-Is (Source MgC)</th>
-                                            <th className="p-3 text-center border-l border-slate-200 bg-blue-50/50">2. To-Be (SOW Blueprint)</th>
-                                            <th className="p-3 text-center border-l border-slate-200 bg-emerald-50/50">3. Actual Built (Target NOC)</th>
+                                            <th className="p-3" rowSpan="2">Resource Category</th>
+                                            <th className="p-3 text-center border-l border-slate-200" colSpan="2">TARGET ACCOUNT (Master AK/SK)</th>
+                                            <th className="p-3 text-center border-l border-slate-200 bg-slate-50" colSpan="2">SOURCE ACCOUNT (Source AK/SK)</th>
+                                            <th className="p-3 text-center border-l border-slate-200 bg-blue-50/50">SOW Blueprint</th>
                                             <th className="p-3 text-center border-l border-slate-200 font-black text-slate-800">Delta</th>
+                                        </tr>
+                                        <tr>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Resources</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Status</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-amber-600 bg-amber-50/30">Resources</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-amber-600 bg-amber-50/30">Status</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-blue-600 bg-blue-50/30" rowSpan="2">Resources</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px]" rowSpan="2"></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
-                                        {liveCategories.map(cat => {
-                                            const asIs = project?.mgcData?.[cat.id] || 0;
-                                            const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0; 
-                                            const actual = cat.count;
-                                            const creep = actual - quoted;
+                                        {(() => {
+                                            const targetRaw = hybridData?.target || {};
+                                            const sourceRaw = hybridData?.source || {};
+                                            const targetError = !!targetRaw.error;
+                                            const sourceError = !!sourceRaw.error;
 
-                                            return (
-                                                <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
-                                                    <td className="p-3 text-center font-mono text-slate-500 border-l border-slate-100 bg-slate-50">{asIs}</td>
-                                                    <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
-                                                    <td className={`p-3 text-center font-mono font-black border-l border-slate-100 bg-emerald-50/30 ${actual > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-100 hover:shadow-inner transition-all group' : 'text-slate-400'}`} onClick={() => { if (actual > 0) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: cat.items }); }}>
-                                                        {actual} {actual > 0 && <i className="fas fa-search-plus ml-1.5 opacity-0 group-hover:opacity-100 text-[10px]"></i>}
-                                                    </td>
-                                                    <td className="p-3 text-center border-l border-slate-100">
-                                                        <span className={`px-2 py-1 rounded text-xs font-black ${creep > 0 ? 'bg-rose-100 text-rose-700' : (creep < 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}`}>
-                                                            {creep > 0 ? `+${creep} (CR)` : creep < 0 ? `${creep} (Not Built)` : 'Verified'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                            const normalize = (raw) => ({
+                                                compute: [...(raw.compute || []), ...(raw.ecs || []), ...(raw.server || [])],
+                                                databases: [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
+                                                network: [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
+                                                storage: [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
+                                                security: [...(raw.security || []), ...(raw.waf || [])]
+                                            });
+
+                                            const targetNorm = targetError ? {} : normalize(targetRaw);
+                                            const sourceNorm = sourceError ? {} : normalize(sourceRaw);
+
+                                            const stdCats = [
+                                                { id: 'compute', label: 'Compute', icon: 'fa-server' },
+                                                { id: 'databases', label: 'Databases', icon: 'fa-database' },
+                                                { id: 'network', label: 'Network', icon: 'fa-network-wired' },
+                                                { id: 'storage', label: 'Storage', icon: 'fa-hdd' },
+                                                { id: 'security', label: 'Security', icon: 'fa-shield-alt' }
+                                            ];
+
+                                            return stdCats.map(cat => {
+                                                const tCount = targetNorm[cat.id]?.length || 0;
+                                                const sCount = sourceNorm[cat.id]?.length || 0;
+                                                const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0;
+                                                const delta = tCount - quoted;
+                                                const targetStatus = targetError ? 'ERR' : (tCount > 0 ? 'ACTIVE' : 'EMPTY');
+                                                const sourceStatus = sourceError ? 'ERR' : (sCount > 0 ? 'ACTIVE' : 'EMPTY');
+
+                                                return (
+                                                    <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
+                                                        <td className={`p-3 text-center font-mono font-bold border-l border-slate-100 ${tCount > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-50' : 'text-slate-400'}`}
+                                                            onClick={() => { if (tCount > 0 && !targetError) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: targetNorm[cat.id], source: 'target' }); }}>
+                                                            {targetError ? '—' : tCount}
+                                                        </td>
+                                                        <td className="p-3 text-center border-l border-slate-100">
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                                targetStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
+                                                                targetStatus === 'ERR' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                                                            }`}>{targetStatus}</span>
+                                                        </td>
+                                                        <td className={`p-3 text-center font-mono font-bold border-l border-slate-100 ${sCount > 0 ? 'text-amber-700 cursor-pointer hover:bg-amber-50' : 'text-slate-400'}`}
+                                                            onClick={() => { if (sCount > 0 && !sourceError) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: sourceNorm[cat.id], source: 'source' }); }}>
+                                                            {sourceError ? '—' : sCount}
+                                                        </td>
+                                                        <td className="p-3 text-center border-l border-slate-100">
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                                sourceStatus === 'ACTIVE' ? 'bg-amber-100 text-amber-700' :
+                                                                sourceStatus === 'ERR' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                                                            }`}>{sourceStatus}</span>
+                                                        </td>
+                                                        <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
+                                                        <td className="p-3 text-center border-l border-slate-100">
+                                                            {targetError ? (
+                                                                <span className="px-2 py-1 rounded text-xs font-black bg-slate-100 text-slate-500">N/A</span>
+                                                            ) : (
+                                                                <span className={`px-2 py-1 rounded text-xs font-black ${delta > 0 ? 'bg-rose-100 text-rose-700' : (delta < 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}`}>
+                                                                    {delta > 0 ? `+${delta} (CR)` : delta < 0 ? `${delta} (Not Built)` : 'Verified'}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            });
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>
-                            {requiresCR ? (
-                                <div className="bg-rose-50 border-2 border-rose-200 rounded-xl p-6 shadow-inner relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-1 h-full bg-rose-500"></div>
-                                    <h4 className="font-black text-rose-800 text-lg mb-2"><i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep Detected</h4>
-                                    <p className="text-xs text-rose-700 font-medium mb-5 leading-relaxed">The Actual Built infrastructure exceeds the signed Statement of Work. To protect delivery margins, a formal Change Request (CR) must be approved by the customer to true-up the final recurring billing.</p>
-                                    <label className="flex items-start gap-4 p-4 bg-white border border-rose-200 rounded-xl cursor-pointer hover:border-rose-400 transition-colors shadow-sm">
-                                        <input type="checkbox" checked={crApproved} onChange={(e) => setCrApproved(e.target.checked)} className="w-5 h-5 accent-rose-600 mt-0.5" />
-                                        <div><div className="font-black text-slate-800 text-sm">Change Request (CR) Customer Approval</div><div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">I certify the customer has signed the true-up agreement.</div></div>
-                                    </label>
-                                </div>
-                            ) : (
-                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex items-center gap-4 shadow-sm">
-                                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-xl shrink-0"><i className="fas fa-check-circle"></i></div>
-                                    <div><h4 className="font-black text-emerald-800 text-sm">Technical Scope Validated</h4><p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. Please proceed to Commercial True-Up.</p></div>
-                                </div>
-                            )}
+                            {(() => {
+                                const targetRaw = hybridData?.target || {};
+                                const targetError = !!targetRaw.error;
+                                if (targetError) {
+                                    return (
+                                        <div className="bg-rose-50 border-2 border-rose-200 rounded-xl p-6 shadow-inner">
+                                            <h4 className="font-black text-rose-800 text-lg mb-2"><i className="fas fa-exclamation-triangle mr-2"></i> Target Account Unreachable</h4>
+                                            <p className="text-xs text-rose-700 font-medium leading-relaxed">Master AK/SK rejected by Huawei IAM (HTTP 401). <br/>Update credentials in Customer Directory → Validate before re-scanning.</p>
+                                        </div>
+                                    );
+                                }
+                                const requiresCR = liveCategories.some(cat => {
+                                    const quoted = project?.blueprintData?.topology?.[cat.id]?.length || 0;
+                                    return (cat.count - quoted) > 0;
+                                });
+                                if (requiresCR) {
+                                    return (
+                                        <div className="bg-rose-50 border-2 border-rose-200 rounded-xl p-6 shadow-inner relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-rose-500"></div>
+                                            <h4 className="font-black text-rose-800 text-lg mb-2"><i className="fas fa-exclamation-triangle mr-2"></i> Scope Creep Detected</h4>
+                                            <p className="text-xs text-rose-700 font-medium mb-5 leading-relaxed">The Actual Built infrastructure exceeds the signed Statement of Work. To protect delivery margins, a formal Change Request (CR) must be approved by the customer to true-up the final recurring billing.</p>
+                                            <label className="flex items-start gap-4 p-4 bg-white border border-rose-200 rounded-xl cursor-pointer hover:border-rose-400 transition-colors shadow-sm">
+                                                <input type="checkbox" checked={crApproved} onChange={(e) => setCrApproved(e.target.checked)} className="w-5 h-5 accent-rose-600 mt-0.5" />
+                                                <div><div className="font-black text-slate-800 text-sm">Change Request (CR) Customer Approval</div><div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">I certify the customer has signed the true-up agreement.</div></div>
+                                            </label>
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex items-center gap-4 shadow-sm">
+                                        <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-xl shrink-0"><i className="fas fa-check-circle"></i></div>
+                                        <div><h4 className="font-black text-emerald-800 text-sm">Technical Scope Validated</h4><p className="text-xs text-emerald-700 font-medium">Built infrastructure strictly aligns with the signed Quotation/SOW. Please proceed to Commercial True-Up.</p></div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     )}
                 </div>

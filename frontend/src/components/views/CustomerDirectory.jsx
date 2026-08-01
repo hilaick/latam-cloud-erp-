@@ -109,16 +109,27 @@ export default function CustomerDirectory() {
     setIsValidating(true);
     try {
       const token = sessionStorage.getItem('hermes_access_token');
-      const bodyData = provider === 'AWS'
-        ? { provider: 'AWS', ak: editingCustomer.awsAK, sk: editingCustomer.awsSK }
-        : { provider: 'Azure', azureTenant: editingCustomer.azureTenant, azureClient: editingCustomer.azureClient, azureSecret: editingCustomer.azureSecret };
-      const res = await fetch('/api/vault/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(bodyData),
-      });
-      const data = await res.json();
-      setValidationStatus(prev => ({ ...prev, [provider]: data }));
+      // Huawei credential types use the new gateway validate-credential endpoint
+      if (['master', 'source', 'tier1', 'tier2', 'tier3'].includes(provider)) {
+        const res = await fetch('/api/gateway/validate-credential', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ customer_id: editingCustomer.id, credential_type: provider }),
+        });
+        const data = await res.json();
+        setValidationStatus(prev => ({ ...prev, [provider]: data }));
+      } else {
+        const bodyData = provider === 'AWS'
+          ? { provider: 'AWS', ak: editingCustomer.awsAK, sk: editingCustomer.awsSK }
+          : { provider: 'Azure', azureTenant: editingCustomer.azureTenant, azureClient: editingCustomer.azureClient, azureSecret: editingCustomer.azureSecret };
+        const res = await fetch('/api/vault/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(bodyData),
+        });
+        const data = await res.json();
+        setValidationStatus(prev => ({ ...prev, [provider]: data }));
+      }
     } catch (err) {
       setValidationStatus(prev => ({ ...prev, [provider]: { valid: false, error: err.message } }));
     } finally {
@@ -499,10 +510,25 @@ export default function CustomerDirectory() {
                           <i className="fas fa-check-circle mr-0.5"></i>Configured
                         </span>
                       )}
+                      {validationStatus['master'] && (
+                        <span className={`text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest font-black ${
+                          validationStatus['master'].status === 'valid' ? 'bg-emerald-100 text-emerald-700' :
+                          validationStatus['master'].status === 'invalid' ? 'bg-rose-100 text-rose-700' :
+                          validationStatus['master'].status === 'missing' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          <i className={`fas ${validationStatus['master'].status === 'valid' ? 'fa-shield-check' : 'fa-exclamation-triangle'} mr-0.5`}></i>
+                          {validationStatus['master'].status === 'valid' ? `…${validationStatus['master'].login_id_last4 || '????'}` : validationStatus['master'].status || '?'}
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.ak || ''} onChange={e => setEditingCustomer({ ...editingCustomer, ak: e.target.value })} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none focus:border-rose-500 bg-white" /></div>
                       <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.sk || ''} onChange={e => setEditingCustomer({ ...editingCustomer, sk: e.target.value })} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none focus:border-rose-500 bg-white" /></div>
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button onClick={() => validateKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Master Keys</>}
+                      </button>
                     </div>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 relative shadow-sm">
@@ -513,27 +539,59 @@ export default function CustomerDirectory() {
                           <i className="fas fa-check-circle mr-0.5"></i>Configured
                         </span>
                       )}
+                      {validationStatus['tier2'] && (
+                        <span className={`text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest font-black ${
+                          validationStatus['tier2'].status === 'valid' ? 'bg-emerald-100 text-emerald-700' :
+                          validationStatus['tier2'].status === 'invalid' ? 'bg-rose-100 text-rose-700' :
+                          validationStatus['tier2'].status === 'missing' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          <i className={`fas ${validationStatus['tier2'].status === 'valid' ? 'fa-shield-check' : 'fa-exclamation-triangle'} mr-0.5`}></i>
+                          {validationStatus['tier2'].status === 'valid' ? `…${validationStatus['tier2'].login_id_last4 || '????'}` : validationStatus['tier2'].status || '?'}
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier2AK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, tier2AK: e.target.value })} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
                       <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier2SK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, tier2SK: e.target.value })} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
                     </div>
+                    <div className="mt-3 flex justify-end">
+                      <button onClick={() => validateKeys('tier2')} disabled={isValidating || !editingCustomer.tier2AK || !editingCustomer.tier2SK} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Tier 2 Keys</>}
+                      </button>
+                    </div>
                   </div>
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 relative shadow-sm">
-                    <h4 className="font-black text-blue-800 text-sm mb-1 flex items-center">
-                      <i className="fas fa-exchange-alt text-blue-500 mr-2"></i>
-                      Source Huawei Cloud (Cross-Account/Region)
-                      <span className="ml-2 bg-blue-100 text-blue-700 text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest">Migration Only</span>
-                    </h4>
+                    <div className="flex items-center gap-2 mb-3">
+                      <h4 className="font-black text-blue-800 text-sm">
+                        <i className="fas fa-exchange-alt text-blue-500 mr-2"></i>
+                        Source Huawei Cloud (Cross-Account/Region)
+                        <span className="ml-2 bg-blue-100 text-blue-700 text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest">Migration Only</span>
+                      </h4>
+                      {validationStatus['source'] && (
+                        <span className={`text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest font-black ${
+                          validationStatus['source'].status === 'valid' ? 'bg-emerald-100 text-emerald-700' :
+                          validationStatus['source'].status === 'invalid' ? 'bg-rose-100 text-rose-700' :
+                          validationStatus['source'].status === 'missing' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          <i className={`fas ${validationStatus['source'].status === 'valid' ? 'fa-shield-check' : 'fa-exclamation-triangle'} mr-0.5`}></i>
+                          {validationStatus['source'].status === 'valid' ? `…${validationStatus['source'].login_id_last4 || '????'}` : validationStatus['source'].status || '?'}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-blue-600 mb-3">Use these credentials for Huawei Cloud → Huawei Cloud migrations (different account/region)</p>
                     <div className="grid grid-cols-2 gap-4 mb-3">
                       <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Access Key (AK)</label><input type="password" value={editingCustomer.source_huawei_ak || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_ak: e.target.value })} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                       <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Secret Key (SK)</label><input type="password" value={editingCustomer.source_huawei_sk || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_sk: e.target.value })} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><input type="text" value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} placeholder="ap-southeast-3" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
-                      <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_project_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
-                      <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_domain_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                    <div className="flex justify-between items-end">
+                      <div className="grid grid-cols-3 gap-4 flex-1 mr-4">
+                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><input type="text" value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} placeholder="ap-southeast-3" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_project_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_domain_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                      </div>
+                      <button onClick={() => validateKeys('source')} disabled={isValidating || !editingCustomer.source_huawei_ak || !editingCustomer.source_huawei_sk} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors whitespace-nowrap">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Source Keys</>}
+                      </button>
                     </div>
                   </div>
                 </div>

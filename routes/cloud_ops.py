@@ -341,6 +341,7 @@ def get_live_inventory():
         provider = data.get('provider', 'Huawei')
         region = data.get('region', 'la-south-2')
         project_id = data.get('projectId')
+        inventory_mode = data.get('mode', 'single')  # 'single' | 'hybrid'
         
         if not customer_id: 
             return jsonify({"success": False, "error": "Customer ID is required."}), 400
@@ -348,29 +349,98 @@ def get_live_inventory():
         customer = Customer.query.get(customer_id)
         master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
 
-        # Determine if this is source discovery or target monitoring
+        # ─── HYBRID MODE: run BOTH target (master) and source discovery ───
+        if inventory_mode == 'hybrid':
+            logger.info(f"HYBRID INVENTORY: Running target + source dual discovery for customer_id={customer_id}")
+            result = {"success": True, "hybrid": {"target": None, "source": None}, "mode": "hybrid"}
+            diagnostics = []
+            
+            # Target scan (Master AK/SK)
+            if customer and customer.ak and customer.sk:
+                try:
+                    target_engine = HuaweiDiscovery(
+                        encrypted_ak_data=customer.ak,
+                        encrypted_sk_data=customer.sk,
+                        region=region,
+                        master_password=master_password
+                    )
+                    logger.info(f"HYBRID: Scanning TARGET infrastructure (Master AK/SK) in {region}")
+                    target_result = target_engine.discover_all()
+                    if target_result.get("success"):
+                        result["hybrid"]["target"] = target_result.get("inventory")
+                        result["target_region"] = region
+                    else:
+                        result["hybrid"]["target"] = {"error": target_result.get("error", "Unknown error")}
+                        diagnostics.append(f"Target scan failed: {target_result.get('error')}")
+                except Exception as e:
+                    logger.error(f"HYBRID: Target scan exception: {e}")
+                    result["hybrid"]["target"] = {"error": str(e)}
+                    diagnostics.append(f"Target scan exception: {str(e)}")
+            else:
+                result["hybrid"]["target"] = {"error": "Master AK/SK missing"}
+                diagnostics.append("Target scan skipped: Master AK/SK not configured")
+            
+            # Source scan (Source Huawei Cloud AK/SK)
+            if customer and customer.source_huawei_ak and customer.source_huawei_sk:
+                source_region = customer.source_huawei_region or region
+                try:
+                    source_engine = HuaweiDiscovery(
+                        encrypted_ak_data=customer.source_huawei_ak,
+                        encrypted_sk_data=customer.source_huawei_sk,
+                        region=source_region,
+                        master_password=master_password
+                    )
+                    logger.info(f"HYBRID: Scanning SOURCE infrastructure (Source AK/SK) in {source_region}")
+                    source_result = source_engine.discover_all()
+                    if source_result.get("success"):
+                        result["hybrid"]["source"] = source_result.get("inventory")
+                        result["source_region"] = source_region
+                    else:
+                        result["hybrid"]["source"] = {"error": source_result.get("error", "Unknown error")}
+                        diagnostics.append(f"Source scan failed: {source_result.get('error')}")
+                except Exception as e:
+                    logger.error(f"HYBRID: Source scan exception: {e}")
+                    result["hybrid"]["source"] = {"error": str(e)}
+                    diagnostics.append(f"Source scan exception: {str(e)}")
+            else:
+                result["hybrid"]["source"] = {"error": "Source Huawei Cloud AK/SK missing"}
+                diagnostics.append("Source scan skipped: Source credentials not configured")
+            
+            if diagnostics:
+                result["diagnostics"] = diagnostics
+            return jsonify(result)
+
+        # ─── SINGLE MODE (legacy + explicit credential toggle) ───
         is_source_discovery = False
         encrypted_ak_data = None
         encrypted_sk_data = None
         discovery_region = region
-        
-        # Check if this is a cross-region migration with Huawei source
-        if project_id:
+        use_source_credentials = data.get('use_source_credentials', False)
+
+        if use_source_credentials:
+            if customer and customer.source_huawei_ak and customer.source_huawei_sk:
+                logger.info(f"EXPLICIT SOURCE DISCOVERY: Using Source Huawei Cloud credentials for customer_id={customer_id}")
+                encrypted_ak_data = customer.source_huawei_ak
+                encrypted_sk_data = customer.source_huawei_sk
+                discovery_region = customer.source_huawei_region or region
+                is_source_discovery = True
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Source Huawei Cloud credentials missing. Configure them in Customer Directory → Huawei Tiers."
+                }), 400
+        elif project_id:
             project = ProjectData.query.get(project_id)
             if project and project.data:
                 try:
                     project_data = json.loads(project.data)
                     migration_scope = project_data.get('migrationScope', [])
                     source_env = project_data.get('sourceEnvironment', '')
-                    
-                    # Check if it's a cross-region migration with Huawei source
                     is_cross_region = ('Cross-Region Migration' in migration_scope or 
                                       'cross_region' in migration_scope)
                     is_huawei_source = ('Huawei' in source_env or 
                                        'huawei' in source_env.lower())
-                    
                     if is_cross_region and is_huawei_source and provider == 'Huawei':
-                        # This is a source discovery for cross-region migration
                         if customer and customer.source_huawei_ak and customer.source_huawei_sk:
                             logger.info(f"SOURCE DISCOVERY: Cross-region migration with Huawei source for project_id={project_id}")
                             encrypted_ak_data = customer.source_huawei_ak
@@ -384,9 +454,7 @@ def get_live_inventory():
                             }), 400
                 except Exception as e:
                     logger.warning(f"Error parsing project data for source discovery: {e}")
-                    # If project data parsing fails, fall back to target monitoring
         
-        # If not source discovery, use master credentials for target monitoring
         if not is_source_discovery:
             logger.info(f"TARGET MONITORING: Using master credentials for customer_id={customer_id}")
             if not customer or not customer.ak or not customer.sk:
@@ -395,34 +463,24 @@ def get_live_inventory():
             encrypted_sk_data = customer.sk
             
         if provider == 'Huawei':
-            from services.huawei_discovery import HuaweiDiscovery
-            
-            logger.info(f"Creating HuaweiDiscovery with region: '{discovery_region}'")
             discovery_engine = HuaweiDiscovery(
                 encrypted_ak_data=encrypted_ak_data, 
                 encrypted_sk_data=encrypted_sk_data, 
                 region=discovery_region, 
                 master_password=master_password
             )
-            
             if is_source_discovery:
                 logger.info(f"SOURCE DISCOVERY: Scanning Huawei Cloud source infrastructure in region {discovery_region}")
             else:
                 logger.info(f"TARGET MONITORING: Scanning Huawei Cloud target infrastructure in region {discovery_region}")
-            
             result = discovery_engine.discover_all()
-
         elif provider == 'AWS':
-            from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
             discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
             result = discovery_engine.run_aws_agentless_discovery(region=data.get('region', 'us-east-1'))
-
         elif provider == 'Azure':
-            from services.hyperscaler_discovery import HyperscalerDiscoveryEngine
             discovery_engine = HyperscalerDiscoveryEngine(customer_id=customer_id)
             subscription_id = data.get('subscription_id') or customer.azure_subscription_id
             result = discovery_engine.run_azure_agentless_discovery(subscription_id=subscription_id)
-
         else:
             return jsonify({"success": False, "error": f"Provider {provider} discovery not supported."}), 400
         
