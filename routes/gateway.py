@@ -9,7 +9,7 @@ from services.huawei_iam import HuaweiIAMClient
 from services.huawei_eps import HuaweiEPSClient
 import logging
 
-gateway_bp = Blueprint('gateway', __name__)
+gateway_bp = Blueprint('gateway', __name__, url_prefix='/api/gateway')
 logger = logging.getLogger(__name__)
 
 
