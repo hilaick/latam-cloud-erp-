@@ -24,7 +24,11 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                     <button onClick={()=>setSubTab('intake')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='intake'?'bg-purple-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-door-open mr-2"></i> 1. ARB Intake & SOW</button>
                     <button onClick={()=>setSubTab('wbs')} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${subTab==='wbs'?'bg-blue-600 text-white':'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}><i className="fas fa-sitemap mr-2"></i> 2. High-Level WBS (Sales)</button>
                 </div>
-                {isCurrent && <button onClick={onPromote} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Approve Gate <i className="fas fa-arrow-right ml-2"></i></button>}
+                {isCurrent && (
+                    blueprintData 
+                        ? <button onClick={onPromote} className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-xs rounded-xl shadow-md transition-transform active:scale-95">Approve Gate <i className="fas fa-arrow-right ml-2"></i></button>
+                        : <button disabled className="px-6 py-2.5 bg-slate-300 text-slate-500 font-black uppercase tracking-widest text-xs rounded-xl cursor-not-allowed shadow-md"><i className="fas fa-lock mr-2"></i>Upload Quotation BoM First</button>
+                )}
             </div>
 
             <div className="p-8 bg-slate-100/50 rounded-b-2xl border-x border-b border-slate-200">

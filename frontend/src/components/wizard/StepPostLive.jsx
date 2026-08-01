@@ -630,7 +630,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/cloud/inventory', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ customer_id: project.customerId, projectId: project.id, region: project.region || 'la-north-2', provider: 'Huawei' })
+                body: JSON.stringify({ customer_id: project.customerId, region: project.region || 'la-north-2', provider: 'Huawei', use_source_credentials: false })
             });
             const data = await res.json();
             if (data.success) {
@@ -1031,34 +1031,48 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             )}
             {detailsModal.show && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col border border-slate-700 animate-slide-up">
+                    <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-2rem)] min-h-[400px] flex flex-col border border-slate-700 animate-slide-up">
                         <div className="bg-slate-900 px-6 py-4 rounded-t-2xl flex justify-between items-center text-white shrink-0">
-                            <h3 className="font-black text-lg text-emerald-400"><i className="fas fa-check-circle mr-2"></i> Verified {detailsModal.label}</h3>
-                            <button onClick={() => setDetailsModal({ show: false, category: '', label: '', items: [] })} className="text-slate-400 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+                            <div>
+                                <h3 className="font-black text-lg text-emerald-400"><i className="fas fa-check-circle mr-2"></i> Verified {detailsModal.label}</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Live resource specifications from Target Cloud API</p>
+                            </div>
+                            <button onClick={() => setDetailsModal({ show: false, category: '', label: '', items: [] })} className="text-slate-400 hover:text-white transition-colors p-2"><i className="fas fa-times text-xl"></i></button>
                         </div>
-                        <div className="p-6 overflow-y-auto bg-slate-50 flex-1 custom-scrollbar">
+                        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-800">
                             {detailsModal.items.length === 0 ? (
-                                <div className="text-center text-slate-400 font-bold py-8 border-2 border-dashed border-slate-300 rounded-xl">No resource details found.</div>
+                                <div className="text-center py-16">
+                                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
+                                        <i className="fas fa-ghost text-slate-500 text-2xl"></i>
+                                    </div>
+                                    <h3 className="font-black text-slate-400 text-sm">No resource details found</h3>
+                                    <p className="text-[10px] text-slate-500 mt-1">The scan may not have returned items for this category.</p>
+                                </div>
                             ) : (
-                                <table className="w-full text-left bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 border-b border-slate-200">
-                                        <tr><th className="p-3">Resource ID / Name</th><th className="p-3">Specification / Type</th><th className="p-3">Target IP / Location</th></tr>
+                                <table className="w-full text-left bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
+                                    <thead className="bg-slate-850 text-[10px] uppercase text-slate-500 border-b border-slate-700">
+                                        <tr><th className="p-3">Resource ID / Name</th><th className="p-3">Live Spec</th><th className="p-3">IP / Location</th></tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 text-xs">
-                                        {detailsModal.items.map((item, i) => (
-                                            <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
-                                                <td className="p-3 font-bold text-slate-800">{item.name || item.id || `Resource-${i}`}</td>
-                                                <td className="p-3 text-slate-600">{item.type || item.engine || item.flavor || item.bandwidth || 'Standard'}</td>
-                                                <td className="p-3 font-mono text-slate-500">{item.ip || item.private_ip_address || item.cidr || item.region || 'N/A'}</td>
-                                            </tr>
-                                        ))}
+                                    <tbody className="divide-y divide-slate-700/50 text-xs">
+                                        {detailsModal.items.map((item, i) => {
+                                            const spec = item.type || item.engine || item.flavor || item.bandwidth || item.displayStr || '—';
+                                            return (
+                                                <tr key={i} className="hover:bg-slate-750 transition-colors">
+                                                    <td className="p-3 font-bold text-white">{item.name || item.id || `Resource-${i}`}</td>
+                                                    <td className="p-3 text-slate-300 font-mono text-[11px]">{spec}</td>
+                                                    <td className="p-3 font-mono text-[11px] text-slate-400">{item.ip || item.private_ip_address || item.cidr || item.region || 'N/A'}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-between items-center shrink-0">
-                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest">Total Count: {detailsModal.items.length}</div>
-                            <button onClick={() => setDetailsModal({ show: false, category: '', label: '', items: [] })} className="px-6 py-2.5 text-xs font-black text-white uppercase tracking-widest bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md">Close Matrix</button>
+                        <div className="px-6 py-4 border-t border-slate-700 bg-slate-900 rounded-b-2xl flex justify-between items-center shrink-0">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Count: {detailsModal.items.length}</div>
+                            <button onClick={() => setDetailsModal({ show: false, category: '', label: '', items: [] })} className="px-6 py-2.5 text-[10px] font-black text-white uppercase tracking-widest bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors shadow-md">
+                                <i className="fas fa-times mr-2"></i>Close
+                            </button>
                         </div>
                     </div>
                 </div>

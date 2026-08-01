@@ -63,7 +63,8 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
                     projectId: activeProject.id, 
                     region: activeProject.region || 'la-south-2',
                     provider: provider,
-                    subscriptionId: subscriptionId 
+                    subscriptionId: subscriptionId,
+                    use_source_credentials: true
                 })
             });
             const data = await res.json();
