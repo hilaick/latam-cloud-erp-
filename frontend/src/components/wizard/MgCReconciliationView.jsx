@@ -20,7 +20,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
     useEffect(() => {
         const fetchTools = async () => {
             try {
-                const token = localStorage.getItem('erp_jwt_token');
+                const token = sessionStorage.getItem('hermes_access_token');
                 const res = await fetch('/api/migration/tools', { headers: { 'Authorization': `Bearer ${token}` } });
                 const data = await res.json();
                 if (data.success) setMigrationTools(data.tools);
@@ -54,7 +54,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
 
         setIsScanning(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/cloud/inventory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -94,7 +94,7 @@ export default function MgCReconciliationView({ activeProject, onUpdateProject }
         if (!file) return;
         setIsScanning(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const formData = new FormData();
             formData.append('file', file);
             

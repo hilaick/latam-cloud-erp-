@@ -17,12 +17,23 @@ with tarfile.open(fileobj=buf, mode='w:gz') as t:
         for fn in files:
             fp = os.path.join(root, fn)
             t.add(fp, arcname='dist/' + os.path.relpath(fp, dist_dir).replace('\\', '/'))
-    t.add(os.path.join(REPO, r'frontend\src\components\wizard\StepPostLive.jsx'),
-          arcname='dist/StepPostLive.jsx')
-    t.add(os.path.join(REPO, r'frontend\src\utils\specParser.js'),
-          arcname='dist/specParser.js')
-    t.add(os.path.join(REPO, r'services\huawei_discovery.py'),
-          arcname='dist/huawei_discovery.py')
+    # Deploy all 12 patched source files (localStorage → sessionStorage fix)
+    patched = [
+        r'frontend\src\components\utils\GlobalCommandDrawer.jsx',
+        r'frontend\src\components\views\CustomerDirectory.jsx',
+        r'frontend\src\components\views\ExcelUploader.jsx',
+        r'frontend\src\components\views\LiveCloudNOC.jsx',
+        r'frontend\src\components\views\MasterExecutionHub.jsx',
+        r'frontend\src\components\views\QuotationHistory.jsx',
+        r'frontend\src\components\views\UserManagement.jsx',
+        r'frontend\src\components\wizard\FinOpsCalculator.jsx',
+        r'frontend\src\components\wizard\GovernanceAndCRView.jsx',
+        r'frontend\src\components\wizard\MgCReconciliationView.jsx',
+        r'frontend\src\components\wizard\StepExecution.jsx',
+        r'frontend\src\components\wizard\ToolRecommendationView.jsx',
+    ]
+    for pf in patched:
+        t.add(os.path.join(REPO, pf), arcname='dist/' + os.path.basename(pf))
 
 data = buf.getvalue()
 print(f'[1/5] Tar built: {len(data)/1024:.1f} KB')
@@ -58,11 +69,19 @@ cmds = [
     f'rm -rf {TARGET_BASE}/frontend/dist/assets/* {TARGET_BASE}/frontend/dist/index.html',
     f'cp -r /tmp/dist/assets/* {TARGET_BASE}/frontend/dist/assets/',
     f'cp /tmp/dist/index.html {TARGET_BASE}/frontend/dist/index.html',
-    # Deploy source files
-    f'cp /tmp/dist/StepPostLive.jsx {TARGET_BASE}/frontend/src/components/wizard/StepPostLive.jsx',
-    f'cp /tmp/dist/specParser.js {TARGET_BASE}/frontend/src/utils/specParser.js',
-    # Deploy backend
-    f'cp /tmp/dist/huawei_discovery.py {TARGET_BASE}/services/huawei_discovery.py',
+    # Deploy all patched source files
+    f'cp /tmp/dist/GlobalCommandDrawer.jsx {TARGET_BASE}/frontend/src/components/utils/GlobalCommandDrawer.jsx',
+    f'cp /tmp/dist/CustomerDirectory.jsx {TARGET_BASE}/frontend/src/components/views/CustomerDirectory.jsx',
+    f'cp /tmp/dist/ExcelUploader.jsx {TARGET_BASE}/frontend/src/components/views/ExcelUploader.jsx',
+    f'cp /tmp/dist/LiveCloudNOC.jsx {TARGET_BASE}/frontend/src/components/views/LiveCloudNOC.jsx',
+    f'cp /tmp/dist/MasterExecutionHub.jsx {TARGET_BASE}/frontend/src/components/views/MasterExecutionHub.jsx',
+    f'cp /tmp/dist/QuotationHistory.jsx {TARGET_BASE}/frontend/src/components/views/QuotationHistory.jsx',
+    f'cp /tmp/dist/UserManagement.jsx {TARGET_BASE}/frontend/src/components/views/UserManagement.jsx',
+    f'cp /tmp/dist/FinOpsCalculator.jsx {TARGET_BASE}/frontend/src/components/wizard/FinOpsCalculator.jsx',
+    f'cp /tmp/dist/GovernanceAndCRView.jsx {TARGET_BASE}/frontend/src/components/wizard/GovernanceAndCRView.jsx',
+    f'cp /tmp/dist/MgCReconciliationView.jsx {TARGET_BASE}/frontend/src/components/wizard/MgCReconciliationView.jsx',
+    f'cp /tmp/dist/StepExecution.jsx {TARGET_BASE}/frontend/src/components/wizard/StepExecution.jsx',
+    f'cp /tmp/dist/ToolRecommendationView.jsx {TARGET_BASE}/frontend/src/components/wizard/ToolRecommendationView.jsx',
     # Restart Flask (handle both flask run and python3 app.py)
     'pkill -f "python3 app.py" 2>/dev/null; pkill -f "flask run" 2>/dev/null; sleep 1',
     f'cd {TARGET_BASE} && . venv/bin/activate && nohup python3 app.py --port 9119 > /tmp/flask.log 2>&1 &',

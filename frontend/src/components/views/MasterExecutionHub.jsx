@@ -17,7 +17,7 @@ export default function MasterExecutionHub() {
     const [showBulkUpdate, setShowBulkUpdate] = useState(false);
 
     const getAuthHeaders = () => {
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         return headers;

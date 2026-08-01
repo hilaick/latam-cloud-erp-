@@ -108,7 +108,7 @@ export default function CustomerDirectory() {
   const validateKeys = async (provider) => {
     setIsValidating(true);
     try {
-      const token = localStorage.getItem('erp_jwt_token');
+      const token = sessionStorage.getItem('hermes_access_token');
       const bodyData = provider === 'AWS'
         ? { provider: 'AWS', ak: editingCustomer.awsAK, sk: editingCustomer.awsSK }
         : { provider: 'Azure', azureTenant: editingCustomer.azureTenant, azureClient: editingCustomer.azureClient, azureSecret: editingCustomer.azureSecret };

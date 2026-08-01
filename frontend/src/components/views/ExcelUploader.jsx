@@ -56,7 +56,7 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                 formData.append('raw_text', pastedData);
             }
 
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             if (!token) throw new Error("Authentication required. Please log in again.");
             
             const response = await fetch('/api/upload_quotation', { 

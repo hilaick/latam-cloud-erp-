@@ -36,7 +36,7 @@ export default function GlobalCommandDrawer({ isOpen, onClose }) {
         }
         
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch(`/api/executions/${activeProjectId}/command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

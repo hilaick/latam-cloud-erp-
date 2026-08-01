@@ -195,7 +195,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         } else if (scenario === 'wbs_detailed') {
             setIsApiSyncing(true);
             try {
-                const token = localStorage.getItem('erp_jwt_token');
+                const token = sessionStorage.getItem('hermes_access_token');
                 const response = await fetch('/api/finops/query_price', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -243,7 +243,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const validateBilling = async () => {
         setIsValidating(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch('/api/finops/billing_validation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

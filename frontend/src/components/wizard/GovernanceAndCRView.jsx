@@ -97,7 +97,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
             const newPlaybooksState = { ...customPlaybooks, 'default_vm': updatedMasterPb };
             
             setCustomPlaybooks(newPlaybooksState);
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             fetch('/api/erp/playbooks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -125,7 +125,7 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
 
     const linkCRToLatestQuotationVersion = async (crId) => {
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch(`/api/quotation/versions/${activeProject.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (response.ok) {
                 const data = await response.json();

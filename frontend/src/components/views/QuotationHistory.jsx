@@ -16,7 +16,7 @@ export default function QuotationHistory({ projectId, onRevert }) {
         setLoading(true);
         setError('');
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch(`/api/quotation/versions/${projectId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -44,7 +44,7 @@ export default function QuotationHistory({ projectId, onRevert }) {
         }
 
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch(`/api/quotation/revert/${versionId}`, {
                 method: 'POST',
                 headers: { 
@@ -72,7 +72,7 @@ export default function QuotationHistory({ projectId, onRevert }) {
 
     const handleViewVersion = async (versionId) => {
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const response = await fetch(`/api/quotation/version/${versionId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });

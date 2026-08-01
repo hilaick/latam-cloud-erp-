@@ -35,7 +35,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
         setLoading(true);
         try {
             // FIX: Uses correct endpoint and securely attaches standard JWT token
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             
             // Use blueprintData (from SOW/Quote) if available, otherwise fall back to mapperNodes for backward compatibility
             let targetArchitecture = [];

@@ -23,7 +23,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         if (!project?.id) return;
         const fetchState = async () => {
             try {
-                const token = localStorage.getItem('erp_jwt_token');
+                const token = sessionStorage.getItem('hermes_access_token');
                 const res = await fetch(`/api/executions/${project.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
                 const data = await res.json();
                 if (data.success) {
@@ -39,7 +39,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
     const updatePhase = async (newPhase, newStatus, pendingAction = null) => {
         setExecutionState(prev => ({ ...prev, currentPhase: newPhase, status: newStatus, pendingAction }));
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         await fetch(`/api/executions/${project.id}/update`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ phase: newPhase, status: newStatus, pendingAction })
@@ -49,7 +49,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const handleExecuteTerraform = async (networkConfig = null) => {
         if (!project?.id) return;
         setShowWaveZeroModal(false);
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         try {
             const res = await fetch(`/api/projects/${project.id}/execute`, { 
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -71,7 +71,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     // 🚨 Phase 4.7 Backend Call
     const handleGarbageCollection = async () => {
         if (!project?.id) return;
-        const token = localStorage.getItem('erp_jwt_token');
+        const token = sessionStorage.getItem('hermes_access_token');
         try {
             const res = await fetch(`/api/projects/${project.id}/garbage-collect`, { 
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
@@ -577,7 +577,7 @@ function WorkbenchView({ project }) {
         ]);
 
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const body = {
                 goal: prompt,
                 context: `ERP Project ID: ${project?.id || 'N/A'}. Repo at C:/Users/h84423900/latam-cloud-erp/repo.`,

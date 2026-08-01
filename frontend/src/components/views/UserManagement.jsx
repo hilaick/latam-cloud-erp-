@@ -56,7 +56,7 @@ export default function UserManagement() {
     const loadHermesConfig = async () => {
         setConfigLoading(true);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/hermes-config', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -75,7 +75,7 @@ export default function UserManagement() {
         setConfigSaving(true);
         setConfigMessage(null);
         try {
-            const token = localStorage.getItem('erp_jwt_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             const res = await fetch('/api/hermes-config', {
                 method: 'PUT',
                 headers: {
