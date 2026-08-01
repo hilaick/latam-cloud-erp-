@@ -540,13 +540,223 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
 // 🚨 PRESERVED: Readiness Gateway View
 function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, onApprove }) {
+    const [loading, setLoading] = useState(false);
+    const [gatewayResult, setGatewayResult] = useState(null);
+    const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+    const [notifyCommercial, setNotifyCommercial] = useState(false);
+
+    const runFullCheck = async () => {
+        setLoading(true);
+        setGatewayResult(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch('/api/gateway/full-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    customer_id: project?.customerId, 
+                    project_id: project?.id 
+                })
+            });
+            const data = await res.json();
+            setGatewayResult(data);
+            // Auto-set commercial notification if real-name auth missing
+            if (data.checks?.realname_auth?.status === 'unverified') {
+                setNotifyCommercial(true);
+            }
+        } catch (err) {
+            setGatewayResult({ success: false, error: err.message });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Run check on mount
+    useEffect(() => {
+        if (project?.customerId) {
+            runFullCheck();
+        }
+    }, [project?.customerId]);
+
+    const checks = gatewayResult?.checks || {};
+    const isReady = gatewayResult?.ready;
+    const mode = gatewayResult?.mode || 'unknown';
+    const showRiskWarning = checks.realname_auth?.status === 'unverified';
+
+    const statusIcon = (status) => {
+        switch (status) {
+            case 'valid': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
+            case 'configured': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
+            case 'unverified': return { icon: 'fa-exclamation-triangle', color: 'text-amber-400' };
+            case 'missing': return { icon: 'fa-times-circle', color: 'text-rose-400' };
+            case 'blocked': return { icon: 'fa-ban', color: 'text-rose-500' };
+            case 'invalid': return { icon: 'fa-times-circle', color: 'text-rose-400' };
+            default: return { icon: 'fa-question-circle', color: 'text-slate-400' };
+        }
+    };
+
     return (
-        <div className="p-8 h-full flex flex-col justify-center items-center">
-            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden text-center p-12">
-                <h3 className="text-xl font-black mb-4">4.0 Execution Readiness Gateway</h3>
-                <p className="text-sm text-slate-500 mb-8">Target Boundary Verified. Cloud credentials validated.</p>
-                <button onClick={onApprove} className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase tracking-widest shadow-md transition-colors">Unlock Engine <i className="fas fa-unlock ml-2"></i></button>
+        <div className="p-8 h-full flex flex-col items-center overflow-y-auto custom-scrollbar">
+            <div className="w-full max-w-2xl space-y-6">
+                {/* Header */}
+                <div className="text-center">
+                    <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${
+                        isReady ? 'bg-emerald-900/40 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                        <i className={`fas ${isReady ? 'fa-shield-check' : 'fa-shield-haltered'}`}></i>
+                    </div>
+                    <h3 className="text-xl font-black text-white mb-1">4.0 Execution Readiness Gateway</h3>
+                    <p className="text-sm text-slate-400">
+                        {isReady 
+                            ? `Target boundary verified — ${mode === 'least_privilege' ? 'Least Privilege mode active' : 'Master fallback mode'}`
+                            : 'Validating credential hierarchy...'}
+                    </p>
+                </div>
+
+                {/* Check Matrix */}
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+                    <div className="bg-slate-900 px-5 py-3 border-b border-slate-700">
+                        <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                            <i className="fas fa-list-check mr-2 text-emerald-400"></i>Credential & Access Validation
+                        </h4>
+                    </div>
+                    <div className="divide-y divide-slate-700/50">
+                        {/* Master AK/SK */}
+                        <CheckRow 
+                            label="Master AK/SK" 
+                            desc="Control plane authentication" 
+                            status={checks.master_credentials?.status}
+                            message={checks.master_credentials?.message}
+                            si={statusIcon(checks.master_credentials?.status)}
+                        />
+                        {/* Real-Name Auth */}
+                        <CheckRow 
+                            label="Real-Name Authentication" 
+                            desc="Required for EPS + Tier 2 isolation" 
+                            status={checks.realname_auth?.status}
+                            message={checks.realname_auth?.warning || checks.realname_auth?.message}
+                            si={statusIcon(checks.realname_auth?.status)}
+                        />
+                        {/* Tier 2 EPS Admin */}
+                        <CheckRow 
+                            label="Tier 2: Sandbox EPS Admin" 
+                            desc="Enterprise Project-scoped access" 
+                            status={checks.tier2_credentials?.status}
+                            message={checks.tier2_credentials?.message}
+                            si={statusIcon(checks.tier2_credentials?.status)}
+                        />
+                        {/* EPS Bracket */}
+                        <CheckRow 
+                            label="EPS Bracket" 
+                            desc={`Size classification: ${checks.eps_bracket?.bracket || 'unknown'}`}
+                            status={checks.eps_bracket?.bracket ? 'valid' : 'missing'}
+                            si={statusIcon(checks.eps_bracket?.bracket ? 'valid' : 'missing')}
+                        />
+                        {/* OS Data Plane */}
+                        <CheckRow 
+                            label="OS Data Plane" 
+                            desc="Agentless migration credentials" 
+                            status={checks.os_credentials?.status}
+                            message={checks.os_credentials?.message}
+                            si={statusIcon(checks.os_credentials?.status)}
+                        />
+                    </div>
+                </div>
+
+                {/* Risk Warning (Path B) */}
+                {showRiskWarning && (
+                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-2xl p-5 animate-fade-in">
+                        <div className="flex items-start gap-3">
+                            <i className="fas fa-exclamation-triangle text-amber-400 text-xl mt-0.5"></i>
+                            <div className="flex-1">
+                                <h4 className="font-black text-amber-400 text-sm mb-1">Reduced Isolation Mode</h4>
+                                <p className="text-xs text-amber-300/80 mb-3">
+                                    Real-name authentication not complete. Full Master AK/SK will be used for execution. 
+                                    Enterprise Project isolation is unavailable until verification is done.
+                                </p>
+                                <label className="flex items-center gap-2 text-xs text-amber-200 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={riskAcknowledged} 
+                                        onChange={e => setRiskAcknowledged(e.target.checked)}
+                                        className="rounded bg-slate-700 border-slate-600"
+                                    />
+                                    I acknowledge the reduced security posture
+                                </label>
+                                {notifyCommercial && (
+                                    <div className="mt-3 flex items-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                                        <i className="fas fa-bell"></i>
+                                        Commercial team will be notified to complete real-name authentication
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex justify-center gap-4">
+                    <button 
+                        onClick={runFullCheck}
+                        disabled={loading}
+                        className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-black uppercase tracking-widest rounded-xl transition-colors disabled:opacity-50"
+                    >
+                        <i className={`fas fa-sync-alt mr-2 ${loading ? 'animate-spin' : ''}`}></i>
+                        Re-Check
+                    </button>
+                    <button 
+                        onClick={onApprove}
+                        disabled={!isReady || (showRiskWarning && !riskAcknowledged)}
+                        className={`px-8 py-2.5 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all ${
+                            isReady && (!showRiskWarning || riskAcknowledged)
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                                : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                        }`}
+                        title={showRiskWarning && !riskAcknowledged ? 'Acknowledge risk warning first' : ''}
+                    >
+                        <i className="fas fa-unlock mr-2"></i>
+                        Unlock Execution Engine
+                    </button>
+                </div>
+
+                {gatewayResult?.requires_action?.length > 0 && (
+                    <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+                        <h4 className="font-black text-[10px] text-slate-500 uppercase tracking-widest mb-2">
+                            <i className="fas fa-clipboard-list mr-1"></i>Required Actions
+                        </h4>
+                        <ul className="space-y-1">
+                            {gatewayResult.requires_action.map((action, i) => (
+                                <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                                    <i className="fas fa-chevron-right text-emerald-500 mt-0.5"></i>
+                                    {action}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </div>
+        </div>
+    );
+}
+
+function CheckRow({ label, desc, status, message, si }) {
+    return (
+        <div className="px-5 py-3 flex items-center gap-4 hover:bg-slate-750 transition-colors">
+            <i className={`fas ${si.icon} ${si.color} text-lg`}></i>
+            <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-white">{label}</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider">{desc}</div>
+                {message && <div className="text-[10px] text-slate-500 mt-0.5 italic">{message}</div>}
+            </div>
+            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
+                status === 'valid' || status === 'configured' 
+                    ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/50'
+                    : status === 'unverified'
+                    ? 'bg-amber-900/40 text-amber-400 border border-amber-700/50'
+                    : 'bg-slate-700/50 text-slate-400 border border-slate-600/50'
+            }`}>
+                {status || 'unknown'}
+            </span>
         </div>
     );
 }

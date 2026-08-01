@@ -1,0 +1,59 @@
+# n8n Workflow Automation — ERP Migration Factory
+# Deploy on flexusx-9e95 (159.138.148.45)
+#
+# Quick setup:
+#   1. scp this file to the server
+#   2. docker-compose up -d
+#   3. Access at https://<host>:5678
+#
+# Prerequisites on flexusx-9e95:
+#   - Docker Engine 20.10+ (likely already installed for Flask)
+#   - docker-compose v2 (or `docker compose` plugin)
+#   - 1+ GB free RAM for n8n
+#   - Port 5678 open on firewall
+
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: erp-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      # CHANGE THIS PASSWORD after first login:
+      - N8N_BASIC_AUTH_PASSWORD=latam-erp-n8n-2026
+      - N8N_HOST=159.138.148.45
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - N8N_ENCRYPTION_KEY=CHANGE_ME_32_CHAR_MIN_SECRET_KEY
+      # Webhook URL for ERP callbacks:
+      - WEBHOOK_URL=https://159.138.148.45:5678/
+      # Database — SQLite for simplicity (Postgres optional for production)
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+      # Execution settings
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168  # 7 days
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=50000
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # Mount shared workflow templates directory:
+      - ./n8n-workflows:/data/workflows
+    networks:
+      - erp-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  n8n_data:
+
+networks:
+  erp-network:
+    external: true  # Assumes existing Docker network; create with: docker network create erp-network
