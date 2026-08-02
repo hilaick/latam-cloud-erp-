@@ -100,15 +100,16 @@ const OrchestrationWorkflow = () => {
   const deployToN8n = async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(summary.n8n_deploy_url, {
+      const res = await fetch('/api/gateway/deploy-n8n-workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workflow),
+        body: JSON.stringify({ workflow }),
       });
-      if (res.ok) { setDeployed(true); }
-      else { setError(`n8n deploy returned ${res.status}`); }
+      const data = await res.json();
+      if (data.success) { setDeployed(true); }
+      else { setError(data.error || `n8n deploy failed (${data.status_code})`); }
     } catch (err) {
-      setError(`Cannot reach n8n at ${summary.n8n_deploy_url}: ${err.message}`);
+      setError(`Deploy error: ${err.message}`);
     }
     finally { setLoading(false); }
   };

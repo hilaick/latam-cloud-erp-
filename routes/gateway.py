@@ -3,11 +3,12 @@
 Implements the least-privilege credential hierarchy:
   Master AK/SK → Tier 2 (EPS Admin) → Tier 3 (Tool-specific) → Data Plane (OS)
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from models import db, Customer, ProjectData
 from services.huawei_iam import HuaweiIAMClient
 from services.huawei_eps import HuaweiEPSClient
 import logging
+import os
 
 gateway_bp = Blueprint('gateway', __name__, url_prefix='/api/gateway')
 logger = logging.getLogger(__name__)
@@ -775,3 +776,52 @@ def generate_n8n_workflow():
         "workflow": workflow,
         "summary": summary
     })
+
+
+# ─────────────────────────────────────────────
+# 8. N8N DEPLOY PROXY (avoids CORS)
+# ─────────────────────────────────────────────
+@gateway_bp.route('/deploy-n8n-workflow', methods=['POST'])
+def deploy_n8n_workflow():
+    """Proxy: deploy workflow JSON to n8n server-side, avoiding browser CORS."""
+    import requests as http_requests
+    data = request.get_json() or {}
+    workflow = data.get('workflow')
+    if not workflow:
+        return jsonify({"success": False, "error": "No workflow provided"}), 400
+
+    n8n_url = data.get('n8n_url', 'http://localhost:5678/rest/workflows')
+
+    # Auth: try API key from config, then env, then basic auth
+    api_key = current_app.config.get('N8N_API_KEY') or os.environ.get('N8N_API_KEY')
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['X-N8N-API-KEY'] = api_key
+    else:
+        # Fall back to basic auth if API key not set
+        headers['Authorization'] = 'Basic ' + __import__('base64').b64encode(
+            b'admin:latam-erp-n8n-2026').decode()
+
+    try:
+        resp = http_requests.post(n8n_url, json=workflow, timeout=15, headers=headers)
+        result = {
+            "success": resp.ok,
+            "status_code": resp.status_code,
+            "deployed": resp.ok
+        }
+        try:
+            result["n8n_response"] = resp.json()
+        except Exception:
+            result["n8n_response"] = resp.text[:500]
+
+        if resp.status_code == 401:
+            result["error"] = (
+                "n8n requires authentication. Generate an API key in n8n UI "
+                "(Settings → API → Generate API Key) and set N8N_API_KEY env var "
+                "on the Flask server, or add it to app.config."
+            )
+        return jsonify(result)
+    except http_requests.ConnectionError:
+        return jsonify({"success": False, "error": f"Cannot reach n8n at {n8n_url}. Is n8n running?"}), 502
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
