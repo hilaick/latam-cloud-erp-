@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const phases = [
   {
@@ -79,10 +79,16 @@ const OrchestrationWorkflow = () => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [deployed, setDeployed] = useState(false);
+  const [deployResult, setDeployResult] = useState(null);
+  const [n8nEmbedUrl, setN8nEmbedUrl] = useState(null);
+
+  // Auto-load workflow on mount
+  useEffect(() => {
+    generateWorkflow();
+  }, []);
 
   const generateWorkflow = async () => {
-    setLoading(true); setError(null); setDeployed(false);
+    setLoading(true); setError(null); setDeployResult(null); setN8nEmbedUrl(null);
     try {
       const token = sessionStorage.getItem('hermes_access_token');
       const res = await fetch('/api/gateway/generate-n8n-workflow', {
@@ -91,94 +97,85 @@ const OrchestrationWorkflow = () => {
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (data.success) { setWorkflow(data.workflow); setSummary(data.summary); }
-      else { setError(data.error || 'Failed to generate workflow'); }
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+      if (data.success) {
+        setWorkflow(data.workflow);
+        setSummary(data.summary);
+      } else {
+        setError(data.error || 'Failed to generate workflow');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const deployToN8n = async () => {
-    setLoading(true); setError(null);
+    if (!workflow) return;
+    setLoading(true); setError(null); setDeployResult(null);
     try {
+      const token = sessionStorage.getItem('hermes_access_token');
       const res = await fetch('/api/gateway/deploy-n8n-workflow', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ workflow }),
       });
       const data = await res.json();
-      if (data.success) { setDeployed(true); }
-      else { setError(data.error || `n8n deploy failed (${data.status_code})`); }
+      if (data.success && data.deployed) {
+        setDeployResult(data);
+        // The n8n workflow embed URL — proxied through Flask
+        setN8nEmbedUrl(`/api/gateway/n8n-proxy/workflow/${data.workflow_id}`);
+      } else {
+        setError(data.error || `Deploy failed (status ${data.status_code})`);
+      }
     } catch (err) {
       setError(`Deploy error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-    finally { setLoading(false); }
   };
 
-  // Render a compact DAG visualization from the workflow
-  const renderDag = () => {
-    if (!workflow || !summary) return null;
-    const phaseColors = ['bg-blue-500', 'bg-indigo-500', 'bg-purple-500', 'bg-rose-500', 'bg-emerald-500'];
-    const phaseGroups = [
-      { label: 'Phase 1', ids: ['trigger', 'phase1_arb', 'phase1_gate'], color: 'border-blue-400' },
-      { label: 'Phase 2', ids: ['phase2_discovery', 'phase2_source_scan', 'phase2_topology', 'phase2_mgc', 'phase2_dtrb'], color: 'border-indigo-400' },
-      { label: 'Phase 3', ids: ['phase3_strategy'], color: 'border-purple-400' },
-      { label: 'Phase 4', ids: ['readiness_gateway', 'readiness_gate', 'phase4_execution', 'phase4_terraform', 'phase4_agents', 'phase4_sync', 'phase4_monitor'], color: 'border-rose-400' },
-      { label: 'Phase 5', ids: ['phase5_cutover', 'phase5_noc', 'phase5_commercial', 'phase5_war', 'project_close'], color: 'border-emerald-400' },
-    ];
-
-    const nodeMap = {};
-    workflow.nodes.forEach(n => { nodeMap[n.id] = n; });
-
-    return (
-      <div className="space-y-4 mt-4">
-        {phaseGroups.map((group, gi) => (
-          <div key={gi} className={`border-l-4 ${group.color} pl-4 py-2`}>
-            <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2">{group.label}</div>
-            <div className="flex flex-wrap gap-2">
-              {group.ids.filter(id => nodeMap[id]).map((id, ni) => {
-                const node = nodeMap[id];
-                const isGate = node.type.includes('if') || node.type.includes('switch');
-                return (
-                  <div key={ni} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${isGate ? 'bg-amber-400/15 text-amber-300 border border-amber-400/30' : 'bg-slate-700 text-slate-300 border border-slate-600'}`}>
-                    {node.name}
-                    {isGate && <span className="ml-1 text-[8px] text-amber-400">◈</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
+  const openN8nNative = () => {
+    if (deployResult && deployResult.workflow_id) {
+      window.open(`/api/gateway/n8n-proxy/workflow/${deployResult.workflow_id}`, '_blank');
+    }
   };
 
   return (
-    <div className="bg-slate-800/80 rounded-2xl border border-slate-700 p-6">
+    <div className="bg-slate-800/80 rounded-2xl border border-slate-700 p-6 mb-6">
+      {/* Header */}
       <div className="flex items-start gap-4 mb-4">
         <div className="w-12 h-12 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
           <i className="fas fa-diagram-project text-white text-lg"></i>
         </div>
         <div className="space-y-1 flex-1">
-          <h3 className="font-black text-white">Auto-Generated Migration Workflow Engine</h3>
+          <h3 className="font-black text-white">Migration Workflow Engine — Powered by n8n</h3>
           <p className="text-xs text-slate-400">
-            Generates an executable n8n workflow from the ERP Migration Factory logic (Phase 1-5),
-            with decision gates at ARB handoff, source discovery, and readiness gateway.
+            Generates an executable workflow from ERP Migration Factory logic (Phase 1-5).
+            Deploy to n8n for <strong>full interactive visualization</strong> — drag nodes, see connections, monitor execution.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
           <button onClick={generateWorkflow} disabled={loading}
-            className="px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
-            {loading ? <><i className="fas fa-spinner fa-spin mr-1.5"></i> Generating...</> : <><i className="fas fa-bolt mr-1.5"></i> Generate Workflow</>}
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
+            {loading ? <><i className="fas fa-spinner fa-spin mr-1.5"></i></> : <><i className="fas fa-sync-alt mr-1.5"></i> Refresh</>}
           </button>
-          {workflow && (
-            <button onClick={deployToN8n} disabled={loading || deployed}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${deployed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-400/30' : 'bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20'}`}>
-              {deployed ? <><i className="fas fa-check-circle mr-1.5"></i> Deployed ✓</> : <><i className="fas fa-rocket mr-1.5"></i> Deploy to n8n</>}
+          {workflow && !deployResult && (
+            <button onClick={deployToN8n} disabled={loading}
+              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 transition-all">
+              <i className="fas fa-rocket mr-1.5"></i> Deploy to n8n
+            </button>
+          )}
+          {deployResult && (
+            <button onClick={openN8nNative}
+              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-400/10 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-400/20 transition-all">
+              <i className="fas fa-external-link-alt mr-1.5"></i> Open in n8n
             </button>
           )}
         </div>
       </div>
 
+      {/* Error */}
       {error && (
         <div className="bg-rose-950/50 border border-rose-700/50 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
           <i className="fas fa-exclamation-triangle text-rose-400"></i>
@@ -187,23 +184,50 @@ const OrchestrationWorkflow = () => {
         </div>
       )}
 
+      {/* Summary badges */}
       {summary && (
-        <div className="flex gap-4 mb-4 text-[10px]">
+        <div className="flex flex-wrap gap-3 mb-4 text-[10px]">
           <span className="bg-slate-700 px-3 py-1 rounded-lg font-bold text-slate-300">{summary.total_nodes} Nodes</span>
           <span className="bg-slate-700 px-3 py-1 rounded-lg font-bold text-slate-300">{summary.total_connections} Connections</span>
           <span className="bg-slate-700 px-3 py-1 rounded-lg font-bold text-slate-300">{summary.phases} Phases</span>
           <span className="bg-amber-400/15 px-3 py-1 rounded-lg font-bold text-amber-300">{summary.decision_gates} Decision Gates</span>
-          <span className="bg-slate-700 px-3 py-1 rounded-lg font-mono text-slate-400">{summary.endpoint_base}</span>
+          {deployResult && (
+            <span className="bg-emerald-400/15 px-3 py-1 rounded-lg font-bold text-emerald-300">
+              <i className="fas fa-check-circle mr-1"></i>Deployed: {deployResult.workflow_name}
+            </span>
+          )}
         </div>
       )}
 
-      {renderDag()}
-
-      {!workflow && !loading && (
-        <div className="text-center py-6 border border-dashed border-slate-700 rounded-xl">
-          <i className="fas fa-cube text-slate-600 text-3xl mb-2 block"></i>
-          <p className="text-xs text-slate-500 font-bold">Click "Generate Workflow" to create the n8n DAG from migration logic</p>
+      {/* n8n embedded iframe */}
+      {n8nEmbedUrl ? (
+        <div className="rounded-xl border border-slate-600 overflow-hidden bg-white" style={{ height: '600px' }}>
+          <iframe
+            src={n8nEmbedUrl}
+            className="w-full h-full"
+            title="n8n Workflow Editor"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
         </div>
+      ) : (
+        !loading && (
+          <div className="text-center py-8 border border-dashed border-slate-700 rounded-xl">
+            <i className="fas fa-cube text-slate-600 text-3xl mb-2 block"></i>
+            <p className="text-xs text-slate-500 font-bold">
+              {workflow ? 'Click "Deploy to n8n" to view the interactive workflow diagram' : 'Click "Refresh" to generate the workflow'}
+            </p>
+          </div>
+        )
+      )}
+
+      {/* Workflow JSON preview (collapsed) */}
+      {workflow && (
+        <details className="mt-4 text-[10px]">
+          <summary className="cursor-pointer text-slate-500 font-bold hover:text-slate-300">Workflow JSON source</summary>
+          <pre className="mt-2 p-3 bg-slate-900 rounded-lg border border-slate-700 text-slate-400 overflow-x-auto max-h-48 text-[9px] leading-relaxed">
+            {JSON.stringify(workflow, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
@@ -211,7 +235,7 @@ const OrchestrationWorkflow = () => {
 
 export default function GlobalProcessView() {
   const [expandedPhase, setExpandedPhase] = useState(null);
-  const [showN8n, setShowN8n] = useState(false);
+  const [showN8n, setShowN8n] = useState(true);
 
   return (
     <div className="animate-fade-in min-h-screen bg-slate-900">
@@ -236,8 +260,8 @@ export default function GlobalProcessView() {
           </div>
           <div className="flex gap-3">
             <button onClick={() => setShowN8n(!showN8n)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${showN8n ? 'bg-amber-400/10 text-amber-400 border-amber-400/30' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'}`}>
-              <i className="fas fa-cubes mr-1.5"></i> {showN8n ? 'n8n Info' : 'Orchestration'}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${showN8n ? 'bg-indigo-400/10 text-indigo-400 border-indigo-400/30' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'}`}>
+              <i className="fas fa-project-diagram mr-1.5"></i> {showN8n ? 'Hide Workflow' : 'Show Workflow'}
             </button>
             <button onClick={() => setExpandedPhase(expandedPhase === null ? 1 : null)}
               className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 transition-colors">
@@ -313,7 +337,6 @@ export default function GlobalProcessView() {
                   <div className="p-6 space-y-0">
                     {phase.steps.map((step, i) => (
                       <div key={step.id} className="flex gap-4">
-                        {/* timeline line */}
                         <div className="flex flex-col items-center shrink-0">
                           <div className={`w-9 h-9 rounded-xl bg-${phase.color}-400/10 border border-${phase.color}-400/20 flex items-center justify-center text-xs font-black text-${phase.color}-400`}>
                             {step.id}
@@ -322,7 +345,6 @@ export default function GlobalProcessView() {
                             <div className="w-0.5 flex-1 min-h-[24px] bg-slate-700 my-1"></div>
                           )}
                         </div>
-                        {/* content */}
                         <div className={`pb-6 flex-1 ${i === phase.steps.length - 1 ? '' : 'border-b border-slate-700/50'}`}>
                           <div className="flex items-center gap-2 mb-1">
                             <h4 className="text-sm font-black text-white">{step.name}</h4>
