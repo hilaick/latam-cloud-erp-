@@ -790,20 +790,44 @@ def deploy_n8n_workflow():
     if not workflow:
         return jsonify({"success": False, "error": "No workflow provided"}), 400
 
-    n8n_url = data.get('n8n_url', 'http://localhost:5678/rest/workflows')
+    n8n_base = data.get('n8n_url', 'http://localhost:5678')
+    n8n_workflows_url = f'{n8n_base}/rest/workflows'
 
-    # Auth: try API key from config, then env, then basic auth
+    # Auth strategy: try API key first; fall back to session login on 401
     api_key = current_app.config.get('N8N_API_KEY') or os.environ.get('N8N_API_KEY')
-    headers = {'Content-Type': 'application/json'}
-    if api_key:
-        headers['X-N8N-API-KEY'] = api_key
-    else:
-        # Fall back to basic auth if API key not set
-        headers['Authorization'] = 'Basic ' + __import__('base64').b64encode(
-            b'admin:latam-erp-n8n-2026').decode()
+    n8n_user = os.environ.get('N8N_BASIC_AUTH_USER', 'admin')
+    n8n_pass = os.environ.get('N8N_BASIC_AUTH_PASSWORD', 'latam-erp-n8n-2026')
+    
+    def _auth_headers(with_api_key=True):
+        h = {'Content-Type': 'application/json'}
+        if with_api_key and api_key:
+            h['X-N8N-API-KEY'] = api_key
+            return h, 'api_key'
+        # Session login
+        try:
+            login_resp = http_requests.post(
+                f'{n8n_base}/rest/login',
+                json={'emailOrLdapLoginId': n8n_user, 'password': n8n_pass},
+                timeout=10, headers={'Content-Type': 'application/json'})
+            if login_resp.ok and login_resp.cookies:
+                h['Cookie'] = '; '.join(f'{k}={v}' for k, v in login_resp.cookies.items())
+                return h, 'session'
+        except Exception:
+            pass
+        h['Authorization'] = 'Basic ' + __import__('base64').b64encode(
+            f'{n8n_user}:{n8n_pass}'.encode()).decode()
+        return h, 'basic'
 
+    headers, auth_method = _auth_headers(with_api_key=bool(api_key))
+    
     try:
-        resp = http_requests.post(n8n_url, json=workflow, timeout=15, headers=headers)
+        resp = http_requests.post(n8n_workflows_url, json=workflow, timeout=15, headers=headers)
+        
+        # If API key failed, retry with session
+        if resp.status_code == 401 and auth_method == 'api_key':
+            logger.info('n8n API key rejected, falling back to session auth')
+            headers, auth_method = _auth_headers(with_api_key=False)
+            resp = http_requests.post(n8n_workflows_url, json=workflow, timeout=15, headers=headers)
         result = {
             "success": resp.ok,
             "status_code": resp.status_code,
@@ -816,12 +840,12 @@ def deploy_n8n_workflow():
 
         if resp.status_code == 401:
             result["error"] = (
-                "n8n requires authentication. Generate an API key in n8n UI "
-                "(Settings → API → Generate API Key) and set N8N_API_KEY env var "
-                "on the Flask server, or add it to app.config."
+                "n8n authentication failed. The configured API key may be invalid/expired, "
+                "or n8n session auth is not working. Generate a new API key from the n8n UI "
+                "(Settings → API → Generate API Key) and update N8N_API_KEY."
             )
         return jsonify(result)
     except http_requests.ConnectionError:
-        return jsonify({"success": False, "error": f"Cannot reach n8n at {n8n_url}. Is n8n running?"}), 502
+        return jsonify({"success": False, "error": f"Cannot reach n8n at {n8n_base}. Is n8n running?"}), 502
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

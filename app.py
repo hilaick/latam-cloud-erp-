@@ -36,6 +36,15 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')
 app = Flask(__name__, static_folder=dist_folder)
 
+# Load n8n API key for workflow deployment (stored server-side to avoid CORS)
+_n8n_key_path = '/etc/hermes_n8n_api_key'
+if os.path.exists(_n8n_key_path):
+    with open(_n8n_key_path) as _f:
+        _n8n_key = _f.read().strip()
+        if _n8n_key:
+            os.environ['N8N_API_KEY'] = _n8n_key
+            app.config['N8N_API_KEY'] = _n8n_key
+
 # Initialize SocketIO explicitly with full CORS and Threading support
 from flask_socketio import SocketIO
 
