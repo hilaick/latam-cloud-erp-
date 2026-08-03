@@ -13,16 +13,23 @@ import '@xyflow/react/dist/style.css';
 function PhaseHeaderNode({ data }) {
   return (
     <div
-      className="rounded-xl px-5 py-3 text-white font-black text-sm shadow-lg border-2"
+      className="rounded-2xl px-6 py-4 text-white font-black shadow-lg border-2"
       style={{
-        background: `linear-gradient(135deg, ${data.color}, ${data.color}dd)`,
+        background: `linear-gradient(135deg, ${data.color}ee, ${data.color})`,
         borderColor: data.color,
-        minWidth: 280,
+        width: 280,
       }}
     >
-      <div className="text-base">{data.label}</div>
+      <div className="flex items-center gap-2 text-sm tracking-wider uppercase opacity-80">
+        <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs font-black">
+          {data.phase}
+        </div>
+        {data.label}
+      </div>
       {data.summary && (
-        <div className="text-[11px] opacity-80 font-medium mt-0.5">{data.summary}</div>
+        <div className="text-[11px] opacity-75 font-medium mt-1.5 leading-tight">
+          {data.summary}
+        </div>
       )}
     </div>
   );
@@ -30,19 +37,28 @@ function PhaseHeaderNode({ data }) {
 
 /* ─── Phase gate node ─── */
 function PhaseGateNode({ data }) {
+  const isLast = data.gate_index === 3;
   return (
     <div
-      className="rounded-lg px-4 py-2.5 text-white text-xs font-bold shadow border"
+      className="rounded-xl px-4 py-3 text-sm font-bold shadow-sm border transition-all"
       style={{
-        background: `${data.color}22`,
-        borderColor: data.color,
+        background: `${data.color}15`,
+        borderColor: `${data.color}60`,
         borderLeftWidth: 4,
         color: data.color,
-        minWidth: 240,
+        width: 260,
       }}
     >
-      <span className="opacity-70 mr-2">●</span>
-      {data.label}
+      <div className="flex items-center gap-2.5">
+        <span className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-black"
+          style={{ background: `${data.color}30`, color: data.color }}>
+          {data.gate_index + 1}
+        </span>
+        <span>{data.label}</span>
+        {isLast && (
+          <span className="ml-auto text-[10px] font-medium opacity-50">✓ gate</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -57,7 +73,7 @@ export function workflowToFlowGraph(workflow) {
   const nodes = (workflow.nodes || []).map(n => ({
     id: n.id,
     type: n.type === 'phase-header' ? 'phase-header' : n.type === 'phase-gate' ? 'phase-gate' : 'default',
-    position: { x: (n.position?.[0] ?? 0) / 5 + 40, y: (n.position?.[1] ?? 0) / 5 + 10 },
+    position: { x: n.position?.[0] ?? 0, y: n.position?.[1] ?? 0 },
     data: {
       label: n.name || '',
       color: n.data?.color || '#475569',
@@ -72,12 +88,16 @@ export function workflowToFlowGraph(workflow) {
       const srcExists = nodes.some(n => n.id === srcId);
       const tgtExists = nodes.some(n => n.id === t.node);
       if (srcExists && tgtExists) {
+        const srcNode = nodes.find(n => n.id === srcId);
+        const srcColor = srcNode?.data?.color || '#94a3b8';
+        const isPhaseJump = srcNode?.type === 'phase-gate' && t.node.includes('_header');
         edges.push({
           id: `e-${srcId}-${t.node}`,
           source: srcId,
           target: t.node,
+          type: isPhaseJump ? 'smoothstep' : 'smoothstep',
           animated: true,
-          style: { stroke: '#94a3b8', strokeWidth: 2 },
+          style: { stroke: srcColor, strokeWidth: isPhaseJump ? 3 : 2 },
         });
       }
     });
@@ -139,12 +159,17 @@ export default function WorkflowGraph({ workflow, onClose, title, compact }) {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.3 }}
-          minZoom={0.2}
+          fitViewOptions={{ padding: 0.4, maxZoom: 1.5 }}
+          minZoom={0.15}
           maxZoom={2}
-          defaultViewport={{ x: 0, y: 0, zoom: compact ? 0.5 : 0.7 }}
+          defaultViewport={{ x: 0, y: 0, zoom: 0.55 }}
           nodesDraggable={false}
           nodesConnectable={false}
+          defaultEdgeOptions={{
+            type: 'smoothstep',
+            animated: true,
+            style: { strokeWidth: 2 },
+          }}
         >
           <Background color="#e2e8f0" gap={20} />
           <Controls className="!rounded-xl !shadow-md !border-slate-200" />

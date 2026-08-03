@@ -593,30 +593,39 @@ def generate_n8n_workflow():
 
     nodes = []
     connections = {}
-    y_start = 80
-    row_height = 110
-    x_center = 640
+    
+    # Layout constants
+    col_width = 300          # width per phase column
+    col_gap = 50             # gap between columns
+    header_height = 70       # phase header node height
+    gate_height = 42         # gate node height  
+    gate_gap = 12            # gap between gates
+    start_x = 30
+    start_y = 30
+    
+    # Total column height: header + 4 gates + 3 gaps
+    col_height = header_height + 4 * gate_height + 3 * gate_gap
 
     for pi, phase in enumerate(phases_config):
-        phase_y = y_start + pi * (row_height * len(gates_by_phase[pi]) + 160)
+        col_x = start_x + pi * (col_width + col_gap)
         gates = gates_by_phase[pi]
 
-        # Phase header node
+        # Phase header — centered in column
         header_id = f"phase{phase['id']}_header"
         header_name = f"Phase {phase['id']}: {phase['name']}"
         nodes.append({
             "id": header_id, "name": header_name,
-            "type": "phase-header", "position": [x_center - 200, phase_y],
+            "type": "phase-header", "position": [col_x, start_y],
             "data": {"phase": phase["id"], "color": phase["color"], "summary": phase["summary"]}
         })
 
         prev_node_id = header_id
         for gi, gate_label in enumerate(gates):
             gate_id = f"phase{phase['id']}_gate{gi+1}"
-            gate_y = phase_y + 50 + gi * row_height
+            gate_y = start_y + header_height + gate_gap + gi * (gate_height + gate_gap)
             nodes.append({
                 "id": gate_id, "name": gate_label,
-                "type": "phase-gate", "position": [x_center - 200, gate_y],
+                "type": "phase-gate", "position": [col_x + 20, gate_y],
                 "data": {"phase": phase["id"], "gate_index": gi, "color": phase["color"]}
             })
             connections[prev_node_id] = {
@@ -624,7 +633,7 @@ def generate_n8n_workflow():
             }
             prev_node_id = gate_id
 
-        # Arrow to next phase
+        # Horizontal connector to next phase header
         if pi < len(phases_config) - 1:
             next_header = f"phase{phases_config[pi+1]['id']}_header"
             connections[prev_node_id] = {
