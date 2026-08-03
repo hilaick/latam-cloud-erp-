@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -115,6 +115,12 @@ export default function WorkflowGraph({ workflow, onClose, title, compact }) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
+
+  // Sync state when async workflow data arrives
+  useEffect(() => {
+    setNodes(initNodes);
+    setEdges(initEdges);
+  }, [initNodes, initEdges, setNodes, setEdges]);
 
   if (!workflow) {
     return (
