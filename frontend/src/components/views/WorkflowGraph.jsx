@@ -1,58 +1,60 @@
-import React, { useMemo, useCallback, useEffect } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-} from '@xyflow/react';
+  WorkflowBuilderRoot,
+  WorkflowBuilderCanvas,
+  useWorkflowBuilderActions,
+} from '@workflowbuilder/sdk';
 import '@xyflow/react/dist/style.css';
 
-/* ─── Phase header node ─── */
+/* ─── Phase header node renderer ─── */
 function PhaseHeaderNode({ data }) {
+  const props = data?.properties || {};
   return (
     <div
       className="rounded-2xl px-6 py-4 text-white font-black shadow-lg border-2"
       style={{
-        background: `linear-gradient(135deg, ${data.color}ee, ${data.color})`,
-        borderColor: data.color,
+        background: `linear-gradient(135deg, ${props.color}ee, ${props.color})`,
+        borderColor: props.color,
         width: 280,
       }}
     >
       <div className="flex items-center gap-2 text-sm tracking-wider uppercase opacity-80">
         <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs font-black">
-          {data.phase}
+          {props.phase}
         </div>
         {data.label}
       </div>
-      {data.summary && (
+      {props.summary && (
         <div className="text-[11px] opacity-75 font-medium mt-1.5 leading-tight">
-          {data.summary}
+          {props.summary}
         </div>
       )}
     </div>
   );
 }
 
-/* ─── Phase gate node ─── */
+/* ─── Phase gate node renderer ─── */
 function PhaseGateNode({ data }) {
-  const isLast = data.gate_index === 3;
+  const props = data?.properties || {};
+  const idx = props.gate_index ?? 0;
+  const isLast = idx === 3;
   return (
     <div
       className="rounded-xl px-4 py-3 text-sm font-bold shadow-sm border transition-all"
       style={{
-        background: `${data.color}15`,
-        borderColor: `${data.color}60`,
+        background: `${props.color}15`,
+        borderColor: `${props.color}60`,
         borderLeftWidth: 4,
-        color: data.color,
+        color: props.color,
         width: 260,
       }}
     >
       <div className="flex items-center gap-2.5">
-        <span className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-black"
-          style={{ background: `${data.color}30`, color: data.color }}>
-          {data.gate_index + 1}
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-black"
+          style={{ background: `${props.color}30`, color: props.color }}
+        >
+          {idx + 1}
         </span>
         <span>{data.label}</span>
         {isLast && (
@@ -63,64 +65,77 @@ function PhaseGateNode({ data }) {
   );
 }
 
-const nodeTypes = {
+/* Stable references — declared at module level per SDK docs */
+const rfNodeTypes = {
   'phase-header': PhaseHeaderNode,
   'phase-gate': PhaseGateNode,
 };
 
-/* ─── Backend workflow JSON → React Flow ─── */
-export function workflowToFlowGraph(workflow) {
+const paletteNodeTypes = [
+  { type: 'phase-header', label: 'Phase Header', icon: 'Activity' },
+  { type: 'phase-gate', label: 'Phase Gate', icon: 'CheckCircle' },
+];
+
+/* ─── Backend JSON → WorkflowBuilder format ─── */
+function toWBFormat(workflow) {
   const nodes = (workflow.nodes || []).map(n => ({
     id: n.id,
-    type: n.type === 'phase-header' ? 'phase-header' : n.type === 'phase-gate' ? 'phase-gate' : 'default',
+    type: n.type,                              // ReactFlow node type
     position: { x: n.position?.[0] ?? 0, y: n.position?.[1] ?? 0 },
     data: {
-      label: n.name || '',
-      color: n.data?.color || '#475569',
-      summary: n.data?.summary || '',
-      phase: n.data?.phase || 0,
+      type: n.type,                            // maps to palette item
+      icon: n.type === 'phase-header' ? 'Activity' : 'CheckCircle',
+      label: n.name,
+      properties: {
+        ...(n.data || {}),
+        color: n.data?.color || '#475569',
+        phase: n.data?.phase,
+        gate_index: n.data?.gate_index,
+        summary: n.data?.summary || '',
+      },
     },
   }));
 
   const edges = [];
   Object.entries(workflow.connections || {}).forEach(([srcId, targets]) => {
-    (targets.main?.[0] || []).forEach(t => {
-      const srcExists = nodes.some(n => n.id === srcId);
-      const tgtExists = nodes.some(n => n.id === t.node);
-      if (srcExists && tgtExists) {
-        const srcNode = nodes.find(n => n.id === srcId);
-        const srcColor = srcNode?.data?.color || '#94a3b8';
-        const isPhaseJump = srcNode?.type === 'phase-gate' && t.node.includes('_header');
-        edges.push({
-          id: `e-${srcId}-${t.node}`,
-          source: srcId,
-          target: t.node,
-          type: isPhaseJump ? 'smoothstep' : 'smoothstep',
-          animated: true,
-          style: { stroke: srcColor, strokeWidth: isPhaseJump ? 3 : 2 },
-        });
-      }
+    const tgtList = targets.main?.[0] || [];
+    tgtList.forEach(t => {
+      const srcNode = nodes.find(n => n.id === srcId);
+      const srcColor = srcNode?.data?.properties?.color || '#94a3b8';
+      const isPhaseJump = srcNode?.data?.type === 'phase-gate' && t.node.includes('_header');
+      edges.push({
+        id: `e-${srcId}-${t.node}`,
+        source: srcId,
+        target: t.node,
+        type: 'smoothstep',
+        animated: true,
+        style: {
+          stroke: srcColor,
+          strokeWidth: isPhaseJump ? 3 : 2,
+        },
+        data: { label: '' },
+      });
     });
   });
 
   return { nodes, edges };
 }
 
-/* ─── The viewer ─── */
-export default function WorkflowGraph({ workflow, onClose, title, compact }) {
-  const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => workflow ? workflowToFlowGraph(workflow) : { nodes: [], edges: [] },
+/* ─── Read-only enforcer — must be child of WorkflowBuilderRoot ─── */
+function ReadOnlyEnforcer() {
+  const { setReadOnly } = useWorkflowBuilderActions();
+  useEffect(() => {
+    setReadOnly(true);
+  }, [setReadOnly]);
+  return null;
+}
+
+/* ─── Main viewer ─── */
+export default function WorkflowGraph({ workflow, compact }) {
+  const initData = useMemo(
+    () => workflow ? toWBFormat(workflow) : { nodes: [], edges: [] },
     [workflow]
   );
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
-
-  // Sync state when async workflow data arrives
-  useEffect(() => {
-    setNodes(initNodes);
-    setEdges(initEdges);
-  }, [initNodes, initEdges, setNodes, setEdges]);
 
   if (!workflow) {
     return (
@@ -131,61 +146,32 @@ export default function WorkflowGraph({ workflow, onClose, title, compact }) {
     );
   }
 
-  const graphHeight = compact ? '50vh' : '70vh';
-  const header = compact ? null : (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-      <div>
-        <h3 className="font-black text-slate-800 text-lg">
-          <i className="fas fa-project-diagram text-blue-600 mr-2" />
-          {title || workflow.name || 'Standard Delivery Methodology'}
-        </h3>
-        <p className="text-xs text-slate-500 mt-0.5">
-          {workflow.nodes?.length || 0} nodes · {Object.keys(workflow.connections || {}).length || 0} connections
-        </p>
-      </div>
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all"
-        >
-          <i className="fas fa-times mr-1" /> Close
-        </button>
-      )}
-    </div>
-  );
+  const h = compact ? '50vh' : '70vh';
 
   return (
-    <div className={`bg-white ${compact ? 'rounded-xl' : 'rounded-2xl'} shadow-sm border border-slate-200 overflow-hidden`}>
-      {header}
-      <div style={{ height: graphHeight, width: '100%' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.4, maxZoom: 1.5 }}
-          minZoom={0.15}
-          maxZoom={2}
-          defaultViewport={{ x: 0, y: 0, zoom: 0.55 }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          defaultEdgeOptions={{
-            type: 'smoothstep',
-            animated: true,
-            style: { strokeWidth: 2 },
-          }}
-        >
-          <Background color="#e2e8f0" gap={20} />
-          <Controls className="!rounded-xl !shadow-md !border-slate-200" />
-          <MiniMap
-            nodeColor={n => n.data?.color || '#475569'}
-            className="!rounded-xl !shadow-md !border-slate-200"
-            maskColor="rgba(0,0,0,.05)"
-          />
-        </ReactFlow>
-      </div>
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <WorkflowBuilderRoot
+        initialNodes={initData.nodes}
+        initialEdges={initData.edges}
+        nodeTypes={paletteNodeTypes}
+        layoutDirection="RIGHT"
+        name="Standard Delivery Methodology"
+        integration={{ strategy: 'localStorage' }}
+        reactFlowProps={{
+          nodeTypes: rfNodeTypes,
+          fitView: true,
+          fitViewOptions: { padding: 0.3, maxZoom: 1.5 },
+          minZoom: 0.1,
+          maxZoom: 2,
+          nodesDraggable: false,
+          nodesConnectable: false,
+        }}
+      >
+        <ReadOnlyEnforcer />
+        <div style={{ height: h, width: '100%' }}>
+          <WorkflowBuilderCanvas />
+        </div>
+      </WorkflowBuilderRoot>
     </div>
   );
 }
