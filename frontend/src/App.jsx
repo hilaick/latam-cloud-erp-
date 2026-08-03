@@ -16,6 +16,7 @@ import GlobalSchedule from './components/views/GlobalSchedule';
 import GlobalProcessView from './components/views/GlobalProcessView';
 import PlaybookStudio from './components/views/PlaybookStudio';
 import UserManagement from './components/views/UserManagement';
+import WorkflowGraphView from './components/views/WorkflowGraphView';
 import GlobalGlossary from './components/utils/GlobalGlossary';
 import GlobalCommandDrawer from './components/utils/GlobalCommandDrawer';
 import HermesModal from './components/HermesModal';
@@ -50,7 +51,7 @@ function App() {
         window.location.reload(); 
     };
 
-    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users'];
+    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow'];
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     // ── Auth loading state ──
@@ -104,6 +105,7 @@ function App() {
                     
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     {activePhase === 'playbooks' && <PlaybookStudio />}
+                    {activePhase === 'workflow' && <WorkflowGraphView />}
                     {activePhase === 'users' && <UserManagement />}
                     
                     {!knownRoutes.includes(activePhase) && (

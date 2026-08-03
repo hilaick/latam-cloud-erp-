@@ -212,6 +212,8 @@ def serve(path):
                 if os.path.exists(assets_dir):
                     js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
                     if js_files:
+                        # Pick the newest JS file by modification time
+                        js_files.sort(key=lambda f: os.path.getmtime(os.path.join(assets_dir, f)), reverse=True)
                         actual_js_file = js_files[0]
                         # Find and replace the JS file reference in the HTML
                         import re

@@ -29,6 +29,7 @@ export default function Sidebar() {
         { id: 'process', icon: 'fa-route', label: 'Process', mobileLabel: 'Process' },
         { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
         { id: 'migration_monitor', icon: 'fa-tv', label: 'Live NOC', mobileLabel: 'NOC' },
+        { id: 'workflow', icon: 'fa-project-diagram', label: 'Workflow Graph', mobileLabel: 'Flow' },
     ];
 
     const activeItem = navItems.find(item => item.id === activePhase && activeProjectId === 'none') || navItems[0];

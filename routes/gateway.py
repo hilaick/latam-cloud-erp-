@@ -553,7 +553,7 @@ def generate_n8n_workflow():
     Request: {project_id, customer_id} (optional — defaults to generic template)
     Response: {success, workflow_json, summary}
     """
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     project_id = data.get('project_id')
     customer_id = data.get('customer_id')
     project_name = "LATAM ERP Migration"
@@ -720,43 +720,46 @@ def generate_n8n_workflow():
     ]
 
     connections = {
-        "trigger": {"main": [[{"node": "phase1_arb", "type": "main", "index": 0}]]},
-        "phase1_arb": {"main": [[{"node": "phase1_gate", "type": "main", "index": 0}]]},
-        "phase1_gate": {"main": [
-            [{"node": "phase2_discovery", "type": "main", "index": 0}],
-            [{"node": "phase1_arb", "type": "main", "index": 0}]
+        "\U0001f9ed Migration Trigger": {"main": [[{"node": "\U0001f4cb Phase 1: ARB Handover", "type": "main", "index": 0}]]},
+        "\U0001f4cb Phase 1: ARB Handover": {"main": [[{"node": "\u2705 Phase 1 Gate: SOW Uploaded?", "type": "main", "index": 0}]]},
+        "\u2705 Phase 1 Gate: SOW Uploaded?": {"main": [
+            [{"node": "\U0001f50d Phase 2: Has Source Credentials?", "type": "main", "index": 0}],
+            [{"node": "\U0001f4cb Phase 1: ARB Handover", "type": "main", "index": 0}]
         ]},
-        "phase2_discovery": {"main": [
-            [{"node": "phase2_source_scan", "type": "main", "index": 0}],
-            [{"node": "phase2_topology", "type": "main", "index": 0}]
+        "\U0001f50d Phase 2: Has Source Credentials?": {"main": [
+            [{"node": "\U0001f4e1 Phase 2.1: NOC Source Scan", "type": "main", "index": 0}],
+            [{"node": "\U0001f3d7\ufe0f Phase 2.2: Target Topology", "type": "main", "index": 0}]
         ]},
-        "phase2_source_scan": {"main": [[{"node": "phase2_topology", "type": "main", "index": 0}]]},
-        "phase2_topology": {"main": [[{"node": "phase2_mgc", "type": "main", "index": 0}]]},
-        "phase2_mgc": {"main": [[{"node": "phase2_dtrb", "type": "main", "index": 0}]]},
-        "phase2_dtrb": {"main": [[{"node": "phase3_strategy", "type": "main", "index": 0}]]},
-        "phase3_strategy": {"main": [[{"node": "readiness_gateway", "type": "main", "index": 0}]]},
-        "readiness_gateway": {"main": [[{"node": "readiness_gate", "type": "main", "index": 0}]]},
-        "readiness_gate": {"main": [
-            [{"node": "phase4_execution", "type": "main", "index": 0}],
-            [{"node": "phase3_strategy", "type": "main", "index": 0}]
+        "\U0001f4e1 Phase 2.1: NOC Source Scan": {"main": [[{"node": "\U0001f3d7\ufe0f Phase 2.2: Target Topology", "type": "main", "index": 0}]]},
+        "\U0001f3d7\ufe0f Phase 2.2: Target Topology": {"main": [[{"node": "\u2696\ufe0f Phase 2.3: MgC Reconciliation", "type": "main", "index": 0}]]},
+        "\u2696\ufe0f Phase 2.3: MgC Reconciliation": {"main": [[{"node": "\U0001f512 Phase 2.4: DTRB Scope Lock", "type": "main", "index": 0}]]},
+        "\U0001f512 Phase 2.4: DTRB Scope Lock": {"main": [[{"node": "\U0001f4ca Phase 3: Strategy & Planning", "type": "main", "index": 0}]]},
+        "\U0001f4ca Phase 3: Strategy & Planning": {"main": [[{"node": "\U0001f6e1\ufe0f Phase 4.0: Readiness Gateway", "type": "main", "index": 0}]]},
+        "\U0001f6e1\ufe0f Phase 4.0: Readiness Gateway": {"main": [[{"node": "\U0001f6a6 Gate: All Checks Passed?", "type": "main", "index": 0}]]},
+        "\U0001f6a6 Gate: All Checks Passed?": {"main": [
+            [{"node": "\U0001f680 Phase 4: Execution Control (Per Wave)", "type": "main", "index": 0}],
+            [{"node": "\U0001f4ca Phase 3: Strategy & Planning", "type": "main", "index": 0}]
         ]},
-        "phase4_execution": {"main": [[{"node": "phase4_terraform", "type": "main", "index": 0}]]},
-        "phase4_terraform": {"main": [[{"node": "phase4_agents", "type": "main", "index": 0}]]},
-        "phase4_agents": {"main": [[{"node": "phase4_sync", "type": "main", "index": 0}]]},
-        "phase4_sync": {"main": [[{"node": "phase4_monitor", "type": "main", "index": 0}]]},
-        "phase4_monitor": {"main": [[{"node": "phase5_cutover", "type": "main", "index": 0}]]},
-        "phase5_cutover": {"main": [[{"node": "phase5_noc", "type": "main", "index": 0}]]},
-        "phase5_noc": {"main": [[{"node": "phase5_commercial", "type": "main", "index": 0}]]},
-        "phase5_commercial": {"main": [[{"node": "phase5_war", "type": "main", "index": 0}]]},
-        "phase5_war": {"main": [[{"node": "project_close", "type": "main", "index": 0}]]}
+        "\U0001f680 Phase 4: Execution Control (Per Wave)": {"main": [[{"node": "\U0001f3d7\ufe0f 4.1: Deploy Landing Zone", "type": "main", "index": 0}]]},
+        "\U0001f3d7\ufe0f 4.1: Deploy Landing Zone": {"main": [[{"node": "\U0001f4e6 4.2: Install SMS/HSS Agents", "type": "main", "index": 0}]]},
+        "\U0001f4e6 4.2: Install SMS/HSS Agents": {"main": [[{"node": "\U0001f504 4.3: Start DRS/SMS Sync", "type": "main", "index": 0}]]},
+        "\U0001f504 4.3: Start DRS/SMS Sync": {"main": [[{"node": "\u23f3 4.4: Monitor Sync Completion", "type": "main", "index": 0}]]},
+        "\u23f3 4.4: Monitor Sync Completion": {"main": [[{"node": "\u2702\ufe0f Phase 5.1: Cutover Execution", "type": "main", "index": 0}]]},
+        "\u2702\ufe0f Phase 5.1: Cutover Execution": {"main": [[{"node": "\U0001f4e1 Phase 5.2: Hybrid NOC Scan", "type": "main", "index": 0}]]},
+        "\U0001f4e1 Phase 5.2: Hybrid NOC Scan": {"main": [[{"node": "\U0001f4b0 Phase 5.3: Commercial True-Up", "type": "main", "index": 0}]]},
+        "\U0001f4b0 Phase 5.3: Commercial True-Up": {"main": [[{"node": "\U0001f3c5 Phase 5.4: WAR Assessment", "type": "main", "index": 0}]]},
+        "\U0001f3c5 Phase 5.4: WAR Assessment": {"main": [[{"node": "\U0001f3c1 Project Closed", "type": "main", "index": 0}]]}
     }
 
     workflow = {
-        "name": f"ERP Migration — {customer_name}: {project_name}",
+        "name": f"ERP Migration \u2014 {customer_name}: {project_name}",
         "nodes": nodes,
         "connections": connections,
-        "settings": {"timezone": "America/Sao_Paulo"},
-        "versionId": "1.0.0",
+        "settings": {
+            "saveExecutionProgress": True,
+            "saveManualExecutions": True,
+            "timezone": "America/Sao_Paulo"
+        },
         "active": False
     }
 
@@ -783,69 +786,307 @@ def generate_n8n_workflow():
 # ─────────────────────────────────────────────
 @gateway_bp.route('/deploy-n8n-workflow', methods=['POST'])
 def deploy_n8n_workflow():
-    """Proxy: deploy workflow JSON to n8n server-side, avoiding browser CORS."""
+    """Proxy: deploy workflow JSON to n8n server-side using the public REST API
+    (api/v1), avoiding browser CORS.  Uses the API key from hermes_n8n_api_key
+    file rather than fragile session cookies.
+    """
     import requests as http_requests
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     workflow = data.get('workflow')
     if not workflow:
         return jsonify({"success": False, "error": "No workflow provided"}), 400
 
     n8n_base = data.get('n8n_url', 'http://localhost:5678')
-    n8n_workflows_url = f'{n8n_base}/rest/workflows'
 
-    # Auth strategy: try API key first; fall back to session login on 401
-    api_key = current_app.config.get('N8N_API_KEY') or os.environ.get('N8N_API_KEY')
-    n8n_user = os.environ.get('N8N_BASIC_AUTH_USER', 'admin')
-    n8n_pass = os.environ.get('N8N_BASIC_AUTH_PASSWORD', 'latam-erp-n8n-2026')
-    
-    def _auth_headers(with_api_key=True):
-        h = {'Content-Type': 'application/json'}
-        if with_api_key and api_key:
-            h['X-N8N-API-KEY'] = api_key
-            return h, 'api_key'
-        # Session login
-        try:
-            login_resp = http_requests.post(
-                f'{n8n_base}/rest/login',
-                json={'emailOrLdapLoginId': n8n_user, 'password': n8n_pass},
-                timeout=10, headers={'Content-Type': 'application/json'})
-            if login_resp.ok and login_resp.cookies:
-                h['Cookie'] = '; '.join(f'{k}={v}' for k, v in login_resp.cookies.items())
-                return h, 'session'
-        except Exception:
-            pass
-        h['Authorization'] = 'Basic ' + __import__('base64').b64encode(
-            f'{n8n_user}:{n8n_pass}'.encode()).decode()
-        return h, 'basic'
-
-    headers, auth_method = _auth_headers(with_api_key=bool(api_key))
-    
+    # --- API key ---
+    api_key_path = os.environ.get('N8N_API_KEY_FILE', '/etc/hermes_n8n_api_key')
     try:
-        resp = http_requests.post(n8n_workflows_url, json=workflow, timeout=15, headers=headers)
-        
-        # If API key failed, retry with session
-        if resp.status_code == 401 and auth_method == 'api_key':
-            logger.info('n8n API key rejected, falling back to session auth')
-            headers, auth_method = _auth_headers(with_api_key=False)
-            resp = http_requests.post(n8n_workflows_url, json=workflow, timeout=15, headers=headers)
+        with open(api_key_path) as f:
+            api_key = f.read().strip()
+    except FileNotFoundError:
+        api_key = os.environ.get('N8N_API_KEY', '')
+    if not api_key:
+        logger.error("No n8n API key available")
+        return jsonify({"success": False, "error": "n8n API key not configured"}), 500
+
+    headers = {
+        "X-N8N-API-KEY": api_key,
+        "Content-Type": "application/json"
+    }
+
+    # --- Existing workflow id?  Do update instead of create ---
+    existing_id = workflow.get("id") or data.get("workflow_id")
+
+    # --- Normalise the workflow payload to public-API shape ---
+    # The public API expects { name, nodes, connections, settings } at root.
+    # Remove internal-only fields that cause schema rejections.
+    clean = {
+        "name": workflow.get("name", "ERP Migration Workflow"),
+        "nodes": workflow.get("nodes", []),
+        "connections": workflow.get("connections", {}),
+        "settings": workflow.get("settings", {
+            "saveExecutionProgress": True,
+            "saveManualExecutions": True,
+        }),
+    }
+    # active is read-only on create; only include for updates
+    if existing_id and "active" in workflow:
+        clean["active"] = workflow["active"]
+
+    try:
+        if existing_id:
+            # Update existing workflow
+            url = f"{n8n_base}/api/v1/workflows/{existing_id}"
+            resp = http_requests.put(url, json=clean, headers=headers, timeout=15)
+            action = "update"
+        else:
+            # Create new workflow
+            url = f"{n8n_base}/api/v1/workflows"
+            resp = http_requests.post(url, json=clean, headers=headers, timeout=15)
+            action = "create"
+
+        logger.info(f"n8n {action} workflow: {resp.status_code}")
+
         result = {
             "success": resp.ok,
             "status_code": resp.status_code,
-            "deployed": resp.ok
+            "deployed": resp.ok,
+            "action": action,
         }
         try:
-            result["n8n_response"] = resp.json()
+            resp_json = resp.json()
+            result["n8n_response"] = resp_json
+            if resp.ok:
+                result["workflow_id"] = resp_json.get("id", existing_id)
+                result["workflow_name"] = resp_json.get("name", "")
         except Exception:
             result["n8n_response"] = resp.text[:500]
 
         if resp.status_code == 401:
             result["error"] = (
-                "n8n authentication failed. The configured API key may be invalid/expired, "
-                "or n8n session auth is not working. Generate a new API key from the n8n UI "
-                "(Settings → API → Generate API Key) and update N8N_API_KEY."
+                "n8n API key rejected (401). The key may be invalid/expired. "
+                "Regenerate a new key and store at /etc/hermes_n8n_api_key, "
+                "then restart the Flask service."
             )
+        elif resp.status_code == 400:
+            # Surface any structure validation detail
+            msg = resp_json.get("message", resp.text) if 'resp_json' in dir() else resp.text
+            result["error"] = f"n8n rejected workflow structure: {msg}"
+
         return jsonify(result)
-    except http_requests.ConnectionError:
-        return jsonify({"success": False, "error": f"Cannot reach n8n at {n8n_base}. Is n8n running?"}), 502
+
+    except http_requests.exceptions.ConnectionError:
+        logger.error("Cannot reach n8n at %s", n8n_base)
+        return jsonify({"success": False, "error": f"Cannot connect to n8n at {n8n_base}"}), 502
     except Exception as e:
+        logger.exception("n8n deploy failed")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# 9. N8N WORKFLOW PROXY — transparent proxy with session auth
+# ─────────────────────────────────────────────
+
+# Module-level cache for the n8n session cookie (avoids login per request)
+_n8n_session_cookie = None
+_n8n_session_expiry = 0
+
+
+def _get_n8n_session():
+    """Return a valid n8n session cookie, logging in if necessary."""
+    global _n8n_session_cookie, _n8n_session_expiry
+    import time as _time
+    import requests as http_requests
+
+    now = _time.time()
+    # Refresh if within 5 minutes of expiry (default n8n session ~30 min)
+    if _n8n_session_cookie and now < (_n8n_session_expiry - 300):
+        return _n8n_session_cookie
+
+    n8n_base = 'http://localhost:5678'
+    login_url = f'{n8n_base}/rest/login'
+    # n8n 2.32.7 uses 'emailOrLdapLoginId' (not 'email')
+    creds = {
+        'emailOrLdapLoginId': os.environ.get('N8N_ADMIN_EMAIL', 'admin@erp-migration.local'),
+        'password': os.environ.get('N8N_ADMIN_PASSWORD', 'latam-erp-n8n-2026'),
+    }
+    try:
+        session = http_requests.Session()
+        resp = session.post(login_url, json=creds, timeout=10)
+        if resp.status_code == 200:
+            cookies = session.cookies
+            # n8n uses 'n8n-auth' JWT cookie
+            for cookie in cookies:
+                if cookie.name == 'n8n-auth':
+                    _n8n_session_cookie = f'n8n-auth={cookie.value}'
+                    _n8n_session_expiry = now + (cookie.expires - now if cookie.expires else 1800)
+                    logger.info(f'n8n session acquired (cookie: n8n-auth, expires in {_n8n_session_expiry - now:.0f}s)')
+                    return _n8n_session_cookie
+            # Fallback: join all cookies
+            _n8n_session_cookie = '; '.join(f'{c.name}={c.value}' for c in cookies)
+            _n8n_session_expiry = now + 1800
+            logger.info(f'n8n session acquired (all cookies: {len(cookies)} total)')
+            return _n8n_session_cookie
+        else:
+            logger.error(f'n8n login failed: {resp.status_code} {resp.text[:300]}')
+    except Exception as e:
+        logger.error(f'n8n login error: {e}')
+    return None
+
+
+@gateway_bp.route('/n8n-proxy/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+@gateway_bp.route('/n8n-proxy/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+def n8n_proxy(path):
+    """Transparent reverse proxy to n8n with automatic session authentication.
+    All internal communication uses localhost:5678.  The browser sees
+    everything under /api/gateway/n8n-proxy/ — no redirects, no login prompt.
+    """
+    import requests as http_requests
+    from flask import Response
+
+    n8n_base = 'http://localhost:5678'
+    target = f'{n8n_base}/{path}' if path else n8n_base
+    qs = request.query_string.decode()
+    if qs:
+        target += f'?{qs}'
+
+    # --- Build proxy headers ---
+    proxy_headers = {}
+    for h in ['accept', 'accept-encoding', 'accept-language', 'cache-control',
+              'content-type', 'x-n8n-api-key', 'cookie', 'referer', 'origin']:
+        val = request.headers.get(h)
+        if val:
+            proxy_headers[h] = val
+
+    # Inject n8n session cookie for authenticated access
+    session_cookie = _get_n8n_session()
+    if session_cookie:
+        existing = proxy_headers.get('cookie', '')
+        if existing:
+            proxy_headers['cookie'] = f'{existing}; {session_cookie}'
+        else:
+            proxy_headers['cookie'] = session_cookie
+
+    # --- Forward the request ---
+    try:
+        resp = http_requests.request(
+            method=request.method,
+            url=target,
+            headers=proxy_headers,
+            data=request.get_data() or None,
+            timeout=30,
+            allow_redirects=False,
+        )
+    except http_requests.exceptions.ConnectionError:
+        logger.error(f'n8n proxy: cannot reach {n8n_base}')
+        return jsonify({'success': False, 'error': f'Cannot reach n8n at {n8n_base}'}), 502
+
+    # --- Handle n8n redirects (follow internally) ---
+    if resp.status_code in (301, 302, 303, 307, 308):
+        location = resp.headers.get('Location', '')
+        if location:
+            # If redirect is to n8n's localhost, follow internally
+            if 'localhost:5678' in location or location.startswith('/'):
+                if location.startswith('/'):
+                    redirect_target = f'{n8n_base}{location}'
+                else:
+                    redirect_target = location
+                # Follow with session cookie
+                redir_headers = dict(proxy_headers)
+                try:
+                    resp2 = http_requests.request(
+                        method='GET', url=redirect_target,
+                        headers=redir_headers, timeout=30,
+                        allow_redirects=False,
+                    )
+                    resp = resp2
+                except Exception:
+                    pass  # fall through to return the redirect itself
+            else:
+                # External redirect — rewrite to stay within proxy
+                # (shouldn't normally happen for n8n internals)
+                pass
+
+    # --- Build response ---
+    excluded = {'content-encoding', 'transfer-encoding', 'connection'}
+    out_headers = {}
+    for h, v in resp.headers.items():
+        if h.lower() not in excluded:
+            # Don't forward n8n's Set-Cookie (Flask manages session)
+            if h.lower() == 'set-cookie':
+                continue
+            out_headers[h] = v
+
+    # Allow iframe embedding from our own origin
+    out_headers['X-Frame-Options'] = 'SAMEORIGIN'
+
+    # Strip COOP/COEP headers that break non-HTTPS origins
+    for hdr in list(out_headers.keys()):
+        hl = hdr.lower()
+        if hl in ('cross-origin-opener-policy', 'cross-origin-embedder-policy',
+                   'cross-origin-opener-policy-report-only', 'origin-agent-cluster'):
+            del out_headers[hdr]
+
+    # --- Rewrite content ---
+    content = resp.content
+    ct = out_headers.get('Content-Type', '')
+
+    # Special handling for base-path.js — n8n hardcodes BASE_PATH = '/',
+    # which causes all JS-constructed asset/API URLs to bypass the proxy.
+    if 'javascript' in ct and 'base-path.js' in request.path:
+        try:
+            body = content.decode('utf-8', errors='replace')
+            proxy_prefix = '/api/gateway/n8n-proxy'
+            body = body.replace("window.BASE_PATH = '/'", f"window.BASE_PATH = '{proxy_prefix}/'")
+            content = body.encode('utf-8')
+            # Aggressive anti-cache — corporate proxies often ignore standard headers
+            out_headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0, private'
+            out_headers['Pragma'] = 'no-cache'
+            out_headers['Expires'] = 'Thu, 01 Jan 1970 00:00:00 GMT'
+            out_headers['Surrogate-Control'] = 'no-store'
+            out_headers['Vary'] = '*'
+            logger.info('n8n proxy: rewritten BASE_PATH in base-path.js')
+        except Exception:
+            pass
+
+    # HTML path rewriting
+    if 'text/html' in ct and content:
+        try:
+            import time
+            body = content.decode('utf-8', errors='replace')
+            proxy_prefix = '/api/gateway/n8n-proxy'
+            # Cache-busting seed — changes every deploy
+            _cache_bust = str(int(time.time()))[-6:]
+            # Rewrite src="/..." and href="/..." etc.
+            import re
+            def _rewrite_attr(m):
+                attr = m.group(1)
+                q = m.group(2)[0]
+                path = m.group(2)[1:-1]
+                if path.startswith(proxy_prefix) or '://' in path or path.startswith('data:'):
+                    return m.group(0)
+                suffix = ''
+                if 'base-path.js' in path or 'posthog.init.js' in path:
+                    suffix = f'?_cb={_cache_bust}'
+                return f'{attr}={q}{proxy_prefix}{path}{suffix}{q}'
+            body = re.sub(r'(src|href|action)=("[^"]*"|\'[^\']*\')', _rewrite_attr, body)
+            # Rewrite REST endpoint meta tag (base64-encoded path)
+            # <meta name="n8n:config:rest-endpoint" content="cmVzdA==" />
+            body = re.sub(
+                r'(<meta\s+name="n8n:config:rest-endpoint"\s+content=")([^"]+)(")',
+                lambda m: f'{m.group(1)}YXBpL2dhdGV3YXkvbjhuLXByb3h5L3Jlc3Q={m.group(3)}',
+                body,
+            )
+            # Rewrite inline JS references to rest endpoint
+            body = body.replace('"/rest/', f'"{proxy_prefix}/rest/')
+            body = body.replace("'/rest/", f"'{proxy_prefix}/rest/")
+            content = body.encode('utf-8')
+        except Exception:
+            pass  # On any error, pass through unmodified content
+
+    return Response(content, status=resp.status_code, headers=out_headers)
+
+
+# ─────────────────────────────────────────────
+# 10. Health
+# ─────────────────────────────────────────────
