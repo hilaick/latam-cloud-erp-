@@ -574,182 +574,62 @@ def generate_n8n_workflow():
         if customer:
             customer_name = customer.name or customer_name
 
-    # ─── Define the migration workflow as n8n nodes ───
-    nodes = [
-        {
-            "id": "trigger", "name": "🧭 Migration Trigger",
-            "type": "n8n-nodes-base.manualTrigger", "position": [640, 100],
-            "parameters": {}
-        },
-        {
-            "id": "phase1_arb", "name": "📋 Phase 1: ARB Handover",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 240],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-1-validate",
-                           "authentication": "genericCredentialType", "sendBody": True}
-        },
-        {
-            "id": "phase1_gate", "name": "✅ Phase 1 Gate: SOW Uploaded?",
-            "type": "n8n-nodes-base.if", "position": [640, 380],
-            "parameters": {"conditions": {"boolean": [{"value1": "={{$json.body.success}}", "operation": "equals", "value2": True}]}}
-        },
-        {
-            "id": "phase2_discovery", "name": "🔍 Phase 2: Has Source Credentials?",
-            "type": "n8n-nodes-base.switch", "position": [260, 520],
-            "parameters": {"dataPropertyName": "hasSourceCredentials",
-                           "options": {"rules": [{"value": True, "output": 0}, {"value": False, "output": 1}]}}
-        },
-        {
-            "id": "phase2_source_scan", "name": "📡 Phase 2.1: NOC Source Scan",
-            "type": "n8n-nodes-base.httpRequest", "position": [80, 660],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/cloud/inventory",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [
-                               {"name": "customer_id", "value": customer_id or "{{customer_id}}"},
-                               {"name": "mode", "value": "single"},
-                               {"name": "use_source_credentials", "value": True}]}}
-        },
-        {
-            "id": "phase2_topology", "name": "🏗️ Phase 2.2: Target Topology",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 660],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-2-topology",
-                           "sendBody": True}
-        },
-        {
-            "id": "phase2_mgc", "name": "⚖️ Phase 2.3: MgC Reconciliation",
-            "type": "n8n-nodes-base.httpRequest", "position": [1200, 660],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/cloud/inventory",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [
-                               {"name": "customer_id", "value": customer_id or "{{customer_id}}"},
-                               {"name": "mode", "value": "single"},
-                               {"name": "use_source_credentials", "value": True}]}}
-        },
-        {
-            "id": "phase2_dtrb", "name": "🔒 Phase 2.4: DTRB Scope Lock",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 800],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-2-dtrb",
-                           "sendBody": True}
-        },
-        {
-            "id": "phase3_strategy", "name": "📊 Phase 3: Strategy & Planning",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 940],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-3-planning",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [
-                               {"name": "project_id", "value": project_id or "{{project_id}}"},
-                               {"name": "waves", "value": 3},
-                               {"name": "include_finops", "value": True}]}}
-        },
-        {
-            "id": "readiness_gateway", "name": "🛡️ Phase 4.0: Readiness Gateway",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 1080],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/full-check",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [
-                               {"name": "customer_id", "value": customer_id or "{{customer_id}}"},
-                               {"name": "project_id", "value": project_id or "{{project_id}}"}]}}
-        },
-        {
-            "id": "readiness_gate", "name": "🚦 Gate: All Checks Passed?",
-            "type": "n8n-nodes-base.if", "position": [640, 1220],
-            "parameters": {"conditions": {"boolean": [{"value1": "={{$json.body.ready}}", "operation": "equals", "value2": True}]}}
-        },
-        {
-            "id": "phase4_execution", "name": "🚀 Phase 4: Execution Control (Per Wave)",
-            "type": "n8n-nodes-base.splitInBatches", "position": [640, 1360],
-            "parameters": {"batchSize": 1, "options": {}}
-        },
-        {
-            "id": "phase4_terraform", "name": "🏗️ 4.1: Deploy Landing Zone",
-            "type": "n8n-nodes-base.httpRequest", "position": [200, 1500],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-4-deploy",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [{"name": "action", "value": "terraform_apply"}]}}
-        },
-        {
-            "id": "phase4_agents", "name": "📦 4.2: Install SMS/HSS Agents",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 1500],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-4-agents",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [{"name": "action", "value": "install_agents"}]}}
-        },
-        {
-            "id": "phase4_sync", "name": "🔄 4.3: Start DRS/SMS Sync",
-            "type": "n8n-nodes-base.httpRequest", "position": [1080, 1500],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-4-sync",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [{"name": "action", "value": "start_sync"}]}}
-        },
-        {
-            "id": "phase4_monitor", "name": "⏳ 4.4: Monitor Sync Completion",
-            "type": "n8n-nodes-base.wait", "position": [640, 1640],
-            "parameters": {"resume": "webhook", "options": {}}
-        },
-        {
-            "id": "phase5_cutover", "name": "✂️ Phase 5.1: Cutover Execution",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 1780],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-5-cutover",
-                           "sendBody": True}
-        },
-        {
-            "id": "phase5_noc", "name": "📡 Phase 5.2: Hybrid NOC Scan",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 1920],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/cloud/inventory",
-                           "sendBody": True,
-                           "bodyParameters": {"parameters": [
-                               {"name": "customer_id", "value": customer_id or "{{customer_id}}"},
-                               {"name": "mode", "value": "hybrid"}]}}
-        },
-        {
-            "id": "phase5_commercial", "name": "💰 Phase 5.3: Commercial True-Up",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 2060],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-5-commercial",
-                           "sendBody": True}
-        },
-        {
-            "id": "phase5_war", "name": "🏅 Phase 5.4: WAR Assessment",
-            "type": "n8n-nodes-base.httpRequest", "position": [640, 2200],
-            "parameters": {"method": "POST", "url": "http://localhost:9119/api/gateway/phase-5-war",
-                           "sendBody": True}
-        },
-        {
-            "id": "project_close", "name": "🏁 Project Closed",
-            "type": "n8n-nodes-base.noOp", "position": [640, 2340],
-            "parameters": {}
-        }
+    # ─── Standard Delivery Methodology — 5 phases with gates ───
+    # Phase colours (match GlobalProcessView phases)
+    phases_config = [
+        {"id": 1, "name": "Discovery & Assessment", "color": "#3b82f6", "summary": "Analyze source landscape & target requirements"},
+        {"id": 2, "name": "Infrastructure Setup", "color": "#6366f1", "summary": "Provision target cloud foundation"},
+        {"id": 3, "name": "Data Migration", "color": "#f59e0b", "summary": "Move databases & storage with minimal downtime"},
+        {"id": 4, "name": "Application Migration", "color": "#10b981", "summary": "Rehost, replatform, or refactor workloads"},
+        {"id": 5, "name": "Cutover & Hypercare", "color": "#8b5cf6", "summary": "Final sync, go-live, and stabilization"},
+    ]
+    gates_by_phase = [
+        ["MgC Agent audit", "Source topology inventory", "Target BoM parsed", "Gap analysis complete"],
+        ["VPC/network provisioned", "VPN/Direct Connect up", "Security groups configured", "DNS/routing verified"],
+        ["DRS sync healthy", "Schema converted", "Data validated", "Cutover window scheduled"],
+        ["SMS agent healthy", "App dependencies mapped", "Test environment verified", "UAT signed off"],
+        ["Final DRS sync", "DNS swing complete", "Monitoring green", "Hypercare 72h passed"],
     ]
 
-    connections = {
-        "\U0001f9ed Migration Trigger": {"main": [[{"node": "\U0001f4cb Phase 1: ARB Handover", "type": "main", "index": 0}]]},
-        "\U0001f4cb Phase 1: ARB Handover": {"main": [[{"node": "\u2705 Phase 1 Gate: SOW Uploaded?", "type": "main", "index": 0}]]},
-        "\u2705 Phase 1 Gate: SOW Uploaded?": {"main": [
-            [{"node": "\U0001f50d Phase 2: Has Source Credentials?", "type": "main", "index": 0}],
-            [{"node": "\U0001f4cb Phase 1: ARB Handover", "type": "main", "index": 0}]
-        ]},
-        "\U0001f50d Phase 2: Has Source Credentials?": {"main": [
-            [{"node": "\U0001f4e1 Phase 2.1: NOC Source Scan", "type": "main", "index": 0}],
-            [{"node": "\U0001f3d7\ufe0f Phase 2.2: Target Topology", "type": "main", "index": 0}]
-        ]},
-        "\U0001f4e1 Phase 2.1: NOC Source Scan": {"main": [[{"node": "\U0001f3d7\ufe0f Phase 2.2: Target Topology", "type": "main", "index": 0}]]},
-        "\U0001f3d7\ufe0f Phase 2.2: Target Topology": {"main": [[{"node": "\u2696\ufe0f Phase 2.3: MgC Reconciliation", "type": "main", "index": 0}]]},
-        "\u2696\ufe0f Phase 2.3: MgC Reconciliation": {"main": [[{"node": "\U0001f512 Phase 2.4: DTRB Scope Lock", "type": "main", "index": 0}]]},
-        "\U0001f512 Phase 2.4: DTRB Scope Lock": {"main": [[{"node": "\U0001f4ca Phase 3: Strategy & Planning", "type": "main", "index": 0}]]},
-        "\U0001f4ca Phase 3: Strategy & Planning": {"main": [[{"node": "\U0001f6e1\ufe0f Phase 4.0: Readiness Gateway", "type": "main", "index": 0}]]},
-        "\U0001f6e1\ufe0f Phase 4.0: Readiness Gateway": {"main": [[{"node": "\U0001f6a6 Gate: All Checks Passed?", "type": "main", "index": 0}]]},
-        "\U0001f6a6 Gate: All Checks Passed?": {"main": [
-            [{"node": "\U0001f680 Phase 4: Execution Control (Per Wave)", "type": "main", "index": 0}],
-            [{"node": "\U0001f4ca Phase 3: Strategy & Planning", "type": "main", "index": 0}]
-        ]},
-        "\U0001f680 Phase 4: Execution Control (Per Wave)": {"main": [[{"node": "\U0001f3d7\ufe0f 4.1: Deploy Landing Zone", "type": "main", "index": 0}]]},
-        "\U0001f3d7\ufe0f 4.1: Deploy Landing Zone": {"main": [[{"node": "\U0001f4e6 4.2: Install SMS/HSS Agents", "type": "main", "index": 0}]]},
-        "\U0001f4e6 4.2: Install SMS/HSS Agents": {"main": [[{"node": "\U0001f504 4.3: Start DRS/SMS Sync", "type": "main", "index": 0}]]},
-        "\U0001f504 4.3: Start DRS/SMS Sync": {"main": [[{"node": "\u23f3 4.4: Monitor Sync Completion", "type": "main", "index": 0}]]},
-        "\u23f3 4.4: Monitor Sync Completion": {"main": [[{"node": "\u2702\ufe0f Phase 5.1: Cutover Execution", "type": "main", "index": 0}]]},
-        "\u2702\ufe0f Phase 5.1: Cutover Execution": {"main": [[{"node": "\U0001f4e1 Phase 5.2: Hybrid NOC Scan", "type": "main", "index": 0}]]},
-        "\U0001f4e1 Phase 5.2: Hybrid NOC Scan": {"main": [[{"node": "\U0001f4b0 Phase 5.3: Commercial True-Up", "type": "main", "index": 0}]]},
-        "\U0001f4b0 Phase 5.3: Commercial True-Up": {"main": [[{"node": "\U0001f3c5 Phase 5.4: WAR Assessment", "type": "main", "index": 0}]]},
-        "\U0001f3c5 Phase 5.4: WAR Assessment": {"main": [[{"node": "\U0001f3c1 Project Closed", "type": "main", "index": 0}]]}
-    }
+    nodes = []
+    connections = {}
+    y_start = 80
+    row_height = 110
+    x_center = 640
+
+    for pi, phase in enumerate(phases_config):
+        phase_y = y_start + pi * (row_height * len(gates_by_phase[pi]) + 160)
+        gates = gates_by_phase[pi]
+
+        # Phase header node
+        header_id = f"phase{phase['id']}_header"
+        header_name = f"Phase {phase['id']}: {phase['name']}"
+        nodes.append({
+            "id": header_id, "name": header_name,
+            "type": "phase-header", "position": [x_center - 200, phase_y],
+            "data": {"phase": phase["id"], "color": phase["color"], "summary": phase["summary"]}
+        })
+
+        prev_node_id = header_id
+        for gi, gate_label in enumerate(gates):
+            gate_id = f"phase{phase['id']}_gate{gi+1}"
+            gate_y = phase_y + 50 + gi * row_height
+            nodes.append({
+                "id": gate_id, "name": gate_label,
+                "type": "phase-gate", "position": [x_center - 200, gate_y],
+                "data": {"phase": phase["id"], "gate_index": gi, "color": phase["color"]}
+            })
+            connections[prev_node_id] = {
+                "main": [[{"node": gate_id, "type": "main", "index": 0}]]
+            }
+            prev_node_id = gate_id
+
+        # Arrow to next phase
+        if pi < len(phases_config) - 1:
+            next_header = f"phase{phases_config[pi+1]['id']}_header"
+            connections[prev_node_id] = {
+                "main": [[{"node": next_header, "type": "main", "index": 0}]]
+            }
 
     workflow = {
         "name": f"ERP Migration \u2014 {customer_name}: {project_name}",

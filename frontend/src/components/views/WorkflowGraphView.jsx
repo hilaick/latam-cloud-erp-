@@ -1,108 +1,72 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { ERPContext } from '../../context/ERPContext';
+import React, { useState, useEffect } from 'react';
 import WorkflowGraph from './WorkflowGraph';
-
-const getAuthHeaders = () => {
-  const token = sessionStorage.getItem('hermes_access_token');
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-};
+import { useAuth } from '../../context/AuthContext';
 
 export default function WorkflowGraphView() {
-  const { projects, activeProjectId } = useContext(ERPContext);
+  const { token } = useAuth();
   const [workflow, setWorkflow] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
 
-  // On mount, try active project first
   useEffect(() => {
-    if (activeProjectId && activeProjectId !== 'none' && activeProjectId !== 'global') {
-      setSelectedProjectId(activeProjectId);
-    }
-  }, [activeProjectId]);
-
-  const fetchWorkflow = async () => {
-    if (!selectedProjectId) {
-      setError('Select a project first');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/gateway/generate-n8n-workflow', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ project_id: selectedProjectId }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setWorkflow(data.workflow);
-      } else {
-        setError(data.error || 'Failed to generate workflow');
+    const fetchWorkflow = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const resp = await fetch('/api/gateway/generate-n8n-workflow', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({}),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          setWorkflow(data.workflow);
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (err) {
+        console.error('Failed to load standard workflow', err);
+        setError(err.message || 'Failed to load workflow');
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      setError(e.message);
-    }
-    setLoading(false);
-  };
+    };
+    fetchWorkflow();
+  }, [token]);
 
-  useEffect(() => {
-    if (selectedProjectId) fetchWorkflow();
-  }, [selectedProjectId]);
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+        <i className="fas fa-spinner fa-spin text-3xl" />
+        <div className="text-sm font-bold">Loading Standard Delivery Methodology...</div>
+      </div>
+    );
+  }
 
-  const projectList = (projects || []).filter(p => !p.isDeleted);
-  const activeProj = projectList.find(p => String(p.id) === String(activeProjectId));
+  if (error) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-red-400 gap-3">
+        <i className="fas fa-exclamation-triangle text-3xl" />
+        <div className="font-bold text-sm">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
-      {/* Selector */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-3">
-          <i className="fas fa-project-diagram text-blue-600 text-xl" />
-          <div>
-            <h3 className="font-black text-slate-800">Migration Workflow Graph</h3>
-            <p className="text-xs text-slate-500">Visual representation of the ERP migration orchestration pipeline</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 ml-auto">
-          <select
-            value={selectedProjectId}
-            onChange={e => setSelectedProjectId(e.target.value)}
-            className="px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-bold bg-white min-w-[240px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">-- Select a project --</option>
-            {projectList.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.customerName || p.name || `Project ${p.id}`} {activeProj?.id === p.id ? '(active)' : ''}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={fetchWorkflow}
-            disabled={!selectedProjectId || loading}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95"
-          >
-            {loading ? <i className="fas fa-spinner fa-spin mr-1" /> : <i className="fas fa-sync-alt mr-1" />}
-            Generate
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-red-700 font-bold text-sm">
-          <i className="fas fa-exclamation-triangle mr-2" />{error}
-        </div>
-      )}
-      {workflow && <WorkflowGraph workflow={workflow} title={workflow.name} onClose={() => setWorkflow(null)} />}
-      {!workflow && !loading && !error && selectedProjectId && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center text-slate-400">
-          <i className="fas fa-arrow-up text-4xl mb-3" />
-          <p className="font-bold">Click "Generate" to render the workflow graph</p>
-        </div>
-      )}
+    <div className="p-6 h-full">
+      <WorkflowGraph
+        workflow={workflow}
+        title="Standard Delivery Methodology"
+      />
     </div>
   );
 }
