@@ -33,7 +33,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-dist_folder = os.path.join(basedir, 'frontend', 'dist')
+dist_folder = os.path.join(basedir, 'frontend')
 app = Flask(__name__, static_folder=dist_folder)
 
 # Load n8n API key for workflow deployment (stored server-side to avoid CORS)
