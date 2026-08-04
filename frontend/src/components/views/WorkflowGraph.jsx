@@ -1,14 +1,10 @@
-import React, { useMemo, useEffect } from 'react';
-import {
-  WorkflowBuilderRoot,
-  WorkflowBuilderCanvas,
-  useWorkflowBuilderActions,
-} from '@workflowbuilder/sdk';
+import React, { useMemo } from 'react';
+import { ReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 /* ─── Phase header node renderer ─── */
 function PhaseHeaderNode({ data }) {
-  const props = data?.properties || {};
+  const props = data?.parameters || {};
   return (
     <div
       className="rounded-2xl px-6 py-4 text-white font-black shadow-lg border-2"
@@ -35,7 +31,7 @@ function PhaseHeaderNode({ data }) {
 
 /* ─── Phase gate node renderer ─── */
 function PhaseGateNode({ data }) {
-  const props = data?.properties || {};
+  const props = data?.parameters || {};
   const idx = props.gate_index ?? 0;
   const isLast = idx === 3;
   return (
@@ -65,77 +61,72 @@ function PhaseGateNode({ data }) {
   );
 }
 
-/* Stable references — declared at module level per SDK docs */
-const rfNodeTypes = {
+/* Stable at module level — ReactFlow requirement */
+const nodeTypes = {
   'phase-header': PhaseHeaderNode,
   'phase-gate': PhaseGateNode,
 };
 
-const paletteNodeTypes = [
-  { type: 'phase-header', label: 'Phase Header', icon: 'Activity' },
-  { type: 'phase-gate', label: 'Phase Gate', icon: 'CheckCircle' },
-];
+/* ─── Backend JSON → ReactFlow format (objects only, no primitives in data) ─── */
+function parseN8nToReactFlow(n8nWorkflow) {
+  if (!n8nWorkflow || !Array.isArray(n8nWorkflow.nodes)) {
+    return { nodes: [], edges: [] };
+  }
 
-/* ─── Backend JSON → WorkflowBuilder format ─── */
-function toWBFormat(workflow) {
-  const nodes = (workflow.nodes || []).map(n => ({
-    id: n.id,
-    type: n.type,                              // ReactFlow node type
-    position: { x: n.position?.[0] ?? 0, y: n.position?.[1] ?? 0 },
-    data: {
-      type: n.type,                            // maps to palette item
-      icon: n.type === 'phase-header' ? 'Activity' : 'CheckCircle',
-      label: n.name,
-      properties: {
-        ...(n.data || {}),
-        color: n.data?.color || '#475569',
-        phase: n.data?.phase,
-        gate_index: n.data?.gate_index,
-        summary: n.data?.summary || '',
+  // 1. Nodes — every data field must be an object, never a primitive
+  const nodes = n8nWorkflow.nodes.map((node) => {
+    const posX = Array.isArray(node.position) ? node.position[0] : (node.position?.x || 0);
+    const posY = Array.isArray(node.position) ? node.position[1] : (node.position?.y || 0);
+
+    return {
+      id: String(node.id || node.name),
+      type: node.type || 'default',           // must match a key in nodeTypes
+      position: { x: Number(posX), y: Number(posY) },
+      // CRITICAL: data must be a clean object, never a primitive
+      data: {
+        label: String(node.name || ''),
+        n8nType: node.type,
+        parameters: node.data || {},           // all custom props nest here
       },
-    },
-  }));
+    };
+  });
 
+  // 2. Edges — data container initialised as object or omitted
   const edges = [];
-  Object.entries(workflow.connections || {}).forEach(([srcId, targets]) => {
-    const tgtList = targets.main?.[0] || [];
-    tgtList.forEach(t => {
-      const srcNode = nodes.find(n => n.id === srcId);
-      const srcColor = srcNode?.data?.properties?.color || '#94a3b8';
-      const isPhaseJump = srcNode?.data?.type === 'phase-gate' && t.node.includes('_header');
-      edges.push({
-        id: `e-${srcId}-${t.node}`,
-        source: srcId,
-        target: t.node,
-        type: 'smoothstep',
-        animated: true,
-        style: {
-          stroke: srcColor,
-          strokeWidth: isPhaseJump ? 3 : 2,
-        },
-        data: { label: '' },
+  if (n8nWorkflow.connections) {
+    Object.entries(n8nWorkflow.connections).forEach(([sourceNodeName, connectionData]) => {
+      connectionData.main?.forEach((outputBranch) => {
+        outputBranch?.forEach((targetConfig) => {
+          if (targetConfig && targetConfig.node) {
+            const srcNode = nodes.find(n => n.id === sourceNodeName);
+            const srcColor = srcNode?.data?.parameters?.color || '#94a3b8';
+            const isPhaseJump = srcNode?.data?.n8nType === 'phase-gate'
+                             && targetConfig.node.includes('_header');
+            edges.push({
+              id: `edge-${sourceNodeName}-${targetConfig.node}`,
+              source: String(sourceNodeName),
+              target: String(targetConfig.node),
+              animated: true,
+              style: {
+                stroke: srcColor,
+                strokeWidth: isPhaseJump ? 3 : 2,
+              },
+              data: {},                         // initialised object, never a string
+            });
+          }
+        });
       });
     });
-  });
+  }
 
   return { nodes, edges };
 }
 
-/* ─── Read-only enforcer — must be child of WorkflowBuilderRoot ─── */
-function ReadOnlyEnforcer() {
-  const { setReadOnly } = useWorkflowBuilderActions();
-  useEffect(() => {
-    setReadOnly(true);
-  }, [setReadOnly]);
-  return null;
-}
-
 /* ─── Main viewer ─── */
 export default function WorkflowGraph({ workflow, compact }) {
-  const initData = useMemo(
-    () => workflow ? toWBFormat(workflow) : { nodes: [], edges: [] },
-    [workflow]
-  );
+  const { nodes, edges } = useMemo(() => {
+    return parseN8nToReactFlow(workflow);
+  }, [workflow]);
 
   if (!workflow) {
     return (
@@ -146,32 +137,30 @@ export default function WorkflowGraph({ workflow, compact }) {
     );
   }
 
+  if (nodes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-slate-400">
+        <span className="font-bold text-sm">No workflow elements found.</span>
+      </div>
+    );
+  }
+
   const h = compact ? '50vh' : '70vh';
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <WorkflowBuilderRoot
-        initialNodes={initData.nodes}
-        initialEdges={initData.edges}
-        nodeTypes={paletteNodeTypes}
-        layoutDirection="RIGHT"
-        name="Standard Delivery Methodology"
-        integration={{ strategy: 'localStorage' }}
-        reactFlowProps={{
-          nodeTypes: rfNodeTypes,
-          fitView: true,
-          fitViewOptions: { padding: 0.3, maxZoom: 1.5 },
-          minZoom: 0.1,
-          maxZoom: 2,
-          nodesDraggable: false,
-          nodesConnectable: false,
-        }}
-      >
-        <ReadOnlyEnforcer />
-        <div style={{ height: h, width: '100%' }}>
-          <WorkflowBuilderCanvas />
-        </div>
-      </WorkflowBuilderRoot>
+    <div style={{ width: '100%', height: h, backgroundColor: '#f8fafc' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3, maxZoom: 1.5 }}
+        minZoom={0.1}
+        maxZoom={2}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+      />
     </div>
   );
 }
