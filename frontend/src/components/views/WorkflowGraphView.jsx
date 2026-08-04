@@ -63,7 +63,7 @@ export default function WorkflowGraphView() {
 
   return (
     <div className="p-6 h-full">
-      <DeliveryConstellation />
+      <DeliveryConstellation workflow={workflow} />
     </div>
   );
 }

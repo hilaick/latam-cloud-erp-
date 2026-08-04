@@ -2,35 +2,80 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 /* ═══════════════════════════════════════════════
    DELIVERY CONSTELLATION — 5-phase methodology
-   Sequential guided tour with step numbers.
-   Full-screen expand mode.
+   Dynamic: parses n8n workflow API response.
+   Falls back to static PHASES if no workflow prop.
    ═══════════════════════════════════════════════ */
 
-/* ─── Configuration ─── */
-const PHASES = [
-  { id:'phase_1', label:'Discovery & Assessment',  summary:'ARB Intake, WBS, BoM validation',          color:'#3b82f6', icon:'fa-search',          gates:['ARB Handover & SOW','High-Level WBS','Quotation BoM Upload','Gate Validation'] },
-  { id:'phase_2', label:'Infrastructure Setup',     summary:'Source discovery, topology, DTRB',         color:'#8b5cf6', icon:'fa-sitemap',         gates:['MgC Source Discovery','ORA Risk Assessment','Target Topology Mapper','DTRB Governance Lock'] },
-  { id:'phase_3', label:'Data Migration',           summary:'WBS, tooling, physics, cutover plan',      color:'#f59e0b', icon:'fa-database',        gates:['WBS & RACI Matrix','Strategic Tooling','Delivery Physics','Wave & Runbook Plan'] },
-  { id:'phase_4', label:'Application Migration',    summary:'CI/CD pipeline, workbench, command center',color:'#ef4444', icon:'fa-rocket',           gates:['Readiness Gateway','CI/CD Orchestrator','Agent Workbench','Command Center'] },
-  { id:'phase_5', label:'Cutover & Hypercare',      summary:'3-Way diff, constellation, WAR, commercial',color:'#10b981', icon:'fa-flag-checkered', gates:['3-Way Infra Diff','Target Constellation','WAR Sign-Off','Commercial True-Up'] },
+/* ─── Default icons for phases 1→5 ─── */
+const PHASE_ICONS = ['fa-search','fa-sitemap','fa-database','fa-rocket','fa-flag-checkered'];
+const PHASE_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#ef4444','#10b981'];
+
+/* ─── Static fallback (used when no workflow prop) ─── */
+const STATIC_PHASES = [
+  { id:'phase_1', label:'Discovery & Assessment',  summary:'ARB Intake, WBS, BoM validation',          color:PHASE_COLORS[0], icon:PHASE_ICONS[0], gates:['ARB Handover & SOW','High-Level WBS','Quotation BoM Upload','Gate Validation'] },
+  { id:'phase_2', label:'Infrastructure Setup',     summary:'Source discovery, topology, DTRB',         color:PHASE_COLORS[1], icon:PHASE_ICONS[1], gates:['MgC Source Discovery','ORA Risk Assessment','Target Topology Mapper','DTRB Governance Lock'] },
+  { id:'phase_3', label:'Data Migration',           summary:'WBS, tooling, physics, cutover plan',       color:PHASE_COLORS[2], icon:PHASE_ICONS[2], gates:['WBS & RACI Matrix','Strategic Tooling','Delivery Physics','Wave & Runbook Plan'] },
+  { id:'phase_4', label:'Application Migration',    summary:'CI/CD pipeline, workbench, command center', color:PHASE_COLORS[3], icon:PHASE_ICONS[3], gates:['Readiness Gateway','CI/CD Orchestrator','Agent Workbench','Command Center'] },
+  { id:'phase_5', label:'Cutover & Hypercare',      summary:'3-Way diff, constellation, WAR, commercial',color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['3-Way Infra Diff','Target Constellation','WAR Sign-Off','Commercial True-Up'] },
 ];
+
+/* ─── Parse n8n workflow JSON → phase array ─── */
+function parseWorkflow(workflow) {
+  if (!workflow || !workflow.nodes) return null;
+
+  const phases = {};
+  const nodes = workflow.nodes;
+
+  // First pass: extract headers
+  for (const n of nodes) {
+    if (n.type === 'phase-header') {
+      const p = n.data?.phase ?? parseInt(n.id.match(/\d+/)?.[0] ?? 0);
+      if (!p) continue;
+      phases[p] = {
+        id: n.id,
+        label: n.name.replace(/^Phase \d+:\s*/i, ''),
+        summary: n.data?.summary ?? '',
+        color: n.data?.color ?? PHASE_COLORS[(p-1)%5],
+        icon: PHASE_ICONS[(p-1)%5],
+        gates: [],
+        phaseNum: p,
+      };
+    }
+  }
+
+  // Second pass: collect gates
+  for (const n of nodes) {
+    if (n.type !== 'phase-gate') continue;
+    const p = n.data?.phase ?? parseInt(n.id.match(/\d+/)?.[0] ?? 0);
+    if (!p || !phases[p]) continue;
+    const gi = n.data?.gate_index ?? phases[p].gates.length;
+    // Ensure array has room
+    while (phases[p].gates.length <= gi) phases[p].gates.push('');
+    phases[p].gates[gi] = n.name;
+  }
+
+  // Sort by phase number, return ordered array
+  const result = Object.values(phases).filter(p=>p.gates.length>0);
+  result.sort((a,b)=>a.phaseNum-b.phaseNum);
+  return result.length>=2 ? result : null; // need at least 2 phases
+}
 
 /* ─── Spatial layout ─── */
 const W=1200, H=750, CX=W/2, CY=H/2, RING_R=260, GATE_R=110;
-
 const polar = (a,r,cx=CX,cy=CY)=>({x:cx+Math.cos(a)*r, y:cy+Math.sin(a)*r});
 
-function computeLayout() {
-  const hubs = PHASES.map((p,i)=>{
-    const a = -Math.PI/2 + 2*Math.PI*i/5;
+function computeLayout(phases) {
+  const count = phases.length;
+  const hubs = phases.map((p,i)=>{
+    const a = -Math.PI/2 + 2*Math.PI*i/count;
     const pos = polar(a, RING_R);
-    return {...p, x:pos.x, y:pos.y, angle:a};
+    return {...p, x:pos.x, y:pos.y, angle:a, index:i};
   });
 
   const allNodes = [], allEdges = [];
   let globalIdx = 0;
 
-  hubs.forEach((hub, pi)=>{
+  hubs.forEach((hub)=>{
     hub.gates.forEach((gateName, gi)=>{
       const gc = hub.gates.length, start = hub.angle-0.5, arc=1.0;
       const step = gc>1 ? arc/(gc-1) : 0;
@@ -39,23 +84,21 @@ function computeLayout() {
 
       const node = {
         id:`${hub.id}_g${gi}`, label:gateName, phaseId:hub.id, phaseLabel:hub.label,
-        phaseIndex:pi, gateIndex:gi, isLast:gi===gc-1,
+        phaseIndex:hub.index, gateIndex:gi, isLast:gi===gc-1,
         color:hub.color, icon:hub.icon,
         x:pos.x, y:pos.y, globalIndex:globalIdx++
       };
       allNodes.push(node);
 
-      // Edge: hub→g0 or gate→gate
       if(gi===0){
-        allEdges.push({id:`${hub.id}_hub2g0`, from:{x:hub.x,y:hub.y}, to:{x:pos.x,y:pos.y}, color:hub.color, type:'internal'});
+        allEdges.push({id:`${hub.id}_h2g0`, from:{x:hub.x,y:hub.y}, to:{x:pos.x,y:pos.y}, color:hub.color, type:'internal'});
       }else{
         const prev = allNodes.find(n=>n.phaseId===hub.id && n.gateIndex===gi-1);
         if(prev) allEdges.push({id:`${hub.id}_g${gi-1}2g${gi}`, from:{x:prev.x,y:prev.y}, to:{x:pos.x,y:pos.y}, color:hub.color, type:'internal'});
       }
     });
 
-    // Cross-phase edge
-    const nextHub = hubs[(pi+1)%hubs.length];
+    const nextHub = hubs[(hub.index+1)%hubs.length];
     const lastGate = allNodes.find(n=>n.phaseId===hub.id && n.isLast);
     if(lastGate) allEdges.push({id:`${hub.id}_2_${nextHub.id}`, from:{x:lastGate.x,y:lastGate.y}, to:{x:nextHub.x,y:nextHub.y}, color:hub.color, type:'cross'});
   });
@@ -64,7 +107,7 @@ function computeLayout() {
 }
 
 /* ─── Main component ─── */
-export default function DeliveryConstellation({ compact }) {
+export default function DeliveryConstellation({ workflow, compact }) {
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({x:0,y:0});
   const [drag, setDrag] = useState(null);
@@ -72,8 +115,14 @@ export default function DeliveryConstellation({ compact }) {
   const [playing, setPlaying] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
-  const {hubs, allNodes, allEdges} = useMemo(computeLayout, []);
-  const total = allNodes.length; // 20
+  // Compute phases: dynamic from workflow, else static fallback
+  const phases = useMemo(()=>{
+    const parsed = parseWorkflow(workflow);
+    return parsed ?? STATIC_PHASES;
+  }, [workflow]);
+
+  const {hubs, allNodes, allEdges} = useMemo(()=>computeLayout(phases), [phases]);
+  const total = allNodes.length;
   const current = step>0 ? allNodes[Math.min(step-1, total-1)] : null;
 
   // Pan
@@ -111,34 +160,28 @@ export default function DeliveryConstellation({ compact }) {
     >
       {/* ─── Controls bar ─── */}
       <div style={{position:'absolute',top:16,left:16,zIndex:30,display:'flex',gap:8,flexWrap:'wrap'}}>
-        {/* Play */}
         <button onClick={()=>{setStep(0);setPlaying(true);}} disabled={playing}
           style={btnStyle(playing?'#374151':'#4f46e5','white',playing?0.6:1,playing)}>
           <i className="fas fa-play mr-1.5"/>{playing ? 'Playing…' : 'Play Guided Tour'}
         </button>
-        {/* Pause */}
         {playing && (
           <button onClick={()=>setPlaying(false)}
             style={btnStyle('#f59e0b','#111827',1)}>
             <i className="fas fa-pause mr-1.5"/>Pause
           </button>
         )}
-        {/* Step forward */}
         <button onClick={()=>{setPlaying(false); setStep(s=>Math.min(total,s+1));}}
           style={btnStyle('#1f2937','#d1d5db',1)}>
           <i className="fas fa-step-forward mr-1.5"/>Step
         </button>
-        {/* Show all */}
         <button onClick={()=>{setStep(total);setPlaying(false);}}
           style={btnStyle('#1f2937','#d1d5db',1)}>
           <i className="fas fa-eye mr-1.5"/>Show All
         </button>
-        {/* Reset */}
         <button onClick={()=>{setStep(0);setPlaying(false);}}
           style={btnStyle('#1f2937','#d1d5db',1)}>
           <i className="fas fa-undo mr-1.5"/>Reset
         </button>
-        {/* Fullscreen */}
         <button onClick={()=>setFullscreen(f=>!f)}
           style={btnStyle(fullscreen?'#4f46e5':'#1f2937',fullscreen?'white':'#d1d5db',1)}>
           <i className={`fas fa-${fullscreen?'compress':'expand'} mr-1.5`}/>
@@ -146,18 +189,17 @@ export default function DeliveryConstellation({ compact }) {
         </button>
       </div>
 
-      {/* ─── Zoom (bottom-right) ─── */}
+      {/* ─── Zoom ─── */}
       <div style={{position:'absolute',bottom:16,right:16,zIndex:30,display:'flex',gap:4}}>
-        <button onClick={()=>setZoom(z=>Math.max(0.3,z-0.15))}
-          style={zBtn}>−</button>
+        <button onClick={()=>setZoom(z=>Math.max(0.3,z-0.15))} style={zBtn}>−</button>
         <div style={zLbl}>{Math.round(zoom*100)}%</div>
-        <button onClick={()=>setZoom(z=>Math.min(3,z+0.15))}
-          style={zBtn}>+</button>
-        <button onClick={()=>{setZoom(0.75);setPan({x:0,y:0});}}
-          style={{...zBtn,width:36}}><i className="fas fa-sync-alt"/></button>
+        <button onClick={()=>setZoom(z=>Math.min(3,z+0.15))} style={zBtn}>+</button>
+        <button onClick={()=>{setZoom(0.75);setPan({x:0,y:0});}} style={{...zBtn,width:36}}>
+          <i className="fas fa-sync-alt"/>
+        </button>
       </div>
 
-      {/* ─── Step indicator panel ─── */}
+      {/* ─── Step indicator ─── */}
       <div style={{position:'absolute',bottom:16,left:16,zIndex:30}}>
         <div style={{fontSize:10,fontWeight:800,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>
           Step {step}/{total}
@@ -165,18 +207,16 @@ export default function DeliveryConstellation({ compact }) {
         <div style={{width:200,height:4,background:'#1f2937',borderRadius:2,overflow:'hidden'}}>
           <div style={{width:`${(step/total)*100}%`,height:'100%',background:'#6366f1',transition:'width 0.3s'}}/>
         </div>
-        {/* Current step callout */}
         {current && (
           <div style={{
             marginTop:10, background:'#111827ee', backdropFilter:'blur(8px)',
-            border:'1px solid #374151', borderRadius:12, padding:'8px 14px',
-            maxWidth:260,
+            border:'1px solid #374151', borderRadius:12, padding:'8px 14px', maxWidth:260,
           }}>
             <div style={{fontSize:8,fontWeight:800,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em'}}>
               Phase {current.phaseIndex+1} — {current.phaseLabel}
             </div>
             <div style={{fontSize:11,fontWeight:800,color:current.color,marginTop:2}}>
-              #{current.globalIndex+1} {current.label}
+              Step #{current.globalIndex+1}: {current.label}
             </div>
           </div>
         )}
@@ -195,18 +235,14 @@ export default function DeliveryConstellation({ compact }) {
           <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
             style={{position:'absolute',inset:0,overflow:'visible',pointerEvents:'none'}}>
 
-            {/* Pentagonal ring */}
             <polygon points={hubs.map(h=>`${h.x},${h.y}`).join(' ')}
               fill="none" stroke="#6366f1" strokeWidth="1" strokeDasharray="6 4" opacity="0.25"/>
 
-            {/* Edges */}
             {allEdges.map(edge=>{
-              // Cross-phase: show once source gate (last gate) revealed
               if(edge.type==='cross'){
                 const srcGate = allNodes.find(n=>n.phaseId===edge.id.split('_2_')[0] && n.isLast);
                 if(!srcGate || allNodes.indexOf(srcGate)>=step) return null;
               }else{
-                // Internal: show once target gate revealed
                 const parts = edge.id.match(/_g(\d+)2g(\d+)$/);
                 if(parts){
                   const phaseId = edge.id.split('_g')[0];
@@ -221,7 +257,6 @@ export default function DeliveryConstellation({ compact }) {
                 style={{filter:`drop-shadow(0 0 6px ${edge.color}40)`}}/>;
             })}
 
-            {/* Animating "current" pulse ring */}
             {current && (
               <circle cx={current.x} cy={current.y} r={14} fill="none"
                 stroke={current.color} strokeWidth="1.5" opacity="0.6"
@@ -230,7 +265,7 @@ export default function DeliveryConstellation({ compact }) {
           </svg>
 
           {/* Phase hubs */}
-          {hubs.map((hub,i)=>{
+          {hubs.map(hub=>{
             const revealed = step>0;
             const active = current && current.phaseId===hub.id;
             return (
@@ -244,7 +279,6 @@ export default function DeliveryConstellation({ compact }) {
                 opacity:revealed?1:0.25, transition:'opacity 0.4s, box-shadow 0.4s, border-color 0.3s',
                 zIndex:10, pointerEvents:'auto', cursor:'default',
               }}>
-                {/* Phase number badge */}
                 <div style={{
                   position:'absolute', top:-8, right:-8,
                   width:22, height:22, borderRadius:11,
@@ -252,10 +286,9 @@ export default function DeliveryConstellation({ compact }) {
                   display:'flex', alignItems:'center', justifyContent:'center',
                   fontSize:11, fontWeight:900,
                   boxShadow:`0 0 10px ${hub.color}60`,
-                  opacity:revealed?1:0,
-                  transition:'opacity 0.4s',
+                  opacity:revealed?1:0, transition:'opacity 0.4s',
                 }}>
-                  {i+1}
+                  {hub.index+1}
                 </div>
                 <i className={`fas ${hub.icon}`} style={{fontSize:20,color:hub.color}}/>
                 <span style={{fontSize:7,fontWeight:900,color:hub.color,textTransform:'uppercase',
@@ -283,7 +316,7 @@ export default function DeliveryConstellation({ compact }) {
             </div>
           )}
 
-          {/* Sub-gate nodes with sequential numbering */}
+          {/* Sub-gate nodes — tooltip shows only step info */}
           {allNodes.map((node,i)=>{
             if(i>=step) return null;
             const isCurrent = i===step-1;
@@ -299,11 +332,11 @@ export default function DeliveryConstellation({ compact }) {
                 transition:'all 0.2s',
                 animation:isCurrent?'node-pulse 0.8s ease-out':undefined,
               }}
-                title={`${node.phaseLabel} → #${node.globalIndex+1} ${node.label}`}
+                title={`Step #${node.globalIndex+1}: ${node.label}`}
                 onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.9)';}}
                 onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';}}>
 
-                {/* Step number label */}
+                {/* Step number */}
                 <div style={{
                   position:'absolute', top:-18, left:'50%', transform:'translateX(-50%)',
                   fontSize:isCurrent?9:7, fontWeight:900, color:node.color,
@@ -313,7 +346,7 @@ export default function DeliveryConstellation({ compact }) {
                   #{i+1}
                 </div>
 
-                {/* Tooltip on hover */}
+                {/* Hover tooltip — step only */}
                 <div className="gate-tooltip" style={{
                   position:'absolute', top:20, left:'50%', transform:'translateX(-50%)',
                   background:'#1f2937ee', backdropFilter:'blur(8px)',
@@ -322,11 +355,11 @@ export default function DeliveryConstellation({ compact }) {
                   pointerEvents:'none', opacity:0, transition:'opacity 0.2s',
                   zIndex:50,
                 }}>
-                  <div style={{fontSize:10,fontWeight:800,color:node.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
-                    Phase {node.phaseIndex+1} — {node.phaseLabel}
+                  <div style={{fontSize:10,fontWeight:800,color:node.color}}>
+                    Step #{node.globalIndex+1}
                   </div>
                   <div style={{fontSize:9,fontWeight:600,color:'#9ca3af',marginTop:2}}>
-                    Step #{node.globalIndex+1}: {node.label}
+                    {node.label}
                   </div>
                 </div>
               </div>
@@ -352,7 +385,6 @@ export default function DeliveryConstellation({ compact }) {
         </div>
       </div>
 
-      {/* ─── CSS animations injected as style tag ─── */}
       <style>{`
         @keyframes pulse-ring {
           0% { r: 8px; opacity: 0.8; }
@@ -369,7 +401,6 @@ export default function DeliveryConstellation({ compact }) {
     </div>
   );
 
-  // Fullscreen overlay wrapper
   if(fullscreen) return (
     <div style={{
       position:'fixed', inset:0, zIndex:9999,
@@ -383,7 +414,7 @@ export default function DeliveryConstellation({ compact }) {
   return content;
 }
 
-/* ─── Reusable style factories ─── */
+/* ─── Reusable styles ─── */
 const btnStyle = (bg,color,opacity=1,disabled=false)=>({
   background:bg, color, border: bg==='#1f2937' ? '1px solid #374151' : 'none', borderRadius:14,
   padding:'10px 16px', fontWeight:800, fontSize:11,
