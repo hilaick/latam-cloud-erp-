@@ -103,3 +103,4 @@ deployments/
 
 # Local test files
 test_*.html
+/dist.tar
