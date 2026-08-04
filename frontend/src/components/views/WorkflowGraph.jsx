@@ -1,191 +1,190 @@
 import React, { useMemo } from 'react';
 import { ReactFlow } from '@xyflow/react';
+import dagre from 'dagre';
 import '@xyflow/react/dist/style.css';
 
 /* ═══════════════════════════════════════════════
-   CUSTOM LAYOUT — 5 columns × 5 rows grid
-   Phase headers at top, sub-gates stacked below
-   Inter-column connections: gate-4 → next header
+   LAYOUT ENGINE — Dagre hierarchical (left→right)
    ═══════════════════════════════════════════════ */
 
-const COL_W = 340;   // gap between phase columns
-const ROW_H = 100;   // gap between gate rows
-const NODE_W = 300;  // visual width (for centering)
-const NODE_H = 72;   // visual height (for centering)
+const NODE_W = 280;
+const NODE_H = 80;
 
-function customLayout(nodes, edges) {
-  // Separate phase headers from sub-gates
-  const headers = nodes.filter(n => n.type === 'phase-header');
-  const gates   = nodes.filter(n => n.type === 'phase-gate');
-
-  // Sort: extract phase number from id (e.g. "phase_1_header" → 1)
-  const phaseNum = (id) => parseInt((id.match(/phase_(\d+)/) || [])[1]) || 0;
-
-  headers.sort((a, b) => phaseNum(a.id) - phaseNum(b.id));
-  gates.sort((a, b) => {
-    const pa = phaseNum(a.id), pb = phaseNum(b.id);
-    if (pa !== pb) return pa - pb;
-    // Within same phase, sort by gate index
-    const ga = a.data?.parameters?.gate_index ?? 0;
-    const gb = b.data?.parameters?.gate_index ?? 0;
-    return ga - gb;
+function dagreLayout(nodes, edges) {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({
+    rankdir: 'LR',
+    align: 'UL',
+    ranksep: 150,
+    nodesep: 30,
+    edgesep: 20,
+    marginx: 40,
+    marginy: 40,
   });
 
-  // Position phase headers: row 0, columns 0..4
-  const positioned = [];
-  const colPositions = {}; // phase_num → x
-
-  headers.forEach((node, i) => {
-    const pn = phaseNum(node.id);
-    const x = i * COL_W;
-    colPositions[pn] = x;
-    positioned.push({
-      ...node,
-      position: { x, y: 0 },
-    });
+  nodes.forEach(n => {
+    g.setNode(n.id, { width: NODE_W, height: NODE_H });
   });
 
-  // Position sub-gates: rows 1..4, columns matching their phase
-  gates.forEach(node => {
-    const pn = phaseNum(node.id);
-    const gateIdx = node.data?.parameters?.gate_index ?? 0;
-    const x = colPositions[pn] ?? 0;
-    positioned.push({
-      ...node,
-      position: { x, y: ROW_H * (gateIdx + 1) },
-    });
+  edges.forEach(e => {
+    g.setEdge(e.source, e.target);
   });
 
-  // Add isometric 3D offset — skew x up and to the right
-  const isoAngle = 0.3; // isometric skew factor
-  return positioned.map(n => ({
-    ...n,
-    position: {
-      x: n.position.x + n.position.y * isoAngle,
-      y: n.position.y * 0.7,  // foreshorten vertical
-    },
-    // Attach un-projected coords for debugging if needed
-    data: {
-      ...n.data,
-      _gridX: n.position.x,
-      _gridY: n.position.y,
-    },
-  }));
+  dagre.layout(g);
+
+  return nodes.map(n => {
+    const pos = g.node(n.id);
+    return {
+      ...n,
+      position: {
+        x: pos.x - NODE_W / 2,
+        y: pos.y - NODE_H / 2,
+      },
+    };
+  });
 }
 
-/* ─── Phase header node renderer ─── */
+/* ═══════════════════════════════════════════════
+   CUSTOM NODE RENDERERS
+   ═══════════════════════════════════════════════ */
+
 function PhaseHeaderNode({ data }) {
-  const props = data?.parameters || {};
+  const p = data?.parameters || {};
+  const color = p.color || '#3b82f6';
   return (
     <div
-      className="phase-header-node"
       style={{
-        '--color': props.color || '#3b82f6',
         width: NODE_W,
+        background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+        color: 'white',
+        borderRadius: 16,
+        padding: '14px 18px',
+        fontWeight: 800,
+        boxShadow: `0 6px 20px ${color}40, inset 0 1px 0 rgba(255,255,255,0.2)`,
+        border: `2px solid ${color}`,
       }}
     >
-      <div className="phase-header-inner">
-        <div className="phase-badge">{props.phase || '?'}</div>
-        <div className="phase-label">{data.label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: p.summary ? 6 : 0 }}>
+        <span style={{
+          display: 'inline-flex', width: 28, height: 28,
+          borderRadius: 10, background: 'rgba(255,255,255,0.2)',
+          alignItems: 'center', justifyContent: 'center',
+          fontSize: 11, fontWeight: 900,
+        }}>
+          {p.phase || '?'}
+        </span>
+        <span style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.9 }}>
+          {data.label}
+        </span>
       </div>
-      {props.summary && (
-        <div className="phase-summary">{props.summary}</div>
+      {p.summary && (
+        <div style={{ fontSize: 11, opacity: 0.75, fontWeight: 500, lineHeight: 1.4 }}>
+          {p.summary}
+        </div>
       )}
-      {/* 3D depth face */}
-      <div className="node-depth" />
-      <div className="node-depth-right" />
     </div>
   );
 }
 
-/* ─── Phase gate node renderer ─── */
 function PhaseGateNode({ data }) {
-  const props = data?.parameters || {};
-  const idx = props.gate_index ?? 0;
+  const p = data?.parameters || {};
+  const color = p.color || '#64748b';
+  const idx = p.gate_index ?? 0;
   const isLast = idx === 3;
   return (
     <div
-      className="phase-gate-node"
       style={{
-        '--color': props.color || '#94a3b8',
         width: NODE_W - 40,
+        background: `${color}10`,
+        border: `1.5px solid ${color}40`,
+        borderLeft: `5px solid ${color}`,
+        borderRadius: 12,
+        padding: '10px 14px',
+        fontSize: 13,
+        fontWeight: 700,
+        color: `${color}`,
+        boxShadow: `0 2px 8px rgba(0,0,0,0.04)`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
       }}
     >
-      <div className="gate-inner">
-        <span className="gate-index">{idx + 1}</span>
-        <span className="gate-label">{data.label}</span>
-        {isLast && <span className="gate-marker">✓ gate</span>}
-      </div>
-      <div className="node-depth" />
-      <div className="node-depth-right" />
+      <span style={{
+        display: 'inline-flex', width: 24, height: 24,
+        borderRadius: 8, background: `${color}20`,
+        alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, fontWeight: 900,
+      }}>
+        {idx + 1}
+      </span>
+      <span style={{ flex: 1 }}>{data.label}</span>
+      {isLast && (
+        <span style={{ fontSize: 10, opacity: 0.4, marginLeft: 'auto' }}>✓ gate</span>
+      )}
     </div>
   );
 }
 
-/* Stable at module level — ReactFlow requirement */
 const nodeTypes = {
   'phase-header': PhaseHeaderNode,
   'phase-gate': PhaseGateNode,
 };
 
-/* ─── Backend JSON → ReactFlow format ─── */
-function parseN8nToReactFlow(n8nWorkflow) {
-  if (!n8nWorkflow || !Array.isArray(n8nWorkflow.nodes)) {
-    return { nodes: [], edges: [] };
-  }
+/* ═══════════════════════════════════════════════
+   BACKEND JSON → REACTFLOW
+   ═══════════════════════════════════════════════ */
 
-  const nodes = n8nWorkflow.nodes.map(node => ({
-    id: String(node.id || node.name),
-    type: node.type || 'default',
-    position: { x: 0, y: 0 },  // will be overwritten by layout
+function parseWorkflow(wf) {
+  if (!wf?.nodes?.length) return { nodes: [], edges: [] };
+
+  // Nodes: id, type, data (all objects, no primitives)
+  const nodes = wf.nodes.map(n => ({
+    id: String(n.id || n.name),
+    type: n.type || 'default',
+    position: { x: 0, y: 0 },
     data: {
-      label: String(node.name || ''),
-      n8nType: node.type,
-      parameters: node.data || {},
+      label: String(n.name || ''),
+      parameters: n.data || {},
     },
   }));
 
+  // Edges: source→target, animated, colored by source phase
   const edges = [];
-  if (n8nWorkflow.connections) {
-    Object.entries(n8nWorkflow.connections).forEach(([srcId, connData]) => {
-      connData.main?.forEach(branch => {
-        branch?.forEach(target => {
-          if (target?.node) {
-            const srcNode = nodes.find(n => n.id === srcId);
-            const srcColor = srcNode?.data?.parameters?.color || '#64748b';
-            const isPhaseJump = srcNode?.data?.n8nType === 'phase-gate'
-                             && target.node.includes('_header');
-            edges.push({
-              id: `e-${srcId}-${target.node}`,
-              source: String(srcId),
-              target: String(target.node),
-              type: 'smoothstep',
-              animated: true,
-              style: {
-                stroke: srcColor,
-                strokeWidth: isPhaseJump ? 3 : 2,
-                opacity: isPhaseJump ? 1 : 0.7,
-              },
-              data: {},
-            });
-          }
-        });
+  const conns = wf.connections || {};
+  Object.entries(conns).forEach(([src, targets]) => {
+    targets.main?.[0]?.forEach(t => {
+      if (!t?.node) return;
+      const srcNode = nodes.find(n => n.id === src);
+      const color = srcNode?.data?.parameters?.color || '#94a3b8';
+      const isJump = srcNode?.type === 'phase-gate' && t.node.includes('_header');
+      edges.push({
+        id: `e-${src}-${t.node}`,
+        source: src,
+        target: t.node,
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: color, strokeWidth: isJump ? 3 : 2 },
+        data: {},
       });
     });
-  }
+  });
 
   return { nodes, edges };
 }
 
-/* ─── Main viewer ─── */
+/* ═══════════════════════════════════════════════
+   MAIN COMPONENT
+   ═══════════════════════════════════════════════ */
+
 export default function WorkflowGraph({ workflow, compact }) {
   const { nodes: rawNodes, edges } = useMemo(
-    () => parseN8nToReactFlow(workflow),
+    () => parseWorkflow(workflow),
     [workflow]
   );
 
   const nodes = useMemo(
-    () => customLayout(rawNodes, edges),
+    () => dagreLayout(rawNodes, edges),
     [rawNodes, edges]
   );
 
@@ -201,62 +200,25 @@ export default function WorkflowGraph({ workflow, compact }) {
   if (nodes.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-slate-400">
-        <span className="font-bold text-sm">No workflow elements found.</span>
+        <span className="font-bold text-sm">No workflow elements.</span>
       </div>
     );
   }
 
-  const h = compact ? '55vh' : '75vh';
-
   return (
-    <div
-      className="workflow-3d-container"
-      style={{
-        width: '100%',
-        height: h,
-        perspective: '3000px',
-        perspectiveOrigin: '50% 40%',
-        background: 'radial-gradient(ellipse at 50% 30%, #1e293b 0%, #0f172a 100%)',
-        borderRadius: 20,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        className="workflow-3d-stage"
-        style={{
-          width: '100%',
-          height: '100%',
-          transform: 'rotateX(20deg) rotateZ(-3deg)',
-          transformStyle: 'preserve-3d',
-        }}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.5, maxZoom: 1.2 }}
-          minZoom={0.05}
-          maxZoom={2}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          panOnScroll={false}
-          zoomOnScroll={false}
-          panOnDrag={false}
-          preventScrolling={false}
-        >
-          {/* Dark theme background for ReactFlow internals */}
-          <svg>
-            <defs>
-              <linearGradient id="edge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#a855f7" stopOpacity="0.6" />
-              </linearGradient>
-            </defs>
-          </svg>
-        </ReactFlow>
-      </div>
+    <div style={{ width: '100%', height: compact ? '55vh' : '75vh' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.4 }}
+        minZoom={0.1}
+        maxZoom={2}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        style={{ background: '#f8fafc', borderRadius: 16 }}
+      />
     </div>
   );
 }
