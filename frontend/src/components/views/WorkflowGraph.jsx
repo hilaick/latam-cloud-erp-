@@ -1,37 +1,76 @@
 import React, { useMemo } from 'react';
 import { ReactFlow } from '@xyflow/react';
-import dagre from 'dagre';
 import '@xyflow/react/dist/style.css';
 
-/* ─── Dagre auto-layout: arrange nodes in horizontal layers ─── */
-const NODE_WIDTH = 280;
-const NODE_HEIGHT = 80;
+/* ═══════════════════════════════════════════════
+   CUSTOM LAYOUT — 5 columns × 5 rows grid
+   Phase headers at top, sub-gates stacked below
+   Inter-column connections: gate-4 → next header
+   ═══════════════════════════════════════════════ */
 
-function getLayoutedElements(nodes, edges) {
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'LR', ranksep: 120, nodesep: 40 });
+const COL_W = 340;   // gap between phase columns
+const ROW_H = 100;   // gap between gate rows
+const NODE_W = 300;  // visual width (for centering)
+const NODE_H = 72;   // visual height (for centering)
 
-  nodes.forEach(node => {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+function customLayout(nodes, edges) {
+  // Separate phase headers from sub-gates
+  const headers = nodes.filter(n => n.type === 'phase-header');
+  const gates   = nodes.filter(n => n.type === 'phase-gate');
+
+  // Sort: extract phase number from id (e.g. "phase_1_header" → 1)
+  const phaseNum = (id) => parseInt((id.match(/phase_(\d+)/) || [])[1]) || 0;
+
+  headers.sort((a, b) => phaseNum(a.id) - phaseNum(b.id));
+  gates.sort((a, b) => {
+    const pa = phaseNum(a.id), pb = phaseNum(b.id);
+    if (pa !== pb) return pa - pb;
+    // Within same phase, sort by gate index
+    const ga = a.data?.parameters?.gate_index ?? 0;
+    const gb = b.data?.parameters?.gate_index ?? 0;
+    return ga - gb;
   });
 
-  edges.forEach(edge => {
-    g.setEdge(edge.source, edge.target);
-  });
+  // Position phase headers: row 0, columns 0..4
+  const positioned = [];
+  const colPositions = {}; // phase_num → x
 
-  dagre.layout(g);
-
-  return nodes.map(node => {
-    const { x, y } = g.node(node.id);
-    return {
+  headers.forEach((node, i) => {
+    const pn = phaseNum(node.id);
+    const x = i * COL_W;
+    colPositions[pn] = x;
+    positioned.push({
       ...node,
-      position: {
-        x: x - NODE_WIDTH / 2,
-        y: y - NODE_HEIGHT / 2,
-      },
-    };
+      position: { x, y: 0 },
+    });
   });
+
+  // Position sub-gates: rows 1..4, columns matching their phase
+  gates.forEach(node => {
+    const pn = phaseNum(node.id);
+    const gateIdx = node.data?.parameters?.gate_index ?? 0;
+    const x = colPositions[pn] ?? 0;
+    positioned.push({
+      ...node,
+      position: { x, y: ROW_H * (gateIdx + 1) },
+    });
+  });
+
+  // Add isometric 3D offset — skew x up and to the right
+  const isoAngle = 0.3; // isometric skew factor
+  return positioned.map(n => ({
+    ...n,
+    position: {
+      x: n.position.x + n.position.y * isoAngle,
+      y: n.position.y * 0.7,  // foreshorten vertical
+    },
+    // Attach un-projected coords for debugging if needed
+    data: {
+      ...n.data,
+      _gridX: n.position.x,
+      _gridY: n.position.y,
+    },
+  }));
 }
 
 /* ─── Phase header node renderer ─── */
@@ -39,24 +78,22 @@ function PhaseHeaderNode({ data }) {
   const props = data?.parameters || {};
   return (
     <div
-      className="rounded-2xl px-6 py-4 text-white font-black shadow-lg border-2"
+      className="phase-header-node"
       style={{
-        background: `linear-gradient(135deg, ${props.color}ee, ${props.color})`,
-        borderColor: props.color,
-        width: 280,
+        '--color': props.color || '#3b82f6',
+        width: NODE_W,
       }}
     >
-      <div className="flex items-center gap-2 text-sm tracking-wider uppercase opacity-80">
-        <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs font-black">
-          {props.phase}
-        </div>
-        {data.label}
+      <div className="phase-header-inner">
+        <div className="phase-badge">{props.phase || '?'}</div>
+        <div className="phase-label">{data.label}</div>
       </div>
       {props.summary && (
-        <div className="text-[11px] opacity-75 font-medium mt-1.5 leading-tight">
-          {props.summary}
-        </div>
+        <div className="phase-summary">{props.summary}</div>
       )}
+      {/* 3D depth face */}
+      <div className="node-depth" />
+      <div className="node-depth-right" />
     </div>
   );
 }
@@ -68,27 +105,19 @@ function PhaseGateNode({ data }) {
   const isLast = idx === 3;
   return (
     <div
-      className="rounded-xl px-4 py-3 text-sm font-bold shadow-sm border transition-all"
+      className="phase-gate-node"
       style={{
-        background: `${props.color}15`,
-        borderColor: `${props.color}60`,
-        borderLeftWidth: 4,
-        color: props.color,
-        width: 260,
+        '--color': props.color || '#94a3b8',
+        width: NODE_W - 40,
       }}
     >
-      <div className="flex items-center gap-2.5">
-        <span
-          className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-black"
-          style={{ background: `${props.color}30`, color: props.color }}
-        >
-          {idx + 1}
-        </span>
-        <span>{data.label}</span>
-        {isLast && (
-          <span className="ml-auto text-[10px] font-medium opacity-50">✓ gate</span>
-        )}
+      <div className="gate-inner">
+        <span className="gate-index">{idx + 1}</span>
+        <span className="gate-label">{data.label}</span>
+        {isLast && <span className="gate-marker">✓ gate</span>}
       </div>
+      <div className="node-depth" />
+      <div className="node-depth-right" />
     </div>
   );
 }
@@ -99,51 +128,45 @@ const nodeTypes = {
   'phase-gate': PhaseGateNode,
 };
 
-/* ─── Backend JSON → ReactFlow format (objects only, no primitives in data) ─── */
+/* ─── Backend JSON → ReactFlow format ─── */
 function parseN8nToReactFlow(n8nWorkflow) {
   if (!n8nWorkflow || !Array.isArray(n8nWorkflow.nodes)) {
     return { nodes: [], edges: [] };
   }
 
-  // 1. Nodes — every data field must be an object, never a primitive
-  const nodes = n8nWorkflow.nodes.map((node) => {
-    const posX = Array.isArray(node.position) ? node.position[0] : (node.position?.x || 0);
-    const posY = Array.isArray(node.position) ? node.position[1] : (node.position?.y || 0);
+  const nodes = n8nWorkflow.nodes.map(node => ({
+    id: String(node.id || node.name),
+    type: node.type || 'default',
+    position: { x: 0, y: 0 },  // will be overwritten by layout
+    data: {
+      label: String(node.name || ''),
+      n8nType: node.type,
+      parameters: node.data || {},
+    },
+  }));
 
-    return {
-      id: String(node.id || node.name),
-      type: node.type || 'default',           // must match a key in nodeTypes
-      position: { x: Number(posX), y: Number(posY) },
-      // CRITICAL: data must be a clean object, never a primitive
-      data: {
-        label: String(node.name || ''),
-        n8nType: node.type,
-        parameters: node.data || {},           // all custom props nest here
-      },
-    };
-  });
-
-  // 2. Edges — data container initialised as object or omitted
   const edges = [];
   if (n8nWorkflow.connections) {
-    Object.entries(n8nWorkflow.connections).forEach(([sourceNodeName, connectionData]) => {
-      connectionData.main?.forEach((outputBranch) => {
-        outputBranch?.forEach((targetConfig) => {
-          if (targetConfig && targetConfig.node) {
-            const srcNode = nodes.find(n => n.id === sourceNodeName);
-            const srcColor = srcNode?.data?.parameters?.color || '#94a3b8';
+    Object.entries(n8nWorkflow.connections).forEach(([srcId, connData]) => {
+      connData.main?.forEach(branch => {
+        branch?.forEach(target => {
+          if (target?.node) {
+            const srcNode = nodes.find(n => n.id === srcId);
+            const srcColor = srcNode?.data?.parameters?.color || '#64748b';
             const isPhaseJump = srcNode?.data?.n8nType === 'phase-gate'
-                             && targetConfig.node.includes('_header');
+                             && target.node.includes('_header');
             edges.push({
-              id: `edge-${sourceNodeName}-${targetConfig.node}`,
-              source: String(sourceNodeName),
-              target: String(targetConfig.node),
+              id: `e-${srcId}-${target.node}`,
+              source: String(srcId),
+              target: String(target.node),
+              type: 'smoothstep',
               animated: true,
               style: {
                 stroke: srcColor,
                 strokeWidth: isPhaseJump ? 3 : 2,
+                opacity: isPhaseJump ? 1 : 0.7,
               },
-              data: {},                         // initialised object, never a string
+              data: {},
             });
           }
         });
@@ -156,15 +179,15 @@ function parseN8nToReactFlow(n8nWorkflow) {
 
 /* ─── Main viewer ─── */
 export default function WorkflowGraph({ workflow, compact }) {
-  const { nodes: rawNodes, edges: rawEdges } = useMemo(() => {
-    return parseN8nToReactFlow(workflow);
-  }, [workflow]);
+  const { nodes: rawNodes, edges } = useMemo(
+    () => parseN8nToReactFlow(workflow),
+    [workflow]
+  );
 
-  const nodes = useMemo(() => {
-    return getLayoutedElements(rawNodes, rawEdges);
-  }, [rawNodes, rawEdges]);
-
-  const edges = rawEdges;
+  const nodes = useMemo(
+    () => customLayout(rawNodes, edges),
+    [rawNodes, edges]
+  );
 
   if (!workflow) {
     return (
@@ -183,22 +206,57 @@ export default function WorkflowGraph({ workflow, compact }) {
     );
   }
 
-  const h = compact ? '50vh' : '70vh';
+  const h = compact ? '55vh' : '75vh';
 
   return (
-    <div style={{ width: '100%', height: h, backgroundColor: '#f8fafc' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.3, maxZoom: 1.5 }}
-        minZoom={0.1}
-        maxZoom={2}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-      />
+    <div
+      className="workflow-3d-container"
+      style={{
+        width: '100%',
+        height: h,
+        perspective: '3000px',
+        perspectiveOrigin: '50% 40%',
+        background: 'radial-gradient(ellipse at 50% 30%, #1e293b 0%, #0f172a 100%)',
+        borderRadius: 20,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        className="workflow-3d-stage"
+        style={{
+          width: '100%',
+          height: '100%',
+          transform: 'rotateX(20deg) rotateZ(-3deg)',
+          transformStyle: 'preserve-3d',
+        }}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.5, maxZoom: 1.2 }}
+          minZoom={0.05}
+          maxZoom={2}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          panOnScroll={false}
+          zoomOnScroll={false}
+          panOnDrag={false}
+          preventScrolling={false}
+        >
+          {/* Dark theme background for ReactFlow internals */}
+          <svg>
+            <defs>
+              <linearGradient id="edge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#a855f7" stopOpacity="0.6" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </ReactFlow>
+      </div>
     </div>
   );
 }
