@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
-    "dagre": "^0.8.5",
     "date-fns": "^4.4.0",
     "lucide-react": "^0.263.1",
     "moment": "^2.30.1",

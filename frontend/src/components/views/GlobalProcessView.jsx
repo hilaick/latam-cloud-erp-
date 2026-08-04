@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import WorkflowGraph from './WorkflowGraph';
+import DeliveryConstellation from './DeliveryConstellation';
 
-export { WorkflowGraph };
+export { DeliveryConstellation };
 
 export default function GlobalProcessView() {
   const [expandedPhase, setExpandedPhase] = useState(null);
@@ -64,7 +64,7 @@ export default function GlobalProcessView() {
         {/* React Flow — Standard Methodology graph */}
         <div className="mb-8">
           {workflow ? (
-            <WorkflowGraph workflow={workflow} title="Standard Delivery Methodology" compact />
+            <DeliveryConstellation compact />
           ) : (
             <div className="flex items-center justify-center h-32 text-slate-500 text-sm font-bold">
               <i className="fas fa-spinner fa-spin mr-2"></i> Loading workflow...

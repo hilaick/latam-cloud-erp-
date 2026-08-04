@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import WorkflowGraph from './WorkflowGraph';
+import DeliveryConstellation from './DeliveryConstellation';
 import { useAuth } from '../../context/AuthContext';
 
 export default function WorkflowGraphView() {
@@ -63,10 +63,7 @@ export default function WorkflowGraphView() {
 
   return (
     <div className="p-6 h-full">
-      <WorkflowGraph
-        workflow={workflow}
-        title="Standard Delivery Methodology"
-      />
+      <DeliveryConstellation />
     </div>
   );
 }
