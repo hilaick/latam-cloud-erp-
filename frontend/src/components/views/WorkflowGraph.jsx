@@ -1,6 +1,38 @@
 import React, { useMemo } from 'react';
 import { ReactFlow } from '@xyflow/react';
+import dagre from 'dagre';
 import '@xyflow/react/dist/style.css';
+
+/* ─── Dagre auto-layout: arrange nodes in horizontal layers ─── */
+const NODE_WIDTH = 280;
+const NODE_HEIGHT = 80;
+
+function getLayoutedElements(nodes, edges) {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: 'LR', ranksep: 120, nodesep: 40 });
+
+  nodes.forEach(node => {
+    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  });
+
+  edges.forEach(edge => {
+    g.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(g);
+
+  return nodes.map(node => {
+    const { x, y } = g.node(node.id);
+    return {
+      ...node,
+      position: {
+        x: x - NODE_WIDTH / 2,
+        y: y - NODE_HEIGHT / 2,
+      },
+    };
+  });
+}
 
 /* ─── Phase header node renderer ─── */
 function PhaseHeaderNode({ data }) {
@@ -124,9 +156,15 @@ function parseN8nToReactFlow(n8nWorkflow) {
 
 /* ─── Main viewer ─── */
 export default function WorkflowGraph({ workflow, compact }) {
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: rawNodes, edges: rawEdges } = useMemo(() => {
     return parseN8nToReactFlow(workflow);
   }, [workflow]);
+
+  const nodes = useMemo(() => {
+    return getLayoutedElements(rawNodes, rawEdges);
+  }, [rawNodes, rawEdges]);
+
+  const edges = rawEdges;
 
   if (!workflow) {
     return (
