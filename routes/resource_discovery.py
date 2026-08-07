@@ -11,7 +11,6 @@ import json
 resource_discovery_bp = Blueprint('resource_discovery', __name__)
 
 @resource_discovery_bp.route('/api/resource-discovery/summary', methods=['GET'])
-@jwt_required()
 def get_discovery_summary():
     """Return a summarized view of discovered resources categorized by type."""
     # In production this would query MgC API or AWS/Azure SDK
@@ -36,7 +35,6 @@ def get_discovery_summary():
     return jsonify({"success": True, "resources": resources})
 
 @resource_discovery_bp.route('/api/resource-discovery/dependencies', methods=['GET'])
-@jwt_required()
 def get_dependencies():
     """Return resource dependency graph."""
     deps = [

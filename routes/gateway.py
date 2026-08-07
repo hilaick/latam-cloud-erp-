@@ -574,21 +574,21 @@ def generate_n8n_workflow():
         if customer:
             customer_name = customer.name or customer_name
 
-    # ─── Standard Delivery Methodology — 5 phases with gates ───
+    # ─── Operational PM framework — 5 phases with gates ───
     # Phase colours (match GlobalProcessView phases)
     phases_config = [
-        {"id": 1, "name": "Discovery & Assessment", "color": "#3b82f6", "summary": "Analyze source landscape & target requirements"},
-        {"id": 2, "name": "Infrastructure Setup", "color": "#6366f1", "summary": "Provision target cloud foundation"},
-        {"id": 3, "name": "Data Migration", "color": "#f59e0b", "summary": "Move databases & storage with minimal downtime"},
-        {"id": 4, "name": "Application Migration", "color": "#10b981", "summary": "Rehost, replatform, or refactor workloads"},
-        {"id": 5, "name": "Cutover & Hypercare", "color": "#8b5cf6", "summary": "Final sync, go-live, and stabilization"},
+        {"id": 1, "name": "ARB Handover", "color": "#3b82f6", "summary": "ARB intake, SOW, and high-level project scoping"},
+        {"id": 2, "name": "Architecture", "color": "#8b5cf6", "summary": "Source discovery, risk profiling, and target topology design"},
+        {"id": 3, "name": "Planning", "color": "#f59e0b", "summary": "Delivery physics, FinOps budgeting, and wave planning"},
+        {"id": 4, "name": "Execution", "color": "#10b981", "summary": "Pipeline execution, engineering workbench, and TAM governance"},
+        {"id": 5, "name": "Post-Live", "color": "#6366f1", "summary": "Infrastructure reconciliation, sign-off, and procurement handover"},
     ]
     gates_by_phase = [
-        ["MgC Agent audit", "Source topology inventory", "Target BoM parsed", "Gap analysis complete"],
-        ["VPC/network provisioned", "VPN/Direct Connect up", "Security groups configured", "DNS/routing verified"],
-        ["DRS sync healthy", "Schema converted", "Data validated", "Cutover window scheduled"],
-        ["SMS agent healthy", "App dependencies mapped", "Test environment verified", "UAT signed off"],
-        ["Final DRS sync", "DNS swing complete", "Monitoring green", "Hypercare 72h passed"],
+        ["ARB Intake & SOW signed", "High-Level WBS (Sales) approved"],
+        ["Architecture Summary complete", "Source Discovery (MgC) executed", "ORA Risk Profile assessed", "Target Topology Mapped", "DTRB Governance approved"],
+        ["WBS & RACI Matrix defined", "Physics Engine calibrated", "FinOps Budget & Burn approved", "Strategic Tooling selected", "Wave & Runbook planned"],
+        ["Readiness Gateway passed", "Execution Pipeline active", "Engineering Workbench online", "Delivery Command Center staffed", "TAM Service Governance running"],
+        ["3-Way Infrastructure Diff complete", "Target Constellation verified", "WAR Sign-Off obtained", "Procurement & PO Handover executed"],
     ]
 
     nodes = []

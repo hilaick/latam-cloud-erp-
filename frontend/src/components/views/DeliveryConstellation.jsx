@@ -7,16 +7,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
    ═══════════════════════════════════════════════ */
 
 /* ─── Default icons for phases 1→5 ─── */
-const PHASE_ICONS = ['fa-search','fa-sitemap','fa-database','fa-rocket','fa-flag-checkered'];
-const PHASE_COLORS = ['#3b82f6','#6366f1','#f59e0b','#10b981','#8b5cf6'];
+const PHASE_ICONS = ['fa-handshake','fa-drafting-compass','fa-tasks','fa-play-circle','fa-clipboard-check'];
+const PHASE_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#6366f1'];
 
-/* ─── Static fallback (used when no workflow prop) — synced with backend phases_config ─── */
+/* ─── Static fallback (used when no workflow prop) — operational PM framework ─── */
 const STATIC_PHASES = [
-  { id:'phase_1', label:'Discovery & Assessment',  summary:'Analyze source landscape & target requirements', color:PHASE_COLORS[0], icon:PHASE_ICONS[0], gates:['MgC Agent audit','Source topology inventory','Target BoM parsed','Gap analysis complete'] },
-  { id:'phase_2', label:'Infrastructure Setup',     summary:'Provision target cloud foundation',              color:PHASE_COLORS[1], icon:PHASE_ICONS[1], gates:['VPC/network provisioned','VPN/Direct Connect up','Security groups configured','DNS/routing verified'] },
-  { id:'phase_3', label:'Data Migration',           summary:'Move databases & storage with minimal downtime',  color:PHASE_COLORS[2], icon:PHASE_ICONS[2], gates:['DRS sync healthy','Schema converted','Data validated','Cutover window scheduled'] },
-  { id:'phase_4', label:'Application Migration',    summary:'Rehost, replatform, or refactor workloads',      color:PHASE_COLORS[3], icon:PHASE_ICONS[3], gates:['SMS agent healthy','App dependencies mapped','Test environment verified','UAT signed off'] },
-  { id:'phase_5', label:'Cutover & Hypercare',      summary:'Final sync, go-live, and stabilization',         color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['Final DRS sync','DNS swing complete','Monitoring green','Hypercare 72h passed'] },
+  { id:'phase_1', label:'ARB Handover',          summary:'ARB intake, SOW, and high-level project scoping',           color:PHASE_COLORS[0], icon:PHASE_ICONS[0], gates:['ARB Intake & SOW signed','High-Level WBS (Sales) approved'] },
+  { id:'phase_2', label:'Architecture',           summary:'Source discovery, risk profiling, and target topology design', color:PHASE_COLORS[1], icon:PHASE_ICONS[1], gates:['Architecture Summary complete','Source Discovery (MgC) executed','ORA Risk Profile assessed','Target Topology Mapped','DTRB Governance approved'] },
+  { id:'phase_3', label:'Planning',               summary:'Delivery physics, FinOps budgeting, and wave planning',       color:PHASE_COLORS[2], icon:PHASE_ICONS[2], gates:['WBS & RACI Matrix defined','Physics Engine calibrated','FinOps Budget & Burn approved','Strategic Tooling selected','Wave & Runbook planned'] },
+  { id:'phase_4', label:'Execution',              summary:'Pipeline execution, engineering workbench, and TAM governance', color:PHASE_COLORS[3], icon:PHASE_ICONS[3], gates:['Readiness Gateway passed','Execution Pipeline active','Engineering Workbench online','Delivery Command Center staffed','TAM Service Governance running'] },
+  { id:'phase_5', label:'Post-Live',              summary:'Infrastructure reconciliation, sign-off, and procurement handover', color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['3-Way Infrastructure Diff complete','Target Constellation verified','WAR Sign-Off obtained','Procurement & PO Handover executed'] },
 ];
 
 /* ─── Parse n8n workflow JSON → phase array ─── */
@@ -407,6 +407,21 @@ export default function DeliveryConstellation({ workflow, compact }) {
       background:'#0a0a12',
       display:'flex', alignItems:'center', justifyContent:'center',
     }}>
+      <button
+        onClick={()=>setFullscreen(false)}
+        style={{
+          position:'fixed', top:20, right:20, zIndex:10001,
+          background:'#dc2626', color:'white',
+          border:'none', borderRadius:12,
+          width:44, height:44, fontSize:20,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer',
+          boxShadow:'0 4px 20px rgba(0,0,0,0.5)',
+        }}
+        title="Exit Fullscreen (Esc)"
+      >
+        <i className="fas fa-times"></i>
+      </button>
       {content}
     </div>
   );
