@@ -4,9 +4,10 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
     const [customerName, setCustomerName] = useState(defaultCustomer);
     
     // Upload Modes
-    const [uploadMode, setUploadMode] = useState('file'); // 'file' or 'paste'
+    const [uploadMode, setUploadMode] = useState('file'); // 'file', 'paste', or 'url'
     const [selectedFile, setSelectedFile] = useState(null);
     const [pastedData, setPastedData] = useState("");
+    const [sharedUrl, setSharedUrl] = useState("");
     
     const [isUploading, setIsUploading] = useState(false);
     const [uploadMessage, setUploadMessage] = useState("");
@@ -40,34 +41,52 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
         
         if (uploadMode === 'file' && !selectedFile) return alert("Please select a file to upload.");
         if (uploadMode === 'paste' && !pastedData.trim()) return alert("Please paste data into the text area.");
+        if (uploadMode === 'url' && !sharedUrl.trim()) return alert("Please enter a Huawei Cloud Pricing Calculator share URL.");
         if (!customerName.trim()) return alert("Please enter a customer name.");
 
         setIsUploading(true);
         setUploadMessage("Uploading and processing...");
 
         try {
-            const formData = new FormData();
-            formData.append('customer_name', customerName);
-            if (projectId) formData.append('project_id', projectId);
-
-            if (uploadMode === 'file') {
-                formData.append('file', selectedFile);
-            } else {
-                formData.append('raw_text', pastedData);
-            }
-
             const token = sessionStorage.getItem('hermes_access_token');
             if (!token) throw new Error("Authentication required. Please log in again.");
             
-            const response = await fetch('/api/upload_quotation', { 
-                method: 'POST', 
-                body: formData,
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            let response, result;
             
-            if (response.status === 401) throw new Error("Authentication failed. Please log in again.");
-            
-            const result = await response.json();
+            if (uploadMode === 'url') {
+                // URL-based import — use dedicated endpoint
+                response = await fetch('/api/quotation/import-from-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        url: sharedUrl,
+                        customer_name: customerName,
+                        project_id: projectId
+                    })
+                });
+                result = await response.json();
+            } else {
+                // File upload or paste — use existing endpoint
+                const formData = new FormData();
+                formData.append('customer_name', customerName);
+                if (projectId) formData.append('project_id', projectId);
+
+                if (uploadMode === 'file') {
+                    formData.append('file', selectedFile);
+                } else {
+                    formData.append('raw_text', pastedData);
+                }
+
+                response = await fetch('/api/upload_quotation', { 
+                    method: 'POST', 
+                    body: formData,
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                result = await response.json();
+            }
 
             if (result.success) {
                 setUploadMessage(`✅ ${result.message || 'Quotation processed successfully!'}`);
@@ -117,6 +136,12 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                             >
                                 <i className="fas fa-paste mr-2"></i> Paste Raw Data
                             </button>
+                            <button 
+                                onClick={() => setUploadMode('url')} 
+                                className={`pb-3 px-6 text-xs uppercase tracking-widest font-black border-b-2 transition-colors ${uploadMode === 'url' ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50 rounded-t-lg' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <i className="fas fa-link mr-2"></i> Shared Link
+                            </button>
                         </div>
 
                         {/* CONTENT BASED ON TAB */}
@@ -148,6 +173,27 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                                     </div>
                                 )}
                             </div>
+                        ) : uploadMode === 'url' ? (
+                            <div className="animate-fade-in">
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Huawei Cloud Pricing Calculator Share URL</label>
+                                <input 
+                                    type="url" 
+                                    value={sharedUrl} 
+                                    onChange={e => setSharedUrl(e.target.value)} 
+                                    placeholder="https://www.huaweicloud.com/intl/en-us/pricing/calculator.html?shareListId=..." 
+                                    className="w-full p-3 border border-slate-300 rounded-xl focus:border-emerald-500 outline-none font-mono text-[11px] text-slate-700 shadow-inner bg-slate-50"
+                                />
+                                <p className="text-[10px] text-slate-400 font-bold mt-2">
+                                    <i className="fas fa-info-circle mr-1"></i> 
+                                    Paste the share URL from Huawei Cloud Pricing Calculator. After importing, you can upload the .xlsx file for complete resource-level detail.
+                                </p>
+                                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <p className="text-[10px] text-amber-700 font-bold">
+                                        <i className="fas fa-lightbulb mr-1"></i>
+                                        <strong>Pro tip:</strong> For full line-item parsing, click "Download" on the calculator page and upload the .xlsx file using the File Upload tab instead.
+                                    </p>
+                                </div>
+                            </div>
                         ) : (
                             <div className="animate-fade-in">
                                 <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Paste Excel / CSV Contents</label>
@@ -171,7 +217,7 @@ export default function ExcelUploader({ onUpdateData, onClose, defaultCustomer =
                 
                 <div className="px-8 py-5 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
                     <button onClick={onClose} disabled={isUploading} className="px-6 py-2.5 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl uppercase tracking-widest transition-colors">Cancel</button>
-                    <button onClick={handleProcess} disabled={(uploadMode==='file'&&!selectedFile) || (uploadMode==='paste'&&!pastedData) || isUploading} className={`px-8 py-2.5 text-xs font-black text-white rounded-xl uppercase tracking-widest shadow-md transition-all ${(uploadMode==='file'&&!selectedFile) || (uploadMode==='paste'&&!pastedData) || isUploading ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'}`}>
+                    <button onClick={handleProcess} disabled={(uploadMode==='file'&&!selectedFile) || (uploadMode==='paste'&&!pastedData) || (uploadMode==='url'&&!sharedUrl) || isUploading} className={`px-8 py-2.5 text-xs font-black text-white rounded-xl uppercase tracking-widest shadow-md transition-all ${(uploadMode==='file'&&!selectedFile) || (uploadMode==='paste'&&!pastedData) || (uploadMode==='url'&&!sharedUrl) || isUploading ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'}`}>
                         {isUploading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Processing</> : <><i className="fas fa-magic mr-2"></i> Generate Blueprint</>}
                     </button>
                 </div>

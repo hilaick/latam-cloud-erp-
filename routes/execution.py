@@ -92,11 +92,33 @@ def execute_project(project_id):
         mapper_nodes = project_data.get('mapperNodes', [])
         region = project_data.get('region', 'la-south-2')
         network_config = (request.get_json() or {}).get('networkConfig', {})
+        dry_run = (request.get_json() or {}).get('dryRun', False)
 
         # 🚨 FIX: Now passing project_id to inject automated tags
         tf_payload = ExecutionOrchestrator.generate_terraform_payload(
             mapper_nodes, region, project_id, require_factory=True, network_config=network_config 
         )
+        
+        # 🚨 DRY-RUN: Return generated payload + resource inventory, skip deployment
+        if dry_run:
+            tf_obj = json.loads(tf_payload)
+            inventory = {"vpcs": [], "subnets": [], "instances": [], "eips": [], "cbr_vaults": []}
+            for res_type, res_map in tf_obj.get("resource", {}).items():
+                if not res_map: continue
+                for name, cfg in res_map.items():
+                    entry = {"name": name, "kind": res_type.replace("huaweicloud_", ""), "tags": cfg.get("tags", {})}
+                    if "vpc" in res_type: inventory["vpcs"].append(entry)
+                    elif "subnet" in res_type: inventory["subnets"].append(entry)
+                    elif "compute_instance" in res_type: inventory["instances"].append(entry)
+                    elif "eip" in res_type: inventory["eips"].append(entry)
+                    elif "cbr" in res_type: inventory["cbr_vaults"].append(entry)
+            transient_count = sum(1 for tag in [r.get("tags", {}) for typ in ["instances", "eips"] for r in inventory[typ]] if tag.get("erp_transient") == "true")
+            inventory["_summary"] = {
+                "total_resources": sum(len(v) for v in inventory.values() if isinstance(v, list)),
+                "transient_resources": transient_count,
+                "note": "Transient resources are destroyed in Phase 4.7 Garbage Collection. PPU cost applies until then."
+            }
+            return jsonify({"success": True, "dry_run": True, "terraform_json": tf_obj, "resource_inventory": inventory})
         
         rfs_result = ExecutionOrchestrator.deploy_to_rfs(
             ak=ephemeral_keys.get('ak'), sk=ephemeral_keys.get('sk'), security_token=ephemeral_keys.get('security_token'),
@@ -137,6 +159,39 @@ def execute_garbage_collection(project_id):
         
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
+@execution_bp.route('/api/projects/<project_id>/rollback', methods=['POST'])
+@jwt_required()
+def rollback_project(project_id):
+    """🚨 Fix #5: Rollback/destroy RFS stack and tear down all provisioned infrastructure."""
+    try:
+        project_record = ProjectData.query.get(project_id)
+        if not project_record: return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        try: ephemeral_keys = ensure_valid_sts_token(project_record)
+        except Exception as auth_err: return jsonify({"success": False, "error": str(auth_err)}), 403
+
+        project_data = json.loads(project_record.data)
+        region = project_data.get('region', 'la-south-2')
+
+        rfs_result = ExecutionOrchestrator.rollback_rfs_stack(
+            ak=ephemeral_keys.get('ak'), sk=ephemeral_keys.get('sk'),
+            security_token=ephemeral_keys.get('security_token'),
+            region=region, project_id=project_id
+        )
+        
+        if rfs_result.get("success"):
+            # Reset execution state on successful rollback
+            ExecutionState.query.filter_by(project_id=project_id).update({
+                'current_phase': 'PHASE_4_0', 'status': 'PENDING'
+            })
+            # Clear delegate tasks
+            project_record.delegate_tasks = '[]'
+            db.session.commit()
+        
+        return jsonify(rfs_result)
+        
+    except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+
 @execution_bp.route('/api/projects/<project_id>/deploy-agents', methods=['POST'])
 @jwt_required()
 def deploy_agents(project_id):
@@ -156,6 +211,58 @@ def deploy_agents(project_id):
         else: return jsonify({"success": True, "mode": "manual", "message": "Zero-Trust Runbooks generated.", "runbook": { "linux": linux_payload, "windows": windows_payload }})
 
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/executions/<project_id>/logs', methods=['GET'])
+@jwt_required()
+def get_execution_logs(project_id):
+    """🚨 Fix #7: Query structured execution logs for a project."""
+    from models import ExecutionState, ExecutionLog
+    state = ExecutionState.query.filter_by(project_id=project_id).first()
+    if not state:
+        return jsonify({"success": True, "logs": []})
+    
+    # Optional filters
+    phase = request.args.get('phase')
+    event_type = request.args.get('type')
+    limit = int(request.args.get('limit', 100))
+    
+    q = ExecutionLog.query.filter_by(execution_state_id=state.id)
+    if phase: q = q.filter_by(phase=phase)
+    if event_type: q = q.filter_by(event_type=event_type)
+    q = q.order_by(ExecutionLog.timestamp.desc()).limit(limit)
+    
+    logs = [{
+        'id': l.id, 'phase': l.phase, 'event_type': l.event_type,
+        'message': l.message, 'agent_name': l.agent_name,
+        'metadata': json.loads(l.metadata_json) if l.metadata_json else None,
+        'timestamp': l.timestamp.isoformat()
+    } for l in q.all()]
+    
+    return jsonify({"success": True, "logs": logs})
+
+@execution_bp.route('/api/executions/<project_id>/logs', methods=['POST'])
+@jwt_required()
+def create_execution_log(project_id):
+    """🚨 Fix #7: Append a structured log entry."""
+    from models import ExecutionState, ExecutionLog
+    state = ExecutionState.query.filter_by(project_id=project_id).first()
+    if not state:
+        return jsonify({"success": False, "error": "Execution state not found"}), 404
+    
+    data = request.get_json() or {}
+    entry = ExecutionLog(
+        execution_state_id=state.id,
+        project_id=project_id,
+        phase=data.get('phase', state.current_phase),
+        event_type=data.get('event_type', 'INFO'),
+        message=data.get('message', ''),
+        agent_name=data.get('agent_name'),
+        metadata_json=json.dumps(data.get('metadata')) if data.get('metadata') else None
+    )
+    db.session.add(entry)
+    db.session.commit()
+    
+    return jsonify({"success": True, "log_id": entry.id})
 
 @execution_bp.route('/api/executions/<project_id>', methods=['GET'])
 @jwt_required()

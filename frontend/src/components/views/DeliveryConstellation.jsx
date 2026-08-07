@@ -108,13 +108,9 @@ function computeLayout(phases) {
 
 /* ─── Main component ─── */
 export default function DeliveryConstellation({ workflow, compact }) {
-  const containerRef = useRef(null);
-  const dragRef = useRef(null);
-  const pinchRef = useRef(null);
-  const lastTap = useRef(0);
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({x:0,y:0});
-  const [dragging, setDragging] = useState(false);
+  const [drag, setDrag] = useState(null);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -129,45 +125,10 @@ export default function DeliveryConstellation({ workflow, compact }) {
   const total = allNodes.length;
   const current = step>0 ? allNodes[Math.min(step-1, total-1)] : null;
 
-  // ─── Pan (mouse) ───
-  const onMD = e => { dragRef.current={sx:e.clientX-pan.x, sy:e.clientY-pan.y}; setDragging(true); };
-  const onMM = e => {
-    if(!dragRef.current) return;
-    setPan({x:e.clientX-dragRef.current.sx, y:e.clientY-dragRef.current.sy});
-  };
-  const onMU = () => { dragRef.current=null; setDragging(false); };
-
-  // ─── Touch: single-finger pan + two-finger pinch ───
-  const onTS = e => {
-    if(e.touches.length===1){
-      dragRef.current={sx:e.touches[0].clientX-pan.x, sy:e.touches[0].clientY-pan.y};
-      setDragging(true);
-    }else if(e.touches.length===2){
-      dragRef.current=null;
-      const dx=e.touches[0].clientX-e.touches[1].clientX;
-      const dy=e.touches[0].clientY-e.touches[1].clientY;
-      pinchRef.current={dist:Math.hypot(dx,dy), zoom};
-    }
-  };
-  const onTM = e => {
-    e.preventDefault();
-    if(e.touches.length===1 && dragRef.current){
-      setPan({x:e.touches[0].clientX-dragRef.current.sx, y:e.touches[0].clientY-dragRef.current.sy});
-    }else if(e.touches.length===2 && pinchRef.current){
-      const dx=e.touches[0].clientX-e.touches[1].clientX;
-      const dy=e.touches[0].clientY-e.touches[1].clientY;
-      const dist=Math.hypot(dx,dy);
-      setZoom(z=>Math.max(0.3,Math.min(3, pinchRef.current.zoom*dist/pinchRef.current.dist)));
-    }
-  };
-  const onTE = () => { dragRef.current=null; pinchRef.current=null; setDragging(false); };
-
-  // Double-tap → fullscreen toggle
-  const onDblTap = e => {
-    const now=Date.now();
-    if(now-lastTap.current<300) setFullscreen(f=>!f);
-    lastTap.current=now;
-  };
+  // Pan
+  const onMD = e=>setDrag({sx:e.clientX-pan.x, sy:e.clientY-pan.y});
+  const onMM = e=>{if(drag)setPan({x:e.clientX-drag.sx, y:e.clientY-drag.sy})};
+  const onMU = ()=>setDrag(null);
 
   // Playback
   useEffect(()=>{
@@ -188,19 +149,14 @@ export default function DeliveryConstellation({ workflow, compact }) {
 
   const content = (
     <div
-      ref={containerRef}
       style={{
         width:'100%', height:containerH,
         background:'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f1a 100%)',
         borderRadius: fullscreen ? 0 : 24,
         overflow:'hidden', position:'relative',
-        cursor:dragging?'grabbing':'grab', userSelect:'none',
-        touchAction:'none',
+        cursor:drag?'grabbing':'grab', userSelect:'none',
       }}
       onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
-      onTouchStart={e=>{onTS(e); onDblTap(e);}}
-      onTouchMove={onTM}
-      onTouchEnd={onTE} onTouchCancel={onTE}
     >
       {/* ─── Controls bar ─── */}
       <div style={{position:'absolute',top:16,left:16,zIndex:30,display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -271,7 +227,7 @@ export default function DeliveryConstellation({ workflow, compact }) {
         position:'absolute',inset:0,
         transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
         transformOrigin:'center center',
-        transition:dragging?'none':'transform 0.25s ease-out',
+        transition:drag?'none':'transform 0.25s ease-out',
       }}>
         <div style={{width:W,height:H,position:'relative',margin:'auto'}}>
 

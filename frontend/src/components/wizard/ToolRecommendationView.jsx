@@ -340,41 +340,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                         </div>
                     )}
                 </div>
-            )} {/* Execution Phase Strategy Setup Build-up */}
-            <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 bg-slate-50">
-                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest"><i className="fas fa-play-circle text-blue-500 mr-2"></i> Setup Phase 4 Execution Mode</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-1">Select how workloads will be processed by the delivery team or orchestration engine.</p>
-                </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div 
-                        onClick={() => handleModeSelect('manual')}
-                        className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${executionMode === 'manual' ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-blue-300'}`}
-                    >
-                        <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl mb-4"><i className="fas fa-hand-paper"></i></div>
-                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2">Manual Pipeline</h4>
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed">Standard step-by-step Kanban execution. Teams manually update cards and trigger APIs per server.</p>
-                    </div>
-
-                    <div 
-                        onClick={() => handleModeSelect('agentic')}
-                        className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${executionMode === 'agentic' ? 'border-purple-500 bg-purple-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-purple-300'}`}
-                    >
-                        <div className="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xl mb-4"><i className="fas fa-robot"></i></div>
-                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2">Agentic Orchestration</h4>
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed">Hermes autonomous engine takes control of the entire wave, deploying agents and syncing tasks automatically.</p>
-                    </div>
-
-                    <div 
-                        onClick={() => handleModeSelect('individual')}
-                        className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${executionMode === 'individual' ? 'border-emerald-500 bg-emerald-50 shadow-md scale-[1.02]' : 'border-slate-200 hover:border-emerald-300'}`}
-                    >
-                        <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl mb-4"><i className="fas fa-tasks"></i></div>
-                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2">Individual Tasks</h4>
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed">Isolate workloads into standalone ad-hoc tasks. Ideal for tiny batches or specific database true-ups.</p>
-                    </div>
-                </div>
-            </div>
+            )} {/* End of Execution Phase Strategy Setup Build-up */}
         </div>
     );
 }

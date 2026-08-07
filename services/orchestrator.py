@@ -214,6 +214,35 @@ echo "Migration Image Factory Ready."
             return {"success": False, "error": str(e)}
 
     @staticmethod
+    def rollback_rfs_stack(ak: str, sk: str, security_token: str, region: str, project_id: str):
+        """Rollback/destroy RFS stack to tear down provisioned infrastructure."""
+        try:
+            stack_name = f"migration-landing-zone-{project_id[-6:]}"
+            url = f"https://rfs.{region}.myhuaweicloud.com/v1/stacks/{stack_name}"
+
+            credentials = BasicCredentials(ak=ak, sk=sk)
+            signer = Signer(credentials)
+            request = SdkRequest(
+                method="DELETE", uri=url,
+                header_params={"Content-Type": "application/json"}
+            )
+            signer.sign(request)
+            headers = dict(request.header_params)
+            if security_token:
+                headers['X-Security-Token'] = security_token
+
+            response = requests.delete(url, headers=headers, timeout=15)
+
+            if response.status_code in [200, 202, 204]:
+                return {"success": True, "message": f"RFS stack '{stack_name}' deletion initiated. All managed resources will be terminated."}
+            elif response.status_code == 404:
+                return {"success": True, "message": "Stack not found — may already be deleted."}
+            else:
+                return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
     def generate_migration_plan(discovery_data: dict, project_type: str = "execution") -> dict:
         try:
             recommendations = ToolRecommender.analyze_discovery_data(discovery_data)

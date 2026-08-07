@@ -38,6 +38,7 @@ class ProjectData(db.Model):
     locked_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     locked_at = db.Column(db.DateTime, nullable=True)
     data = db.Column(db.Text, nullable=False)
+    delegate_tasks = db.Column(db.Text, default='[]')  # JSON array of delegate task records
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -211,10 +212,24 @@ class ExecutionState(db.Model):
     project_id = db.Column(db.String(50), db.ForeignKey('projects.id'), unique=True, nullable=False)
     current_phase = db.Column(db.String(50), default='PHASE_4_0')
     status = db.Column(db.String(50), default='PENDING') # PENDING, IN_PROGRESS, WAITING_ON_CUSTOMER, COMPLETED
-    pending_action = db.Column(db.String(100)) 
+    pending_action = db.Column(db.String(100))
     migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
-    execution_logs = db.Column(db.Text, default='[]') 
     last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Relationship to structured logs
+    logs = db.relationship('ExecutionLog', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
+
+# 🚨 Structured Execution Logs — queryable, per-project event journal (Fix #7)
+class ExecutionLog(db.Model):
+    __tablename__ = 'execution_logs'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    execution_state_id = db.Column(db.Integer, db.ForeignKey('execution_states.id'), nullable=False, index=True)
+    project_id = db.Column(db.String(50), index=True)
+    phase = db.Column(db.String(50))          # PHASE_4_1, PHASE_4_2, etc.
+    event_type = db.Column(db.String(50))     # INFO, SUCCESS, ERROR, WARNING, GATE_CHANGE
+    message = db.Column(db.Text)
+    agent_name = db.Column(db.String(100))    # Which Hermes agent produced this
+    metadata_json = db.Column(db.Text)        # Optional structured payload
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 # 🚨 Hermes AI Configuration — Global settings store
 class HermesConfig(db.Model):

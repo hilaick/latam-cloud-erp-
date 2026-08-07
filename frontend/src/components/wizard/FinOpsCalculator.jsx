@@ -244,10 +244,23 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         setIsValidating(true);
         try {
             const token = sessionStorage.getItem('hermes_access_token');
+            // 📆 Compute date range: project start (durationMonths ago) → today
+            const now = new Date();
+            const startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - Number(durationMonths));
+            const fmt = (d) => d.toISOString().split('T')[0]; // YYYY-MM-DD
+            
             const response = await fetch('/api/finops/billing_validation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ duration_months: durationMonths, estimated_cost: migrationOverhead, bom_items: migrationBom || [] })
+                body: JSON.stringify({
+                    start_date: fmt(startDate),
+                    end_date: fmt(now),
+                    duration_months: durationMonths,
+                    estimated_cost: migrationOverhead,
+                    bom_items: migrationBom || [],
+                    currency: activeCurrency.code
+                })
             });
             const data = await response.json();
             if (data.success) {
@@ -284,13 +297,42 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     const remainingAfterGoLive = totalAvailable - totalMigrationBurn;
     const monthsOfRunwayLeft = mrr > 0 ? remainingAfterGoLive / mrr : 0;
 
-    const fm = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+    // 💰 MULTI-CURRENCY SUPPORT
+    const [currency, setCurrency] = useState(activeProject?.financials?.currency || 'USD');
+    const currencies = [
+        { code: 'USD', symbol: '$', locale: 'en-US', name: 'US Dollar' },
+        { code: 'BRL', symbol: 'R$', locale: 'pt-BR', name: 'Brazilian Real' },
+        { code: 'CLP', symbol: 'CLP$', locale: 'es-CL', name: 'Chilean Peso' },
+        { code: 'PEN', symbol: 'S/', locale: 'es-PE', name: 'Peruvian Sol' },
+        { code: 'COP', symbol: 'COP$', locale: 'es-CO', name: 'Colombian Peso' },
+        { code: 'MXN', symbol: 'MX$', locale: 'es-MX', name: 'Mexican Peso' }
+    ];
+    const activeCurrency = currencies.find(c => c.code === currency) || currencies[0];
+
+    const fm = (num) => new Intl.NumberFormat(activeCurrency.locale, { style: 'currency', currency: activeCurrency.code, maximumFractionDigits: 0 }).format(num);
+
+    // 📊 BUDGET SNAPSHOT HISTORY (Time-Series Tracking)
+    const budgetSnapshots = useMemo(() => {
+        const snapshots = activeProject?.financials?.budgetSnapshots || [];
+        const now = new Date().toISOString();
+        const current = {
+            timestamp: now,
+            totalAvailable,
+            totalRunRate,
+            budgetHealth,
+            marginPercentage: parseFloat(marginPercentage),
+            migrationBurn: totalMigrationBurn
+        };
+        return [...snapshots.slice(-12), current];
+    }, [activeProject?.financials?.budgetSnapshots, totalAvailable, totalRunRate, budgetHealth, marginPercentage, totalMigrationBurn]);
+
+    const maxBudgetHealth = Math.max(...budgetSnapshots.map(s => Math.abs(s.budgetHealth || 0)), 1);
 
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); 
         
         setTimeout(() => {
-            onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling });
+            onUpdateProject(activeProject.id, 'financials', { sowBudget, huaweiCoupon, migrationOverhead, overheadScenario, migrationBom, actualBilling, currency, budgetSnapshots });
             alert("FinOps & Commercial Model Saved."); 
         }, 300);
     };
@@ -321,6 +363,12 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         </div>
                     </div>
                     <button type="button" onClick={saveContext} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform active:scale-95"><i className="fas fa-save mr-2"></i> Save FinOps</button>
+                    <div className="flex items-center gap-3">
+                        <label className="text-[9px] text-slate-400 uppercase font-bold">Currency:</label>
+                        <select value={currency} onChange={e => { setCurrency(e.target.value); onUpdateProject(activeProject.id, 'financials', { ...(activeProject.financials || {}), currency: e.target.value }); }} className="bg-slate-800 border border-slate-600 text-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase focus:border-emerald-500 outline-none">
+                            {currencies.map(c => (<option key={c.code} value={c.code}>{c.symbol} {c.code}</option>))}
+                        </select>
+                    </div>
                 </div>
 
                 <div className="p-8 border-b border-slate-200 bg-slate-50">
@@ -363,29 +411,69 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                             <input type="number" value={migrationOverhead} onChange={e=>setMigrationOverhead(e.target.value)} disabled={overheadScenario !== 'manual'} className="w-full p-3 border border-amber-300 rounded-lg text-sm font-black text-amber-800 bg-white outline-none focus:border-amber-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-500" />
                         </div>
 
-                        {migrationBom && overheadScenario === 'wbs_detailed' && (
-                            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
-                                <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM)</h5>
-                                <div className="space-y-3">
-                                    {migrationBom.map((item) => (
-                                        <div key={item.id} className={`flex gap-3 items-start bg-white p-3 rounded-lg border shadow-sm transition-colors ${item.selected ? 'border-indigo-300' : 'border-slate-200 opacity-60'}`}>
-                                            <div className="mt-1 shrink-0">
-                                                <input type="checkbox" checked={item.selected} onChange={() => toggleBomItem(item.id)} className="w-4 h-4 text-indigo-600 rounded cursor-pointer" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-center">
-                                                    <div className={`text-xs font-black ${item.selected ? 'text-slate-800' : 'text-slate-500 line-through'}`}>{item.service} <span className="text-indigo-600 mx-1">x{item.qty}</span></div>
-                                                    <div className="text-xs font-black text-rose-600">{fm(item.cost_per_month)}/mo</div>
+                        {migrationBom && overheadScenario === 'wbs_detailed' && (() => {
+                            // Group BOM items by major category
+                            const BOM_CATEGORY_MAP = {
+                                'ECS': 'Compute', 'ELB': 'Compute', 'AS': 'Compute',
+                                'RDS': 'Database', 'DDS': 'Database', 'DRS': 'Database', 'GAUSSDB': 'Database',
+                                'EVS': 'Storage', 'OBS': 'Storage', 'SFS': 'Storage', 'CBR': 'Storage',
+                                'VPC': 'Networking', 'EIP': 'Networking', 'NAT': 'Networking', 'VPN': 'Networking',
+                                'DIRECTCONNECT': 'Networking', 'CC': 'Networking', 'DNS': 'Networking'
+                            };
+                            const bomGroups = {};
+                            migrationBom.forEach(item => {
+                                const cat = String(item.category || item.service || 'Other').toUpperCase();
+                                const majorCat = BOM_CATEGORY_MAP[cat] || 'Other';
+                                if (!bomGroups[majorCat]) bomGroups[majorCat] = { category: majorCat, total: 0, items: [] };
+                                bomGroups[majorCat].total += (item.cost_per_month || 0);
+                                bomGroups[majorCat].items.push(item);
+                            });
+                            const bomGroupsArr = Object.values(bomGroups).sort((a, b) => b.total - a.total);
+                            
+                            return (
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
+                                    <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM) by Category</h5>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {bomGroupsArr.map((group) => (
+                                            <div key={group.category} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                                                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs ${
+                                                            group.category === 'Compute' ? 'bg-blue-100 text-blue-600' :
+                                                            group.category === 'Database' ? 'bg-purple-100 text-purple-600' :
+                                                            group.category === 'Storage' ? 'bg-amber-100 text-amber-600' :
+                                                            group.category === 'Networking' ? 'bg-cyan-100 text-cyan-600' :
+                                                            'bg-slate-100 text-slate-600'
+                                                        }`}>
+                                                            {group.category === 'Compute' ? '🖥' : group.category === 'Database' ? '🗄' : group.category === 'Storage' ? '💾' : group.category === 'Networking' ? '🌐' : '📦'}
+                                                        </span>
+                                                        <span className="font-black text-xs text-slate-700 uppercase tracking-widest">{group.category}</span>
+                                                    </div>
+                                                    <span className="text-xs font-black text-indigo-600">{fm(group.total)}/mo</span>
                                                 </div>
-                                                <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{item.spec}</div>
-                                                <div className="text-[10px] text-slate-500 mt-1.5 leading-tight">{item.reason}</div>
+                                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                    {group.items.map((item) => (
+                                                        <div key={item.id} className={`flex gap-2 items-start p-2 rounded-lg transition-colors ${item.selected ? 'bg-indigo-50' : 'opacity-50'}`}>
+                                                            <div className="mt-0.5 shrink-0">
+                                                                <input type="checkbox" checked={item.selected} onChange={() => toggleBomItem(item.id)} className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className={`text-[10px] font-bold ${item.selected ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{item.service} <span className="text-indigo-500">x{item.qty}</span></div>
+                                                                    <div className="text-[10px] font-black text-rose-600">{fm(item.cost_per_month)}/mo</div>
+                                                                </div>
+                                                                <div className="text-[8px] font-bold text-slate-400 uppercase">{item.spec}</div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                    <div className="text-[9px] text-indigo-500 font-bold mt-3 text-right">Costs dynamically recalculate based on confirmed selections.</div>
                                 </div>
-                                <div className="text-[9px] text-indigo-500 font-bold mt-3 text-right">Costs dynamically recalculate based on confirmed selections.</div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         <div className="flex gap-4">
                             <div className="flex-1"><label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-slate-500">Transfer Infra Tax</label><select value={infraComplexity} onChange={e=>setInfraComplexity(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg text-xs font-bold outline-none bg-white"><option value="Low">Low (Internet)</option><option value="Medium">Medium (VPN)</option><option value="High">High (DirectConnect)</option></select></div>
@@ -444,21 +532,86 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm animate-slide-up">
                             <div className="flex justify-between items-center mb-6">
                                 <div className="text-2xl font-black text-slate-800">Total Invoiced: {fm(actualBilling.invoiced_total)}</div>
-                                <div className={`text-sm font-black px-4 py-1.5 rounded-lg border ${actualBilling.status === 'warning' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                                    Variance: {actualBilling.variance > 0 ? '+' : ''}{fm(actualBilling.variance)}
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {actualBilling.line_items.map((line, idx) => (
-                                    <div key={idx} className={`p-4 rounded-lg border ${line.status === 'danger' ? 'bg-rose-50/50 border-rose-200' : line.status === 'warning' ? 'bg-amber-50/50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{line.category}</span>
-                                            <span className={`text-sm font-black ${line.status === 'danger' ? 'text-rose-600' : 'text-slate-800'}`}>{fm(line.amount)}</span>
-                                        </div>
-                                        {line.note && <div className="text-[10px] text-slate-500 font-medium leading-tight mt-2"><i className="fas fa-info-circle mr-1"></i>{line.note}</div>}
+                                    <div className={`text-sm font-black px-4 py-1.5 rounded-lg border ${actualBilling.status === 'warning' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                                        Variance: {actualBilling.variance > 0 ? '+' : ''}{fm(actualBilling.variance)}
                                     </div>
-                                ))}
-                            </div>
+                                </div>
+                                {actualBilling.period && (
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 bg-slate-50 inline-block px-3 py-1 rounded-full">
+                                        <i className="fas fa-calendar-alt mr-1"></i> 
+                                        {actualBilling.period.start || 'Project Start'} → {actualBilling.period.end || 'Today'}
+                                        <span className="mx-2 text-slate-300">|</span>
+                                        {actualBilling.period.duration_months} months
+                                    </div>
+                                )}
+                                {/* 💳 CATEGORY GROUP CARDS — grouped by major resource class */}
+                                {(actualBilling.category_groups || []).length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {(actualBilling.category_groups || []).map((group, idx) => (
+                                            <div key={idx} className={`p-5 rounded-xl border-2 transition-all ${
+                                                group.variance_pct > 20 ? 'bg-rose-50 border-rose-200' 
+                                                : group.variance_pct > 10 ? 'bg-amber-50 border-amber-200' 
+                                                : 'bg-emerald-50/50 border-emerald-200'
+                                            }`}>
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${
+                                                            group.category === 'Compute' ? 'bg-blue-100 text-blue-600' :
+                                                            group.category === 'Database' ? 'bg-purple-100 text-purple-600' :
+                                                            group.category === 'Storage' ? 'bg-amber-100 text-amber-600' :
+                                                            group.category === 'Networking' ? 'bg-cyan-100 text-cyan-600' :
+                                                            'bg-slate-100 text-slate-600'
+                                                        }`}>
+                                                            {group.category === 'Compute' ? '🖥' : group.category === 'Database' ? '🗄' : group.category === 'Storage' ? '💾' : group.category === 'Networking' ? '🌐' : '📦'}
+                                                        </span>
+                                                        <span className="font-black text-sm text-slate-800 uppercase tracking-widest">{group.category}</span>
+                                                    </div>
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                        group.variance_pct > 20 ? 'bg-rose-200 text-rose-800' : 
+                                                        group.variance_pct > 10 ? 'bg-amber-200 text-amber-800' : 
+                                                        'bg-emerald-200 text-emerald-800'
+                                                    }`}>
+                                                        {group.variance >= 0 ? '+' : ''}{fm(group.variance)}
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                                    <div>
+                                                        <div className="text-[9px] text-slate-400 uppercase font-bold">Estimated</div>
+                                                        <div className="font-black text-slate-600">{fm(group.estimated)}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[9px] text-slate-400 uppercase font-bold">Actual Billed</div>
+                                                        <div className={`font-black ${group.variance_pct > 10 ? 'text-rose-600' : 'text-emerald-600'}`}>{fm(group.actual)}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 pt-3 border-t border-slate-200/50">
+                                                    <div className="text-[9px] font-bold text-slate-500 mb-2 uppercase">Resource Breakdown</div>
+                                                    <div className="space-y-1">
+                                                        {(group.items || []).map((item, i) => (
+                                                            <div key={i} className="flex justify-between text-[10px]">
+                                                                <span className="text-slate-600 font-medium">{item.category} • {item.name || item.id}</span>
+                                                                <span className={`font-bold ${item.status === 'danger' ? 'text-rose-500' : 'text-slate-500'}`}>{fm(item.amount)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    /* FALLBACK: flat line items if no category groups */
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {actualBilling.line_items.map((line, idx) => (
+                                            <div key={idx} className={`p-4 rounded-lg border ${line.status === 'danger' ? 'bg-rose-50/50 border-rose-200' : line.status === 'warning' ? 'bg-amber-50/50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{line.category}</span>
+                                                    <span className={`text-sm font-black ${line.status === 'danger' ? 'text-rose-600' : 'text-slate-800'}`}>{fm(line.amount)}</span>
+                                                </div>
+                                                {line.note && <div className="text-[10px] text-slate-500 font-medium leading-tight mt-2"><i className="fas fa-info-circle mr-1"></i>{line.note}</div>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                         </div>
                     ) : (
                         <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50/50">
@@ -467,6 +620,70 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         </div>
                     )}
                 </div>
+
+                {/* 💰 RESERVED INSTANCE OPTIMIZATION */}
+                {totalServers > 0 && (
+                <div className="bg-gradient-to-r from-indigo-50 to-sky-50 p-8 border-b border-slate-200">
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-1 border-b border-indigo-100 pb-3">
+                        <i className="fas fa-piggy-bank text-indigo-600 mr-2"></i> Reserved Instance Savings Analysis
+                    </h4>
+                    <p className="text-[10px] text-slate-500 font-bold mb-4">Based on {totalServers} target servers — RI purchases reduce monthly burn up to 45%</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[
+                            { tier: 'No RI (On-Demand)', cost: totalServers * 100 * durationMonths, savingsPct: 0, savings: 0, rec: false },
+                            { tier: '1-Year Partial RI', cost: totalServers * 70 * durationMonths, savingsPct: 30, savings: totalServers * 30 * durationMonths, rec: false },
+                            { tier: '3-Year All-Upfront RI', cost: totalServers * 55 * durationMonths, savingsPct: 45, savings: totalServers * 45 * durationMonths, rec: true }
+                        ].map((s, i) => (
+                            <div key={i} className={`rounded-xl p-5 border-2 ${s.rec ? 'bg-white border-emerald-400 shadow-lg shadow-emerald-100 ring-1 ring-emerald-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                <div className="flex justify-between items-start mb-3">
+                                    <span className="text-[10px] font-black uppercase text-slate-600">{s.tier}</span>
+                                    {s.rec && <span className="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase">Recommended</span>}
+                                </div>
+                                <div className="text-xl font-black text-slate-800 mb-2">{fm(s.cost)}</div>
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-3">{durationMonths}-month period</div>
+                                <div className={`text-sm font-black ${s.savingsPct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    {s.savingsPct > 0 ? `Save ${fm(s.savings)} (${s.savingsPct}%)` : 'Baseline on-demand rates'}
+                                </div>
+                                {s.rec && <div className="mt-3 pt-3 border-t border-emerald-100 text-[9px] text-emerald-700 font-bold"><i className="fas fa-check-circle mr-1"></i> Maximum savings — lock in 3-year pricing</div>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                )}
+
+                {/* 📊 BUDGET BURN TIME-SERIES */}
+                {budgetSnapshots.length > 1 && (
+                <div className="bg-white p-8 border-b border-slate-200">
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-1 border-b border-slate-100 pb-3">
+                        <i className="fas fa-chart-line text-sky-500 mr-2"></i> Budget Burn Time-Series
+                    </h4>
+                    <p className="text-[10px] text-slate-500 font-bold mb-4">{budgetSnapshots.length} snapshots · burn rate {(totalRunRate/Math.max(totalAvailable,1)*100).toFixed(1)}% · runway {monthsOfRunwayLeft.toFixed(1)} months</p>
+                    <div className="overflow-x-auto">
+                        <div className="flex gap-1 items-end h-32 min-w-[500px]">
+                            {budgetSnapshots.map((snap, idx) => {
+                                const isLast = idx === budgetSnapshots.length - 1;
+                                const barH = maxBudgetHealth > 0 ? Math.max(8, Math.abs(snap.budgetHealth||0)/maxBudgetHealth*100) : 8;
+                                const isPositive = (snap.budgetHealth||0) >= 0;
+                                const t = new Date(snap.timestamp);
+                                const label = isLast ? 'NOW' : `${t.getMonth()+1}/${t.getDate()}`;
+                                return (
+                                    <div key={idx} className="flex-1 flex flex-col items-center gap-1 group relative" title={`${label}: ${fm(snap.budgetHealth)} (${snap.marginPercentage}%)`}>
+                                        <div className="text-[8px] font-bold text-slate-400 mb-1">{label}</div>
+                                        <div className="w-full rounded-t transition-all cursor-pointer" style={{height:`${barH}%`, backgroundColor: isPositive?'#10b981':'#f43f5e', opacity: isLast?1:(0.3+idx/budgetSnapshots.length*0.6)}}></div>
+                                        <div className="absolute -bottom-5 opacity-0 group-hover:opacity-100 bg-slate-800 text-white text-[8px] px-2 py-1 rounded font-bold whitespace-nowrap transition-opacity z-10">{label}: {fm(snap.budgetHealth)}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-slate-50 p-3 rounded-lg border text-center"><div className="text-[9px] text-slate-400 uppercase font-bold">Burn Rate</div><div className="text-sm font-black text-rose-600">{fm(totalRunRate)}</div></div>
+                        <div className="bg-slate-50 p-3 rounded-lg border text-center"><div className="text-[9px] text-slate-400 uppercase font-bold">Per-Month</div><div className="text-sm font-black text-amber-600">{fm(totalRunRate/Math.max(durationMonths,1))}</div></div>
+                        <div className="bg-slate-50 p-3 rounded-lg border text-center"><div className="text-[9px] text-slate-400 uppercase font-bold">Runway</div><div className="text-sm font-black text-emerald-600">{monthsOfRunwayLeft.toFixed(1)}mo</div></div>
+                        <div className="bg-slate-50 p-3 rounded-lg border text-center"><div className="text-[9px] text-slate-400 uppercase font-bold">Margin</div><div className={`text-sm font-black ${budgetHealth>=0?'text-emerald-600':'text-rose-600'}`}>{marginPercentage}%</div></div>
+                    </div>
+                </div>
+                )}
 
                 <div className="bg-slate-800 p-8 flex flex-col justify-center border-t border-slate-700 relative overflow-hidden">
                     <h4 className="font-black text-white text-lg mb-6 uppercase tracking-widest border-b border-slate-600 pb-3 relative z-10"><i className="fas fa-calculator text-indigo-400 mr-3"></i> Margin Analysis</h4>

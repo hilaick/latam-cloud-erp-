@@ -8,7 +8,7 @@ from pathlib import Path
 from models import setup_db, db
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
-from services.excel_ingestor import process_huawei_quotation as process_quotation
+from services.quotation_router import process_quotation
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from datetime import timedelta, datetime
 import mimetypes
@@ -33,7 +33,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-dist_folder = os.path.join(basedir, 'frontend')
+dist_folder = os.path.join(basedir, 'frontend', 'dist')  # point to Vite output dir
 app = Flask(__name__, static_folder=dist_folder)
 
 # Load n8n API key for workflow deployment (stored server-side to avoid CORS)
@@ -303,6 +303,69 @@ def get_quotation_versions(project_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/quotation/import-from-url', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def import_quotation_from_url():
+    """Import quotation from a Huawei Cloud Pricing Calculator share URL."""
+    if request.method == 'OPTIONS': return '', 200
+    try:
+        data = request.get_json(silent=True) or {}
+        url = data.get('url', '').strip()
+        customer_name = data.get('customer_name', 'Unknown Customer')
+        project_id = data.get('project_id')
+        
+        if not url:
+            return jsonify({'success': False, 'error': 'URL is required'})
+        if not project_id:
+            return jsonify({'success': False, 'error': 'Project ID is required'})
+        
+        from services.pricing_calculator_parser import is_pricing_calculator_url, parse_from_share_url
+        if not is_pricing_calculator_url(url):
+            return jsonify({'success': False, 'error': 'URL is not a valid Huawei Cloud Pricing Calculator share link. Expected format: https://www.huaweicloud.com/intl/en-us/pricing/calculator.html?shareListId=...'})
+        
+        blueprint = parse_from_share_url(url, customer_name)
+        
+        # Save the blueprint JSON as a placeholder file for URL imports
+        import json as json_module
+        placeholder_path = PROJECT_ROOT / 'uploads' / 'quotations' / project_id
+        placeholder_path.mkdir(parents=True, exist_ok=True)
+        placeholder_file = placeholder_path / f"shared_link_{int(datetime.utcnow().timestamp())}.json"
+        with open(placeholder_file, 'w') as f:
+            json_module.dump(blueprint, f, indent=2)
+        
+        # Create a version record for the URL import
+        from services.quotation_versioning import create_quotation_version
+        current_user = get_jwt_identity()
+        version = create_quotation_version(
+            project_id=project_id,
+            filename=f"shared_link_{int(datetime.utcnow().timestamp())}.json",
+            file_path=str(placeholder_file),
+            uploaded_by=current_user,
+            blueprint_data=blueprint,
+            cr_id=data.get('cr_id')
+        )
+        
+        # Update project data
+        from models import ProjectData
+        import json as json_module
+        project = ProjectData.query.get(project_id)
+        if project:
+            project_data = json_module.loads(project.data)
+            project_data['blueprintData'] = blueprint
+            project.data = json_module.dumps(project_data)
+            project.updated_at = datetime.utcnow()
+            db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'blueprint': blueprint,
+            'message': 'Pricing Calculator share link imported. Download and upload the .xlsx file for complete resource-level parsing.',
+            'version_id': version.id if version else None,
+            'note': blueprint.get('note', '')
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/finops/upload-ecs-ri-quotation', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def upload_ecs_ri_quotation():
@@ -561,6 +624,195 @@ def finops_query_price():
         })
         
     except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/finops/billing_validation', methods=['POST'])
+@jwt_required()
+def finops_billing_validation():
+    """Fetch actual Huawei Cloud billing data and compare against estimated BOM costs.
+    
+    In production, this queries Huawei Cloud BSS API (Pay-Per-Use billing endpoint).
+    For demo/PoC, generates realistic comparison data based on project parameters.
+    """
+    try:
+        data = request.get_json()
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+        estimated_cost = float(data.get('estimated_cost', 0))
+        bom_items = data.get('bom_items', [])
+        currency = data.get('currency', 'USD')
+        project_id = data.get('project_id', '')
+        
+        # Parse dates, fall back to duration_months for backward compat
+        from datetime import datetime
+        if start_date and end_date:
+            start_dt = datetime.strptime(start_date[:10], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date[:10], '%Y-%m-%d')
+            duration_months = max(1, round((end_dt - start_dt).days / 30.44, 1))
+        else:
+            duration_months = int(data.get('duration_months', 3))
+            start_dt = None
+            end_dt = None
+        
+        # Regional pricing multipliers (LATAM)
+        region_multipliers = {
+            'la-santiago-1': 1.12, 'la-sao-paulo-1': 1.08, 'la-mexico-city-1': 1.05,
+            'la-bogota-1': 1.06, 'la-lima-1': 1.10, 'la-buenos-aires-1': 0.95
+        }
+        
+        # Simulate actual invoiced amounts (in production: Huawei Cloud BSS API call)
+        # BOM items map to real cloud services with actual consumption
+        line_items = []
+        total_invoiced = 0
+        
+        for item in bom_items:
+            cat = str(item.get('category', item.get('type', 'ECS'))).upper()
+            
+            # Simulate real usage patterns: actual costs are typically 85-115% of estimated
+            import random, hashlib
+            seed = hashlib.md5((item.get('id','') + str(duration_months)).encode()).hexdigest()
+            rng = random.Random(int(seed[:8], 16))
+            variance_factor = rng.uniform(0.82, 1.18)
+            
+            estimated_item = float(item.get('cost_per_month', 0))
+            actual_amount = round(estimated_item * variance_factor * duration_months, 2)
+            total_invoiced += actual_amount
+            
+            variance = actual_amount - (estimated_item * duration_months)
+            variance_pct = abs(variance / (estimated_item * duration_months)) * 100 if estimated_item > 0 else 0
+            
+            if variance_pct > 20:
+                status = 'danger'
+                note = f'Significant overrun: +{variance_pct:.0f}% vs estimate. Check for unexpected scaling or unused resources.'
+            elif variance_pct > 10:
+                status = 'warning'
+                note = f'Moderate variance: {variance_pct:.0f}% deviation. Consider RI purchase to stabilize costs.'
+            else:
+                status = 'ok'
+                note = 'Within expected range.'
+            
+            line_items.append({
+                'id': item.get('id'),
+                'category': cat,
+                'name': item.get('name', cat),
+                'estimated': round(estimated_item * duration_months, 2),
+                'amount': actual_amount,
+                'variance': round(variance, 2),
+                'variance_pct': round(variance_pct, 1),
+                'status': status,
+                'note': note,
+                'currency': currency
+            })
+        
+        variance = round(total_invoiced - estimated_cost, 2)
+        variance_pct = abs(variance / estimated_cost * 100) if estimated_cost > 0 else 0
+
+        # Compute category groups for major resource classes
+        CATEGORY_MAP = {
+            'ECS': 'Compute', 'ELB': 'Compute', 'AS': 'Compute',
+            'RDS': 'Database', 'DDS': 'Database', 'DRS': 'Database', 'GAUSSDB': 'Database',
+            'EVS': 'Storage', 'OBS': 'Storage', 'SFS': 'Storage', 'CBR': 'Storage',
+            'VPC': 'Networking', 'EIP': 'Networking', 'NAT': 'Networking', 'VPN': 'Networking',
+            'DIRECTCONNECT': 'Networking', 'CC': 'Networking', 'DNS': 'Networking'
+        }
+        category_groups = {}
+        for item in line_items:
+            cat = str(item['category']).upper()
+            major_cat = CATEGORY_MAP.get(cat, 'Other')
+            if major_cat not in category_groups:
+                category_groups[major_cat] = {'category': major_cat, 'estimated': 0, 'actual': 0, 'variance': 0, 'items': []}
+            category_groups[major_cat]['estimated'] += item['estimated']
+            category_groups[major_cat]['actual'] += item['amount']
+            category_groups[major_cat]['variance'] += item['variance']
+            category_groups[major_cat]['items'].append(item)
+        # Calculate variance percentages
+        for g in category_groups.values():
+            g['variance_pct'] = round(abs(g['variance']) / g['estimated'] * 100, 1) if g['estimated'] > 0 else 0
+        category_groups_list = sorted(category_groups.values(), key=lambda x: x['actual'], reverse=True)
+        
+        if variance_pct > 20:
+            overall_status = 'warning'
+            recommendation = 'Budget overrun critical. Immediate RI purchase recommended. Review unused resources for termination.'
+        elif variance_pct > 10:
+            overall_status = 'warning'
+            recommendation = 'Budget trending over estimate. Consider 1-year RI commitment for core workloads.'
+        elif variance < 0 and abs(variance_pct) > 5:
+            overall_status = 'ok'
+            recommendation = 'Under budget — good execution discipline. Consider applying surplus to next wave.'
+        else:
+            overall_status = 'ok'
+            recommendation = 'Budget on track. Continue monitoring.'
+        
+        # RI recommendation engine
+        ri_recommendations = []
+        for item in bom_items:
+            cat = str(item.get('category', item.get('type', ''))).upper()
+            monthly = float(item.get('cost_per_month', 0))
+            
+            if cat == 'ECS' and monthly > 50:
+                # Suggest RI for ECS instances running > 1 month
+                ri_1yr_savings = round(monthly * 12 * 0.35, 2)  # ~35% savings with 1yr RI
+                ri_3yr_savings = round(monthly * 36 * 0.55, 2)  # ~55% savings with 3yr RI
+                ri_recommendations.append({
+                    'id': item.get('id'),
+                    'name': item.get('name', cat),
+                    'type': 'ECS Reserved Instance',
+                    'current_monthly': monthly,
+                    'ri_1yr_monthly': round(monthly * 0.65, 2),
+                    'ri_1yr_total_savings': ri_1yr_savings,
+                    'ri_3yr_monthly': round(monthly * 0.45, 2),
+                    'ri_3yr_total_savings': ri_3yr_savings,
+                    'break_even_months': 8,
+                    'action': 'Purchase 1-year RI' if duration_months >= 8 else 'Consider on-demand (migration < 8 months)'
+                })
+            elif cat == 'RDS' and monthly > 80:
+                ri_1yr_savings = round(monthly * 12 * 0.30, 2)
+                ri_recommendations.append({
+                    'id': item.get('id'),
+                    'name': item.get('name', cat),
+                    'type': 'RDS Reserved Instance',
+                    'current_monthly': monthly,
+                    'ri_1yr_monthly': round(monthly * 0.70, 2),
+                    'ri_1yr_total_savings': ri_1yr_savings,
+                    'break_even_months': 9,
+                    'action': 'Purchase 1-year RDS RI' if duration_months >= 9 else 'Consider on-demand'
+                })
+        
+        # Time-series budget snapshots (simulated weekly burn)
+        import math
+        budget_snapshots = []
+        weekly_burn = estimated_cost / (duration_months * 4.33) if duration_months > 0 else 0
+        for week in range(1, int(duration_months * 4.33) + 1):
+            cumulative_actual = round(weekly_burn * week * rng.uniform(0.90, 1.10), 2)
+            budget_snapshots.append({
+                'week': week,
+                'label': f'Week {week}',
+                'cumulative_estimated': round(weekly_burn * week, 2),
+                'cumulative_actual': cumulative_actual,
+                'variance': round(cumulative_actual - weekly_burn * week, 2)
+            })
+        
+        result = {
+            'success': True,
+            'invoiced_total': round(total_invoiced, 2),
+            'estimated_total': round(estimated_cost, 2),
+            'variance': variance,
+            'variance_pct': round(variance_pct, 1),
+            'status': overall_status,
+            'recommendation': recommendation,
+            'currency': currency,
+            'line_items': line_items,
+            'category_groups': category_groups_list,
+            'ri_recommendations': ri_recommendations,
+            'budget_snapshots': budget_snapshots,
+            'fetched_at': datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/finops/upload-ecs-ri-raw', methods=['POST'])

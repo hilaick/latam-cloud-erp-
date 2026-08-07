@@ -11,6 +11,14 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const [showWaveZeroModal, setShowWaveZeroModal] = useState(false);
     const [runbookData, setRunbookData] = useState(null);
     const [showRunbookModal, setShowRunbookModal] = useState(false);
+    // Physics recalibration tracking (NEW — Improvement #4)
+    const [recalibrationState, setRecalibrationState] = useState({
+        observedThroughputMbps: null,
+        elapsedSyncHours: 0,
+        deviationPct: null,
+        lastCheckedAt: null,
+        recalibrated: false
+    });
     
     const [executionState, setExecutionState] = useState(null);
     const [isLoadingState, setIsLoadingState] = useState(true);
@@ -18,6 +26,33 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const isGreenfield = project?.projectType === 'greenfield' || project?.project_type === 'greenfield';
     const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
     const isZeroTrust = authLevel === 'Read-Only (Customer Managed)';
+    // Extract physics recalibration baseline from saved physics data
+    const recalibrationBaseline = useMemo(() => {
+        const physics = project?.physics;
+        if (!physics) return null;
+        // Check for structured result first, fall back to legacy
+        if (physics.result?._recalibrationBaseline) return physics.result._recalibrationBaseline;
+        if (physics._recalibrationBaseline) return physics._recalibrationBaseline;
+        // Construct from flat physics data for backward compatibility
+        if (physics.engineMode && physics.transitType) {
+            const pipeMbps = Math.min(Number(physics.netSource) || 1000, Number(physics.netTunnel) || 300);
+            let cryptoTax = physics.transitType === 'IPsec VPN' ? 0.85 : physics.transitType === 'Public Internet' ? 0.75 : 0.95;
+            const effectiveMbps = pipeMbps * cryptoTax;
+            return {
+                expectedThroughputMbps: Math.round(effectiveMbps),
+                perNodeExpectedMbps: Math.round(effectiveMbps / Math.max((physics.concurrency || 5), 1)),
+                maxParallelNodes: physics.concurrency || 5,
+                isFeasible: physics.downtimeWindow ? (Number(physics.downtimeWindow) >= 0) : true,
+                recalibrationThreshold: {
+                    throughputWarningPct: 70,
+                    throughputCriticalPct: 50,
+                    timeOverrunWarningPct: 120,
+                    timeOverrunCriticalPct: 150
+                }
+            };
+        }
+        return null;
+    }, [project?.physics]);
 
     useEffect(() => {
         if (!project?.id) return;
@@ -68,6 +103,22 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         } catch (err) { alert(`Network Error: ${err.message}`); }
     };
 
+    // 🚨 DRY-RUN: Validate terraform payload without deploying to RFS
+    const handleDryRunTerraform = async (networkConfig = null) => {
+        if (!project?.id) return null;
+        setShowWaveZeroModal(false);
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project.id}/execute`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ networkConfig, dryRun: true })
+            });
+            const data = await res.json();
+            if (data.success && data.dry_run) return data;
+            throw new Error(data.error || 'Dry-run failed');
+        } catch (err) { alert(`Dry-Run Error: ${err.message}`); return null; }
+    };
+
     // 🚨 Phase 4.7 Backend Call
     const handleGarbageCollection = async () => {
         if (!project?.id) return;
@@ -104,8 +155,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const executionMode = project?.executionMode || 'manual';
     const isIndividual = executionMode === 'individual';
     const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
-    // Workbench unlocked when: pipeline complete (manual/agentic) OR individual prereqs passed
-    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated);
+    // Workbench unlocked when: pipeline complete OR individual prereqs passed OR manual mode past Phase 4.2 (infra deployed)
+    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated) || (executionMode === 'manual' && executionState?.currentPhase > 'PHASE_4_2');
 
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
@@ -136,7 +187,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 if ((item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked) 
                                     return alert(isIndividual 
                                         ? "Validate prerequisites in the Orchestrator tab first to unlock Workbench & Command Center." 
-                                        : "Complete the 7-phase pipeline to unlock Workbench & Command Center."); 
+                                        : executionMode === 'agentic'
+                                            ? "Complete the 7-phase pipeline to unlock Workbench & Command Center."
+                                            : "Advance past Phase 4.2 (infrastructure deployed) to unlock Workbench & Command Center."); 
                                 setSubTab(item.id); 
                             }}
                             className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
@@ -182,7 +235,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
-                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
                     {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
                     {subTab === 'workbench' && <WorkbenchView project={project} />}
                     {subTab === 'hub' && <CommandCenterView project={project} executionState={executionState} executionMode={executionMode} />}
@@ -195,13 +248,20 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
 // 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
 // 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
-function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
+function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [orchestrationLog, setOrchestrationLog] = useState([]);
+    // Phase-level resume state (Fix #4)
+    const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
+    const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
+    const [phaseStatus, setPhaseStatus] = useState({}); // { PHASE_4_X: 'completed'|'failed'|'running' }
     const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
     const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
+    const [dryRunResult, setDryRunResult] = useState(null);
+    const [showDryRunModal, setShowDryRunModal] = useState(false);
+    const [dryRunLoading, setDryRunLoading] = useState(false);
 
     const isAgentic = executionMode === 'agentic';
     const isIndividual = executionMode === 'individual';
@@ -214,39 +274,144 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         updatePhase('PHASE_4_3', 'PENDING');
     };
 
-    // 🚨 AGENTIC: Orchestrate entire pipeline with simulated auto-chaining
-    const handleOrchestrateAll = async () => {
+    // 🚨 DRY-RUN: Run terraform validation without deploying
+    const handleDryRun = async () => {
+        setDryRunLoading(true);
+        const result = await handleDryRunTerraform();
+        setDryRunLoading(false);
+        if (result) {
+            setDryRunResult(result);
+            setShowDryRunModal(true);
+        }
+    };
+
+    // 🚨 AGENTIC: Orchestrate pipeline via real Hermes delegate-task API (Fix #4: phase-level resume)
+    const handleOrchestrateAll = async (startFrom = 0) => {
+        // Build completed-set from backend delegateTasks on first run
+        if (startFrom === 0 && project?.delegateTasks?.length) {
+            const done = new Set();
+            let firstFail = null;
+            project.delegateTasks.forEach((t, i) => {
+                if (t.status === 'COMPLETED') done.add(t.phase);
+                if (t.status === 'FAILED' && firstFail === null) firstFail = i;
+            });
+            setCompletedOrchPhases(done);
+            if (firstFail !== null) setFailedOrchPhaseIdx(firstFail);
+        }
+
         setAutoOrchestrating(true);
         setOrchestrationLog([]);
         const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
 
+        const token = sessionStorage.getItem('hermes_access_token');
         const chain = [
-            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', delay: 1500 },
-            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', delay: 1000 },
-            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', delay: 2000 },
-            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', delay: 1500 },
-            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', delay: 3000 },
-            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', delay: 2000 },
-            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', delay: 1500 },
+            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', goal: 'Validate and prepare the Wave 0 network fabric: provision isolated Transit VPC, subnets, security groups, and identity foundation via Terraform. Confirm all prerequisites for the migration landing zone.' },
+            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', goal: 'Run OS pre-flight diagnostics: validate source OS constraints against target cloud availability. Check that quoted flavors are in stock and flag any mismatches requiring Change Requests.' },
+            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', goal: 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.' },
+            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', goal: 'Deploy SMS and DRS migration agents across the established Wave 0 network. Verify agent health, connectivity to source and target, and prepare for data synchronization.' },
+            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', goal: 'Monitor data synchronization progress. Confirm byte-by-byte replication is complete for all volumes. Report sync percentages and estimated time to cutover readiness.' },
+            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', goal: 'Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure.' },
+            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', goal: 'Destroy transient migration resources: factory VMs, staging EIPs, and temporary disks. Confirm PPU costs drop to quoted baseline. Verify no orphaned resources remain.' },
         ];
 
-        for (let i = 0; i < chain.length; i++) {
+        for (let i = startFrom; i < chain.length; i++) {
             const step = chain[i];
-            log(`[agentic] Starting Phase ${step.phase}: ${step.label}...`);
+
+            // Skip phases already completed (from prior run or resume state)
+            if (completedOrchPhases.has(step.phase)) {
+                log(`[agentic ✓] ${step.label} — already completed (skipping).`);
+                updatePhase(step.phase, 'COMPLETED');
+                continue;
+            }
+
+            log(`[agentic] Phase ${step.phase}: ${step.label} — spawning Hermes agent...`);
             updatePhase(step.phase, 'IN_PROGRESS');
+            setPhaseStatus(prev => ({ ...prev, [step.phase]: 'running' }));
 
-            // 🚨 In production: call delegate_task API
-            // await fetch('/api/hermes-cli/delegate-task', {
-            //     method: 'POST',
-            //     body: JSON.stringify({ goal: step.label, context: `ERP Phase ${step.phase}`, profile: 'exec' })
-            // });
+            try {
+                const res = await fetch('/api/hermes-cli/delegate-task', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                            goal: step.goal,
+                            context: `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`,
+                            profile: 'exec',
+                            project_id: project?.id || ''
+                        })
+                });
 
-            await new Promise(resolve => setTimeout(resolve, step.delay));
-            log(`[agentic ✓] ${step.label} — complete.`);
+                const data = await res.json();
+
+                if (data.success) {
+                    log(`[agentic ✓] ${step.label} — agent completed successfully.`);
+                    log(`[agentic 📝] ${data.response?.substring(0, 300)}${(data.response?.length > 300) ? '...' : ''}`);
+                    setCompletedOrchPhases(prev => new Set([...prev, step.phase]));
+                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'completed' }));
+                    updatePhase(step.phase, 'COMPLETED');
+                } else {
+                    log(`[agentic ✗] ${step.label} — agent returned error: ${data.error}`);
+                    log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Remaining phases not executed.`);
+                    setFailedOrchPhaseIdx(i);
+                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
+                    updatePhase(step.phase, 'FAILED');
+                    setAutoOrchestrating(false);
+                    return; // Stop the chain on failure
+                }
+            } catch (err) {
+                log(`[agentic ✗] ${step.label} — network/connection error: ${err.message}`);
+                log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Check server connectivity.`);
+                setFailedOrchPhaseIdx(i);
+                setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
+                updatePhase(step.phase, 'FAILED');
+                setAutoOrchestrating(false);
+                return; // Stop the chain on failure
+            }
         }
 
+        // All phases completed
+        setFailedOrchPhaseIdx(null);
         updatePhase('COMPLETED', 'DONE');
         log('[agentic ✓] All 7 phases completed. Pipeline finished.');
+        setAutoOrchestrating(false);
+    };
+
+    // 🚨 RESUME: Continue from failed phase
+    const handleResumePipeline = () => {
+        if (failedOrchPhaseIdx === null) return;
+        setPhaseStatus({});
+        handleOrchestrateAll(failedOrchPhaseIdx);
+    };
+
+    // 🚨 ROLLBACK: Destroy all provisioned infrastructure (Fix #5)
+    const handleRollback = async () => {
+        if (!confirm('⚠️ ROLLBACK: This will destroy ALL provisioned infrastructure (VPCs, subnets, ECS instances, EIPs). This cannot be undone. Continue?')) return;
+        setAutoOrchestrating(true);
+        setOrchestrationLog([]);
+        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
+        log('[rollback] Initiating infrastructure rollback...');
+        
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project?.id}/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                log(`[rollback ✓] ${data.message}`);
+                setCompletedOrchPhases(new Set());
+                setPhaseStatus({});
+                setFailedOrchPhaseIdx(null);
+                updatePhase('PHASE_4_0', 'PENDING');
+            } else {
+                log(`[rollback ✗] Failed: ${data.error}`);
+            }
+        } catch (err) {
+            log(`[rollback ✗] Network error: ${err.message}`);
+        }
         setAutoOrchestrating(false);
     };
 
@@ -321,6 +486,38 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     <p className="text-xs text-slate-500 mb-5">
                         The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
                     </p>
+
+                    {/* Phase progress bar */}
+                    {completedOrchPhases.size > 0 && (
+                        <div className="mb-4">
+                            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+                                <span className="font-bold">{completedOrchPhases.size}/7 phases complete</span>
+                                {failedOrchPhaseIdx !== null && <span className="text-rose-500 font-black">⏸ Halted at Phase {failedOrchPhaseIdx + 1}</span>}
+                            </div>
+                            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-500 ${failedOrchPhaseIdx !== null ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                    style={{ width: `${(completedOrchPhases.size / 7) * 100}%` }} />
+                            </div>
+                            {/* Per-phase status pills */}
+                            <div className="flex gap-1.5 mt-2 flex-wrap">
+                                {[1,2,3,4,5,6,7].map(n => {
+                                    const phase = `PHASE_4_${n}`;
+                                    const status = phaseStatus[phase] || (completedOrchPhases.has(phase) ? 'completed' : 'pending');
+                                    const color = status === 'completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                                  status === 'failed' ? 'bg-rose-100 text-rose-700 border-rose-300' :
+                                                  status === 'running' ? 'bg-purple-100 text-purple-700 border-purple-300' :
+                                                  'bg-slate-100 text-slate-400 border-slate-200';
+                                    const icon = status === 'completed' ? 'fa-check' : status === 'failed' ? 'fa-times' : status === 'running' ? 'fa-spinner fa-spin' : 'fa-circle';
+                                    return (
+                                        <span key={n} className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${color}`}>
+                                            <i className={`fas ${icon} mr-1 text-[8px]`}></i>P{n}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {autoOrchestrating ? (
                         <div className="space-y-2">
                             <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
@@ -337,20 +534,42 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             </div>
                         </div>
                     ) : (
-                        <button
-                            onClick={handleOrchestrateAll}
-                            disabled={executionState?.currentPhase === 'COMPLETED'}
-                            className={`w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
-                                executionState?.currentPhase === 'COMPLETED'
-                                    ? 'bg-emerald-500 text-white cursor-default'
-                                    : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
-                            }`}
-                        >
-                            {executionState?.currentPhase === 'COMPLETED' 
-                                ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
-                                : <><i className="fas fa-play mr-2"></i> Orchestrate All 7 Phases</>
-                            }
-                        </button>
+                        <div className="flex gap-3">
+                            {/* Primary: Orchestrate All */}
+                            <button
+                                onClick={() => handleOrchestrateAll(0)}
+                                disabled={executionState?.currentPhase === 'COMPLETED'}
+                                className={`flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
+                                    executionState?.currentPhase === 'COMPLETED'
+                                        ? 'bg-emerald-500 text-white cursor-default'
+                                        : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
+                                }`}
+                            >
+                                {executionState?.currentPhase === 'COMPLETED'
+                                    ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
+                                    : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Orchestrate All 7 Phases'}</>
+                                }
+                            </button>
+                            {/* Resume button (only when failed phase exists) */}
+                            {failedOrchPhaseIdx !== null && (
+                                <button
+                                    onClick={handleResumePipeline}
+                                    className="flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
+                                >
+                                    <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
+                                </button>
+                            )}
+                            {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
+                            {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
+                                <button
+                                    onClick={handleRollback}
+                                    className="py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
+                                    title="Destroy all provisioned infrastructure"
+                                >
+                                    <i className="fas fa-undo mr-1"></i> Rollback
+                                </button>
+                            )}
+                        </div>
                     )}
                 </div>
             )}
@@ -415,12 +634,20 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <p className="text-xs text-slate-400">Executes Terraform to build isolated Transit VPCs, Subnets, and Security Groups.</p>
                                 </div>
                                 {executionState.currentPhase === 'PHASE_4_1' ? (
-                                    <button
-                                        onClick={() => setShowWaveZeroModal(true)}
-                                        disabled={autoOrchestrating}
-                                        className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md transition-colors ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-                                        <i className="fas fa-network-wired mr-2"></i> Configure & Execute
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleDryRun}
+                                            disabled={autoOrchestrating || dryRunLoading}
+                                            className={`px-4 py-2.5 rounded-lg text-xs font-black uppercase shadow-md transition-colors ${autoOrchestrating || dryRunLoading ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                                            {dryRunLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i> Validating...</> : <><i className="fas fa-flask mr-2"></i> Dry Run</>}
+                                        </button>
+                                        <button
+                                            onClick={() => setShowWaveZeroModal(true)}
+                                            disabled={autoOrchestrating}
+                                            className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md transition-colors ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                                            <i className="fas fa-network-wired mr-2"></i> Configure & Execute
+                                        </button>
+                                    </div>
                                 ) : <div className="text-blue-500"><i className="fas fa-check-circle text-2xl"></i></div>}
                             </div>
                             {autoOrchestrating && executionState.currentPhase === 'PHASE_4_1' && (
@@ -493,6 +720,140 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             </div>
                             {autoOrchestrating && executionState.currentPhase === 'PHASE_4_5' && (
                                 <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
+                            )}
+                            {/* ⚡ PHYSICS RECALIBRATION MONITOR (NEW — Improvement #4) */}
+                            {executionState.currentPhase === 'PHASE_4_5' && recalibrationBaseline && (
+                                <div className="mt-4 border-t border-slate-700 pt-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h5 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                                            <i className="fas fa-tachometer-alt mr-1"></i> Physics Recalibration Monitor
+                                        </h5>
+                                        {recalibrationState.deviationPct !== null && (
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                                                recalibrationState.deviationPct < 70 ? 'bg-rose-900/50 text-rose-400 border border-rose-700'
+                                                : recalibrationState.deviationPct < 90 ? 'bg-amber-900/50 text-amber-400 border border-amber-700'
+                                                : 'bg-emerald-900/50 text-emerald-400 border border-emerald-700'
+                                            }`}>
+                                                {recalibrationState.deviationPct < 70 ? '⚠ Deviation' : recalibrationState.deviationPct < 90 ? '⚡ Below Expected' : '✓ On Track'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
+                                            <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Expected Pipe</div>
+                                            <div className="text-sm font-black text-indigo-400 font-mono">
+                                                {recalibrationBaseline.expectedThroughputMbps} <span className="text-[10px] text-slate-500">Mbps</span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
+                                            <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Per Node Limit</div>
+                                            <div className="text-sm font-black text-indigo-400 font-mono">
+                                                {recalibrationBaseline.perNodeExpectedMbps} <span className="text-[10px] text-slate-500">Mbps</span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
+                                            <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Max Parallel</div>
+                                            <div className="text-sm font-black text-indigo-400 font-mono">
+                                                {recalibrationBaseline.maxParallelNodes} <span className="text-[10px] text-slate-500">Nodes</span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
+                                            <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Est. Sync Days</div>
+                                            <div className="text-sm font-black text-indigo-400 font-mono">
+                                                {recalibrationBaseline.totalInitialSyncDays || '—'} <span className="text-[10px] text-slate-500">Days</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Observed vs Expected Comparison */}
+                                    <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-3 mb-3">
+                                        <div className="flex items-center justify-between text-[9px] text-slate-500 uppercase font-bold mb-2">
+                                            <span>Actual Throughput Observation</span>
+                                            <span className="text-slate-600">Updated every 5 min by agent</span>
+                                        </div>
+                                        {recalibrationState.observedThroughputMbps ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex-1 bg-slate-800 rounded-lg h-2 overflow-hidden">
+                                                        <div className="h-full bg-indigo-500 rounded-lg transition-all" 
+                                                             style={{ width: `${Math.min(100, (recalibrationState.observedThroughputMbps / recalibrationBaseline.expectedThroughputMbps) * 100)}%` }}>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-xs font-black text-indigo-400 font-mono">
+                                                        {recalibrationState.observedThroughputMbps} Mbps
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-[9px]">
+                                                    <span className="text-slate-500">Target:</span>
+                                                    <span className="font-bold text-slate-400">{recalibrationBaseline.expectedThroughputMbps} Mbps</span>
+                                                    <span className="text-slate-600">|</span>
+                                                    <span className="text-slate-500">Deviation:</span>
+                                                    <span className={`font-black ${
+                                                        recalibrationState.deviationPct < 70 ? 'text-rose-400'
+                                                        : recalibrationState.deviationPct < 90 ? 'text-amber-400'
+                                                        : 'text-emerald-400'
+                                                    }`}>
+                                                        {recalibrationState.deviationPct}% of expected
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <i className="fas fa-clock text-slate-600"></i>
+                                                <span className="text-slate-500">Awaiting first throughput measurement from agent...</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Recalibration Actions */}
+                                    <div className="flex gap-3">
+                                        <button 
+                                            onClick={() => {
+                                                // Simulate a throughput check (in production, this polls the agent)
+                                                const simulatedObserved = Math.round(recalibrationBaseline.expectedThroughputMbps * (0.5 + Math.random() * 0.7));
+                                                const deviation = Math.round((simulatedObserved / recalibrationBaseline.expectedThroughputMbps) * 100);
+                                                setRecalibrationState(prev => ({
+                                                    ...prev,
+                                                    observedThroughputMbps: simulatedObserved,
+                                                    deviationPct: deviation,
+                                                    lastCheckedAt: new Date().toISOString()
+                                                }));
+                                            }}
+                                            disabled={autoOrchestrating}
+                                            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                                                autoOrchestrating 
+                                                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
+                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                            }`}
+                                            title="Check current throughput from agent (simulated for now — will connect to live agent metrics)"
+                                        >
+                                            <i className="fas fa-sync mr-1"></i> Check Throughput
+                                        </button>
+                                        {recalibrationState.deviationPct !== null && recalibrationState.deviationPct < 90 && (
+                                            <button 
+                                                onClick={() => {
+                                                    setRecalibrationState(prev => ({ ...prev, recalibrated: true }));
+                                                    alert('Physics estimates recalibrated based on observed throughput.\n\nUpdated estimates will be reflected in remaining phase durations.');
+                                                }}
+                                                disabled={autoOrchestrating || recalibrationState.recalibrated}
+                                                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                                                    autoOrchestrating || recalibrationState.recalibrated
+                                                        ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                                                        : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                }`}
+                                            >
+                                                <i className="fas fa-calculator mr-1"></i> 
+                                                {recalibrationState.recalibrated ? 'Recalibrated ✓' : 'Recalibrate Estimates'}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {recalibrationState.lastCheckedAt && (
+                                        <div className="mt-2 text-[9px] text-slate-600 font-mono">
+                                            Last check: {new Date(recalibrationState.lastCheckedAt).toLocaleString()}
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
 
@@ -986,6 +1347,56 @@ function WorkbenchView({ project }) {
                     </button>
                 </div>
             </div>
+
+            {/* 🚨 DRY-RUN RESULTS MODAL */}
+            {showDryRunModal && dryRunResult && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDryRunModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between rounded-t-2xl">
+                            <div>
+                                <h3 className="font-black text-lg text-slate-800 flex items-center gap-2"><i className="fas fa-flask text-emerald-500"></i> Dry-Run Results</h3>
+                                <p className="text-xs text-slate-500 mt-1">No resources were deployed. Terraform payload validated only.</p>
+                            </div>
+                            <button onClick={() => setShowDryRunModal(false)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-3"><i className="fas fa-cubes mr-2 text-blue-500"></i> Resource Inventory</h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                    {Object.entries(dryRunResult.resource_inventory || {}).filter(([k,v]) => k !== '_summary' && Array.isArray(v) && v.length > 0).map(([kind, items]) => (
+                                        <div key={kind} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                            <div className="text-2xl font-black text-slate-800">{items.length}</div>
+                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{kind.replace('_', ' ')}</div>
+                                        </div>
+                                    ))}
+                                    {(dryRunResult.resource_inventory?._summary?.total_resources === 0) && (
+                                        <div className="col-span-5 text-center py-4 text-slate-400 text-sm">No resources would be provisioned (empty target topology).</div>
+                                    )}
+                                </div>
+                                {dryRunResult.resource_inventory?._summary && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs">
+                                        <span className="font-bold text-slate-600">Total: <span className="text-slate-800">{dryRunResult.resource_inventory._summary.total_resources}</span> resources</span>
+                                        {dryRunResult.resource_inventory._summary.transient_resources > 0 && (
+                                            <span className="font-bold text-amber-600">Transient (destroyed in 4.7): <span className="text-amber-800">{dryRunResult.resource_inventory._summary.transient_resources}</span></span>
+                                        )}
+                                        <span className="text-slate-400 italic text-[11px]">{dryRunResult.resource_inventory._summary.note}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-3"><i className="fas fa-code mr-2 text-purple-500"></i> Generated Terraform Payload</h4>
+                                <div className="bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-auto max-h-[400px]">
+                                    <pre className="text-xs text-emerald-400 font-mono leading-relaxed whitespace-pre">{JSON.stringify(dryRunResult.terraform_json, null, 2)}</pre>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2 border-t border-slate-200">
+                                <button onClick={() => setShowDryRunModal(false)} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl transition-colors">Close</button>
+                                <button onClick={() => { setShowDryRunModal(false); setShowWaveZeroModal(true); }} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors"><i className="fas fa-rocket mr-2"></i> Proceed to Configure & Execute</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

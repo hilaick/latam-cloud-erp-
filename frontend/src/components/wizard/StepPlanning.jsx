@@ -14,12 +14,12 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [gateWarnings, setGateWarnings] = useState([]);
     const [gatePassed, setGatePassed] = useState(false);
 
-    // 🚨 REORDERED: Menu Items logical flow
+    // 🚨 REORDERED: Menu Items logical flow — Physics & FinOps BEFORE Tooling
     const menuItems = [
         { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
-        { id: 'tools', num: '3.2', icon: 'fa-tools', label: 'Strategic Tooling' },
-        { id: 'physics', num: '3.3', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
-        { id: 'finops', num: '3.4', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
+        { id: 'physics', num: '3.2', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
+        { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
+        { id: 'tools', num: '3.4', icon: 'fa-tools', label: 'Strategic Tooling' },
         { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
 
@@ -29,10 +29,10 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         let data = {};
         try { data = JSON.parse(project?.data || '{}'); } catch(e) {}
 
-        // REQUIRED: execution mode
+        // REQUIRED: execution mode (now in 3.4 Tooling)
         const mode = project?.executionMode || executionMode;
         if (!mode) {
-            warnings.push({ level: 'required', tab: 'tools', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.2 Strategic Tooling.' });
+            warnings.push({ level: 'required', tab: 'tools', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.4 Strategic Tooling.' });
         }
 
         // RECOMMENDED: WBS & RACI populated
@@ -40,24 +40,24 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
             warnings.push({ level: 'recommended', tab: 'wbs', msg: 'WBS & RACI Matrix not populated. Visit 3.1 to define detailed work breakdown.' });
         }
 
-        // RECOMMENDED: tool assignments
+        // RECOMMENDED: physics calculated (now 3.2)
+        if (!project?.physics) {
+            warnings.push({ level: 'recommended', tab: 'physics', msg: 'Delivery physics not calculated. Visit 3.2 for time/bandwidth estimates.' });
+        }
+
+        // RECOMMENDED: finops budget (now 3.3) — FIXED: checks actual save keys
+        if (!project?.budget && !project?.financials) {
+            warnings.push({ level: 'recommended', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.3 for cost envelopes.' });
+        }
+
+        // RECOMMENDED: tool assignments (now 3.4)
         if (!data?.toolAssignments && !data?.recommendations) {
-            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Scroll down in 3.2 to run tool recommendations.' });
+            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Visit 3.4 to run tool recommendations based on physics & cost analysis.' });
         }
 
         // RECOMMENDED: wave plan
         if (!data?.waves && !data?.runbook) {
             warnings.push({ level: 'recommended', tab: 'runbook', msg: 'Wave cutover plan not created. Visit 3.5 to group servers into waves.' });
-        }
-
-        // OPTIONAL: physics calculated
-        if (!data?.physics) {
-            warnings.push({ level: 'optional', tab: 'physics', msg: 'Delivery physics not calculated. Visit 3.3 for time/bandwidth estimates.' });
-        }
-
-        // OPTIONAL: finops budget
-        if (!data?.finopsBudget && !data?.finops) {
-            warnings.push({ level: 'optional', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.4 for cost envelopes.' });
         }
 
         const hasBlocking = warnings.some(w => w.level === 'required');
@@ -67,7 +67,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     };
 
     const handleProceedToExecution = () => {
-        // Build ExecutionPlan contract
+        // Build ExecutionPlan contract — now includes physics & finops
         const executionPlan = {
             mode: project?.executionMode || executionMode || 'manual',
             planningCompletedAt: new Date().toISOString(),
@@ -76,6 +76,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                 wbs: project?.wbsMatrix || null,
                 topology: project?.mapperNodes || null,
                 riskScore: project?.ora?.riskScore || null,
+                physics: project?.physics?.result || project?.physics || null,
+                finops: { budget: project?.budget || null, financials: project?.financials || null }
             }
         };
 
@@ -141,10 +143,10 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                         <div className="animate-fade-in h-full flex flex-col">
                             <div className="bg-amber-50 border-b border-amber-200 p-6 shrink-0">
                                 <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling Allocation</h4>
-                                <p className="text-xs text-amber-700/80 mt-1 font-medium">Determine exactly WHICH tools will migrate WHICH workloads before calculating transfer physics.</p>
+                                <p className="text-xs text-amber-700/80 mt-1 font-medium">Select optimal migration engines informed by delivery physics and cost constraints from steps 3.2–3.3.</p>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                {/* 🚨 NEW: 3.2 Execution Mode Selector */}
+                                {/* 🚨 3.4 Execution Mode Selector */}
                                 <div className="p-6 border-b border-slate-100">
                                     <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-4">
                                         <i className="fas fa-sliders-h mr-2 text-indigo-600"></i> Setup Phase 4 Execution Mode

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { generateStructuredResult, classifyNodeWithConfidence, generateRecalibrationBaseline, estimatePhysicsEgressForFinOps, generateNodeTimeline } from '../../utils/physicsMath';
 
 // Pre-defined Physics Profiles
 const PROFILES = {
@@ -137,6 +138,16 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
     const [omsTasks, setOmsTasks] = useState(5);
     const [omsObjPerSec, setOmsObjPerSec] = useState(120);
 
+    // ⚡ WHAT-IF / SENSITIVITY MODE
+    const [showWhatIf, setShowWhatIf] = useState(false);
+    const [whatIfNetSource, setWhatIfNetSource] = useState(2000);
+    const [whatIfTransit, setWhatIfTransit] = useState('DirectConnect');
+    const [whatIfConcurrency, setWhatIfConcurrency] = useState(10);
+
+    // 🚨 EXPLICIT EXECUTION GATE — Results compute only when user clicks "Calculate Physics"
+    const [hasCalculated, setHasCalculated] = useState(false);
+    const [calcKey, setCalcKey] = useState(0); // bumped to trigger recalculation
+
     const nodes = useMemo(() => {
         // First try mapperNodes (saved reconciled architecture)
         if (activeProject?.mapperNodes?.length > 0) {
@@ -258,19 +269,30 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
 
         nodes.forEach(n => {
             if (!mergedConfigs[n.id]) {
-                const t = String(n.type || '').toUpperCase();
-                const isDb = dbTypes.some(d => t.includes(d));
-                const isStorage = storageTypes.some(s => t.includes(s));
-
-                if (isDb) {
-                    mergedConfigs[n.id] = { ...PROFILES['db_paas'], profileName: PROFILES['db_paas'].name, customSizeGB: Number(n.storage) || 500, includedInMath: true, isDb: true, isStorage: false };
-                } else if (isStorage) {
-                    mergedConfigs[n.id] = { ...PROFILES['obs_standard'], profileName: PROFILES['obs_standard'].name, customSizeGB: Number(n.storage) || 1000, includedInMath: true, isDb: false, isStorage: true };
+                const classification = classifyNodeWithConfidence(n);
+                let profileBase;
+                if (classification.pillar === 'database') {
+                    profileBase = { ...PROFILES['db_paas'] };
+                } else if (classification.pillar === 'storage') {
+                    profileBase = { ...PROFILES['obs_standard'] };
                 } else {
                     const isWin = String(n.os || '').toUpperCase().includes('WIN');
-                    const prof = isWin ? PROFILES['windows_std'] : PROFILES['linux_block'];
-                    mergedConfigs[n.id] = { ...prof, profileName: prof.name, customSizeGB: Number(n.storage) || 200, includedInMath: true, isDb: false, isStorage: false };
+                    profileBase = isWin ? { ...PROFILES['windows_std'] } : { ...PROFILES['linux_block'] };
                 }
+                mergedConfigs[n.id] = {
+                    ...profileBase,
+                    profileName: profileBase.name || 'Custom',
+                    customSizeGB: Number(n.storage) || 200,
+                    includedInMath: true,
+                    isDb: classification.pillar === 'database',
+                    isStorage: classification.pillar === 'storage',
+                    // Confidence-scored metadata (NEW)
+                    _classifiedPillar: classification.pillar,
+                    _classificationConfidence: classification.confidence,
+                    _recommendedTool: classification.recommendedTool,
+                    _syncMethod: classification.syncMethod,
+                    _isFileHeavy: classification.isFileHeavy
+                };
                 needsUpdate = true;
             }
         });
@@ -284,9 +306,11 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         onUpdateProject(activeProject.id, 'physics', { 
             engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency, 
             usedStoragePct, appChurnPct, dbChurnPct,
-            useCompute, useDatabase, useStorage, nodeConfigs, omsTasks, omsObjPerSec 
+            useCompute, useDatabase, useStorage, nodeConfigs, omsTasks, omsObjPerSec,
+            // Structured machine-readable result (NEW — consumed by ExecutionPlan)
+            result: physicsResult
         }); 
-        alert("Physics parameters saved."); 
+        alert("Physics parameters saved — including structured execution plan data.");
     };
 
     const resetContext = () => {
@@ -332,9 +356,9 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         let totalUsedGB = 0; let totalChurnGB = 0;
 
         const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
-        const computeNodes = useCompute ? activeNodes.filter(n => computeTypes.some(c => String(n.type).toUpperCase().includes(c))) : [];
-        const dbNodes = useDatabase ? activeNodes.filter(n => dbTypes.some(d => String(n.type).toUpperCase().includes(d))) : [];
-        const storageNodes = useStorage ? activeNodes.filter(n => storageTypes.some(s => String(n.type).toUpperCase().includes(s))) : [];
+        const computeNodes = useCompute ? activeNodes.filter(n => !nodeConfigs[n.id]?.isDb && !nodeConfigs[n.id]?.isStorage) : [];
+        const dbNodes = useDatabase ? activeNodes.filter(n => nodeConfigs[n.id]?.isDb) : [];
+        const storageNodes = useStorage ? activeNodes.filter(n => nodeConfigs[n.id]?.isStorage) : [];
 
         computeNodes.forEach(n => {
             const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100);
@@ -462,6 +486,104 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
         };
     }, [nodes, nodeConfigs, useCompute, useDatabase, useStorage, netSource, netTunnel, transitType, concurrency, omsTasks, omsObjPerSec, downtimeWindow]);
 
+    // ==========================================
+    // 📊 STRUCTURED RESULT — Machine-readable output for ExecutionPlan
+    // ==========================================
+    const physicsResult = useMemo(() => {
+        const sharedState = {
+            netSource, transitType, netTunnel, downtimeWindow, concurrency,
+            usedStoragePct, appChurnPct, dbChurnPct
+        };
+        const result = generateStructuredResult({
+            engineMode,
+            cogResult,
+            manResult,
+            nodeConfigs,
+            nodes,
+            sharedState
+        });
+        // Attach recalibration baseline for Phase 4.5
+        result._recalibrationBaseline = generateRecalibrationBaseline(result);
+        return result;
+    }, [engineMode, cogResult, manResult, nodeConfigs, nodes, netSource, transitType, netTunnel, downtimeWindow, concurrency, usedStoragePct, appChurnPct, dbChurnPct, calcKey]);
+
+    // ⚡ PER-NODE TIMELINE
+    const nodeTimeline = useMemo(() => {
+        if (!hasCalculated || !physicsResult) return [];
+        const activeResult = engineMode === 'cognitive' ? cogResult : manResult;
+        const effectiveMbps = engineMode === 'cognitive' ? activeResult?.effectiveMbps : activeResult?.effectivePipeMbps;
+        return generateNodeTimeline({
+            nodes,
+            nodeConfigs,
+            effectiveMbps: effectiveMbps || 100,
+            maxParallel: Number(concurrency) || 1,
+            perNode: physicsResult.perNode || {}
+        });
+    }, [physicsResult, engineMode, cogResult, manResult, nodes, nodeConfigs, concurrency, calcKey]);
+
+    // ⚡ PHYSICS→FINOPS BRIDGE
+    const physicsEgressForFinOps = useMemo(() => {
+        if (!hasCalculated || !physicsResult) return null;
+        return estimatePhysicsEgressForFinOps(physicsResult, 'USD');
+    }, [physicsResult, calcKey]);
+
+    // ⚡ WHAT-IF SCENARIO
+    const whatIfScenario = useMemo(() => {
+        if (!showWhatIf || !physicsResult) return null;
+        const pipeMbps = Math.min(Number(whatIfNetSource) || 2000, Number(netTunnel) || 300);
+        const cryptoTaxMap = { 'DirectConnect': 0.95, 'IPsec VPN': 0.85, 'Public Internet': 0.75 };
+        const cryptoTax = cryptoTaxMap[whatIfTransit] || 0.85;
+        const effMbps = pipeMbps * cryptoTax;
+        const validConc = Math.max(Number(whatIfConcurrency) || 1, 1);
+        
+        // Quick estimate using the cognitive model
+        const activeNodes = nodes.filter(n => nodeConfigs[n.id]?.includedInMath !== false);
+        const computeNodes = activeNodes.filter(n => !nodeConfigs[n.id]?.isDb && !nodeConfigs[n.id]?.isStorage);
+        let totalGB = 0;
+        computeNodes.forEach(n => {
+            totalGB += (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100);
+        });
+        
+        const pipePerServer = effMbps / Math.min(computeNodes.length || 1, validConc);
+        const totalHrs = computeNodes.length > 0 
+            ? ((totalGB * 1024 * 8) / Math.min(pipePerServer, 3000)) / 3600 / validConc 
+            : 0;
+        const days = Math.floor(totalHrs / 24);
+        const remaining = (totalHrs % 24).toFixed(1);
+        
+        // Compare with baseline
+        const baselineHrs = engineMode === 'cognitive' 
+            ? parseFloat(cogResult?.phase1Days || 0) * 24 + parseFloat(cogResult?.phase2Hrs || 0)
+            : parseFloat(manResult?.totalExecutionHrs || 0);
+        const deltaHrs = totalHrs - baselineHrs;
+        const improvementPct = baselineHrs > 0 ? Math.abs(deltaHrs / baselineHrs * 100).toFixed(0) : 0;
+        
+        return {
+            effectiveMbps: Math.round(effMbps),
+            totalHrs: totalHrs.toFixed(1),
+            daysStr: days > 0 ? `${days}d ${remaining}h` : `${totalHrs.toFixed(1)}h`,
+            deltaHrs: deltaHrs.toFixed(1),
+            improvementPct,
+            isBetter: deltaHrs < 0,
+            isFeasible: totalHrs <= Number(downtimeWindow),
+            pipePerServer: Math.round(pipePerServer),
+            totalNodes: computeNodes.length,
+            totalGB: Math.round(totalGB)
+        };
+    }, [showWhatIf, physicsResult, whatIfNetSource, whatIfTransit, whatIfConcurrency, nodes, nodeConfigs, netTunnel, usedStoragePct, downtimeWindow, engineMode, cogResult, manResult, calcKey]);
+
+    const handleCalculate = () => {
+        setCalcKey(k => k + 1);
+        setHasCalculated(true);
+    };
+
+    // Reset calculated state when any input changes — user must explicitly recalculate
+    useEffect(() => {
+        if (hasCalculated) {
+            setHasCalculated(false);
+        }
+    }, [engineMode, netSource, transitType, netTunnel, concurrency, usedStoragePct, appChurnPct, dbChurnPct, downtimeWindow, nodeConfigs]);
+
     return (
         <div className="mx-auto space-y-6 animate-fade-in p-2 md:p-6 pb-12">
             
@@ -502,6 +624,287 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     <button onClick={saveContext} className="px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-md font-black uppercase tracking-widest text-xs transition-colors whitespace-nowrap"><i className="fas fa-save mr-2"></i> Save Context</button>
                 </div>
             </div>
+
+            {/* ⚡ EXECUTION READINESS DASHBOARD — always visible */}
+            <div className={`rounded-2xl shadow-xl border p-6 text-white overflow-hidden relative mb-6 ${
+                hasCalculated 
+                    ? 'bg-gradient-to-r from-slate-900 to-slate-800 border-indigo-500/30' 
+                    : 'bg-gradient-to-r from-slate-800 to-slate-700 border-amber-500/30'
+            }`}>
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                <div className="relative z-10">
+                    {hasCalculated ? (
+                        <>
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-black text-sm uppercase tracking-widest text-indigo-300">
+                                <i className="fas fa-rocket mr-2"></i> Execution Readiness Dashboard
+                            </h4>
+                            <div className="flex items-center gap-3">
+                                <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase border ${
+                                    physicsResult.timeline?.isFeasible !== false
+                                        ? 'bg-emerald-900/60 text-emerald-400 border-emerald-600'
+                                        : 'bg-rose-900/60 text-rose-400 border-rose-600'
+                                }`}>
+                                    {physicsResult.timeline?.isFeasible !== false ? '\u2713 Execution Feasible' : '\u26a0 Not Feasible'}
+                                </span>
+                                <button onClick={handleCalculate} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap">
+                                    <i className="fas fa-redo mr-1"></i> Recalculate
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Total Sync</div>
+                                <div className="text-lg font-black text-white font-mono">
+                                    {physicsResult.timeline?.totalInitialSyncDays || physicsResult.timeline?.totalMinutes ? 
+                                        `${(physicsResult.timeline.totalInitialSyncDays || (physicsResult.timeline.totalMinutes / 1440).toFixed(1))}d` 
+                                        : '\u2014'}
+                                </div>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Cutover Window</div>
+                                <div className="text-lg font-black text-white font-mono">
+                                    {physicsResult.timeline?.cutoverMinutes ? 
+                                        `${(physicsResult.timeline.cutoverMinutes / 60).toFixed(1)}h` 
+                                        : '—'}
+                                </div>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10 col-span-2 lg:col-span-1">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Bottleneck</div>
+                                <div className="text-sm font-black text-amber-400 uppercase">
+                                    {physicsResult.bottleneck?.pillar || physicsResult.executionTimeline?.bottleneck || '—'}
+                                </div>
+                                {physicsResult.executionTimeline?.bottleneck && physicsResult.executionTimeline?.slaWindowHours && (() => {
+                                    const bottleneck = physicsResult.executionTimeline.bottleneck;
+                                    const sla = physicsResult.executionTimeline.slaWindowHours;
+                                    const totalHrs = physicsResult.executionTimeline?.totalCutoverHours || physicsResult.executionTimeline?.totalExecutionHours || 0;
+                                    const overrun = Number(totalHrs) - Number(sla);
+                                    const headroom = Number(sla) - Number(totalHrs);
+                                    return (
+                                        <div className="mt-2 pt-2 border-t border-white/10 text-[9px] leading-relaxed">
+                                            {overrun > 0 ? (
+                                                <span className="text-rose-400 font-bold">
+                                                    Exceeds SLA by {overrun.toFixed(1)}h — bottleneck consumes {Math.round(Number(totalHrs) / Math.max(Number(sla), 1) * 100)}% of window
+                                                </span>
+                                            ) : (
+                                                <span className="text-emerald-400 font-bold">
+                                                    {headroom.toFixed(1)}h headroom ({Math.round(headroom / Math.max(Number(sla), 1) * 100)}% buffer)
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Confidence</div>
+                                <div className={`text-sm font-black uppercase ${
+                                    physicsResult.timeline?.confidenceLevel === 'HIGH' ? 'text-emerald-400'
+                                    : physicsResult.timeline?.confidenceLevel === 'MEDIUM' ? 'text-amber-400'
+                                    : 'text-rose-400'
+                                }`}>
+                                    {physicsResult.timeline?.confidenceLevel || '\u2014'}
+                                </div>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Effective Pipe</div>
+                                <div className="text-sm font-black text-indigo-400 font-mono">
+                                    {physicsResult.pipeline?.effectiveMbps || '\u2014'} Mbps
+                                </div>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Parallel Nodes</div>
+                                <div className="text-sm font-black text-indigo-400 font-mono">
+                                    {physicsResult.concurrency?.maxParallel || '\u2014'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Recommendations */}
+                        {physicsResult.recommendations?.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-white/10">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold mb-2">Key Recommendations</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {physicsResult.recommendations.slice(0, 4).map((rec, i) => (
+                                        <span key={i} className={`text-[9px] font-black px-2 py-1 rounded uppercase border ${
+                                            rec.priority === 'CRITICAL' ? 'bg-rose-900/40 text-rose-400 border-rose-700'
+                                            : rec.priority === 'HIGH' ? 'bg-amber-900/40 text-amber-400 border-amber-700'
+                                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                                        }`}>
+                                            {rec.note?.length > 80 ? rec.note.slice(0, 80) + '\u2026' : rec.note}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        </>
+                    ) : (
+                        <div className="text-center py-10">
+                            <i className="fas fa-microscope text-5xl text-amber-400/30 mb-4 block"></i>
+                            <h4 className="font-black text-base uppercase tracking-widest text-amber-300 mb-3">
+                                Delivery Physics Ready to Run
+                            </h4>
+                            <p className="text-slate-400 text-sm max-w-lg mx-auto leading-relaxed">
+                                Click <span className="text-white font-bold bg-white/10 px-2 py-0.5 rounded">"Calculate Physics"</span> to generate time estimates, identify bottlenecks, and populate this execution readiness dashboard.
+                            </p>
+                            <button onClick={handleCalculate} className="mt-6 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 active:scale-95">
+                                <i className="fas fa-play mr-2"></i> Calculate Physics
+                            </button>
+                            <div className="mt-5 flex justify-center gap-4 text-[10px] uppercase tracking-widest text-slate-500">
+                                <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500/40"></i> Bandwidth math</span>
+                                <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500/40"></i> Concurrency limits</span>
+                                <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500/40"></i> SLA feasibility</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* 📋 PER-NODE MIGRATION TIMELINE */}
+            {nodeTimeline.length > 0 && (
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest">
+                            <i className="fas fa-timeline text-indigo-500 mr-2"></i> Per-Node Migration Timeline
+                        </h4>
+                        <span className="text-[10px] font-bold text-slate-400">
+                            {nodeTimeline.length} nodes · {Math.max(...nodeTimeline.map(n => n.wave || 1))} waves · ~{Math.max(...nodeTimeline.map(n => n.completeHour || 0)).toFixed(1)}h total
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-200">
+                                <tr>
+                                    <th className="p-2 w-8">#</th>
+                                    <th className="p-2">Node Name</th>
+                                    <th className="p-2">Pillar</th>
+                                    <th className="p-2">Tool</th>
+                                    <th className="p-2 text-right">Payload</th>
+                                    <th className="p-2 text-right">Est. Time</th>
+                                    <th className="p-2 text-center">Wave</th>
+                                    <th className="p-2 text-right">Completes @</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {nodeTimeline.slice(0, 20).map((node, idx) => (
+                                    <tr key={node.nodeId} className={`hover:bg-indigo-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                                        <td className="p-2 font-mono text-[10px] text-slate-400">{node.finishOrder}</td>
+                                        <td className="p-2 font-bold text-slate-800 max-w-[200px] truncate" title={node.name}>{node.name}</td>
+                                        <td className="p-2">
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                                node.pillar === 'database' ? 'bg-rose-100 text-rose-600' :
+                                                node.pillar === 'storage' ? 'bg-amber-100 text-amber-600' :
+                                                'bg-blue-100 text-blue-600'
+                                            }`}>{node.pillar}</span>
+                                        </td>
+                                        <td className="p-2 text-[10px] font-bold text-slate-600">{node.tool}</td>
+                                        <td className="p-2 text-right font-mono text-[10px] text-slate-600">{node.totalGB} GB</td>
+                                        <td className="p-2 text-right font-mono text-[10px] font-bold text-slate-700">{node.estimatedDays > 0 ? `${node.estimatedDays.toFixed(1)}d` : `${node.estimatedHours.toFixed(1)}h`}</td>
+                                        <td className="p-2 text-center">
+                                            <span className="bg-indigo-100 text-indigo-600 text-[9px] font-black px-1.5 py-0.5 rounded">{node.wave}</span>
+                                        </td>
+                                        <td className="p-2 text-right font-mono text-[10px] text-slate-500">T+{node.completeHour.toFixed(1)}h</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {nodeTimeline.length > 20 && (
+                            <div className="text-center py-2 text-[10px] text-slate-400 font-bold">
+                                + {nodeTimeline.length - 20} more nodes...
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ⚡ WHAT-IF SCENARIO COMPARISON */}
+            {hasCalculated && (
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h4 className="font-black text-sm text-slate-800 uppercase tracking-widest">
+                            <i className="fas fa-flask text-amber-500 mr-2"></i> What-If Sensitivity Analysis
+                        </h4>
+                        <button 
+                            onClick={() => setShowWhatIf(!showWhatIf)} 
+                            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
+                                showWhatIf ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}>
+                            {showWhatIf ? 'Hide Comparison' : 'Compare Scenario'}
+                        </button>
+                    </div>
+                    
+                    {showWhatIf && (
+                        <div className="animate-fade-in space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Baseline */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
+                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Baseline (Current)</div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div><div className="text-[9px] text-slate-400 uppercase">Pipe</div><div className="font-mono font-bold text-slate-800">{physicsResult.pipeline?.effectiveMbps || '—'} Mbps</div></div>
+                                        <div><div className="text-[9px] text-slate-400 uppercase">Transit</div><div className="font-bold text-slate-800 text-xs">{physicsResult.pipeline?.transitType || '—'}</div></div>
+                                        <div><div className="text-[9px] text-slate-400 uppercase">Concurrency</div><div className="font-mono font-bold text-slate-800">{physicsResult.concurrency?.maxParallel || '—'} nodes</div></div>
+                                        <div><div className="text-[9px] text-slate-400 uppercase">Feasible</div>
+                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${
+                                                physicsResult.executionTimeline?.isFeasible ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                                            }`}>{physicsResult.executionTimeline?.isFeasible ? 'Yes' : 'No'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* What-If */}
+                                <div className={`border-2 rounded-xl p-5 ${whatIfScenario?.isBetter ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-300'}`}>
+                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">What-If Scenario</div>
+                                    <div className="grid grid-cols-3 gap-3 mb-4">
+                                        <div>
+                                            <label className="text-[9px] text-slate-400 uppercase block mb-1">Pipe (Mbps)</label>
+                                            <input type="number" value={whatIfNetSource} onChange={e => setWhatIfNetSource(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-xs font-bold font-mono" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] text-slate-400 uppercase block mb-1">Transit</label>
+                                            <select value={whatIfTransit} onChange={e => setWhatIfTransit(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-xs font-bold">
+                                                <option value="DirectConnect">DirectConnect</option>
+                                                <option value="IPsec VPN">IPsec VPN</option>
+                                                <option value="Public Internet">Internet</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] text-slate-400 uppercase block mb-1">Concurrency</label>
+                                            <input type="number" value={whatIfConcurrency} onChange={e => setWhatIfConcurrency(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-xs font-bold font-mono" />
+                                        </div>
+                                    </div>
+                                    
+                                    {whatIfScenario && (
+                                        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200">
+                                            <div><div className="text-[9px] text-slate-400 uppercase">Result</div><div className="font-mono font-bold text-slate-800">{whatIfScenario.daysStr}</div></div>
+                                            <div className="text-right">
+                                                <div className={`text-lg font-black ${whatIfScenario.isBetter ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                    {whatIfScenario.isBetter ? `↓${whatIfScenario.improvementPct}% faster` : `↑${whatIfScenario.improvementPct}% slower`}
+                                                </div>
+                                                <div className="text-[9px] text-slate-400 uppercase">{whatIfScenario.isBetter ? 'Improvement' : 'Regression'} vs baseline</div>
+                                            </div>
+                                            <div><div className="text-[9px] text-slate-400 uppercase">Eff. Pipe</div><div className="font-mono font-bold text-slate-800">{whatIfScenario.effectiveMbps} Mbps</div></div>
+                                            <div><div className="text-[9px] text-slate-400 uppercase">Feasible</div>
+                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${
+                                                    whatIfScenario.isFeasible ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                                                }`}>{whatIfScenario.isFeasible ? 'Yes' : 'No'}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400 text-center italic">
+                                Use this to answer: "What if the customer upgrades from 500 Mbps VPN to 1 Gbps Direct Connect?" Adjust parameters above to compare scenarios.
+                            </p>
+                        </div>
+                    )}
+                    {!showWhatIf && (
+                        <div className="text-center py-6 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                            <i className="fas fa-flask text-2xl mb-2 opacity-50"></i>
+                            <div className="text-xs font-bold uppercase tracking-widest">Sensitivity analysis ready — click "Compare Scenario" to test alternative configurations</div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* 🌐 SHARED GLOBAL PIPELINE */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -568,6 +971,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                         <th className="p-3">Resource Name</th>
                                         <th className="p-3">Type & Profile</th>
                                         <th className="p-3 text-right">Payload Size</th>
+                                        <th className="p-3 text-center w-16">Conf.</th>
                                         <th className="p-3">Sync Details (Manual Overrides)</th>
                                         <th className="p-3 text-center">Include in Math</th>
                                     </tr>
@@ -599,6 +1003,22 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                     <div className="flex items-center justify-end gap-1">
                                                         <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
                                                     </div>
+                                                </td>
+                                                <td className="p-3 text-center">
+                                                    {(() => {
+                                                        const confPct = conf._classificationConfidence;
+                                                        if (confPct === undefined) return <span className="text-[9px] text-slate-300">—</span>;
+                                                        const pct = Math.round(confPct * 100);
+                                                        const color = pct >= 80 ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                                                      : pct >= 60 ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                                                      : 'bg-red-100 text-red-600 border-red-200';
+                                                        return (
+                                                            <span className={`inline-block px-1.5 py-0.5 rounded font-black text-[9px] border ${color}`}
+                                                                  title={`AI Classification Confidence: ${pct}% — ${conf._classifiedPillar || 'unknown'} pillar`}>
+                                                                {pct}%
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="p-3">
                                                     {conf.isDb ? (

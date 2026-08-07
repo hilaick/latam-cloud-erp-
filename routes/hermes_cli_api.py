@@ -16,7 +16,7 @@ import os
 import sys
 import requests as http_requests
 from datetime import datetime
-from models import db, Customer, ProjectData, HuaweiAccount, MigrationTask, WBSTask, User, CognitiveLearningLog, QuotationVersion, ExecutionState, AdHocMigrationLog, GlobalPlaybooks, HermesConfig
+from models import db, Customer, ProjectData, HuaweiAccount, MigrationTask, WBSTask, User, CognitiveLearningLog, QuotationVersion, ExecutionState, ExecutionLog, AdHocMigrationLog, GlobalPlaybooks, HermesConfig
 
 logger = logging.getLogger(__name__)
 hermes_cli_bp = Blueprint('hermes_cli_api', __name__)
@@ -24,6 +24,42 @@ hermes_cli_bp = Blueprint('hermes_cli_api', __name__)
 def _get_hc():
     """Shorthand to get the singleton HermesConfig."""
     return HermesConfig.get_config()
+
+def _update_delegate_task_status(project_id, task_index, status, error=None):
+    """Update a delegate task's status in the project record."""
+    if not project_id:
+        return
+    try:
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return
+        tasks = json.loads(project.delegate_tasks or '[]')
+        if task_index < len(tasks):
+            tasks[task_index]['status'] = status
+            tasks[task_index]['completed_at'] = datetime.utcnow().isoformat()
+            if error:
+                tasks[task_index]['error'] = str(error)[:500]
+            project.delegate_tasks = json.dumps(tasks)
+            db.session.commit()
+            logger.info(f"Delegate task #{task_index} for project {project_id} → {status}")
+            
+            # 🚨 Fix #7: Auto-log to structured execution_logs table
+            task = tasks[task_index]
+            state = ExecutionState.query.filter_by(project_id=project_id).first()
+            if state:
+                log_entry = ExecutionLog(
+                    execution_state_id=state.id,
+                    project_id=project_id,
+                    phase=task.get('phase', ''),
+                    event_type='SUCCESS' if status == 'COMPLETED' else 'ERROR',
+                    message=f"Phase {task.get('phase', '?')}: {task.get('goal', '')[:200]}",
+                    agent_name='Hermes Delegate',
+                    metadata_json=json.dumps({'task_id': task.get('id'), 'goal': task.get('goal', '')[:100]})
+                )
+                db.session.add(log_entry)
+                db.session.commit()
+    except Exception as e:
+        logger.error(f"Failed to update delegate task status: {e}")
 
 def execute_privileged_engine_command(query, project_id="global"):
     """
@@ -172,7 +208,13 @@ def hermes_delegate_task():
     
     Reads from HermesConfig for mode (cli/http), model selection, and connection params.
     Supports per-call model/profile overrides from the frontend.
+    
+    Auto-creates delegate task records in the project for CommandCenter telemetry.
     """
+    # Track these for status updates at exit
+    project_id = None
+    task_index = None
+    
     try:
         data = request.get_json()
         if not data:
@@ -183,18 +225,48 @@ def hermes_delegate_task():
         profile = data.get('profile', 'exec')
         model_override = data.get('model')
         provider_override = data.get('provider')
+        project_id = data.get('project_id', '').strip()
         
         if not goal:
             return jsonify({'success': False, 'error': 'Task goal required'}), 400
-            
+        
+        hc = _get_hc()
+        
+        # ── Create delegate task record ──
+        task_record = {
+            'goal': goal[:200],
+            'phase': 'PHASE_4_0',
+            'status': 'RUNNING',
+            'profile': profile,
+            'model': model_override or hc.delegation_model or 'exec',
+            'started_at': datetime.utcnow().isoformat(),
+            'error': None
+        }
+        # Infer phase from goal text
+        import re
+        phase_match = re.search(r'Phase (\d+(?:\.\d+)?)', goal)
+        if phase_match:
+            task_record['phase'] = f'PHASE_4_{phase_match.group(1).replace(".", "_")}'
+        
+        if project_id:
+            project = ProjectData.query.get(project_id)
+            if project:
+                try:
+                    existing = json.loads(project.delegate_tasks or '[]')
+                except (json.JSONDecodeError, TypeError):
+                    existing = []
+                existing.append(task_record)
+                project.delegate_tasks = json.dumps(existing)
+                db.session.commit()
+                task_index = len(existing) - 1
+                logger.info(f"Created delegate task #{task_index} for project {project_id}: {goal[:80]}")
+        
         # Build a self-contained prompt for the subagent
         full_prompt = goal
         if context:
             full_prompt = f"{goal}\n\nContext:\n{context}"
             
         logger.info(f"Spawning Hermes agent via profile '{profile}' for goal: {goal[:100]}...")
-        
-        hc = _get_hc()
         
         # ── HTTP / Loadbalancer mode ──
         if hc.mode == 'http':
@@ -223,6 +295,7 @@ def hermes_delegate_task():
                 if resp.status_code == 200:
                     body = resp.json()
                     content = body.get('choices', [{}])[0].get('message', {}).get('content', str(body))
+                    _update_delegate_task_status(project_id, task_index, 'COMPLETED')
                     return jsonify({
                         'success': True,
                         'response': content,
@@ -231,14 +304,18 @@ def hermes_delegate_task():
                         'goal': goal[:200]
                     })
                 else:
+                    err_msg = f'Loadbalancer returned HTTP {resp.status_code}: {resp.text[:300]}'
+                    _update_delegate_task_status(project_id, task_index, 'FAILED', err_msg)
                     return jsonify({
                         'success': False,
-                        'error': f'Loadbalancer returned HTTP {resp.status_code}: {resp.text[:300]}'
+                        'error': err_msg
                     }), 500
             except Exception as http_err:
+                err_msg = f'Loadbalancer connection failed: {str(http_err)}'
+                _update_delegate_task_status(project_id, task_index, 'FAILED', err_msg)
                 return jsonify({
                     'success': False,
-                    'error': f'Loadbalancer connection failed: {str(http_err)}'
+                    'error': err_msg
                 }), 500
         
         # ── CLI mode (default) ──
@@ -258,6 +335,7 @@ def hermes_delegate_task():
         )
         
         if result.returncode == 0:
+            _update_delegate_task_status(project_id, task_index, 'COMPLETED')
             return jsonify({
                 'success': True,
                 'response': result.stdout.strip(),
@@ -266,18 +344,23 @@ def hermes_delegate_task():
                 'goal': goal[:200]
             })
         else:
+            err_msg = f"Hermes execution failed: {result.stderr.strip()}"
+            _update_delegate_task_status(project_id, task_index, 'FAILED', err_msg)
             return jsonify({
                 'success': False,
-                'error': f"Hermes execution failed: {result.stderr.strip()}"
+                'error': err_msg
             }), 500
             
     except subprocess.TimeoutExpired:
+        err_msg = 'Task timed out after 180 seconds. Consider splitting into smaller workloads.'
+        _update_delegate_task_status(project_id, task_index, 'FAILED', err_msg)
         return jsonify({
             'success': False,
-            'error': 'Task timed out after 180 seconds. Consider splitting into smaller workloads.'
+            'error': err_msg
         }), 504
     except Exception as e:
         logger.error(f"Delegate Task Error: {str(e)}", exc_info=True)
+        _update_delegate_task_status(project_id, task_index, 'FAILED', str(e))
         return jsonify({
             'success': False,
             'error': f"Orchestration error: {str(e)}"

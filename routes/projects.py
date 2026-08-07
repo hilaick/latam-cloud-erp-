@@ -186,6 +186,11 @@ def get_project(project_id):
         project_data = json.loads(project.data)
     except (json.JSONDecodeError, TypeError):
         project_data = project.data
+    
+    try:
+        delegate_tasks = json.loads(project.delegate_tasks or '[]')
+    except (json.JSONDecodeError, TypeError):
+        delegate_tasks = []
 
     return jsonify({
         'success': True,
@@ -194,6 +199,7 @@ def get_project(project_id):
             'project_type': project.project_type,
             'owner_id': project.owner_id,
             'data': project_data,
+            'delegateTasks': delegate_tasks,
             'members': members,
             'other_editors': other_editors,
             'created_at': project.created_at.isoformat() if project.created_at else None,

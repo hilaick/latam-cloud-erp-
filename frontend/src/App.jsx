@@ -51,7 +51,7 @@ function App() {
         window.location.reload(); 
     };
 
-    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow'];
+    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow', 'login'];
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     // ── Auth loading state ──
@@ -108,10 +108,25 @@ function App() {
                     {activePhase === 'workflow' && <WorkflowGraphView />}
                     {activePhase === 'users' && <UserManagement />}
                     
+                    {activePhase === 'login' && <LoginPage />}
+                    
                     {!knownRoutes.includes(activePhase) && (
-                        <div className="text-center mt-20 text-slate-400">
-                            <h2 className="text-2xl font-bold">View Migration in Progress</h2>
-                            <p>This view is currently being ported to the Vite architecture.</p>
+                        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-6">
+                            <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center">
+                                <i className="fas fa-clock text-red-400 text-3xl" />
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-slate-300">Session Expired</h2>
+                                <p className="text-slate-500 text-sm mt-2 max-w-md">
+                                    Your session has expired or the page is unavailable. Please log in again.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => { handleLogout(); }}
+                                className="px-8 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all"
+                            >
+                                <i className="fas fa-sign-in-alt mr-2" /> Log In
+                            </button>
                         </div>
                     )}
                 </div>
