@@ -8,15 +8,15 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 /* ─── Default icons for phases 1→5 ─── */
 const PHASE_ICONS = ['fa-search','fa-sitemap','fa-database','fa-rocket','fa-flag-checkered'];
-const PHASE_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#ef4444','#10b981'];
+const PHASE_COLORS = ['#3b82f6','#6366f1','#f59e0b','#10b981','#8b5cf6'];
 
-/* ─── Static fallback (used when no workflow prop) ─── */
+/* ─── Static fallback (used when no workflow prop) — synced with backend phases_config ─── */
 const STATIC_PHASES = [
-  { id:'phase_1', label:'Discovery & Assessment',  summary:'ARB Intake, WBS, BoM validation',          color:PHASE_COLORS[0], icon:PHASE_ICONS[0], gates:['ARB Handover & SOW','High-Level WBS','Quotation BoM Upload','Gate Validation'] },
-  { id:'phase_2', label:'Infrastructure Setup',     summary:'Source discovery, topology, DTRB',         color:PHASE_COLORS[1], icon:PHASE_ICONS[1], gates:['MgC Source Discovery','ORA Risk Assessment','Target Topology Mapper','DTRB Governance Lock'] },
-  { id:'phase_3', label:'Data Migration',           summary:'WBS, tooling, physics, cutover plan',       color:PHASE_COLORS[2], icon:PHASE_ICONS[2], gates:['WBS & RACI Matrix','Strategic Tooling','Delivery Physics','Wave & Runbook Plan'] },
-  { id:'phase_4', label:'Application Migration',    summary:'CI/CD pipeline, workbench, command center', color:PHASE_COLORS[3], icon:PHASE_ICONS[3], gates:['Readiness Gateway','CI/CD Orchestrator','Agent Workbench','Command Center'] },
-  { id:'phase_5', label:'Cutover & Hypercare',      summary:'3-Way diff, constellation, WAR, commercial',color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['3-Way Infra Diff','Target Constellation','WAR Sign-Off','Commercial True-Up'] },
+  { id:'phase_1', label:'Discovery & Assessment',  summary:'Analyze source landscape & target requirements', color:PHASE_COLORS[0], icon:PHASE_ICONS[0], gates:['MgC Agent audit','Source topology inventory','Target BoM parsed','Gap analysis complete'] },
+  { id:'phase_2', label:'Infrastructure Setup',     summary:'Provision target cloud foundation',              color:PHASE_COLORS[1], icon:PHASE_ICONS[1], gates:['VPC/network provisioned','VPN/Direct Connect up','Security groups configured','DNS/routing verified'] },
+  { id:'phase_3', label:'Data Migration',           summary:'Move databases & storage with minimal downtime',  color:PHASE_COLORS[2], icon:PHASE_ICONS[2], gates:['DRS sync healthy','Schema converted','Data validated','Cutover window scheduled'] },
+  { id:'phase_4', label:'Application Migration',    summary:'Rehost, replatform, or refactor workloads',      color:PHASE_COLORS[3], icon:PHASE_ICONS[3], gates:['SMS agent healthy','App dependencies mapped','Test environment verified','UAT signed off'] },
+  { id:'phase_5', label:'Cutover & Hypercare',      summary:'Final sync, go-live, and stabilization',         color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['Final DRS sync','DNS swing complete','Monitoring green','Hypercare 72h passed'] },
 ];
 
 /* ─── Parse n8n workflow JSON → phase array ─── */
