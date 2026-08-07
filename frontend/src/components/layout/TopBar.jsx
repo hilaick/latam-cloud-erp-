@@ -49,6 +49,16 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
         setProjectMenuOpen(false);
         setProjectSearch('');
     };
+    
+    const handleCustomerClick = () => {
+        const display = currentProjectDisplay;
+        const customerName = currentProject?.customerName;
+        if (customerName && currentProject?.customerId) {
+            window.location.hash = `#phase=crm&proj=none&customer=${currentProject.customerId}&cname=${encodeURIComponent(customerName)}`;
+        } else {
+            window.location.hash = '#phase=crm&proj=none';
+        }
+    };
 
     return (
         <div className="bg-white border-b border-slate-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-[45] shadow-sm shrink-0">
@@ -64,8 +74,8 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                         onClick={() => setProjectMenuOpen(!projectMenuOpen)}
                         className="flex items-center justify-between gap-2 bg-slate-50 sm:bg-transparent px-2 py-1 md:p-0 rounded border border-slate-200 sm:border-none outline-none cursor-pointer hover:text-blue-600 transition-colors w-[150px] sm:w-auto max-w-[160px] sm:max-w-[280px]"
                     >
-                        <span className="font-black text-xs md:text-sm text-slate-800 truncate">
-                            {currentProjectDisplay}
+                        <span className="font-black text-xs md:text-sm truncate cursor-pointer hover:text-blue-600 transition-colors" onClick={handleCustomerClick} title="Open customer vault in CRM">
+                            <span className="text-slate-500">Customer </span><span className="text-slate-800">{currentProjectDisplay}</span>
                         </span>
                         <i className={`fas fa-chevron-down text-[10px] text-slate-400 transition-transform ${projectMenuOpen ? 'rotate-180' : ''}`}></i>
                     </button>

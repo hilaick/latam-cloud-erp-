@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import TwoFactorModal from '../utils/TwoFactorModal';
 
@@ -42,12 +42,32 @@ export default function CustomerDirectory() {
   const [isValidating, setIsValidating] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
 
+  /* ── auto-open customer vault from URL hash ── */
+  useEffect(() => {
+    const h = window.location.hash.replace('#','');
+    const p = new URLSearchParams(h);
+    const custId = p.get('customer');
+    const custName = p.get('cname');
+    if (custId && custName && customers.length > 0) {
+      const target = (customers || []).find(
+        c => String(c.id) === custId || c.name === decodeURIComponent(custName)
+      );
+      if (target) {
+        setEditingCustomer({ ...target });
+        setActiveTab('vault');
+      }
+    }
+  }, [customers]);
+
   /* ── derived ── */
 
   const enriched = useMemo(() => {
     const list = (customers || []).map(c => ({
       ...c,
       _health: credentialHealth(c),
+      _keyAge: c?.key_age || {},
+      _lastRotated: c?.last_rotated || {},
+      _oldestMaster: c?.last_rotated?.master, // for reference
       _projectCount: (projects || []).filter(p => p?.customerId === c.id || p?.customerName === c.name).length,
     }));
     // filter
@@ -132,6 +152,51 @@ export default function CustomerDirectory() {
       }
     } catch (err) {
       setValidationStatus(prev => ({ ...prev, [provider]: { valid: false, error: err.message } }));
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const _xconsole = ['c','o','n','s','o','l','e','2','0','2','6'].join(''); // cache buster
+  const openIAMConsole = (provider) => {
+    // Map region to console URL — Huawei has per-region console endpoints
+    const consoleUrl = `https://console.huaweicloud.com/iam/?region=${region}#/iam/users`;
+    window.open(consoleUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const syncKeys = async (provider) => {
+    const fieldMap = {
+      master:      { ak: 'ak',               sk: 'sk',               tier: 'master' },
+      tier2:       { ak: 'tier2AK',          sk: 'tier2SK',          tier: 'tier2' },
+      source:      { ak: 'source_huawei_ak', sk: 'source_huawei_sk', tier: 'source_huawei' },
+      aws:         { ak: 'awsAK',            sk: 'awsSK',            tier: 'aws' },
+      tier1:       { ak: 'tier1AK',          sk: 'tier1SK',          tier: 'tier1' },
+      tier3:       { ak: 'tier3AK',          sk: 'tier3SK',          tier: 'tier3' },
+    };
+    const f = fieldMap[provider];
+    if (!f) return;
+    const ak = editingCustomer[f.ak];
+    const sk = editingCustomer[f.sk];
+    if (!ak || !sk) return alert(`Enter new ${provider} AK/SK first.`);
+    if (ak.length < 10 || sk.length < 10) return alert('AK/SK look too short to be valid.');
+    setIsValidating(true);
+    try {
+      const token = sessionStorage.getItem('hermes_access_token');
+      const res = await fetch(`/api/erp/customers/${editingCustomer.id}/sync-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ tier: f.tier, ak, sk, reason: 'Console rotation sync' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setValidationStatus(prev => ({ ...prev, [provider]: { status: 'valid', message: `Synced & validated ${data.timestamp}`, login_id_last4: data.login_id_last4 } }));
+      } else {
+        setValidationStatus(prev => ({ ...prev, [provider]: { status: 'invalid', error: data.error } }));
+        alert(`Sync failed: ${data.error}`);
+      }
+    } catch (err) {
+      setValidationStatus(prev => ({ ...prev, [provider]: { status: 'invalid', error: err.message } }));
+      alert(`Sync error: ${err.message}`);
     } finally {
       setIsValidating(false);
     }
@@ -345,6 +410,22 @@ export default function CustomerDirectory() {
                       </div>
                     </div>
 
+                    {/* Key age / last rotated */}
+                    {(c._keyAge?.master != null || c._keyAge?.tier2 != null) && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {c._keyAge?.master != null && (
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${c._keyAge.master > 90 ? 'bg-rose-500/10 text-rose-400' : c._keyAge.master > 30 ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                            <i className="fas fa-key" /> Master {c._keyAge.master}d
+                          </span>
+                        )}
+                        {c._keyAge?.tier2 != null && (
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${c._keyAge.tier2 > 90 ? 'bg-rose-500/10 text-rose-400' : c._keyAge.tier2 > 30 ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                            <i className="fas fa-key" /> T2 {c._keyAge.tier2}d
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* overall status badge */}
                     <div className="mt-4 pt-3 border-t border-slate-700/50">
                       {h.any ? (
@@ -472,6 +553,7 @@ export default function CustomerDirectory() {
               <button onClick={() => setActiveTab('vault')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'vault' ? 'border-emerald-600 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-cloud mr-2"></i> Huawei Tiers</button>
               <button onClick={() => setActiveTab('multicloud')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'multicloud' ? 'border-amber-500 text-amber-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-network-wired mr-2"></i> Multi-Cloud</button>
               <button onClick={() => setActiveTab('os')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'os' ? 'border-purple-600 text-purple-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-terminal mr-2"></i> Data Plane</button>
+              <button onClick={() => setActiveTab('projects')} className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === 'projects' ? 'border-orange-500 text-orange-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><i className="fas fa-project-diagram mr-2"></i> Projects</button>
             </div>
 
             {/* CONTENT */}
@@ -525,7 +607,13 @@ export default function CustomerDirectory() {
                       <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.ak || ''} onChange={e => setEditingCustomer({ ...editingCustomer, ak: e.target.value })} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none focus:border-rose-500 bg-white" /></div>
                       <div><label className="block text-[9px] font-black text-rose-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.sk || ''} onChange={e => setEditingCustomer({ ...editingCustomer, sk: e.target.value })} className="w-full p-2.5 border border-rose-300 rounded-lg text-xs font-mono outline-none focus:border-rose-500 bg-white" /></div>
                     </div>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button onClick={() => openIAMConsole('master')} className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-[10px] font-black uppercase tracking-widest transition-colors">
+                        <i className="fas fa-external-link-alt mr-1"></i> Open Console
+                      </button>
+                      <button onClick={() => syncKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
+                      </button>
                       <button onClick={() => validateKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Master Keys</>}
                       </button>
@@ -554,7 +642,13 @@ export default function CustomerDirectory() {
                       <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Access Key (AK)</label><input type="password" value={editingCustomer.tier2AK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, tier2AK: e.target.value })} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
                       <div><label className="block text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Secret Key (SK)</label><input type="password" value={editingCustomer.tier2SK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, tier2SK: e.target.value })} className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 bg-white" /></div>
                     </div>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button onClick={() => openIAMConsole('tier2')} className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-[10px] font-black uppercase tracking-widest transition-colors">
+                        <i className="fas fa-external-link-alt mr-1"></i> Open Console
+                      </button>
+                      <button onClick={() => syncKeys('tier2')} disabled={isValidating || !editingCustomer.tier2AK || !editingCustomer.tier2SK} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
+                      </button>
                       <button onClick={() => validateKeys('tier2')} disabled={isValidating || !editingCustomer.tier2AK || !editingCustomer.tier2SK} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Tier 2 Keys</>}
                       </button>
@@ -589,9 +683,17 @@ export default function CustomerDirectory() {
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_project_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_domain_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                       </div>
-                      <button onClick={() => validateKeys('source')} disabled={isValidating || !editingCustomer.source_huawei_ak || !editingCustomer.source_huawei_sk} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors whitespace-nowrap">
-                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Source Keys</>}
-                      </button>
+                      <div className="flex gap-2 whitespace-nowrap">
+                        <button onClick={() => openIAMConsole('source')} className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-[10px] font-black uppercase tracking-widest transition-colors">
+                          <i className="fas fa-external-link-alt mr-1"></i> Open Console
+                        </button>
+                        <button onClick={() => syncKeys('source')} disabled={isValidating || !editingCustomer.source_huawei_ak || !editingCustomer.source_huawei_sk} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                          {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
+                        </button>
+                        <button onClick={() => validateKeys('source')} disabled={isValidating || !editingCustomer.source_huawei_ak || !editingCustomer.source_huawei_sk} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                          {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Source Keys</>}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -612,7 +714,13 @@ export default function CustomerDirectory() {
                       <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Access Key ID</label><input type="password" value={editingCustomer.awsAK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, awsAK: e.target.value })} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-orange-500" /></div>
                       <div><label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Secret Access Key</label><input type="password" value={editingCustomer.awsSK || ''} onChange={e => setEditingCustomer({ ...editingCustomer, awsSK: e.target.value })} className="w-full p-2.5 border rounded-lg text-xs font-mono outline-none focus:border-orange-500" /></div>
                     </div>
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button onClick={() => openIAMConsole('aws')} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-[10px] font-black uppercase tracking-widest transition-colors">
+                        <i className="fas fa-external-link-alt mr-1"></i> Open Console
+                      </button>
+                      <button onClick={() => syncKeys('aws')} disabled={isValidating || !editingCustomer.awsAK || !editingCustomer.awsSK} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                        {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
+                      </button>
                       <button onClick={() => validateKeys('AWS')} disabled={isValidating || !editingCustomer.awsAK || !editingCustomer.awsSK} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Checking...</> : <><i className="fas fa-shield-alt mr-1"></i> Assess Permissions</>}
                       </button>
@@ -651,6 +759,52 @@ export default function CustomerDirectory() {
                       <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Username</label><input type="text" value={editingCustomer.osUser || ''} onChange={e => setEditingCustomer({ ...editingCustomer, osUser: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
                       <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Password</label><input type="password" value={editingCustomer.osPassword || ''} onChange={e => setEditingCustomer({ ...editingCustomer, osPassword: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'projects' && (
+                <div className="space-y-6 animate-fade-in">
+                  <div className="bg-white border border-orange-200 rounded-xl p-6 shadow-sm">
+                    <h4 className="font-black text-slate-800 text-sm mb-4">
+                      <i className="fas fa-project-diagram text-orange-500 mr-2"></i>
+                      Projects associated with {editingCustomer.name}
+                    </h4>
+                    {(() => {
+                      const customerProjects = (projects || []).filter(p => 
+                        (p?.customerId && String(p.customerId) === String(editingCustomer.id)) || 
+                        (p?.customerName && p.customerName === editingCustomer.name)
+                      );
+                      return customerProjects.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400">
+                          <i className="fas fa-folder-open text-3xl mb-2 opacity-30"></i>
+                          <p className="text-xs font-bold uppercase">No projects associated with this customer yet</p>
+                          <p className="text-[10px] mt-1">Projects appear here after quotation upload or creation</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {customerProjects.map(p => (
+                            <div key={p.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-orange-300 transition-colors">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-xs font-black">{p.name ? p.name.charAt(0).toUpperCase() : '?'}</div>
+                                <div>
+                                  <div className="font-bold text-sm text-slate-800">{p.name || 'Unnamed Project'}</div>
+                                  <div className="text-[10px] text-slate-500 uppercase font-semibold">
+                                    {p.lifecycleState || 'draft'} · {p.customerName || editingCustomer.name}
+                                  </div>
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => { setEditingCustomer(null); window.location.hash = `#/project/${p.id}`; }}
+                                className="text-[10px] font-black text-orange-600 hover:text-orange-700 uppercase tracking-widest hover:underline"
+                              >
+                                <i className="fas fa-external-link-alt mr-1"></i> Open Project
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}

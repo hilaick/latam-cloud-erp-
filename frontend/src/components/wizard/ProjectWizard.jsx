@@ -89,7 +89,7 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                                 <i className="fas fa-cog"></i>
                             </button>
                         </div>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{activeProject.customerName || "Project Workspace"}</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest cursor-pointer hover:text-blue-600 transition-colors" onClick={() => activeProject?.customerId ? window.location.hash = `#phase=crm&proj=none&customer=${activeProject.customerId}&cname=${encodeURIComponent(activeProject.customerName || '')}` : null} title="Open customer vault"><i className="fas fa-building mr-1"></i> {activeProject.customerName || "Project Workspace"}</p>
                     </div>
                 </div>
 
