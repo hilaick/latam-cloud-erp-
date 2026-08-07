@@ -27,6 +27,7 @@ export default function Sidebar() {
         { id: 'finops', icon: 'fa-file-invoice-dollar', label: 'FinOps (COC)', mobileLabel: 'FinOps' }, 
         { id: 'schedule', icon: 'fa-calendar-alt', label: 'Schedule', mobileLabel: 'Schedule' },
         { id: 'process', icon: 'fa-route', label: 'Process', mobileLabel: 'Process' },
+        { id: 'resource-discovery', icon: 'fa-search-location', label: 'Discovery', mobileLabel: 'Discovery' },
         { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
         { id: 'migration_monitor', icon: 'fa-tv', label: 'Live NOC', mobileLabel: 'NOC' },
         { id: 'workflow', icon: 'fa-project-diagram', label: 'Workflow Graph', mobileLabel: 'Flow' },

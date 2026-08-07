@@ -21,6 +21,7 @@ import GlobalGlossary from './components/utils/GlobalGlossary';
 import GlobalCommandDrawer from './components/utils/GlobalCommandDrawer';
 import HermesModal from './components/HermesModal';
 import LoginPage from './components/auth/LoginPage';
+import ResourceDiscoveryMap from './components/views/ResourceDiscoveryMap';
 
 function App() {
     const { isAuthenticated, loading: authLoading, logout } = useAuth();
@@ -51,7 +52,7 @@ function App() {
         window.location.reload(); 
     };
 
-    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow', 'login'];
+    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow', 'login', 'resource-discovery'];
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     // ── Auth loading state ──
@@ -106,6 +107,7 @@ function App() {
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     {activePhase === 'playbooks' && <PlaybookStudio />}
                     {activePhase === 'workflow' && <WorkflowGraphView />}
+                    {activePhase === 'resource-discovery' && <ResourceDiscoveryMap />}
                     {activePhase === 'users' && <UserManagement />}
                     
                     {activePhase === 'login' && <LoginPage />}

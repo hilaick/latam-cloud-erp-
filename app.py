@@ -26,6 +26,7 @@ from routes.war_evaluation import war_bp
 from routes.hermes import hermes_bp
 from routes.hermes_cli_api import hermes_cli_bp
 from routes.gateway import gateway_bp
+from routes.resource_discovery import resource_discovery_bp
 
 load_dotenv()
 
@@ -192,6 +193,7 @@ app.register_blueprint(war_bp)
 app.register_blueprint(hermes_bp)
 app.register_blueprint(hermes_cli_bp) 
 app.register_blueprint(gateway_bp)
+app.register_blueprint(resource_discovery_bp)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
