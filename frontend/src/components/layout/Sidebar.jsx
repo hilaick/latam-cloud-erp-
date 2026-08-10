@@ -31,6 +31,7 @@ export default function Sidebar() {
         { id: 'playbooks', icon: 'fa-book-open', label: 'Playbooks', mobileLabel: 'Playbooks' },
         { id: 'migration_monitor', icon: 'fa-tv', label: 'Live NOC', mobileLabel: 'NOC' },
         { id: 'workflow', icon: 'fa-project-diagram', label: 'Workflow Graph', mobileLabel: 'Flow' },
+        { id: 'halted', icon: 'fa-archive', label: 'Halted Projects', mobileLabel: 'Halted' },
     ];
 
     const activeItem = navItems.find(item => item.id === activePhase && activeProjectId === 'none') || navItems[0];

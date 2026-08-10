@@ -542,6 +542,7 @@ export default function CustomerDirectory() {
               <div>
                 <h3 className="font-black text-xl text-blue-400">
                   <i className="fas fa-user-shield mr-3"></i>Customer Profile & Vault
+                  <span className="text-white text-sm font-bold ml-3 align-middle">— {editingCustomer?.name || 'Unnamed'}</span>
                 </h3>
               </div>
               <button onClick={() => setEditingCustomer(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times text-xl"></i></button>
@@ -788,7 +789,12 @@ export default function CustomerDirectory() {
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-xs font-black">{p.name ? p.name.charAt(0).toUpperCase() : '?'}</div>
                                 <div>
-                                  <div className="font-bold text-sm text-slate-800">{p.name || 'Unnamed Project'}</div>
+                                  <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                                    {p.name || 'Unnamed Project'}
+                                    {p.status === 'cancelled' && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-600 border border-red-200">Cancelled</span>}
+                                    {p.status === 'suspended' && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 border border-amber-200">Suspended</span>}
+                                    {p.status === 'transferred' && <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 border border-indigo-200">Transferred</span>}
+                                  </div>
                                   <div className="text-[10px] text-slate-500 uppercase font-semibold">
                                     {p.lifecycleState || 'draft'} · {p.customerName || editingCustomer.name}
                                   </div>

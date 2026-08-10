@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import ReactDOM from 'react-dom';
+import { ERPContext } from '../../context/ERPContext';
+import HaltProjectModal from './HaltProjectModal';
 
 /* ═══════════════════════════════════════════════
    DELIVERY CONSTELLATION — 5-phase methodology
@@ -108,12 +111,22 @@ function computeLayout(phases) {
 
 /* ─── Main component ─── */
 export default function DeliveryConstellation({ workflow, compact }) {
+  const { projects } = useContext(ERPContext);
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({x:0,y:0});
   const [drag, setDrag] = useState(null);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [showHaltModal, setShowHaltModal] = useState(false);
+
+  // Resolve current project from URL hash
+  const { phase, proj } = (() => {
+    const hash = window.location.hash.replace('#', '');
+    const params = new URLSearchParams(hash || '');
+    return { phase: params.get('phase') || '', proj: params.get('proj') || '' };
+  })();
+  const currentProject = (projects || []).find(p => String(p.id) === String(proj));
 
   // Compute phases: dynamic from workflow, else static fallback
   const phases = useMemo(()=>{
@@ -153,7 +166,7 @@ export default function DeliveryConstellation({ workflow, compact }) {
         width:'100%', height:containerH,
         background:'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f1a 100%)',
         borderRadius: fullscreen ? 0 : 24,
-        overflow:'hidden', position:'relative',
+        overflow:fullscreen?'visible':'hidden', position:'relative',
         cursor:drag?'grabbing':'grab', userSelect:'none',
       }}
       onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
@@ -182,6 +195,13 @@ export default function DeliveryConstellation({ workflow, compact }) {
           style={btnStyle('#1f2937','#d1d5db',1)}>
           <i className="fas fa-undo mr-1.5"/>Reset
         </button>
+        {currentProject && (
+          <button onClick={()=>setShowHaltModal(true)}
+            style={btnStyle('#7f1d1d','#fca5a5',1)}
+            title="Halt this project (cancel, suspend, or transfer)">
+            <i className="fas fa-hand-paper mr-1.5"/>Halt Project
+          </button>
+        )}
         <button onClick={()=>setFullscreen(f=>!f)}
           style={btnStyle(fullscreen?'#4f46e5':'#1f2937',fullscreen?'white':'#d1d5db',1)}>
           <i className={`fas fa-${fullscreen?'compress':'expand'} mr-1.5`}/>
@@ -423,10 +443,29 @@ export default function DeliveryConstellation({ workflow, compact }) {
         <i className="fas fa-times"></i>
       </button>
       {content}
+      {showHaltModal && currentProject && (
+        ReactDOM.createPortal(
+          <HaltProjectModal
+            project={currentProject}
+            onClose={() => setShowHaltModal(false)}
+          />,
+          document.body
+        )
+      )}
     </div>
   );
 
-  return content;
+  return (
+    <>
+      {showHaltModal && currentProject && (
+        <HaltProjectModal
+          project={currentProject}
+          onClose={() => setShowHaltModal(false)}
+        />
+      )}
+      {content}
+    </>
+  );
 }
 
 /* ─── Reusable styles ─── */

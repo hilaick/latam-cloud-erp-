@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import logging
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from models import db, ProjectData, Customer, QuotationVersion, ExecutionState
@@ -9,6 +10,25 @@ from services.credential_manager import get_credential_manager
 
 crm_bp = Blueprint('crm', __name__)
 logger = logging.getLogger(__name__)
+
+def _cred_blob_age(blob):
+    """Extract key-age (days) + last-rotated timestamp from an encrypted credential JSON blob.
+    Returns (days, timestamp_str) or (None, None) if absent/unparseable."""
+    if not blob:
+        return None, None
+    try:
+        d = json.loads(blob)
+        ts = d.get('timestamp')
+        if not ts:
+            return None, None
+        try:
+            parsed = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S UTC')
+        except ValueError:
+            parsed = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+        days = max(0, (datetime.utcnow() - parsed).days)
+        return days, ts
+    except Exception:
+        return None, None
 
 @crm_bp.route('/api/vault/validate', methods=['POST'])
 @jwt_required()
@@ -239,7 +259,25 @@ def manage_customers():
                     "os_domain": c.os_domain, 
                     "os_user": c.os_user, 
                     # 🚨 MASK THE PASSWORD - NEVER SEND IT TO FRONTEND IN PLAIN TEXT
-                    "os_password": "********" if c.os_password else ""
+                    "os_password": "********" if c.os_password else "",
+
+                    # 🕐 KEY AGE / LAST-ROTATED (derived from encrypted blob timestamp)
+                    "key_age": {
+                        "master": _cred_blob_age(c.ak)[0],
+                        "tier1": _cred_blob_age(c.tier1_ak)[0],
+                        "tier2": _cred_blob_age(c.tier2_ak)[0],
+                        "tier3": _cred_blob_age(c.tier3_ak)[0],
+                        "aws": _cred_blob_age(c.aws_ak)[0],
+                        "source": _cred_blob_age(c.source_huawei_ak)[0],
+                    },
+                    "last_rotated": {
+                        "master": _cred_blob_age(c.ak)[1],
+                        "tier1": _cred_blob_age(c.tier1_ak)[1],
+                        "tier2": _cred_blob_age(c.tier2_ak)[1],
+                        "tier3": _cred_blob_age(c.tier3_ak)[1],
+                        "aws": _cred_blob_age(c.aws_ak)[1],
+                        "source": _cred_blob_age(c.source_huawei_ak)[1],
+                    }
                 })
             return jsonify({"success": True, "customers": result})
         
@@ -512,6 +550,209 @@ def update_wbs_task():
 def manage_playbooks():
     return jsonify({"success": True})
 
+@crm_bp.route('/api/erp/customers/<c_id>/rotate-credentials', methods=['POST'])
+@jwt_required()
+def rotate_customer_credentials(c_id):
+    """Rotate credentials for a customer — accepts new AK/SK pair, validates, encrypts, stores"""
+    try:
+        customer = Customer.query.get(c_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+
+        data = request.json
+        tier = data.get('tier')  # master, tier1, tier2, tier3, aws, source_huawei
+        new_ak = data.get('ak')
+        new_sk = data.get('sk')
+        reason = data.get('reason', 'Manual rotation')
+
+        if not tier or not new_ak or not new_sk:
+            return jsonify({"success": False, "error": "tier, ak, and sk are required"}), 400
+
+        # Validate tier
+        valid_tiers = {
+            'master': ('ak', 'sk'),
+            'tier1': ('tier1_ak', 'tier1_sk'),
+            'tier2': ('tier2_ak', 'tier2_sk'),
+            'tier3': ('tier3_ak', 'tier3_sk'),
+            'aws': ('aws_ak', 'aws_sk'),
+            'source_huawei': ('source_huawei_ak', 'source_huawei_sk')
+        }
+
+        if tier not in valid_tiers:
+            return jsonify({"success": False, "error": f"Invalid tier. Valid: {list(valid_tiers.keys())}"}), 400
+
+        ak_field, sk_field = valid_tiers[tier]
+
+        # Validate format briefly
+        if len(new_ak) < 10 or len(new_sk) < 10:
+            return jsonify({"success": False, "error": "AK/SK appear too short to be valid"}), 400
+
+        # Encrypt new credentials
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
+        enc_dict = cm.encrypt_credentials(new_ak, new_sk)
+        encrypted_json = json.dumps(enc_dict)
+
+        # Store old values for audit log before overwriting
+        old_ak_encrypted = getattr(customer, ak_field)
+        old_sk_encrypted = getattr(customer, sk_field)
+
+        # Update with new encrypted credentials
+        setattr(customer, ak_field, encrypted_json)
+        setattr(customer, sk_field, encrypted_json)
+
+        # Log rotation event
+        log_entry = {
+            "timestamp": datetime.utcnow().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S UTC'),
+            "customer_id": c_id,
+            "customer_name": customer.name,
+            "tier": tier,
+            "reason": reason,
+            "old_ak_prefix": old_ak_encrypted[:30] + "..." if old_ak_encrypted else "none"
+        }
+        logger.info(f"CREDENTIAL ROTATION: {json.dumps(log_entry)}")
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"{tier} credentials rotated for {customer.name}",
+            "tier": tier,
+            "timestamp": log_entry["timestamp"]
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Credential rotation failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@crm_bp.route('/api/erp/customers/<c_id>/sync-credentials', methods=['POST'])
+@jwt_required()
+def sync_customer_credentials(c_id):
+    """Validate new AK/SK against Huawei IAM, then encrypt + store. Console-assisted rotation step 2."""
+    try:
+        from services.huawei_api_signer import validate_iam_key
+
+        customer = Customer.query.get(c_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+
+        data = request.json or {}
+        tier = data.get('tier', '').strip().lower()
+        ak = data.get('ak', '').strip()
+        sk = data.get('sk', '').strip()
+        reason = data.get('reason', 'Console sync')
+
+        # Tier → DB column mapping
+        tier_map = {
+            'master':       ('ak', 'sk'),
+            'tier1':        ('tier1_ak', 'tier1_sk'),
+            'tier2':        ('tier2_ak', 'tier2_sk'),
+            'tier3':        ('tier3_ak', 'tier3_sk'),
+            'aws':          ('aws_ak', 'aws_sk'),
+            'source_huawei': ('source_huawei_ak', 'source_huawei_sk'),
+        }
+        if tier not in tier_map:
+            return jsonify({"success": False, "error": f"Unknown tier: {tier}. Use: {', '.join(tier_map.keys())}"}), 400
+
+        if not ak or not sk or len(ak) < 10 or len(sk) < 10:
+            return jsonify({"success": False, "error": "AK/SK too short or missing"}), 400
+
+        # Step 1: Validate new key against Huawei IAM
+        validation = validate_iam_key(ak, sk)
+        if not validation['valid']:
+            return jsonify({
+                "success": False,
+                "error": f"IAM validation failed: {validation.get('error', 'unknown')}"
+            }), 400
+
+        # Step 2: Encrypt + store
+        master_password = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_password)
+        enc_dict = cm.encrypt_credentials(ak, sk)
+        encrypted_json = json.dumps(enc_dict)
+
+        ak_field, sk_field = tier_map[tier]
+        setattr(customer, ak_field, encrypted_json)
+        setattr(customer, sk_field, encrypted_json)
+        db.session.commit()
+
+        logger.info(
+            f"CREDENTIAL SYNC: customer={c_id} tier={tier} "
+            f"login_id={validation.get('login_id','?')} "
+            f"reason={reason}"
+        )
+
+        return jsonify({
+            "success": True,
+            "customer_id": c_id,
+            "tier": tier,
+            "timestamp": enc_dict['timestamp'],
+            "login_id_last4": validation['login_id'][-4:] if len(validation.get('login_id','')) >= 4 else validation.get('login_id',''),
+            "message": f"Validated & encrypted. Old key should now be disabled in console."
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Credential sync failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@crm_bp.route('/api/erp/customers/<c_id>/credential-audit', methods=['GET'])
+@jwt_required()
+def audit_customer_credentials(c_id):
+    """Audit credential status for a customer — reports which tiers have keys, age indicators"""
+    try:
+        customer = Customer.query.get(c_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+
+        tiers = {
+            'master': ('ak', 'sk'),
+            'tier1': ('tier1_ak', 'tier1_sk'),
+            'tier2': ('tier2_ak', 'tier2_sk'),
+            'tier3': ('tier3_ak', 'tier3_sk'),
+            'aws': ('aws_ak', 'aws_sk'),
+            'source_huawei': ('source_huawei_ak', 'source_huawei_sk')
+        }
+
+        audit = {}
+        for tier_name, (ak_field, sk_field) in tiers.items():
+            ak_val = getattr(customer, ak_field)
+            sk_val = getattr(customer, sk_field)
+            has_ak = bool(ak_val)
+            has_sk = bool(sk_val)
+            is_encrypted = False
+            ak_preview = None
+
+            if has_ak and isinstance(ak_val, str):
+                is_encrypted = ak_val.startswith('{') and 'encrypted_' in ak_val
+                try:
+                    enc_data = json.loads(ak_val)
+                    if 'timestamp' in enc_data:
+                        audit[tier_name + '_encrypted_at'] = enc_data['timestamp']
+                except (json.JSONDecodeError, KeyError):
+                    pass
+                ak_preview = ak_val[:8] + "..." if len(ak_val) > 8 else ak_val
+
+            audit[tier_name] = {
+                'has_keys': has_ak and has_sk,
+                'encrypted': is_encrypted,
+                'preview': ak_preview
+            }
+
+        return jsonify({
+            "success": True,
+            "customer_id": c_id,
+            "customer_name": customer.name,
+            "audit": audit
+        })
+
+    except Exception as e:
+        logger.error(f"Credential audit failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @crm_bp.route('/api/erp/projects/<project_id>/set-phase', methods=['POST'])
 @jwt_required()
 def set_project_phase(project_id):
@@ -559,4 +800,170 @@ def set_project_phase(project_id):
                        "execution_phase_updated": execution_state is not None})
     except Exception as e:
         db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+
+# ─────────────────────────────────────────────
+# PROJECT HALT / CANCELLATION ENDPOINTS
+# ─────────────────────────────────────────────
+
+@crm_bp.route('/api/erp/projects/<project_id>/halt', methods=['POST'])
+@jwt_required()
+def halt_project(project_id):
+    """Halt a project — action ∈ {cancel, suspend, transfer}"""
+    try:
+        data = request.json
+        action = data.get('action')  # 'cancel', 'suspend', 'transfer'
+        reason = data.get('reason', '')
+        transferred_to = data.get('transferredTo', '')
+        resume_review_date = data.get('resumeReviewDate', '')
+        author = data.get('author', 'System')
+
+        if action not in ('cancel', 'suspend', 'transfer'):
+            return jsonify({"success": False, "error": "action must be cancel, suspend, or transfer"}), 400
+
+        if not reason or not reason.strip():
+            return jsonify({"success": False, "error": "reason is required"}), 400
+
+        if action == 'transfer' and not transferred_to:
+            return jsonify({"success": False, "error": "transferredTo is required for transfer action"}), 400
+
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        project_data = json.loads(project.data)
+
+        # Set halt metadata
+        project_data['status'] = 'cancelled' if action == 'cancel' else ('suspended' if action == 'suspend' else 'transferred')
+        project_data['haltAction'] = action
+        project_data['haltReason'] = reason.strip()
+        project_data['haltDate'] = datetime.utcnow().isoformat()
+        project_data['haltAuthor'] = author
+        project_data['haltedFromPhase'] = project_data.get('lifecycleState', 'unknown')
+
+        if action == 'transfer':
+            project_data['transferredTo'] = transferred_to
+            project_data['transferredDate'] = datetime.utcnow().isoformat()
+
+        if action == 'suspend' and resume_review_date:
+            project_data['resumeReviewDate'] = resume_review_date
+
+        # Preserve current state snapshot
+        project_data['haltSnapshot'] = {
+            'phase': project_data.get('lifecycleState'),
+            'progress': project_data.get('prog', '0%'),
+            'resourcesDeployed': project_data.get('resourcesDeployed', []),
+            'configState': project_data.get('configState', {}),
+        }
+
+        project.data = json.dumps(project_data, ensure_ascii=False)
+
+        # Update execution state if present
+        execution_state = ExecutionState.query.filter_by(project_id=project_id).first()
+        if execution_state:
+            execution_state.status = 'HALTED'
+            execution_state.halt_action = action
+
+        db.session.commit()
+
+        logger.info(f"Project {project_id} halted: action={action}, by={author}")
+        return jsonify({
+            "success": True,
+            "project_id": project_id,
+            "status": project_data['status'],
+            "action": action,
+            "message": f"Project {action}ed successfully"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Halt project failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@crm_bp.route('/api/erp/projects/<project_id>/resume', methods=['PATCH'])
+@jwt_required()
+def resume_project(project_id):
+    """Resume a suspended project back to active state"""
+    try:
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        project_data = json.loads(project.data)
+
+        if project_data.get('status') != 'suspended':
+            return jsonify({"success": False, "error": "Only suspended projects can be resumed"}), 400
+
+        project_data['status'] = 'active'
+        project_data.pop('haltAction', None)
+        project_data.pop('haltReason', None)
+        project_data.pop('haltDate', None)
+        project_data.pop('haltAuthor', None)
+        project_data.pop('resumeReviewDate', None)
+        project_data['resumedDate'] = datetime.utcnow().isoformat()
+        project_data['resumedBy'] = request.json.get('author', 'System')
+
+        project.data = json.dumps(project_data, ensure_ascii=False)
+
+        # Restore execution state
+        execution_state = ExecutionState.query.filter_by(project_id=project_id).first()
+        if execution_state:
+            execution_state.status = 'ACTIVE'
+            execution_state.halt_action = None
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "project_id": project_id,
+            "status": "active",
+            "message": "Project resumed successfully"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@crm_bp.route('/api/erp/projects/halted', methods=['GET'])
+@jwt_required()
+def get_halted_projects():
+    """List all halted projects (cancelled, suspended, transferred)"""
+    try:
+        # Filter by status in JSON data field
+        all_projects = ProjectData.query.all()
+        halted = []
+
+        for p in all_projects:
+            try:
+                data = json.loads(p.data)
+                if data.get('status') in ('cancelled', 'suspended', 'transferred'):
+                    halted.append({
+                        'id': p.id,
+                        'name': data.get('name', p.id),
+                        'customerName': data.get('customerName', ''),
+                        'status': data['status'],
+                        'haltAction': data.get('haltAction', ''),
+                        'haltReason': data.get('haltReason', ''),
+                        'haltDate': data.get('haltDate', ''),
+                        'haltAuthor': data.get('haltAuthor', ''),
+                        'haltedFromPhase': data.get('haltedFromPhase', ''),
+                        'transferredTo': data.get('transferredTo', ''),
+                        'resumeReviewDate': data.get('resumeReviewDate', ''),
+                        'progress': data.get('prog', '0%'),
+                        'haltSnapshot': data.get('haltSnapshot', {}),
+                    })
+            except Exception:
+                continue
+
+        return jsonify({
+            "success": True,
+            "count": len(halted),
+            "projects": halted
+        })
+
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

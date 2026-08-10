@@ -27,6 +27,7 @@ export const ERPProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
     const [customPlaybooks, setCustomPlaybooks] = useState({});
     const [customers, setCustomers] = useState([]);
+    const [haltedProjects, setHaltedProjects] = useState([]);
     
     const initialParams = getHashParams();
     const [activePhase, setActivePhaseState] = useState(initialParams.phase);
@@ -373,13 +374,105 @@ export const ERPProvider = ({ children }) => {
         }, 50);
     };
 
+    // ============================================================================
+    // 🛑 PROJECT HALT / CANCELLATION OPERATIONS
+    // ============================================================================
+    const handleHaltProject = async (projectId, { action, reason, transferredTo, resumeReviewDate }) => {
+        try {
+            const r = await fetch(`/api/erp/projects/${projectId}/halt`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    action,
+                    reason,
+                    transferredTo: transferredTo || '',
+                    resumeReviewDate: resumeReviewDate || '',
+                    author: sessionStorage.getItem('hermes_user_name') || 'System'
+                })
+            });
+
+            if (r.status === 401 || r.status === 422) { handleAuthError(); return { success: false }; }
+            if (!r.ok) {
+                const errData = await r.json().catch(() => ({}));
+                throw new Error(errData.error || `Halt failed: ${r.status}`);
+            }
+
+            const result = await r.json();
+            if (result.success) {
+                setProjects(prev => prev.map(p =>
+                    String(p.id) === String(projectId)
+                        ? { ...p, status: result.status, haltAction: action, haltReason: reason }
+                        : p
+                ));
+                if (action === 'cancel' || action === 'transfer') {
+                    setActiveProjectId('none');
+                    setActivePhase('home');
+                }
+            }
+            return result;
+        } catch (err) {
+            console.error('Error halting project:', err);
+            alert(`Failed to halt project: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+    };
+
+    const handleResumeProject = async (projectId) => {
+        try {
+            const r = await fetch(`/api/erp/projects/${projectId}/resume`, {
+                method: 'PATCH',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    author: sessionStorage.getItem('hermes_user_name') || 'System'
+                })
+            });
+
+            if (r.status === 401 || r.status === 422) { handleAuthError(); return { success: false }; }
+            if (!r.ok) {
+                const errData = await r.json().catch(() => ({}));
+                throw new Error(errData.error || `Resume failed: ${r.status}`);
+            }
+
+            const result = await r.json();
+            if (result.success) {
+                setProjects(prev => prev.map(p =>
+                    String(p.id) === String(projectId)
+                        ? { ...p, status: 'active', haltAction: undefined, haltReason: undefined }
+                        : p
+                ));
+                setHaltedProjects(prev => prev.filter(p => String(p.id) !== String(projectId)));
+            }
+            return result;
+        } catch (err) {
+            console.error('Error resuming project:', err);
+            alert(`Failed to resume project: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+    };
+
+    const fetchHaltedProjects = async () => {
+        try {
+            const r = await fetch('/api/erp/projects/halted', { headers: getAuthHeaders() });
+            if (r.status === 401 || r.status === 422) { handleAuthError(); return; }
+            if (!r.ok) throw new Error(`Failed to fetch halted projects: ${r.status}`);
+            const data = await r.json();
+            if (data.success) {
+                setHaltedProjects(data.projects || []);
+            }
+        } catch (err) {
+            console.error('Error fetching halted projects:', err);
+        }
+    };
+
+
     return (
         <ERPContext.Provider value={{ 
             projects, 
             customers, 
             activePhase, 
             activeProjectId, 
-            customPlaybooks, 
+            customPlaybooks,
+            haltedProjects, 
             setActivePhase, 
             setActiveProjectId, 
             setCustomPlaybooks, 
@@ -389,7 +482,10 @@ export const ERPProvider = ({ children }) => {
             handleUpdateCustomer, 
             handleDeleteCustomer, 
             handleDeleteProject,
-            syncExecutionProgress, 
+            handleHaltProject,
+            handleResumeProject,
+            fetchHaltedProjects,
+            syncExecutionProgress,
             refreshData: fetchState
         }}>
             {children}
