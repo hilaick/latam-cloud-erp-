@@ -4,6 +4,7 @@ import PhysicsEngine from './PhysicsEngine';
 import FinOpsCalculator from './FinOpsCalculator';
 import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import CutoverRunbookView from './CutoverRunbookView';
+import AgenticOrchestrationPanel from './AgenticOrchestrationPanel';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     // 🚨 REORDERED: Default tab is now 'wbs' (3.1)
@@ -14,12 +15,13 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [gateWarnings, setGateWarnings] = useState([]);
     const [gatePassed, setGatePassed] = useState(false);
 
-    // 🚨 REORDERED: Menu Items logical flow — Physics & FinOps BEFORE Tooling
+    // 🚨 SPLIT: 3.4a = Tool Recommendations, 3.4b = Execution Mode (after tools, before runbook)
     const menuItems = [
         { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
         { id: 'physics', num: '3.2', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
         { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
-        { id: 'tools', num: '3.4', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'tools', num: '3.4a', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'execution', num: '3.4b', icon: 'fa-robot', label: 'Execution Mode' },
         { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
 
@@ -29,10 +31,10 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         let data = {};
         try { data = JSON.parse(project?.data || '{}'); } catch(e) {}
 
-        // REQUIRED: execution mode (now in 3.4 Tooling)
+        // REQUIRED: execution mode (now in 3.4b Execution Mode)
         const mode = project?.executionMode || executionMode;
         if (!mode) {
-            warnings.push({ level: 'required', tab: 'tools', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.4 Strategic Tooling.' });
+            warnings.push({ level: 'required', tab: 'execution', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.4b Execution Mode.' });
         }
 
         // RECOMMENDED: WBS & RACI populated
@@ -50,9 +52,9 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
             warnings.push({ level: 'recommended', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.3 for cost envelopes.' });
         }
 
-        // RECOMMENDED: tool assignments (now 3.4)
+        // RECOMMENDED: tool assignments (now 3.4a)
         if (!data?.toolAssignments && !data?.recommendations) {
-            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Visit 3.4 to run tool recommendations based on physics & cost analysis.' });
+            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Visit 3.4a to run tool recommendations based on physics & cost analysis.' });
         }
 
         // RECOMMENDED: wave plan
@@ -146,14 +148,25 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                 <p className="text-xs text-amber-700/80 mt-1 font-medium">Select optimal migration engines informed by delivery physics and cost constraints from steps 3.2–3.3.</p>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                {/* 🚨 3.4 Execution Mode Selector */}
-                                <div className="p-6 border-b border-slate-100">
-                                    <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-4">
-                                        <i className="fas fa-sliders-h mr-2 text-indigo-600"></i> Setup Phase 4 Execution Mode
-                                    </h5>
-                                    <p className="text-xs text-slate-500 mb-5">
-                                        Select how workloads will be processed by the delivery team or orchestration engine.
-                                    </p>
+                                <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
+                            </div>
+                        </div>
+                    )}
+
+                    {subTab === 'execution' && (
+                        <div className="animate-fade-in h-full flex flex-col">
+                            <div className="bg-purple-50 border-b border-purple-200 p-6 shrink-0">
+                                <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest">
+                                    <i className="fas fa-robot mr-2"></i> Setup Phase 4 Execution Mode
+                                </h4>
+                                <p className="text-xs text-purple-700/80 mt-1 font-medium">
+                                    Select how workloads will be processed by the delivery team or orchestration engine.
+                                    <span className="block mt-1 text-purple-500">Run recommendations (3.4a) and wave planning (3.5) first for best results.</span>
+                                </p>
+                            </div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                                {/* Execution Mode Selector */}
+                                <div className="mb-6">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         {/* Manual Pipeline */}
                                         <button
@@ -240,7 +253,11 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         </button>
                                     </div>
                                 </div>
-                                <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
+
+                                {/* Agentic Orchestration Panel — shown when agentic selected */}
+                                {executionMode === 'agentic' && (
+                                    <AgenticOrchestrationPanel project={project} onUpdateProject={onUpdateProject} />
+                                )}
                             </div>
                         </div>
                     )}

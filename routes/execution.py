@@ -9,9 +9,13 @@ from services.credential_manager import get_credential_manager
 from services.identity_provisioner import IdentityProvisioner
 from services.orchestrator import ExecutionOrchestrator
 from services.agent_orchestrator import AgentOrchestrator
+from services.agentic_simulator import register_agentic_dry_run_routes
 
 logger = logging.getLogger(__name__)
 execution_bp = Blueprint('execution', __name__)
+
+# Register agentic orchestration dry-run endpoint
+register_agentic_dry_run_routes(execution_bp)
 
 def ensure_valid_sts_token(project_record):
     project_data = json.loads(project_record.data)
