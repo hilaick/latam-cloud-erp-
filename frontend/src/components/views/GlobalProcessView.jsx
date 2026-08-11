@@ -203,10 +203,10 @@ const phases = [
     tagline: 'Source discovery, risk profiling, and target topology design',
     icon: 'fa-drafting-compass',
     color: 'purple',
-    gates: ['Architecture Summary complete', 'Source Discovery (MgC) executed', 'ORA Risk Profile assessed', 'Target Topology Mapped', 'DTRB Governance approved'],
+    gates: ['Architecture Summary complete', 'Source Discovery complete', 'ORA Risk Profile assessed', 'Target Topology Mapped', 'DTRB Governance approved'],
     steps: [
       { title: '2.1 Architecture Summary', description: 'Define the high-level architecture approach, constraints, and key decisions that will guide the entire migration lifecycle.', tools: ['Architecture Framework', 'Decision Log'] },
-      { title: '2.2 Source Discovery (MgC)', description: 'Deploy MgC Agent for automated discovery of source servers, databases, and network topology — foundational for sizing and migration planning.', tools: ['MgC Agent', 'SSH', 'vCenter API'] },
+      { title: '2.2 Source Discovery', description: 'Discover and document source infrastructure — servers, databases, and network topology. May be derived from quotation BoM when source access is unavailable.', tools: ['SSH', 'vCenter API', 'BoM Analysis'] },
       { title: '2.3 ORA Risk Profile', description: 'Assess Operational Risk Assessment profile: identify compatibility gaps, regulatory constraints, and technical debt that could impact migration.', tools: ['ORA Framework', 'Risk Matrix'] },
       { title: '2.4 Target Topology Mapper', description: 'Map discovered source infrastructure to Huawei Cloud target services, generating the target state architecture diagram.', tools: ['Topology Mapper', 'Huawei Cloud API'] },
       { title: '2.5 DTRB Governance', description: 'Digital Transformation Review Board governance checkpoint: validate architecture decisions against organizational standards and policies.', tools: ['DTRB Portal', 'Governance Checklist'] },

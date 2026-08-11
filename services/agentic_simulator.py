@@ -1575,10 +1575,10 @@ def register_agentic_dry_run_routes(execution_bp):
                 "region": project_data.get("region", "la-south-2"),
                 "mapperNodes": project_data.get("mapperNodes", []),
                 "waves": project_data.get("waves", []),
-                "physics": project_data.get("physics", {}),
+                "physics": project_data.get("physics") or {},
                 "finops": {
-                    "budget": project_data.get("budget", project_data.get("financials", {}).get("budget", 10000)),
-                    "financials": project_data.get("financials", {}),
+                    "budget": project_data.get("budget") or project_data.get("financials", {}).get("budget") if project_data.get("financials") else 10000,
+                    "financials": project_data.get("financials") or {},
                 },
                 "toolAssignments": project_data.get("toolAssignments", project_data.get("recommendations", [])),
                 "executionMode": "agentic",

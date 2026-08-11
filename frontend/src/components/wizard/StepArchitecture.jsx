@@ -39,7 +39,7 @@ export default function StepArchitecture({ project, onUpdateProject, onPromote }
 
     const menuItems = [
         { id: 'summary', num: '2.1', icon: 'fa-chart-pie', label: 'Architecture Summary' },
-        { id: 'mgc', num: '2.2', icon: 'fa-search', label: 'Source Discovery (MgC)' },
+        { id: 'mgc', num: '2.2', icon: 'fa-search', label: 'Source Discovery' },
         { id: 'ora', num: '2.3', icon: 'fa-exclamation-triangle', label: 'ORA Risk Profile' },
         { id: 'mapper', num: '2.4', icon: 'fa-network-wired', label: 'Target Topology Mapper' },
         { id: 'gov', num: '2.5', icon: isLocked ? 'fa-lock' : 'fa-shield-alt', label: 'DTRB Governance' }

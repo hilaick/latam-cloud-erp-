@@ -585,7 +585,7 @@ def generate_n8n_workflow():
     ]
     gates_by_phase = [
         ["ARB Intake & SOW signed", "High-Level WBS (Sales) approved"],
-        ["Architecture Summary complete", "Source Discovery (MgC) executed", "ORA Risk Profile assessed", "Target Topology Mapped", "DTRB Governance approved"],
+        ["Architecture Summary complete", "Source Discovery complete", "ORA Risk Profile assessed", "Target Topology Mapped", "DTRB Governance approved"],
         ["WBS & RACI Matrix defined", "Physics Engine calibrated", "FinOps Budget & Burn approved", "Strategic Tooling selected", "Wave & Runbook planned"],
         ["Readiness Gateway passed", "Execution Pipeline active", "Engineering Workbench online", "Delivery Command Center staffed", "TAM Service Governance running"],
         ["3-Way Infrastructure Diff complete", "Target Constellation verified", "WAR Sign-Off obtained", "Procurement & PO Handover executed"],

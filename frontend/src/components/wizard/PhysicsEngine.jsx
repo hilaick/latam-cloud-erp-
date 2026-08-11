@@ -993,7 +993,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                                                 <td className="p-3 font-bold text-slate-800 flex items-center">
                                                     <i className={`fas ${conf.isDb ? 'fa-database text-rose-500' : conf.isStorage ? 'fa-hdd text-amber-500' : 'fa-server text-blue-500'} mr-2`}></i>
                                                     {n.name || n.hostname || n.description || 'Placeholder Resource'}
-                                                    {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not discovered by MgC.">Quote Only</span>}
+                                                    {n.status === 'Quoted Only' && <span className="ml-2 bg-slate-200 text-slate-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-300" title="This node was imported from a Sales Quote, not auto-discovered from source.">Quote Only</span>}
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="text-[10px] font-black uppercase text-slate-500 mb-0.5">{conf.isDb ? 'Database' : conf.isStorage ? 'Storage' : conf.os || 'VM'}</div>

@@ -173,7 +173,7 @@ export default function ArchitectureCanvas({ title, nodes = [], onNodeClick, reg
                         <div className="h-[400px] flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-300 rounded-3xl bg-white/50 w-full min-w-[800px]">
                             <i className="fas fa-project-diagram text-6xl mb-4 opacity-30"></i>
                             <p className="font-black text-lg text-slate-500">Awaiting Target Architecture Data</p>
-                            <p className="text-xs font-medium mt-2">Upload a SOW or sync with MgC to populate the canvas.</p>
+                            <p className="text-xs font-medium mt-2">Upload a SOW or add source data to populate the canvas.</p>
                         </div>
                     ) : (
                         <>
