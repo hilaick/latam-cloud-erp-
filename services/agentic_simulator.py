@@ -2179,6 +2179,48 @@ class AgenticExecutionSimulator:
             path_taken = "image_primary"
 
         elif strategy == "manual_agent_required":
+            # ── BLOCKED: Full decision tree visibility even when blocked ──
+            sid += 1
+            all_trace.append({
+                "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
+                "action": "BLOCKED_STRATEGY_ANALYSIS",
+                "target": server_name,
+                "message": (
+                    f"⛔ Server '{server_name}' is BLOCKED — missing metadata for agentic path. "
+                    f"Reason: No data-plane admin access ({profile.get('has_data_plane_admin', False)}), "
+                    f"no agent preinstalled ({profile.get('agent_preinstalled', False)}), "
+                    f"no source access ({profile.get('has_source_access', False)})."
+                ),
+                "decision": {"recommended_action": "manual_agent_install_or_image_upload"},
+                "result": "blocked",
+            })
+            current_offset += 5
+
+            # Show what WOULD happen if metadata were provided
+            sid += 1
+            all_trace.append({
+                "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
+                "action": "HYPOTHETICAL_PATH_WITH_METADATA",
+                "target": server_name,
+                "message": (
+                    f"💡 If metadata were enriched (e.g., has_data_plane_admin=true), this server would follow: "
+                    f"SMS Agent Install via SSH → Full Disk Sync → Delta Syncs → Cutover → Post-Migration Hardening. "
+                    f"Applicable skills: {[s['name'] for s in skills]}. "
+                    f"History shows {len(history_matches or [])} similar past migrations."
+                ),
+                "dependencies": [
+                    {"name": "metadata_enrichment", "desc": "Run source discovery or add fields to mapperNode", "status": "needed"},
+                    {"name": "sms_agent_install", "desc": "Orchestrator pushes agent via SSH with Tier1 credentials", "status": "blocked_on_metadata"},
+                    {"name": "network_path", "desc": "VPC/subnet must be provisioned (Phase 4.1)", "status": "ok"},
+                ],
+                "commands": [
+                    {"desc": "If metadata were present, agent install command", "cmd": f"ssh root@<source_ip> 'wget https://sms.{region}.myhuaweicloud.com/sms_agent/sms_agent_linux.tar.gz && tar xzf sms_agent_linux.tar.gz && cd SMS-Agent && ./install.sh --ak <HCLOUD_AK> --sk <HCLOUD_SK> --quiet'"},
+                ],
+                "timestamp_offset_seconds": current_offset,
+                "result": "hypothetical_path_displayed",
+            })
+            current_offset += 5
+
             final_outcome = "BLOCKED_MANUAL_AGENT_REQUIRED"
             path_taken = "blocked"
 
