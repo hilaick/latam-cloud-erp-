@@ -254,6 +254,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
+                    project_id: activeProject?.id,
                     start_date: fmt(startDate),
                     end_date: fmt(now),
                     duration_months: durationMonths,

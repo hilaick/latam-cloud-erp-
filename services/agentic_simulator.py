@@ -1292,7 +1292,12 @@ class AgenticExecutionSimulator:
         # ═══ Phase 4.8: Finalize ═══
         step_id += 1
         total_hours = total_simulated_seconds / 3600
-        budget = float(finops.get("budget", 10000))
+        try:
+            budget_raw = finops.get("budget")
+            budget = float(budget_raw if budget_raw is not None else 10000)
+        except Exception:
+            logger.error(f"Budget parse failed: finops={finops}", exc_info=True)
+            budget = 10000.0
         estimated_cost = AgenticExecutionSimulator._estimate_cost(
             resource_usage, total_hours, physics
         )
