@@ -1828,9 +1828,18 @@ class AgenticExecutionSimulator:
 
                 batch_results = []
                 for server in batch:
+                    # ── Project-agnostic enrichment: classify + history + skills ──
+                    profile = ServerProfiler.classify(server)
+                    enriched_profile = ServerProfiler.enrich_with_history(profile, server)
+                    applicable_skills = SkillRegistry.get_skills_for_server(enriched_profile, server)
+                    history_matches = ExecutionHistoryStore.query_similar(enriched_profile, server)
+                    
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,
-                        total_simulated_seconds, region, config
+                        total_simulated_seconds, region, config,
+                        enriched_profile=enriched_profile,
+                        applicable_skills=applicable_skills,
+                        history_matches=history_matches
                     )
                     step_id = server_result["final_step_id"]
                     total_simulated_seconds = server_result["final_offset"]
@@ -1968,6 +1977,30 @@ class AgenticExecutionSimulator:
             },
         }
 
+        # ── Learning Feedback Loop: ingest this simulation's outcomes ──
+        # Every simulated server becomes a data point for future projects.
+        # The system gets smarter with each run.
+        simulation_result_for_history = {
+            "trace": trace,
+            "summary": summary,
+        }
+        ExecutionHistoryStore.ingest(simulation_result_for_history)
+        history_stats = ExecutionHistoryStore.get_stats()
+        
+        summary["learning_system"] = {
+            "records_ingested": len(trace),
+            "total_history_records": history_stats["total_records"],
+            "success_rate": history_stats["success_rate"],
+            "strategy_distribution": history_stats["strategy_distribution"],
+            "unique_projects": history_stats["unique_projects"],
+            "note": (
+                "This simulation's outcomes have been ingested into the cross-project "
+                "learning store. Future simulations for other projects will query this "
+                "data and apply relevant learnings, making the system progressively "
+                "smarter with each execution."
+            ),
+        }
+
         return {
             "success": True,
             "trace": trace,
@@ -1985,18 +2018,38 @@ class AgenticExecutionSimulator:
         offset: float,
         region: str,
         config: SimulationConfig,
+        enriched_profile: dict = None,
+        applicable_skills: list = None,
+        history_matches: list = None,
     ) -> dict:
-        """Process one server through the complete migration decision tree."""
+        """Process one server through the complete migration decision tree.
+        
+        Now project-agnostic: enriched_profile carries history-informed strategy,
+        applicable_skills are dynamically matched from SkillRegistry,
+        and history_matches provide cross-project learnings.
+        """
         server_name = server.get("name", server.get("hostname", server.get("id", "unknown")))
-        profile = ServerProfiler.classify(server)
+        profile = enriched_profile if enriched_profile else ServerProfiler.classify(server)
+        skills = applicable_skills or SkillRegistry.get_skills_for_server(profile, server)
 
-        strategy = profile["strategy"]
+        strategy = profile.get("suggested_strategy", profile["strategy"])
         all_trace: List[dict] = []
         current_offset = offset
         sid = step_id
         final_outcome = "UNKNOWN"
         final_sync_hours = 0.0
         path_taken = "unknown"
+
+        # ── History-informed pre-flight annotations ──
+        history_note = ""
+        if profile.get("best_match_project"):
+            history_note = (
+                f" [📚 Learned from {profile['best_match_project']}: "
+                f"similar {profile.get('os')} {profile.get('role')} server — "
+                f"strategy suggests '{strategy}']"
+            )
+        if profile.get("suggestion_reason"):
+            history_note += f" [💡 {profile['suggestion_reason']}]"
 
         # ── Pre-flight: Flavor capacity check ──
         sid += 1
@@ -2007,7 +2060,12 @@ class AgenticExecutionSimulator:
             "agent": f"Agent-{server_name}",
             "action": "FLAVOR_CAPACITY_CHECK",
             "target": server_name,
-            "message": f"Checking flavor '{flavor}' availability in {region}. Result: {'AVAILABLE' if capacity_ok else 'RETIRED/OUT_OF_STOCK'}.",
+            "message": (
+                f"Checking flavor '{flavor}' availability in {region}. "
+                f"Result: {'AVAILABLE' if capacity_ok else 'RETIRED/OUT_OF_STOCK'}.{history_note}"
+            ),
+            "history_sourced": bool(history_note),
+            "learnings_applied": profile.get("history_learnings", {}),
             "commands": [
                 {"desc": "Query ECS flavor availability", "cmd": f"hcloud ecs flavor-describe --flavor {flavor} --region {region}"},
             ],
