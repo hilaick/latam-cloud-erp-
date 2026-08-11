@@ -51,7 +51,6 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
     };
     
     const handleCustomerClick = () => {
-        const display = currentProjectDisplay;
         const customerName = currentProject?.customerName;
         if (customerName && currentProject?.customerId) {
             window.location.hash = `#phase=crm&proj=none&customer=${currentProject.customerId}&cname=${encodeURIComponent(customerName)}`;

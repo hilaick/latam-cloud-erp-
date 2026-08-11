@@ -304,7 +304,7 @@ export default function DeliveryConstellation({ workflow, compact }) {
                   width:22, height:22, borderRadius:11,
                   background:hub.color, color:'#fff',
                   display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:11, fontWeight:900,
+                  fontSize:11, fontWeight:900, lineHeight:1,
                   boxShadow:`0 0 10px ${hub.color}60`,
                   opacity:revealed?1:0, transition:'opacity 0.4s',
                 }}>
@@ -421,16 +421,16 @@ export default function DeliveryConstellation({ workflow, compact }) {
     </div>
   );
 
-  if(fullscreen) return (
-    <div style={{
-      position:'fixed', inset:0, zIndex:9999,
+  if(fullscreen) return ReactDOM.createPortal(
+    (<div style={{
+      position:'fixed', inset:0, zIndex:99999,
       background:'#0a0a12',
       display:'flex', alignItems:'center', justifyContent:'center',
     }}>
       <button
         onClick={()=>setFullscreen(false)}
         style={{
-          position:'fixed', top:20, right:20, zIndex:10001,
+          position:'fixed', top:20, right:20, zIndex:100001,
           background:'#dc2626', color:'white',
           border:'none', borderRadius:12,
           width:44, height:44, fontSize:20,
@@ -444,15 +444,13 @@ export default function DeliveryConstellation({ workflow, compact }) {
       </button>
       {content}
       {showHaltModal && currentProject && (
-        ReactDOM.createPortal(
-          <HaltProjectModal
-            project={currentProject}
-            onClose={() => setShowHaltModal(false)}
-          />,
-          document.body
-        )
+        <HaltProjectModal
+          project={currentProject}
+          onClose={() => setShowHaltModal(false)}
+        />
       )}
-    </div>
+    </div>),
+    document.body
   );
 
   return (

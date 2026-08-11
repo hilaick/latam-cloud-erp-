@@ -57,7 +57,8 @@ class CredentialManager:
                 'salt': base64.b64encode(salt).decode(),
                 'nonce': base64.b64encode(nonce).decode(),
                 'algorithm': 'AES-256-GCM',
-                'key_derivation': 'PBKDF2-SHA256-100000'
+                'key_derivation': 'PBKDF2-SHA256-100000',
+                'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
             }
         except Exception as e:
             logger.error(f"Failed to encrypt credentials: {str(e)}")
