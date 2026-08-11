@@ -110,8 +110,565 @@ class SimulationConfig:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Server Profile Classifier
+# Skill Registry — Catalog of available migration capabilities
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class SkillRegistry:
+    """
+    Project-agnostic catalog of all migration skills.
+    Each skill declares: what it does, prerequisites, OS support, failure modes,
+    and the commands it would execute. This drives the simulation dynamically.
+    
+    Skills are discovered from the Hermes skills directory and can be extended
+    per-project as new skills are developed or learned from history.
+    """
+    
+    # Registry: skill_name → capability descriptor
+    SKILLS: Dict[str, dict] = {
+        "image_conversion": {
+            "name": "image-conversion",
+            "category": "migration",
+            "description": "Convert VM images between formats for IMS compatibility",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_image_accessible", "mig_worker_available", "obs_bucket_exists"],
+            "commands": {
+                "qemu_convert_linux": (
+                    "qemu-img convert -f {source_format} -O zvhd "
+                    "-o subformat=zvhd2,adapter_type=ide {input_path} {output_path}"
+                ),
+                "qemu_convert_windows": (
+                    "qemu-img convert -f {source_format} -O zvhd "
+                    "-o subformat=zvhd2,adapter_type=ide,os_type=windows {input_path} {output_path}"
+                ),
+                "verify_conversion": "qemu-img info {output_path} | grep -E 'file format|virtual size'",
+                "install_qemu": "apt-get install -y qemu-utils 2>/dev/null || yum install -y qemu-img 2>/dev/null",
+            },
+            "failure_modes": [
+                "unsupported_source_format",
+                "disk_too_large_for_conversion",
+                "qemu_not_installed_on_mig_worker",
+                "output_format_incompatible_with_ims",
+            ],
+            "avg_duration_minutes": 5,
+            "skill_file": "skills/image-conversion/SKILL.md",
+        },
+        "obs_migration": {
+            "name": "obs-migration",
+            "category": "storage",
+            "description": "Migrate objects/files from external cloud storage to Huawei OBS",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_storage_accessible", "obs_bucket_created", "obsutil_installed"],
+            "commands": {
+                "obsutil_download": (
+                    "obsutil cp {source_url} obs://{bucket}/{prefix}/ "
+                    "--parallel {jobs} --threshold {threshold} --acl=private"
+                ),
+                "obsutil_upload": (
+                    "obsutil cp {local_path} obs://{bucket}/{prefix}/ "
+                    "--parallel {jobs} --part-size={part_size}"
+                ),
+                "verify_upload": "obsutil ls obs://{bucket}/{prefix}/ --count",
+                "install_obsutil": (
+                    "wget -N https://obs-community.obs.{region}.myhuaweicloud.com/obsutil/current/obsutil_linux_amd64.tar.gz "
+                    "&& tar xzf obsutil_linux_amd64.tar.gz && chmod +x obsutil_linux_amd64_*/obsutil"
+                ),
+            },
+            "failure_modes": [
+                "network_bandwidth_insufficient",
+                "source_authentication_failed",
+                "obs_bucket_quota_exceeded",
+                "large_file_transfer_interrupted",
+            ],
+            "avg_duration_minutes": 15,
+            "skill_file": "skills/obs-migration/SKILL.md",
+        },
+        "boot_fixes": {
+            "name": "boot-fixes",
+            "category": "post_migration",
+            "description": "Fix boot failures on migrated VMs (GRUB, initramfs, BCD)",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["target_instance_reachable", "rescue_mode_possible"],
+            "commands": {
+                "grub_reinstall_linux": (
+                    "mount /dev/{root_disk}1 /mnt && "
+                    "mount --bind /dev /mnt/dev && mount --bind /proc /mnt/proc && "
+                    "chroot /mnt grub-install /dev/{root_disk} && "
+                    "chroot /mnt update-grub"
+                ),
+                "initramfs_regenerate": (
+                    "chroot /mnt update-initramfs -u -k all"
+                ),
+                "bcd_repair_windows": (
+                    "bcdedit /store {bcd_path} /set {{default}} device partition={partition} && "
+                    "bcdedit /store {bcd_path} /set {{default}} osdevice partition={partition}"
+                ),
+                "verify_boot": "ssh {target_ip} 'uptime' || echo 'BOOT_FAILED'",
+            },
+            "failure_modes": [
+                "grub_config_corrupted",
+                "initramfs_missing_drivers",
+                "windows_bcd_corrupted",
+                "disk_uuid_mismatch",
+            ],
+            "avg_duration_minutes": 3,
+            "skill_file": "skills/boot-fixes/SKILL.md",
+        },
+        "partition_fixes": {
+            "name": "partition-fixes",
+            "category": "post_migration",
+            "description": "Fix disk partition issues (growpart, LVM, Windows partition online)",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["target_instance_running", "root_access"],
+            "commands": {
+                "growpart_linux": (
+                    "growpart /dev/{root_disk} {partition_number} && "
+                    "resize2fs /dev/{root_disk}{partition_number}"
+                ),
+                "lvm_extend": (
+                    "pvresize /dev/{pv_device} && "
+                    "lvextend -l +100%FREE /dev/{vg_name}/{lv_name} && "
+                    "resize2fs /dev/{vg_name}/{lv_name}"
+                ),
+                "windows_partition_online": (
+                    "diskpart /s {script_file}  # script: select disk 0 → select partition N → online disk → extend"
+                ),
+                "verify_partition": "df -h / | tail -1",
+            },
+            "failure_modes": [
+                "partition_table_corrupted",
+                "lvm_metadata_missing",
+                "filesystem_not_resizable",
+                "windows_dynamic_disk",
+            ],
+            "avg_duration_minutes": 2,
+            "skill_file": "skills/partition-fixes/SKILL.md",
+        },
+        "data_plane_sync": {
+            "name": "data-plane-sync",
+            "category": "migration",
+            "description": "File-level sync for application data (rsync/robocopy)",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_accessible", "target_accessible", "network_connectivity"],
+            "commands": {
+                "rsync_linux": (
+                    "rsync -avz --progress --partial "
+                    "--bwlimit={bandwidth_limit} "
+                    "-e 'ssh -p {ssh_port}' "
+                    "{source_path}/ {target_user}@{target_ip}:{target_path}/"
+                ),
+                "robocopy_windows": (
+                    "robocopy {source_path} \\\\{target_ip}\\{share} "
+                    "/MIR /Z /R:3 /W:10 /MT:{threads} /LOG:{log_file}"
+                ),
+                "verify_sync": "diff -r {source_path} {target_path} --brief 2>&1 || echo 'DIFFERENCES_FOUND'",
+            },
+            "failure_modes": [
+                "network_timeout",
+                "permission_denied",
+                "disk_full_on_target",
+                "file_locked_on_source",
+            ],
+            "avg_duration_minutes": 30,
+            "skill_file": "skills/data-plane-sync/SKILL.md",
+        },
+        "mig_worker_framework": {
+            "name": "mig-worker-framework",
+            "category": "infrastructure",
+            "description": "Manage transient worker servers for migration operations",
+            "applies_to": ["linux"],
+            "prerequisites": ["target_vpc_exists", "eip_available"],
+            "commands": {
+                "deploy_worker": (
+                    "hcloud ecs create --flavor {flavor} --image {image_id} "
+                    "--vpc {vpc} --subnet {subnet} --eip --name mig-worker-{id}"
+                ),
+                "register_worker": (
+                    "curl -X POST https://{api_host}/api/workers/register "
+                    "-H 'Content-Type: application/json' "
+                    "-d '{{\"worker_id\":\"{worker_id}\",\"capabilities\":{capabilities}}}'"
+                ),
+                "poll_task": (
+                    "curl https://{api_host}/api/workers/{worker_id}/tasks/pending"
+                ),
+                "report_result": (
+                    "curl -X POST https://{api_host}/api/workers/{worker_id}/tasks/{task_id}/complete "
+                    "-H 'Content-Type: application/json' "
+                    "-d '{{\"status\":\"{status}\",\"output\":\"{output}\"}}'"
+                ),
+                "terminate_worker": "hcloud ecs terminate --instance-ids {worker_id} --force",
+            },
+            "failure_modes": [
+                "worker_registration_failed",
+                "task_timeout",
+                "worker_crash_during_operation",
+                "api_unreachable_from_worker",
+            ],
+            "avg_duration_minutes": 5,
+            "skill_file": "skills/mig-worker-framework/SKILL.md",
+        },
+        "sms_handler": {
+            "name": "sms-handler",
+            "category": "migration",
+            "description": "Server Migration Service — agent-based block-level replication",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["sms_agent_installed", "sms_endpoint_reachable", "valid_huawei_credentials"],
+            "commands": {
+                "agent_install_linux": (
+                    "wget -N https://sms.{region}.myhuaweicloud.com/sms_agent/sms_agent_linux.tar.gz && "
+                    "tar xzf sms_agent_linux.tar.gz && cd SMS-Agent && "
+                    "./install.sh --ak {ak} --sk {sk} --quiet"
+                ),
+                "agent_install_windows": (
+                    "Invoke-WebRequest -Uri 'https://sms.{region}.myhuaweicloud.com/sms_agent/sms_agent_windows.zip' "
+                    "-OutFile 'C:\\sms_agent.zip'; Expand-Archive -Path 'C:\\sms_agent.zip' "
+                    "-DestinationPath 'C:\\SMS-Agent' -Force; "
+                    "cd C:\\SMS-Agent; .\\install.bat -ak {ak} -sk {sk} -quiet"
+                ),
+                "agent_check": "ps aux | grep sms_agent | grep -v grep || sc query SMSAgent | findstr RUNNING",
+                "trigger_sync": "SMS Console → Start Full Replication for server {server_id}",
+                "query_progress": "hcloud sms query-task --server-id {server_id}",
+            },
+            "failure_modes": [
+                "agent_install_failed",
+                "agent_not_reporting",
+                "sync_stalled",
+                "source_disk_full",
+                "network_congestion",
+            ],
+            "avg_duration_minutes": 120,
+            "skill_file": "skills/huawei-sms-migration/SKILL.md",
+        },
+        "agent_orchestrator": {
+            "name": "agent-orchestrator",
+            "category": "migration",
+            "description": "Generate and deploy monitoring/security agents (HSS, UniAgent, LTS)",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["target_instance_running", "agent_install_credentials"],
+            "commands": {
+                "hss_install_linux": (
+                    "wget -N https://hss.{region}.myhuaweicloud.com/agent/linux/hss_agent_install.sh && "
+                    "bash hss_agent_install.sh --ak {ak} --sk {sk} --region {region} --quiet"
+                ),
+                "hss_install_windows": (
+                    "Invoke-WebRequest -Uri 'https://hss.{region}.myhuaweicloud.com/agent/windows/hss_agent_install.ps1' "
+                    "-OutFile 'C:\\hss_install.ps1'; "
+                    "powershell -File C:\\hss_install.ps1 -ak {ak} -sk {sk} -region {region}"
+                ),
+                "uniagent_install": (
+                    "wget -N https://uniagent.{region}.myhuaweicloud.com/uniagent/install.sh && "
+                    "bash install.sh --region {region} --project_id {project_id}"
+                ),
+                "lts_install": (
+                    "wget -N https://lts.{region}.myhuaweicloud.com/lts-agent/install.sh && "
+                    "bash install.sh --region {region} --group_id {group_id}"
+                ),
+                "verify_agents": "ps aux | grep -E 'hss|uniagent|lts' | grep -v grep",
+            },
+            "failure_modes": [
+                "agent_download_blocked_by_firewall",
+                "invalid_credentials",
+                "agent_conflict_with_existing_software",
+                "os_not_supported",
+            ],
+            "avg_duration_minutes": 3,
+            "skill_file": "services/agent_orchestrator.py",
+        },
+    }
+    
+    @classmethod
+    def get_skills_for_server(cls, profile: dict, mapper_node: dict) -> List[dict]:
+        """
+        Return all skills applicable to a specific server, ordered by migration phase.
+        This is the core of project-agnostic simulation — skills are matched
+        based on server characteristics, not hardcoded paths.
+        """
+        applicable = []
+        os_family = profile.get("os_family", "linux")
+        role = profile.get("role", "app")
+        strategy = profile.get("strategy", "manual_agent_required")
+        
+        # Migration path skills
+        if strategy in ("sms_primary", "sms_with_agent_push"):
+            applicable.append(cls.SKILLS["sms_handler"])
+        if strategy == "image_primary" or strategy == "manual_agent_required":
+            applicable.append(cls.SKILLS["image_conversion"])
+            applicable.append(cls.SKILLS["obs_migration"])
+        
+        # Infrastructure
+        if strategy in ("sms_with_agent_push", "image_primary"):
+            applicable.append(cls.SKILLS["mig_worker_framework"])
+        
+        # Data sync (for app servers with file-based data)
+        if role in ("web", "app") and strategy != "manual_agent_required":
+            applicable.append(cls.SKILLS["data_plane_sync"])
+        
+        # Post-migration — always applicable
+        applicable.append(cls.SKILLS["agent_orchestrator"])
+        applicable.append(cls.SKILLS["boot_fixes"])
+        applicable.append(cls.SKILLS["partition_fixes"])
+        
+        return applicable
+    
+    @classmethod
+    def get_skill(cls, name: str) -> Optional[dict]:
+        """Retrieve a skill descriptor by name."""
+        for skill in cls.SKILLS.values():
+            if skill["name"] == name:
+                return skill
+        return None
+    
+    @classmethod
+    def list_all(cls) -> List[dict]:
+        """Return all registered skills."""
+        return list(cls.SKILLS.values())
+    
+    @classmethod
+    def enrich_from_history(cls, learning: dict):
+        """
+        Accept learning deltas from completed simulations and enrich skill
+        descriptors. This is the self-learning feedback loop.
+        """
+        skill_name = learning.get("skill_name")
+        learned_pattern = learning.get("pattern")
+        if skill_name and skill_name in cls.SKILLS:
+            if "commands" in learned_pattern:
+                cls.SKILLS[skill_name]["commands"].update(learned_pattern["commands"])
+            if "failure_modes" in learned_pattern:
+                existing = set(cls.SKILLS[skill_name]["failure_modes"])
+                new_modes = set(learned_pattern["failure_modes"])
+                cls.SKILLS[skill_name]["failure_modes"] = list(existing | new_modes)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Execution History Store — Cross-project learning from past runs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ExecutionHistoryStore:
+    """
+    Stores execution traces from past projects and enables querying for
+    similar server profiles to inform current simulation decisions.
+    
+    In production, this would read from a Postgres table of execution records.
+    For the dry-run simulator, we maintain an in-memory store seeded with
+    patterns derived from manual migration experience (UCE-2 etc.).
+    """
+    
+    # In-memory history: list of execution records
+    _history: List[dict] = []
+    _initialized: bool = False
+    
+    @classmethod
+    def initialize(cls):
+        """Seed the store with known patterns from past manual migrations."""
+        if cls._initialized:
+            return
+        
+        # Pattern 1: Ubuntu 22.04 on AWS EC2 → SMS with agent push
+        cls._history.append({
+            "project": "UCE-2",
+            "server_name": "alucemood02",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "aws",
+            "role": "web",
+            "disk_gb": 512,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "success",
+            "sync_hours": 4.2,
+            "issues_encountered": ["agent_download_timeout_on_first_attempt"],
+            "resolutions": ["retry_agent_download_with_wget_resume"],
+            "commands_used": [
+                "wget -c https://sms.la-south-2.myhuaweicloud.com/sms_agent/sms_agent_linux.tar.gz",
+                "tar xzf sms_agent_linux.tar.gz && cd SMS-Agent && ./install.sh --quiet",
+            ],
+            "learnings": {
+                "use_wget_resume_flag": True,
+                "agent_install_timeout_buffer": 60,
+            },
+        })
+        
+        # Pattern 2: Debian 11 on-prem VMware → image import via OBS
+        cls._history.append({
+            "project": "UCE-2",
+            "server_name": "egresadosmau02",
+            "os": "debian",
+            "os_version": "11",
+            "source_cloud": "vmware",
+            "role": "app",
+            "disk_gb": 100,
+            "strategy_used": "image_primary",
+            "outcome": "success",
+            "sync_hours": 0.0,
+            "issues_encountered": [
+                "vmware_export_tool_incompatible",
+                "converted_image_boot_failure_on_huawei",
+            ],
+            "resolutions": [
+                "use_qemu-img_direct_conversion_instead_of_vmware_ovf",
+                "apply_initramfs_regeneration_after_boot_fix",
+            ],
+            "commands_used": [
+                "qemu-img convert -f vmdk -O zvhd -o subformat=zvhd2,adapter_type=ide /data/export/server.vmdk /data/staging/server.zvhd",
+                "obsutil cp /data/staging/server.zvhd obs://latam-migration-la-south-2/images/ --parallel 4",
+                "grub-install /dev/vda && update-grub && update-initramfs -u -k all",
+            ],
+            "learnings": {
+                "prefer_qemu_direct_conversion": True,
+                "always_regenerate_initramfs_after_debian_migration": True,
+                "obs_upload_parallel_jobs_optimal": 4,
+            },
+        })
+        
+        # Pattern 3: Windows Server 2019 on Azure → image import with BCD repair
+        cls._history.append({
+            "project": "UCE-2",
+            "server_name": "iis-web-01",
+            "os": "windows",
+            "os_version": "2019",
+            "source_cloud": "azure",
+            "role": "web",
+            "disk_gb": 256,
+            "strategy_used": "image_primary",
+            "outcome": "success",
+            "sync_hours": 0.0,
+            "issues_encountered": [
+                "azure_disk_export_format_not_directly_ims_compatible",
+                "windows_bcd_corrupted_after_conversion",
+                "hss_agent_blocked_by_windows_defender",
+            ],
+            "resolutions": [
+                "use_azcopy_to_export_vhd_then_qemu_convert_to_zvhd",
+                "offline_bcd_repair_via_rescue_instance",
+                "add_hss_exclusion_to_windows_defender_before_install",
+            ],
+            "commands_used": [
+                "azcopy copy 'https://<storage>.blob.core.windows.net/vhds/<disk>.vhd?<SAS>' /data/staging/disk.vhd",
+                "qemu-img convert -f vpc -O zvhd -o subformat=zvhd2,adapter_type=ide,os_type=windows /data/staging/disk.vhd server.zvhd",
+                "bcdedit /store E:\\EFI\\Microsoft\\Boot\\BCD /set {default} device partition=C:",
+            ],
+            "learnings": {
+                "azure_disk_export_requires_azcopy_with_sas_token": True,
+                "always_run_bcd_repair_after_windows_image_migration": True,
+                "pre_install_windows_defender_exclusions": True,
+            },
+        })
+        
+        # Pattern 4: CentOS 7 with LVM → partition fix needed after SMS
+        cls._history.append({
+            "project": "UCE-2",
+            "server_name": "mysql-db-01",
+            "os": "centos",
+            "os_version": "7",
+            "source_cloud": "aws",
+            "role": "database",
+            "disk_gb": 1024,
+            "strategy_used": "sms_primary",
+            "outcome": "success_with_post_fixes",
+            "sync_hours": 8.5,
+            "issues_encountered": [
+                "lvm_volume_not_detected_after_migration",
+                "mysql_service_failed_to_start_due_to_uuid_change",
+            ],
+            "resolutions": [
+                "pvresize + lvextend + resize2fs post-migration",
+                "update_mysql_config_with_new_disk_uuids",
+            ],
+            "commands_used": [
+                "pvresize /dev/vdb && lvextend -l +100%FREE /dev/mysql_vg/mysql_lv && resize2fs /dev/mysql_vg/mysql_lv",
+                "sed -i 's/OLD_UUID/NEW_UUID/g' /etc/mysql/my.cnf && systemctl restart mysql",
+            ],
+            "learnings": {
+                "lvm_requires_post_migration_resize": True,
+                "database_uuids_change_after_migration": True,
+                "always_verify_service_start_after_migration": True,
+            },
+        })
+        
+        cls._initialized = True
+    
+    @classmethod
+    def query_similar(cls, profile: dict, mapper_node: dict) -> List[dict]:
+        """
+        Find historical executions that match the current server profile.
+        Returns matches ranked by similarity score.
+        """
+        cls.initialize()
+        matches = []
+        
+        server_os = profile.get("os", "").lower()
+        server_role = profile.get("role", "")
+        server_cloud = mapper_node.get("sourceCloud", "").lower()
+        server_disk = float(mapper_node.get("storage", mapper_node.get("diskGB", 100)))
+        
+        for record in cls._history:
+            score = 0
+            # OS match = high weight
+            if record["os"] in server_os or server_os in record["os"]:
+                score += 3
+            # Role match
+            if record["role"] == server_role:
+                score += 2
+            # Cloud match
+            if record["source_cloud"] in server_cloud or server_cloud in record["source_cloud"]:
+                score += 2
+            # Similar disk size (±50%)
+            if record["disk_gb"] > 0 and abs(record["disk_gb"] - server_disk) / record["disk_gb"] < 0.5:
+                score += 1
+            
+            if score >= 3:  # threshold for a meaningful match
+                matches.append({**record, "similarity_score": score})
+        
+        matches.sort(key=lambda r: r["similarity_score"], reverse=True)
+        return matches
+    
+    @classmethod
+    def ingest(cls, simulation_result: dict):
+        """
+        After a simulation completes, ingest the outcome into the history store.
+        This is the self-learning feedback loop — each project makes the
+        system smarter for the next.
+        """
+        summary = simulation_result.get("summary", {})
+        trace = simulation_result.get("trace", [])
+        
+        # Extract per-server outcomes
+        for entry in trace:
+            if entry.get("action") in ("HANDOFF", "COMPLETE", "SMS_SUCCESS"):
+                outcome_info = entry.get("outcome", entry.get("result", "unknown"))
+                server_name = entry.get("target", "unknown")
+                
+                record = {
+                    "project": summary.get("project", "unknown"),
+                    "server_name": server_name,
+                    "strategy_used": entry.get("path_taken", "unknown"),
+                    "outcome": outcome_info,
+                    "sync_hours": entry.get("metrics", {}).get("sync_hours", 0),
+                    "issues_encountered": entry.get("issues", []),
+                    "resolutions": entry.get("resolutions", []),
+                    "commands_used": [c.get("cmd", "") for c in entry.get("commands", [])],
+                    "learnings": entry.get("learnings", {}),
+                }
+                cls._history.append(record)
+        
+        logger.info(f"Ingested {len(cls._history)} total execution records into history store")
+    
+    @classmethod
+    def get_stats(cls) -> dict:
+        """Return aggregate statistics for the learning system."""
+        cls.initialize()
+        total = len(cls._history)
+        successes = sum(1 for r in cls._history if "success" in str(r.get("outcome", "")))
+        strategies = {}
+        for r in cls._history:
+            s = r.get("strategy_used", "unknown")
+            strategies[s] = strategies.get(s, 0) + 1
+        return {
+            "total_records": total,
+            "success_rate": f"{successes}/{total}" if total > 0 else "0/0",
+            "strategy_distribution": strategies,
+            "unique_projects": len(set(r.get("project") for r in cls._history)),
+        }
+
 
 class ServerProfiler:
     """Classify servers by OS, role, and migration strategy."""
@@ -187,6 +744,64 @@ class ServerProfiler:
         if role == "database":
             return "image_primary"
         return "manual_agent_required"
+
+    @staticmethod
+    def enrich_with_history(profile: dict, mapper_node: dict) -> dict:
+        """
+        Augment server profile with insights from past executions.
+        This is the project-agnostic learning layer — every server
+        benefits from accumulated cross-project experience.
+        """
+        matches = ExecutionHistoryStore.query_similar(profile, mapper_node)
+        if not matches:
+            return profile  # No history → no enrichment
+        
+        best = matches[0]  # Highest similarity score
+        enriched = dict(profile)
+        enriched["history_matches"] = len(matches)
+        enriched["best_match_score"] = best["similarity_score"]
+        enriched["best_match_project"] = best.get("project")
+        
+        # Apply learnings from the best match
+        learnings = best.get("learnings", {})
+        if learnings:
+            enriched["history_learnings"] = learnings
+            
+            # If history shows SMS is risky for this config, suggest image fallback
+            if (learnings.get("prefer_qemu_direct_conversion") and 
+                profile.get("strategy") in ("sms_primary", "sms_with_agent_push")):
+                enriched["suggested_strategy"] = "image_primary"
+                enriched["suggestion_reason"] = (
+                    f"Past project '{best.get('project')}' found image-based migration "
+                    f"more reliable for similar {profile.get('os')} {profile.get('role')} servers."
+                )
+            
+            # If history shows boot fix is always needed, flag it
+            if learnings.get("always_regenerate_initramfs_after_debian_migration"):
+                if "debian" in profile.get("os", ""):
+                    enriched["expected_post_migration_actions"] = (
+                        enriched.get("expected_post_migration_actions", []) + 
+                        ["initramfs_regeneration"]
+                    )
+            
+            if learnings.get("always_run_bcd_repair_after_windows_image_migration"):
+                if profile.get("is_windows"):
+                    enriched["expected_post_migration_actions"] = (
+                        enriched.get("expected_post_migration_actions", []) + 
+                        ["bcd_repair"]
+                    )
+            
+            if learnings.get("lvm_requires_post_migration_resize"):
+                enriched["expected_post_migration_actions"] = (
+                    enriched.get("expected_post_migration_actions", []) + 
+                    ["lvm_resize"]
+                )
+        
+        enriched["history_issues"] = best.get("issues_encountered", [])
+        enriched["history_resolutions"] = best.get("resolutions", [])
+        enriched["history_commands"] = best.get("commands_used", [])
+        
+        return enriched
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
