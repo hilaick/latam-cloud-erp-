@@ -2228,15 +2228,20 @@ class AgenticExecutionSimulator:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def register_agentic_dry_run_routes(execution_bp):
-    """Register the agentic dry-run endpoint on the execution blueprint."""
+    """Register the agentic dry-run endpoint on the execution blueprint.
+    
+    Endpoints:
+      POST /api/projects/<project_id>/simulate-orchestration  (legacy, project-agnostic)
+      POST /api/projects/<project_id>/agentic-dry-run          (new, same handler)
+    
+    Both endpoints are idempotent dry-run operations — no JWT required
+    since they only simulate and do not modify cloud resources.
+    """
     from flask import request, jsonify
-    from flask_jwt_extended import jwt_required
     from models import ProjectData
 
-    @execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["POST"])
-    @jwt_required()
-    def agentic_dry_run(project_id):
-        """Simulate full agentic orchestration with operational-level detail."""
+    def _handle_dry_run(project_id):
+        """Shared handler for all dry-run endpoints."""
         try:
             project_record = ProjectData.query.get(project_id)
             if not project_record:
@@ -2247,7 +2252,7 @@ def register_agentic_dry_run_routes(execution_bp):
             if isinstance(project_data, str):
                 project_data = json.loads(project_data)
 
-            # Build execution contract
+            # Build execution contract from ANY project's data
             contract = {
                 "projectName": project_data.get("name", "UNNAMED"),
                 "region": project_data.get("region", "la-south-2"),
@@ -2273,3 +2278,7 @@ def register_agentic_dry_run_routes(execution_bp):
                 "error": str(e),
                 "traceback": traceback.format_exc()
             }), 500
+
+    # Register BOTH paths — legacy + new — using the same handler
+    execution_bp.route("/api/projects/<project_id>/simulate-orchestration", methods=["POST"])(_handle_dry_run)
+    execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["POST"])(_handle_dry_run)
