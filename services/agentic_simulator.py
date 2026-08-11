@@ -602,17 +602,20 @@ class ExecutionHistoryStore:
         
         for record in cls._history:
             score = 0
+            record_os = record.get("os", "").lower()
             # OS match = high weight
-            if record["os"] in server_os or server_os in record["os"]:
+            if record_os and (record_os in server_os or server_os in record_os):
                 score += 3
             # Role match
-            if record["role"] == server_role:
+            if record.get("role") == server_role:
                 score += 2
             # Cloud match
-            if record["source_cloud"] in server_cloud or server_cloud in record["source_cloud"]:
+            record_cloud = record.get("source_cloud", "").lower()
+            if record_cloud and (record_cloud in server_cloud or server_cloud in record_cloud):
                 score += 2
             # Similar disk size (±50%)
-            if record["disk_gb"] > 0 and abs(record["disk_gb"] - server_disk) / record["disk_gb"] < 0.5:
+            record_disk = float(record.get("disk_gb", 100))
+            if record_disk > 0 and abs(record_disk - server_disk) / record_disk < 0.5:
                 score += 1
             
             if score >= 3:  # threshold for a meaningful match
@@ -640,6 +643,8 @@ class ExecutionHistoryStore:
                 record = {
                     "project": summary.get("project", "unknown"),
                     "server_name": server_name,
+                    "os": entry.get("os", entry.get("profile", {}).get("os", "unknown")),
+                    "role": entry.get("role", entry.get("profile", {}).get("role", "unknown")),
                     "strategy_used": entry.get("path_taken", "unknown"),
                     "outcome": outcome_info,
                     "sync_hours": entry.get("metrics", {}).get("sync_hours", 0),
@@ -1852,16 +1857,25 @@ class AgenticExecutionSimulator:
                     }
 
                 # Batch handoff — agents report back to Orchestrator
-                for result in batch_results:
+                for idx, result in enumerate(batch_results):
                     step_id += 1
+                    # Get the server node for OS/role info
+                    server_node = batch[idx] if idx < len(batch) else {}
+                    hook_server_name = result['server_name']
                     trace.append({
-                        "id": step_id, "phase": "PHASE_4_2", "agent": f"Agent-{result['server_name']}",
+                        "id": step_id, "phase": "PHASE_4_2", "agent": f"Agent-{hook_server_name}",
                         "action": "HANDOFF",
+                        "target": hook_server_name,
+                        "os": server_node.get("os", profile.get("os", "unknown") if 'profile' in dir() else "unknown"),
+                        "role": profile.get("role", "unknown") if 'profile' in dir() else "unknown",
+                        "path_taken": result["path_taken"],
+                        "outcome": result["outcome"],
                         "message": (
-                            f"Agent for '{result['server_name']}' reports: {result['outcome']}. "
+                            f"Agent for '{hook_server_name}' reports: {result['outcome']}. "
                             f"Path: {result['path_taken']}. Sync time: {result['sync_hours']:.1f}h."
                         ),
                         "timestamp_offset_seconds": total_simulated_seconds,
+                        "metrics": {"sync_hours": result['sync_hours']},
                         "decision": {"outcome": result["outcome"], "sync_hours": result["sync_hours"]},
                     })
                     total_simulated_seconds += config.STEP_TIMINGS["handoff"]
