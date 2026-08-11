@@ -5,6 +5,7 @@ export { DeliveryConstellation };
 
 export default function GlobalProcessView() {
   const [expandedPhase, setExpandedPhase] = useState(null);
+  const [showGraph, setShowGraph] = useState(false);
   const [workflow, setWorkflow] = useState(null);
 
   const PHASE = {
@@ -53,6 +54,11 @@ export default function GlobalProcessView() {
             </div>
           </div>
           <div className="flex gap-3">
+            <button onClick={() => setShowGraph(!showGraph)}
+              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 transition-colors">
+              <i className={`fas fa-project-diagram mr-1.5`}></i>
+              {showGraph ? 'Hide Graph' : 'Show Graph'}
+            </button>
             <button onClick={() => setExpandedPhase(expandedPhase === null ? 1 : null)}
               className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 transition-colors">
               <i className={`fas fa-${expandedPhase === null ? 'expand-alt' : 'compress-alt'} mr-1.5`}></i>
@@ -62,6 +68,7 @@ export default function GlobalProcessView() {
         </div>
 
         {/* React Flow — Standard Methodology graph */}
+        {showGraph && (
         <div className="mb-8">
           {workflow ? (
             <DeliveryConstellation workflow={workflow} compact />
@@ -71,6 +78,7 @@ export default function GlobalProcessView() {
             </div>
           )}
         </div>
+        )}
 
         {/* phase pipeline — horizontal flow */}
         <div className="mb-8">
@@ -84,7 +92,7 @@ export default function GlobalProcessView() {
                     : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <span className={`w-8 h-8 rounded-lg ${PHASE[phase.color].bg2} flex items-center justify-center text-xs font-black leading-none tabular-nums ${PHASE[phase.color].text}`}>{phase.id}</span>
+                    <span className={`w-8 h-8 rounded-full ${PHASE[phase.color].bg2} flex items-center justify-center text-xs font-black font-mono leading-none ${PHASE[phase.color].text}`}>{phase.id}</span>
                     <div>
                       <div className="text-xs font-black text-white">{phase.title}</div>
                       <div className="text-[9px] text-slate-500">{phase.tagline}</div>
