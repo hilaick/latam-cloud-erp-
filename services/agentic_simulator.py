@@ -1848,6 +1848,8 @@ class AgenticExecutionSimulator:
                     )
                     step_id = server_result["final_step_id"]
                     total_simulated_seconds = server_result["final_offset"]
+                    # ── CRITICAL: Ingest per-server command-level trace into main trace ──
+                    trace.extend(server_result["trace"])
                     batch_results.append(server_result)
                     servers_processed += 1
                     all_server_outcomes[server_result["server_name"]] = {
