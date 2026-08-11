@@ -10,26 +10,31 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+class _Credentials:
+    """Duck-typed credentials for SDK v3.1+ that expects credentials.ak/sk."""
+    def __init__(self, ak, sk):
+        self.ak = ak
+        self.sk = sk
+
+
 class MockHttpRequest:
-    """
-    A duck-typed mock of Huawei's HttpRequest object. 
-    This prevents 500 Internal Server Errors caused by missing/moved SDK modules,
-    allowing us to cryptographically sign custom URLs manually.
-    """
-    def __init__(self, method, url, headers=None, body=""):
+    """Duck-typed mock of Huawei's SdkRequest. SDK v3.1+ uses header_params."""
+    def __init__(self, method, url, body=""):
         self.method = method
-        self.url = url
-        self.headers = headers or {}
         self.body = body
-        
+        self.header_params = {}
+
         parsed = urlparse(url)
         self.scheme = parsed.scheme
         self.host = parsed.netloc
-        self.uri = quote(parsed.path) if parsed.path else "/"
-        self.query = {}
+        self.resource_path = quote(parsed.path) if parsed.path else "/"
+        self.uri = self.resource_path
+
+        self.query_params = []
         if parsed.query:
             for k, v in parse_qsl(parsed.query):
-                self.query[k] = v
+                self.query_params.append((k, v))
 
 class HuaweiBSSScanner:
     """
@@ -47,23 +52,17 @@ class HuaweiBSSScanner:
         if not Signer:
             return None
         try:
-            return Signer(self.raw_ak, self.raw_sk) # Positional fallback
+            return Signer(_Credentials(self.raw_ak, self.raw_sk))
         except Exception:
-            try:
-                return Signer(key=self.raw_ak, secret=self.raw_sk) # Standard kwargs
-            except Exception:
-                s = Signer()
-                s.Key = self.raw_ak
-                s.Secret = self.raw_sk
-                return s
+            return None
 
     def get_project_id(self, signer) -> str:
         try:
             url = f"https://iam.myhuaweicloud.com/v3/projects?name={self.region}"
             req = MockHttpRequest("GET", url)
-            req.headers = {"Content-Type": "application/json"}
+            req.header_params = {"Content-Type": "application/json"}
             signer.sign(req)
-            resp = requests.get(req.url, headers=req.headers, timeout=10)
+            resp = requests.get(req.scheme + "://" + req.host + req.uri, headers=req.header_params, timeout=10)
             if resp.status_code == 200:
                 projects = resp.json().get('projects', [])
                 if projects: return projects[0].get('id')
@@ -103,7 +102,7 @@ class HuaweiBSSScanner:
             payload_json = json.dumps(payload)
             
             req = MockHttpRequest("POST", console_url, body=payload_json)
-            req.headers = {
+            req.header_params = {
                 "Content-Type": "application/json;charset=utf8",
                 "Accept": "application/json, text/plain, */*"
             }
@@ -112,7 +111,7 @@ class HuaweiBSSScanner:
             signer.sign(req)
             diagnostics.append(f"Sending V4 Signed POST request to Console API Proxy...")
             
-            resp = requests.post(req.url, headers=req.headers, data=payload_json, timeout=15)
+            resp = requests.post(req.scheme + "://" + req.host + req.uri, headers=req.header_params, data=payload_json, timeout=15)
             
             if resp.status_code == 200:
                 data = resp.json()
@@ -159,9 +158,9 @@ class HuaweiBSSScanner:
             try:
                 diagnostics.append(f"Attempting Open API: {url}")
                 req = MockHttpRequest("GET", url)
-                req.headers = {"Content-Type": "application/json"}
+                req.header_params = {"Content-Type": "application/json"}
                 signer.sign(req)
-                resp = requests.get(req.url, headers=req.headers, timeout=10)
+                resp = requests.get(req.scheme + "://" + req.host + req.uri, headers=req.header_params, timeout=10)
                 
                 if resp.status_code == 200:
                     data = resp.json()

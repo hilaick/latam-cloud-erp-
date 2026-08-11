@@ -609,7 +609,7 @@ def finops_dashboard():
                 continue
 
             # Must have a customer
-            customer_id = data.get('customerId')
+            customer_id = str(data.get('customerId', ''))
             if not customer_id:
                 continue
 

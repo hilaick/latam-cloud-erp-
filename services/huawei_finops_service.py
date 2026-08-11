@@ -19,22 +19,35 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class MockHttpRequest:
-    """Duck-typed mock of Huawei's HttpRequest for manual V4 signing."""
+class _Credentials:
+    """Duck-typed credentials for SDK v3.1+ that expects credentials.ak/sk."""
+    def __init__(self, ak, sk):
+        self.ak = ak
+        self.sk = sk
 
-    def __init__(self, method, url, headers=None, body=""):
+
+class MockHttpRequest:
+    """Duck-typed mock of Huawei's SdkRequest for manual V4 signing.
+
+    SDK v3.1+ changed the interface: header_params (not headers),
+    query_params (list of tuples, not dict), resource_path.
+    """
+
+    def __init__(self, method, url, body=""):
         self.method = method
-        self.url = url
-        self.headers = headers or {}
         self.body = body
+        self.header_params = {}
+
         parsed = urlparse(url)
         self.scheme = parsed.scheme
         self.host = parsed.netloc
-        self.uri = quote(parsed.path) if parsed.path else "/"
-        self.query = {}
+        self.resource_path = quote(parsed.path) if parsed.path else "/"
+        self.uri = self.resource_path
+
+        self.query_params = []
         if parsed.query:
             for k, v in parse_qsl(parsed.query):
-                self.query[k] = v
+                self.query_params.append((k, v))
 
 
 class HuaweiFinOpsService:
@@ -56,15 +69,9 @@ class HuaweiFinOpsService:
         if not Signer:
             return None
         try:
-            return Signer(self.raw_ak, self.raw_sk)
+            return Signer(_Credentials(self.raw_ak, self.raw_sk))
         except Exception:
-            try:
-                return Signer(key=self.raw_ak, secret=self.raw_sk)
-            except Exception:
-                s = Signer()
-                s.Key = self.raw_ak
-                s.Secret = self.raw_sk
-                return s
+            return None
 
     def _signed_request(self, method, url, body=None, timeout=15):
         """Make a V4-signed request to a Huawei Cloud API endpoint."""
@@ -73,14 +80,14 @@ class HuaweiFinOpsService:
             return {"success": False, "error": "Huawei SDK Signer unavailable"}
 
         req = MockHttpRequest(method, url, body=body or "")
-        req.headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        req.header_params = {"Content-Type": "application/json", "Accept": "application/json"}
         signer.sign(req)
 
         try:
             if method == "GET":
-                resp = requests.get(req.url, headers=req.headers, timeout=timeout)
+                resp = requests.get(req.scheme + "://" + req.host + req.uri, headers=req.header_params, timeout=timeout)
             elif method == "POST":
-                resp = requests.post(req.url, headers=req.headers, data=body, timeout=timeout)
+                resp = requests.post(req.scheme + "://" + req.host + req.uri, headers=req.header_params, data=body, timeout=timeout)
             else:
                 return {"success": False, "error": f"Unsupported method: {method}"}
 
