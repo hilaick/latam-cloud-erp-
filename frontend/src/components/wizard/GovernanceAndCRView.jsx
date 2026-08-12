@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
+import HelpDrawer from '../utils/HelpDrawer';
 
 export default function GovernanceAndCRView({ activeProject, onUpdateProject }) {
     const { customPlaybooks, setCustomPlaybooks } = useContext(ERPContext);
@@ -258,7 +259,15 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                 )}
             </div>
 
-            {/* DTRB HELP DRAWER & CR MODAL EXCLUDED FOR BREVITY, Keep your existing modal code here! */}
+            {/* DTRB HELP DRAWER */}
+            <HelpDrawer
+                isOpen={showGovernanceHelp}
+                onClose={() => setShowGovernanceHelp(false)}
+                title="DTRB Governance & Change Requests"
+                docName="DTRB_GOVERNANCE"
+            />
+
+            {/* CHANGE REQUEST MODAL */}
         </div>
     );
 }

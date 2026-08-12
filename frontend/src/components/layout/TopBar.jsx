@@ -2,7 +2,7 @@ import React, { useContext, useState, useRef, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import { useAuth } from '../../context/AuthContext';
 
-export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes }) {
+export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes, onOpenHelp }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const { user } = useAuth();
     
@@ -134,6 +134,15 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                     className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-purple-800 border border-purple-700 flex items-center justify-center text-purple-200 hover:bg-purple-700 hover:text-purple-100 hover:border-purple-500 transition-all shadow-md active:scale-95"
                 >
                     <i className="fas fa-robot text-xs md:text-sm"></i>
+                </button>
+
+                {/* 📖 Help Button — ERP Documentation */}
+                <button 
+                    onClick={onOpenHelp}
+                    title="ERP Help & Documentation"
+                    className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-500 transition-all shadow-md active:scale-95"
+                >
+                    <i className="fas fa-question-circle text-xs md:text-sm"></i>
                 </button>
 
                 {/* 🚨 NEW: Global Terminal Button */}

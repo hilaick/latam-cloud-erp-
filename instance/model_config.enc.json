@@ -1,0 +1,57 @@
+{
+  "providers": {
+    "deepseek": {
+      "provider": "deepseek",
+      "enabled": true,
+      "preferred_model": "deepseek-v4-pro",
+      "weight": 1,
+      "max_concurrency": 3,
+      "timeout_seconds": 30,
+      "retry_count": 2,
+      "_encrypted_key": "gAAAAABqfOC_jDSIxYSMuf0uNNrf0NAVUduI-Fh-R6YCqjiCSO3SN_ufXO2P-j8x6NfcqUXuaGf9WspLe3YvaZUgdG6X49pZK52e3o2J-utyBFG48zGslmg="
+    },
+    "zai": {
+      "provider": "zai",
+      "enabled": true,
+      "preferred_model": "glm-5.2",
+      "weight": 1,
+      "max_concurrency": 3,
+      "timeout_seconds": 30,
+      "retry_count": 2
+    },
+    "kimi": {
+      "provider": "kimi",
+      "enabled": true,
+      "preferred_model": "kimi-coding",
+      "weight": 1,
+      "max_concurrency": 3,
+      "timeout_seconds": 30,
+      "retry_count": 2
+    },
+    "openai": {
+      "provider": "openai",
+      "enabled": true,
+      "preferred_model": "gpt-4o",
+      "weight": 1,
+      "max_concurrency": 3,
+      "timeout_seconds": 30,
+      "retry_count": 2
+    }
+  },
+  "loadbalancer": {
+    "strategy": "priority",
+    "fallback_order": [
+      "deepseek",
+      "zai",
+      "kimi"
+    ],
+    "health_check_interval": 60,
+    "circuit_breaker_threshold": 5
+  },
+  "primary_model": "glm-5.2",
+  "primary_provider": "zai",
+  "delegation_model": "kimi-coding",
+  "delegation_provider": "kimi",
+  "last_updated": "2026-08-12T21:08:15.448865",
+  "version": 3
+}

@@ -23,6 +23,7 @@ import HermesModal from './components/HermesModal';
 import LoginPage from './components/auth/LoginPage';
 import ResourceDiscoveryMap from './components/views/ResourceDiscoveryMap';
 import HaltedProjects from './components/views/HaltedProjects';
+import HelpDrawer from './components/utils/HelpDrawer';
 
 function App() {
     const { isAuthenticated, loading: authLoading, logout } = useAuth();
@@ -31,6 +32,7 @@ function App() {
     const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
     const [isCommandDrawerOpen, setIsCommandDrawerOpen] = useState(false);
     const [isHermesOpen, setIsHermesOpen] = useState(false);
+    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     const { 
         projects, 
@@ -83,6 +85,7 @@ function App() {
                     onOpenGlossary={() => setIsGlossaryOpen(true)} 
                     onOpenCommandDrawer={() => setIsCommandDrawerOpen(true)} // 🚨 PASSED PROP
                     onOpenHermes={() => setIsHermesOpen(true)} // 🚨 HERMES AI BUTTON
+                    onOpenHelp={() => setIsHelpOpen(true)} // 📖 HELP DOCUMENTATION
                 />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
@@ -151,6 +154,14 @@ function App() {
                     projectId={activeProjectId}
                     isOpen={isHermesOpen}
                     onClose={() => setIsHermesOpen(false)}
+                />
+
+                {/* 📖 GLOBAL HELP DRAWER */}
+                <HelpDrawer
+                    isOpen={isHelpOpen}
+                    onClose={() => setIsHelpOpen(false)}
+                    title="ERP Migration Factory — Project Introduction"
+                    docName="PROJECT_INTRODUCTION"
                 />
             </main>
         </div>

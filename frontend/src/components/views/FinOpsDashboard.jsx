@@ -26,7 +26,7 @@ export default function FinOpsDashboard() {
         setLoading(true);
         setError(null);
         try {
-            const token = localStorage.getItem('access_token');
+            const token = sessionStorage.getItem('hermes_access_token');
             if (!token) {
                 setError('AUTH_REQUIRED');
                 return;
@@ -38,7 +38,7 @@ export default function FinOpsDashboard() {
                 // Token expired or invalid — clear it and prompt re-login
                 const body = await resp.json().catch(() => ({}));
                 if (body.msg && (body.msg.includes('expired') || body.msg.includes('Signature') || body.msg.includes('segments'))) {
-                    localStorage.removeItem('access_token');
+                    sessionStorage.removeItem('hermes_access_token');
                     setError('SESSION_EXPIRED');
                     return;
                 }
