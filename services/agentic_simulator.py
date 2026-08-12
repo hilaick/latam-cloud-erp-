@@ -16,6 +16,10 @@ import time
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 
+# ── Local imports ──
+from services.knowledge_provider import (
+    ExternalKnowledgeStore, KnowledgeProvider, EXTERNAL_REPO_URL
+)
 logger = logging.getLogger(__name__)
 
 
@@ -1838,13 +1842,26 @@ class AgenticExecutionSimulator:
                     enriched_profile = ServerProfiler.enrich_with_history(profile, server)
                     applicable_skills = SkillRegistry.get_skills_for_server(enriched_profile, server)
                     history_matches = ExecutionHistoryStore.query_similar(enriched_profile, server)
+                    # ── Federated knowledge: query all 3 sources ──
+                    knowledge = KnowledgeProvider.query(
+                        enriched_profile, server,
+                        skill_matches=applicable_skills,
+                        history_matches=history_matches
+                    )
+                    # Inject knowledge trace enrichment into trace
+                    enrichment = KnowledgeProvider.generate_trace_enrichment(
+                        enriched_profile, server, step_id
+                    )
+                    trace.extend(enrichment["trace_entries"])
+                    step_id += len(enrichment["trace_entries"])
                     
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,
                         total_simulated_seconds, region, config,
                         enriched_profile=enriched_profile,
                         applicable_skills=applicable_skills,
-                        history_matches=history_matches
+                        history_matches=history_matches,
+                        knowledge=knowledge
                     )
                     step_id = server_result["final_step_id"]
                     total_simulated_seconds = server_result["final_offset"]
@@ -2017,6 +2034,23 @@ class AgenticExecutionSimulator:
             ),
         }
 
+        # ── External knowledge stats ──
+        try:
+            ext_stats = ExternalKnowledgeStore.get_stats()
+            summary["external_knowledge"] = {
+                "source": EXTERNAL_REPO_URL,
+                "total_skills": ext_stats["total_entries"],
+                "last_sync": ext_stats["last_sync"],
+                "categories": ext_stats["categories"],
+                "migration_types": ext_stats["migration_types"],
+                "note": (
+                    "External skills imported from binrogithub/1-3-Cloud-Adoption-Skills. "
+                    "Auto-synced every 6 hours via git pull."
+                ),
+            }
+        except Exception:
+            summary["external_knowledge"] = {"status": "unavailable", "source": EXTERNAL_REPO_URL}
+
         return {
             "success": True,
             "trace": trace,
@@ -2037,18 +2071,40 @@ class AgenticExecutionSimulator:
         enriched_profile: dict = None,
         applicable_skills: list = None,
         history_matches: list = None,
+        knowledge: dict = None,
     ) -> dict:
         """Process one server through the complete migration decision tree.
         
         Now project-agnostic: enriched_profile carries history-informed strategy,
         applicable_skills are dynamically matched from SkillRegistry,
-        and history_matches provide cross-project learnings.
+        history_matches provide cross-project learnings,
+        and knowledge provides federated recommendation from all 3 sources.
         """
         server_name = server.get("name", server.get("hostname", server.get("id", "unknown")))
         profile = enriched_profile if enriched_profile else ServerProfiler.classify(server)
         skills = applicable_skills or SkillRegistry.get_skills_for_server(profile, server)
 
         strategy = profile.get("suggested_strategy", profile["strategy"])
+        # ── Knowledge-informed strategy override ──
+        if knowledge and knowledge.get("top_recommendation"):
+            rec = knowledge["top_recommendation"]
+            if rec["confidence"] > 0.8 and rec["source"] in ("skill", "external"):
+                old_strategy = strategy
+                strategy_map = {
+                    "sms": "agentic_blended",
+                    "image": "image_primary",
+                    "drs": "drs_migration",
+                    "mgc": "agentic_blended",
+                }
+                mapped = strategy_map.get(rec["strategy"])
+                if mapped and mapped != strategy and "blocked" not in (strategy, mapped):
+                    logger.info(
+                        "[Knowledge] Overriding strategy for '%s': %s → %s "
+                        "(source: %s, confidence: %.0f%%)",
+                        server_name, strategy, mapped, rec["source"], rec["confidence"] * 100
+                    )
+                    strategy = mapped
+        
         all_trace: List[dict] = []
         current_offset = offset
         sid = step_id
