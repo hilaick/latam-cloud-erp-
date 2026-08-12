@@ -437,8 +437,10 @@ class KnowledgeProvider:
         # Build command signatures for dedup
         known_sigs = set()
         for e in all_entries:
-            for cmd in e.get("commands", [])[:3]:
-                known_sigs.add(hash(cmd.get("cmd", "")) % 10_000_000)
+            cmds = e.get("commands", [])
+            if isinstance(cmds, list):
+                for cmd in cmds[:3]:
+                    known_sigs.add(hash(cmd.get("cmd", "")) % 10_000_000)
 
         covered_strategies = {
             e.get("migration_type") or e.get("strategy", "")
@@ -450,7 +452,7 @@ class KnowledgeProvider:
             if h_strat and h_strat in covered_strategies:
                 continue
             hist_cmds = hist.get("commands", [])
-            if hist_cmds:
+            if isinstance(hist_cmds, list) and hist_cmds:
                 sig = hash(hist_cmds[0].get("cmd", "")) % 10_000_000
                 if sig in known_sigs:
                     continue
@@ -517,7 +519,7 @@ class KnowledgeProvider:
                     f"Confidence: {entry.get('confidence', 0):.0%}, "
                     f"Relevance: {entry.get('relevance_score', 'N/A')}"
                 ),
-                "commands": entry.get("commands", [])[:3],
+                "commands": (entry.get("commands", []) if isinstance(entry.get("commands"), list) else [])[:3],
                 "decision": {
                     "source": entry["source"],
                     "priority": entry["priority"],
