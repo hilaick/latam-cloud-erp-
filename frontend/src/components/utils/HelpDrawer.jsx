@@ -123,9 +123,12 @@ export default function HelpDrawer({ isOpen, onClose, title, content, docName })
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
+  // ⚠️ useMemo must be called BEFORE any early return — React rule: hooks must run in
+  // the same order every render. When isOpen=false we return early, but when it flips
+  // to true the useMemo below would add an extra hook → error #310.
   const htmlContent = useMemo(() => mdToHtml(mdContent), [mdContent]);
+
+  if (!isOpen) return null;
 
   return (
     <>

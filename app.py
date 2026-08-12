@@ -27,6 +27,7 @@ from routes.hermes import hermes_bp
 from routes.hermes_cli_api import hermes_cli_bp
 from routes.gateway import gateway_bp
 from routes.resource_discovery import resource_discovery_bp
+from routes.projects import projects_bp
 
 load_dotenv()
 
@@ -198,6 +199,7 @@ app.register_blueprint(hermes_bp)
 app.register_blueprint(hermes_cli_bp) 
 app.register_blueprint(gateway_bp)
 app.register_blueprint(resource_discovery_bp)
+app.register_blueprint(projects_bp)
 
 # ── Help Documentation API ──
 @app.route('/api/docs/<doc_name>', methods=['GET'])

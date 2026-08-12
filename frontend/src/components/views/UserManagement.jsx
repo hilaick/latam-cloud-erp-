@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import TwoFactorModal from '../utils/TwoFactorModal'; 
+import React, { useState } from 'react';
+import TwoFactorModal from '../utils/TwoFactorModal';
+import ModelConfigPanel from '../wizard/ModelConfigPanel';
+import KnowledgeTreePanel from '../utils/KnowledgeTreePanel';
 
 export default function UserManagement() {
     const roles = [
@@ -33,85 +35,6 @@ export default function UserManagement() {
 
     const targetUserName = users.find(u => u.id === userToDelete)?.name || 'Unknown User';
     const myProfile = users[0]; // Assuming Hilaick is user 0 for the demo
-
-    // ── Hermes AI Configuration State ──
-    const [hermesConfig, setHermesConfig] = useState({
-        mode: 'cli',
-        hermes_binary_path: '',
-        lb_url: '',
-        lb_auth: '',
-        global_provider: 'deepseek',
-        global_model: 'deepseek-v4-pro',
-        delegation_provider: 'zai',
-        delegation_model: 'glm-5.2'
-    });
-    const [configLoading, setConfigLoading] = useState(false);
-    const [configSaving, setConfigSaving] = useState(false);
-    const [configMessage, setConfigMessage] = useState(null);
-
-    useEffect(() => {
-        loadHermesConfig();
-    }, []);
-
-    const loadHermesConfig = async () => {
-        setConfigLoading(true);
-        try {
-            const token = sessionStorage.getItem('hermes_access_token');
-            const res = await fetch('/api/hermes-config', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (data.success) {
-                setHermesConfig(prev => ({ ...prev, ...data.config }));
-            }
-        } catch (err) {
-            console.error('Failed to load Hermes config:', err);
-        } finally {
-            setConfigLoading(false);
-        }
-    };
-
-    const saveHermesConfig = async () => {
-        setConfigSaving(true);
-        setConfigMessage(null);
-        try {
-            const token = sessionStorage.getItem('hermes_access_token');
-            const res = await fetch('/api/hermes-config', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(hermesConfig)
-            });
-            const data = await res.json();
-            if (data.success) {
-                setConfigMessage({ type: 'success', text: data.message || 'Configuration saved.' });
-            } else {
-                setConfigMessage({ type: 'error', text: data.error || 'Failed to save.' });
-            }
-        } catch (err) {
-            setConfigMessage({ type: 'error', text: 'Network error: ' + err.message });
-        } finally {
-            setConfigSaving(false);
-        }
-    };
-
-    const updateConfigField = (field, value) => {
-        setHermesConfig(prev => ({ ...prev, [field]: value }));
-    };
-
-    const providerOptions = [
-        { value: 'deepseek', label: 'DeepSeek (deepseek)' },
-        { value: 'zai', label: 'Z.AI / GLM (zai)' },
-        { value: 'kimi-coding', label: 'Moonshot / Kimi (kimi-coding)' },
-    ];
-
-    const modelOptions = {
-        deepseek: ['deepseek-v4-pro', 'deepseek-v3.2'],
-        zai: ['glm-5.2', 'glm-4.5'],
-        'kimi-coding': ['kimi-k2.6', 'kimi-k2.5'],
-    };
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
@@ -149,169 +72,19 @@ export default function UserManagement() {
                     </div>
 
                     {/* ── Hermes AI Configuration ── */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                        <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-5">
-                            <h3 className="font-black text-lg text-slate-800"><i className="fas fa-microchip text-purple-600 mr-2"></i> Hermes AI Configuration</h3>
-                            {configLoading && <i className="fas fa-spinner fa-spin text-slate-400"></i>}
-                        </div>
+                    <ModelConfigPanel />
 
-                        {configMessage && (
-                            <div className={`mb-4 p-3 rounded-lg text-xs font-bold border ${
-                                configMessage.type === 'success' 
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                            }`}>
-                                <i className={`fas fa-${configMessage.type === 'success' ? 'check-circle' : 'exclamation-triangle'} mr-1`}></i>
-                                {configMessage.text}
-                            </div>
-                        )}
-
-                        <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
-                            {/* Connection Mode */}
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Connection Mode</label>
-                                <div className="flex gap-2">
-                                    {['cli', 'http'].map(m => (
-                                        <button
-                                            key={m}
-                                            onClick={() => updateConfigField('mode', m)}
-                                            className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
-                                                hermesConfig.mode === m
-                                                    ? 'border-purple-500 bg-purple-50 text-purple-700'
-                                                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-                                            }`}
-                                        >
-                                            <i className={`fas fa-${m === 'cli' ? 'terminal' : 'server'} mr-1`}></i>
-                                            {m === 'cli' ? 'Local CLI' : 'HTTP (LB)'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* CLI Path (shown only in CLI mode) */}
-                            {hermesConfig.mode === 'cli' && (
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                                        <i className="fas fa-terminal text-slate-400 mr-1"></i> Hermes Binary Path
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={hermesConfig.hermes_binary_path || ''}
-                                        onChange={e => updateConfigField('hermes_binary_path', e.target.value)}
-                                        placeholder="hermes  (or /usr/local/lib/hermes-agent/venv/bin/hermes)"
-                                        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700 focus:border-purple-500 outline-none"
-                                    />
-                                </div>
-                            )}
-
-                            {/* Loadbalancer Settings (shown only in HTTP mode) */}
-                            {hermesConfig.mode === 'http' && (
-                                <>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                                            <i className="fas fa-link text-slate-400 mr-1"></i> Loadbalancer URL
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={hermesConfig.lb_url || ''}
-                                            onChange={e => updateConfigField('lb_url', e.target.value)}
-                                            placeholder="http://localhost:8666/v1/chat/completions"
-                                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700 focus:border-purple-500 outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                                            <i className="fas fa-key text-slate-400 mr-1"></i> Auth Header
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={hermesConfig.lb_auth || ''}
-                                            onChange={e => updateConfigField('lb_auth', e.target.value)}
-                                            placeholder="Basic YWRtaW46..."
-                                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700 focus:border-purple-500 outline-none"
-                                        />
-                                    </div>
-                                </>
-                            )}
-
-                            {/* Divider */}
-                            <div className="border-t border-slate-100 pt-4 mt-2">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Model Configuration</h4>
-                            </div>
-
-                            {/* Global Model */}
-                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                                <label className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">
-                                    <i className="fas fa-globe mr-1"></i> Global / Primary Model
-                                </label>
-                                <div className="space-y-2">
-                                    <select
-                                        value={hermesConfig.global_provider || 'deepseek'}
-                                        onChange={e => {
-                                            updateConfigField('global_provider', e.target.value);
-                                            updateConfigField('global_model', (modelOptions[e.target.value] || [''])[0]);
-                                        }}
-                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
-                                    >
-                                        {providerOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                    </select>
-                                    <select
-                                        value={hermesConfig.global_model || ''}
-                                        onChange={e => updateConfigField('global_model', e.target.value)}
-                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
-                                    >
-                                        {(modelOptions[hermesConfig.global_provider] || []).map(m => 
-                                            <option key={m} value={m}>{m}</option>
-                                        )}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Delegation Model */}
-                            <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
-                                <label className="block text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-2">
-                                    <i className="fas fa-robot mr-1"></i> Delegation Model (Sub-agents)
-                                </label>
-                                <div className="space-y-2">
-                                    <select
-                                        value={hermesConfig.delegation_provider || 'zai'}
-                                        onChange={e => {
-                                            updateConfigField('delegation_provider', e.target.value);
-                                            updateConfigField('delegation_model', (modelOptions[e.target.value] || [''])[0]);
-                                        }}
-                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
-                                    >
-                                        {providerOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                    </select>
-                                    <select
-                                        value={hermesConfig.delegation_model || ''}
-                                        onChange={e => updateConfigField('delegation_model', e.target.value)}
-                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
-                                    >
-                                        {(modelOptions[hermesConfig.delegation_provider] || []).map(m => 
-                                            <option key={m} value={m}>{m}</option>
-                                        )}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mt-5 pt-4 border-t border-slate-100">
-                            <button
-                                onClick={saveHermesConfig}
-                                disabled={configSaving}
-                                className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors"
-                            >
-                                {configSaving ? (
-                                    <><i className="fas fa-spinner fa-spin mr-2"></i> Saving...</>
-                                ) : (
-                                    <><i className="fas fa-save mr-2"></i> Save Configuration</>
-                                )}
-                            </button>
-                            <p className="text-[9px] text-slate-400 mt-2 text-center">
-                                Changes take effect immediately. A server restart may be required for daemon socket connections.
+                    {/* ── Federated Knowledge Tree ── */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                        <div className="border-b border-slate-100 pb-3 mb-4">
+                            <h3 className="font-black text-base text-slate-800">
+                                <i className="fas fa-sitemap text-emerald-600 mr-2"></i> Skill Knowledge Tree
+                            </h3>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                Hierarchical view of all skills across 3 sources (Skill Registry · External · History)
                             </p>
                         </div>
+                        <KnowledgeTreePanel />
                     </div>
                 </div>
 

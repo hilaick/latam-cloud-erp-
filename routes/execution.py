@@ -117,6 +117,103 @@ def update_provider_config(provider_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ── Loadbalancer Key Management (Huawei ModelArts API keys) ──
+
+from services.lb_key_store import LoadbalancerKeyStore
+
+@execution_bp.route('/api/loadbalancer/keys', methods=['GET'])
+@jwt_required()
+def get_lb_keys():
+    try:
+        slots = LoadbalancerKeyStore().get_public_slots()
+        return jsonify({"success": True, "slots": slots, "max_slots": LoadbalancerKeyStore.MAX_SLOTS})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/loadbalancer/keys/<int:slot>', methods=['POST'])
+@jwt_required()
+def set_lb_key(slot):
+    try:
+        data = request.get_json()
+        key = data.get("key", "").strip()
+        label = data.get("label", "").strip()
+        if not key:
+            return jsonify({"success": False, "error": "key required"}), 400
+        LoadbalancerKeyStore().set_key(slot, key, label)
+        return jsonify({"success": True, "message": f"Key saved for slot {slot}"})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/loadbalancer/keys/<int:slot>', methods=['DELETE'])
+@jwt_required()
+def delete_lb_key(slot):
+    try:
+        LoadbalancerKeyStore().delete_key(slot)
+        return jsonify({"success": True, "message": f"Key deleted from slot {slot}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/knowledge/tree', methods=['GET'])
+@jwt_required()
+def get_knowledge_tree():
+    """Return hierarchical skill tree with usage metrics from all 3 sources."""
+    try:
+        from services.knowledge_provider import KnowledgeProvider
+        provider = KnowledgeProvider()
+        entries = provider.query_all()
+        tree = build_knowledge_tree(entries)
+        metrics = compute_knowledge_metrics(entries)
+        return jsonify({"success": True, "tree": tree, "metrics": metrics})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def build_knowledge_tree(entries):
+    """Build hierarchical tree from flat knowledge entries."""
+    categories = {}
+    for entry in entries:
+        cat = entry.migration_type or "General"
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append({
+            "id": entry.id,
+            "name": entry.trigger or entry.id,
+            "source": entry.source,     # skill | external | history
+            "usedCount": entry.usage_count or 0,
+            "confidence": entry.confidence or 0.5,
+            "children": [],
+        })
+
+    tree = []
+    for cat_name, children in sorted(categories.items()):
+        tree.append({
+            "id": f"cat-{cat_name}",
+            "name": cat_name,
+            "source": "category",
+            "children": sorted(children, key=lambda c: -(c["confidence"] or 0)),
+        })
+    return tree
+
+
+def compute_knowledge_metrics(entries):
+    """Aggregate usage stats across sources."""
+    used = sum(1 for e in entries if getattr(e, 'usage_count', 0) > 0)
+    fed = sum(1 for e in entries if getattr(e, 'fed_count', 0) > 0)
+    by_source = {}
+    for e in entries:
+        src = e.source or 'unknown'
+        by_source[src] = by_source.get(src, 0) + 1
+    return {
+        "total": len(entries),
+        "used": used,
+        "fed": fed,
+        "bySource": by_source,
+    }
+
+
 def ensure_valid_sts_token(project_record):
     project_data = json.loads(project_record.data)
     ephemeral_keys = project_data.get('ephemeralKeys')
