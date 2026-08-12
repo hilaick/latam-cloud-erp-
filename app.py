@@ -42,6 +42,10 @@ app = Flask(__name__, static_folder=dist_folder)
 from services.model_config import ModelConfigStore
 ModelConfigStore().init_app(app)
 
+# Initialize Load Balancer Key Store (Huawei ModelArts API keys)
+from services.lb_key_store import LoadbalancerKeyStore
+LoadbalancerKeyStore().init_app(app)
+
 # Load n8n API key for workflow deployment (stored server-side to avoid CORS)
 _n8n_key_path = '/etc/hermes_n8n_api_key'
 if os.path.exists(_n8n_key_path):
