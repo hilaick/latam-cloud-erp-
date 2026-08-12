@@ -37,6 +37,10 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 dist_folder = os.path.join(basedir, 'frontend', 'dist')  # point to Vite output dir
 app = Flask(__name__, static_folder=dist_folder)
 
+# Initialize Model Configuration Store (API keys for AI loadbalancer)
+from services.model_config import ModelConfigStore
+ModelConfigStore().init_app(app)
+
 # Load n8n API key for workflow deployment (stored server-side to avoid CORS)
 _n8n_key_path = '/etc/hermes_n8n_api_key'
 if os.path.exists(_n8n_key_path):
@@ -194,6 +198,29 @@ app.register_blueprint(hermes_bp)
 app.register_blueprint(hermes_cli_bp) 
 app.register_blueprint(gateway_bp)
 app.register_blueprint(resource_discovery_bp)
+
+# ── Help Documentation API ──
+@app.route('/api/docs/<doc_name>', methods=['GET'])
+@jwt_required()
+def get_doc(doc_name):
+    """Serve markdown documentation from the docs/ folder."""
+    safe_name = os.path.basename(doc_name)  # prevent path traversal
+    doc_path = os.path.join(basedir, 'docs', f'{safe_name}.md')
+    if not os.path.exists(doc_path):
+        return jsonify({'success': False, 'error': f'Document not found: {safe_name}'}), 404
+    with open(doc_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return jsonify({'success': True, 'content': content, 'name': safe_name})
+
+@app.route('/api/docs', methods=['GET'])
+@jwt_required()
+def list_docs():
+    """List available documentation files."""
+    docs_dir = os.path.join(basedir, 'docs')
+    if not os.path.exists(docs_dir):
+        return jsonify({'success': True, 'docs': []})
+    files = [f.replace('.md', '') for f in os.listdir(docs_dir) if f.endswith('.md')]
+    return jsonify({'success': True, 'docs': files})
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

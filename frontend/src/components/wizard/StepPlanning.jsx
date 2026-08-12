@@ -5,6 +5,7 @@ import FinOpsCalculator from './FinOpsCalculator';
 import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import CutoverRunbookView from './CutoverRunbookView';
 import AgenticOrchestrationPanel from './AgenticOrchestrationPanel';
+import ModelConfigPanel from './ModelConfigPanel';
 
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     // 🚨 REORDERED: Default tab is now 'wbs' (3.1)
@@ -253,6 +254,9 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* ── AI Model Configuration (API keys + loadbalancer) ── */}
+                                <ModelConfigPanel />
 
                                 {/* Agentic Orchestration Panel — shown when agentic selected */}
                                 {executionMode === 'agentic' && (

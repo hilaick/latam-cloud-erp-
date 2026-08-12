@@ -11,11 +11,111 @@ from services.orchestrator import ExecutionOrchestrator
 from services.agent_orchestrator import AgentOrchestrator
 from services.agentic_simulator import register_agentic_dry_run_routes
 
+from services.model_config import ModelConfigStore, PROVIDER_REGISTRY
+
 logger = logging.getLogger(__name__)
 execution_bp = Blueprint('execution', __name__)
 
 # Register agentic orchestration dry-run endpoint
 register_agentic_dry_run_routes(execution_bp)
+
+# ── Model Configuration API ── (API keys for AI loadbalancer)
+
+@execution_bp.route('/api/model-config', methods=['GET'])
+@jwt_required()
+def get_model_config():
+    """Get full model config — API keys are masked."""
+    try:
+        cfg = ModelConfigStore().get_public_config()
+        cfg["providers_registry"] = {
+            pid: {"name": info["name"], "models": info["models"], "auth_type": info["auth_type"]}
+            for pid, info in PROVIDER_REGISTRY.items()
+        }
+        return jsonify({"success": True, "config": cfg})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/model-config/api-key', methods=['POST'])
+@jwt_required()
+def set_model_api_key():
+    """Store an API key for a provider."""
+    try:
+        data = request.get_json()
+        provider = data.get("provider", "").strip().lower()
+        key = data.get("key", "").strip()
+        if not provider or not key:
+            return jsonify({"success": False, "error": "provider + key required"}), 400
+        if provider not in PROVIDER_REGISTRY:
+            return jsonify({"success": False, "error": f"Unknown provider: {provider}"}), 400
+        ModelConfigStore().set_api_key(provider, key)
+        return jsonify({"success": True, "message": f"API key saved for {PROVIDER_REGISTRY[provider]['name']}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/model-config/primary', methods=['POST'])
+@jwt_required()
+def set_primary_model():
+    """Set primary orchestrator model."""
+    try:
+        data = request.get_json()
+        model = data.get("model", "").strip()
+        provider = data.get("provider", "").strip().lower()
+        if not model or not provider:
+            return jsonify({"success": False, "error": "model + provider required"}), 400
+        ModelConfigStore().set_primary_model(model, provider)
+        return jsonify({"success": True, "message": f"Primary: {model} via {provider}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/model-config/delegation', methods=['POST'])
+@jwt_required()
+def set_delegation_model():
+    """Set delegation (sub-agent) model."""
+    try:
+        data = request.get_json()
+        model = data.get("model", "").strip()
+        provider = data.get("provider", "").strip().lower()
+        if not model or not provider:
+            return jsonify({"success": False, "error": "model + provider required"}), 400
+        ModelConfigStore().set_delegation_model(model, provider)
+        return jsonify({"success": True, "message": f"Delegation: {model} via {provider}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/model-config/fallback', methods=['POST'])
+@jwt_required()
+def set_fallback_order():
+    """Set provider fallback priority order."""
+    try:
+        data = request.get_json()
+        order = data.get("order", [])
+        if not order or not isinstance(order, list):
+            return jsonify({"success": False, "error": "order (list) required"}), 400
+        valid = [p for p in order if p in PROVIDER_REGISTRY]
+        if len(valid) < 2 and len(order) > 1:
+            return jsonify({"success": False, "error": f"Unknown providers in order. Valid: {list(PROVIDER_REGISTRY.keys())}"}), 400
+        ModelConfigStore().set_fallback_order(valid)
+        return jsonify({"success": True, "message": f"Fallback: {' → '.join(valid)}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@execution_bp.route('/api/model-config/provider/<provider_id>', methods=['POST'])
+@jwt_required()
+def update_provider_config(provider_id):
+    """Update provider settings (enabled, weight, concurrency, etc.)."""
+    try:
+        if provider_id not in PROVIDER_REGISTRY:
+            return jsonify({"success": False, "error": f"Unknown provider: {provider_id}"}), 400
+        data = request.get_json()
+        allowed = {"enabled", "weight", "max_concurrency", "timeout_seconds", "retry_count", "preferred_model"}
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            return jsonify({"success": False, "error": "No valid fields"}), 400
+        ModelConfigStore().set_provider_config(provider_id, **updates)
+        return jsonify({"success": True, "message": f"Updated {provider_id}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 def ensure_valid_sts_token(project_record):
     project_data = json.loads(project_record.data)
