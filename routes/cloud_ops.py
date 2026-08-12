@@ -712,18 +712,16 @@ def finops_dashboard():
                         enriched['live_data_error'] = str(e)
                         projects_with_errors += 1
 
-            # If live data not fetched, compute simulated data (fallback)
+            # If live data not fetched, leave billing fields as null/unavailable
             if not enriched.get('live_data_fetched'):
-                # Compute simulated billed-to-date based on elapsed time
+                # No simulated fallback — honest gap
                 from datetime import datetime as dt
                 start_str = proj_data.get('kickoff')
                 end_str = proj_data.get('date')
                 now = dt.utcnow()
-
                 days_total = 30
                 days_elapsed = 0
                 days_delayed = 0
-
                 if start_str and end_str:
                     try:
                         start = dt.strptime(start_str, '%Y-%m-%d')
@@ -734,24 +732,16 @@ def finops_dashboard():
                             days_delayed = (now - end).days
                     except Exception:
                         pass
-
-                target_daily_burn = (mrr * 0.45) / 30
-                migration_daily_burn = 25
-                billed_target = min(days_elapsed, days_total) * target_daily_burn
-                billed_overrun = max(days_delayed, 0) * (target_daily_burn + migration_daily_burn)
-
                 enriched.update({
-                    'billedToDate': round(billed_target + billed_overrun, 2),
-                    'dailyBurnRate': round(target_daily_burn + migration_daily_burn, 2),
-                    'overrun': round(billed_overrun, 2),
+                    'billedToDate': None,
+                    'dailyBurnRate': None,
+                    'overrun': None,
                     'daysElapsed': days_elapsed,
                     'daysTotal': days_total,
                     'daysDelayed': days_delayed,
-                    'isAtRisk': days_delayed > 0 or (mrr > 0 and (billed_target + billed_overrun) > mrr * 0.5)
+                    'isAtRisk': None,
+                    'dataAvailable': False
                 })
-
-                total_billed_to_date += billed_target + billed_overrun
-                total_projected_overrun += billed_overrun
             else:
                 # Days calculations for live-data projects
                 from datetime import datetime as dt
@@ -944,44 +934,15 @@ def billing_validation():
 
 
 def _simulated_billing_validation(start_date, end_date, duration_months, estimated_cost, bom_items):
-    """Fallback: return simulated billing data when live data unavailable."""
-    import random
-    random.seed(hash(str(start_date) + str(duration_months)) % (2**32))
-
-    invoiced_total = estimated_cost * (0.85 + random.random() * 0.3)  # 85%–115% of estimate
-    variance = invoiced_total - estimated_cost
-    status = 'warning' if abs(variance) > estimated_cost * 0.2 else 'ok'
-
-    category_groups = []
-    if bom_items:
-        for item in bom_items[:6]:
-            if item.get('selected', True):
-                actual_amt = item.get('cost_per_month', 100) * duration_months * (0.8 + random.random() * 0.4)
-                category_groups.append({
-                    'category': item.get('category', 'Other'),
-                    'estimated': item.get('cost_per_month', 100) * duration_months,
-                    'actual': round(actual_amt, 2),
-                    'variance': round(actual_amt - item.get('cost_per_month', 100) * duration_months, 2),
-                    'variance_pct': round(random.random() * 20, 1),
-                    'items': [{
-                        'name': item.get('service', item.get('id', 'Unknown')),
-                        'category': item.get('category', 'Other'),
-                        'amount': round(actual_amt, 2),
-                        'status': 'ok' if random.random() > 0.3 else 'warning'
-                    }]
-                })
-
+    """Return honest error when live billing data is unavailable."""
     return jsonify({
-        "success": True,
+        "success": False,
         "live_data": False,
-        "invoiced_total": round(invoiced_total, 2),
-        "variance": round(variance, 2),
-        "status": status,
+        "error": "Live billing validation unavailable — Huawei Cloud BSS APIs not published for LATAM region.",
+        "hint": "Billing summary APIs require China region or different API tier. Contact Huawei Cloud support.",
         "period": {
             "start": start_date[:10] if start_date else 'N/A',
             "end": end_date[:10] if end_date else 'N/A',
             "duration_months": duration_months
-        },
-        "category_groups": category_groups,
-        "line_items": []  # legacy support
-    })
+        }
+    }), 503

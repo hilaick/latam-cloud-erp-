@@ -111,7 +111,7 @@ function computeLayout(phases) {
 
 /* ─── Main component ─── */
 export default function DeliveryConstellation({ workflow, compact }) {
-  const { projects } = useContext(ERPContext);
+  const { projects, activeProjectId } = useContext(ERPContext);
   const [zoom, setZoom] = useState(0.7);
   const [pan, setPan] = useState({x:0,y:0});
   const [drag, setDrag] = useState(null);
@@ -120,11 +120,11 @@ export default function DeliveryConstellation({ workflow, compact }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [showHaltModal, setShowHaltModal] = useState(false);
 
-  // Resolve current project from URL hash
+  // Resolve current project from context (primary) or URL hash (fallback for direct links)
   const { phase, proj } = (() => {
     const hash = window.location.hash.replace('#', '');
     const params = new URLSearchParams(hash || '');
-    return { phase: params.get('phase') || '', proj: params.get('proj') || '' };
+    return { phase: params.get('phase') || '', proj: activeProjectId !== 'none' ? activeProjectId : (params.get('proj') || '') };
   })();
   const currentProject = (projects || []).find(p => String(p.id) === String(proj));
 

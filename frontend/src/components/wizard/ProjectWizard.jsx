@@ -7,8 +7,11 @@ import StepExecution from './StepExecution';
 import StepPostLive from './StepPostLive';
 import { PreSalesQualificationMatrix } from '../../utils/helpers';
 
+import HaltProjectModal from '../views/HaltProjectModal';
+
 export default function ProjectWizard({ activeProject, onUpdateProject, onClose }) {
     const [showConfig, setShowConfig] = useState(false);
+    const [showHaltModal, setShowHaltModal] = useState(false);
     const [currentStep, setCurrentStep] = useState(1);
     
     const { customers, projects } = useContext(ERPContext);
@@ -116,6 +119,14 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
                         })}
                     </div>
                 </div>
+
+                <button
+                    onClick={() => setShowHaltModal(true)}
+                    className="shrink-0 px-4 py-2 bg-red-700 hover:bg-red-600 text-red-100 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-600 transition-colors flex items-center gap-2 shadow-md"
+                    title="Halt this project (cancel, suspend, or transfer)"
+                >
+                    <i className="fas fa-hand-paper"></i> Halt Project
+                </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
@@ -322,6 +333,13 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
 
                     </div>
                 </div>
+            )}
+
+            {showHaltModal && (
+                <HaltProjectModal
+                    project={activeProject}
+                    onClose={() => setShowHaltModal(false)}
+                />
             )}
         </div>
     );

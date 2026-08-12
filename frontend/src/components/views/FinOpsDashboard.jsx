@@ -27,9 +27,24 @@ export default function FinOpsDashboard() {
         setError(null);
         try {
             const token = localStorage.getItem('access_token');
+            if (!token) {
+                setError('AUTH_REQUIRED');
+                return;
+            }
             const resp = await fetch('/api/finops/dashboard', {
                 headers: { Authorization: `Bearer ${token}` },
             });
+            if (resp.status === 401 || resp.status === 422) {
+                // Token expired or invalid — clear it and prompt re-login
+                const body = await resp.json().catch(() => ({}));
+                if (body.msg && (body.msg.includes('expired') || body.msg.includes('Signature') || body.msg.includes('segments'))) {
+                    localStorage.removeItem('access_token');
+                    setError('SESSION_EXPIRED');
+                    return;
+                }
+                setError('AUTH_ERROR');
+                return;
+            }
             if (!resp.ok) {
                 throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             }
@@ -53,7 +68,7 @@ export default function FinOpsDashboard() {
         fetchDashboard();
     }, [fetchDashboard]);
 
-    // ── Build enriched projects (live data preferred, simulated fallback) ──
+    // ── Build enriched projects from live API data ──
     const activeProjects = (projects || []).filter(
         (p) => p && !p.isWaiting && p.lifecycleState !== '6_completed'
     );
@@ -79,12 +94,12 @@ export default function FinOpsDashboard() {
             if (liveProject.overrun) totalProjectedOverrun += liveProject.overrun;
             return {
                 ...project,
-                ...liveProject, // live data fields overwrite simulated
+                ...liveProject, // live data fields from API response
                 isLive: true,
             };
         }
 
-        // ── SIMULATED DATA PATH (fallback) ──
+        // ── No live data available for this project ──
         const start = new Date(project.kickoff);
         const end = new Date(project.date);
         let daysTotal = 30;
@@ -99,29 +114,17 @@ export default function FinOpsDashboard() {
             }
         }
 
-        const targetDailyBurn = (mrr * 0.45) / 30;
-        const migrationDailyBurn = 25;
-
-        const billedTarget = Math.min(daysElapsed, daysTotal) * targetDailyBurn;
-        let billedOverrun = 0;
-        if (daysDelayed > 0) {
-            billedOverrun = daysDelayed * (targetDailyBurn + migrationDailyBurn);
-        }
-
-        const totalBilled = billedTarget + billedOverrun;
-        totalBilledToDate += totalBilled;
-        totalProjectedOverrun += billedOverrun;
-
         return {
             ...project,
             daysTotal,
             daysElapsed: Math.floor(daysElapsed),
             daysDelayed,
-            dailyBurnRate: targetDailyBurn + migrationDailyBurn,
-            billedToDate: totalBilled,
-            overrun: billedOverrun,
-            isAtRisk: daysDelayed > 0 || totalBilled > mrr * 0.5,
+            dailyBurnRate: null,
+            billedToDate: null,
+            overrun: null,
+            isAtRisk: null,
             isLive: false,
+            dataAvailable: false,
         };
     });
 
@@ -163,13 +166,22 @@ export default function FinOpsDashboard() {
                             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 py-1.5">
                                 <i className="fas fa-spinner fa-spin mr-1.5"></i>Connecting...
                             </span>
+                        ) : error === 'SESSION_EXPIRED' || error === 'AUTH_REQUIRED' ? (
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 py-1.5 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                                  onClick={() => window.location.href = '/login'}>
+                                <i className="fas fa-key mr-1.5"></i>Session Expired — Click to Login
+                            </span>
+                        ) : error === 'AUTH_ERROR' ? (
+                            <span className="text-[10px] font-black uppercase tracking-widest text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-full px-3 py-1.5">
+                                <i className="fas fa-user-lock mr-1.5"></i>Authentication Error
+                            </span>
                         ) : error ? (
                             <span className="text-[10px] font-black uppercase tracking-widest text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-full px-3 py-1.5">
-                                <i className="fas fa-exclamation-circle mr-1.5"></i>Simulated
+                                <i className="fas fa-exclamation-circle mr-1.5"></i>Unavailable
                             </span>
                         ) : (
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-400/10 border border-slate-500/30 rounded-full px-3 py-1.5">
-                                Simulated Data
+                                No Live Data
                             </span>
                         )}
 
@@ -208,7 +220,7 @@ export default function FinOpsDashboard() {
                             {fm(summary.totalBilledToDate)}
                         </div>
                         <div className="text-[10px] text-slate-500 mt-2 font-bold uppercase">
-                            {liveDataAvailable ? 'Live consumption from COC BSS' : 'Estimated consumption'}
+                            {liveDataAvailable ? 'Live consumption from COC BSS' : 'Live data unavailable for LATAM region'}
                         </div>
                     </div>
                     <div className="bg-slate-800/50 rounded-xl border border-slate-600 p-5 relative overflow-hidden">
@@ -333,12 +345,18 @@ export default function FinOpsDashboard() {
                                     <td className="p-4">
                                         <div
                                             className={`inline-flex px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest ${
-                                                project.isAtRisk
-                                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                project.isAtRisk === null
+                                                    ? 'bg-slate-50 text-slate-500 border border-slate-200'
+                                                    : project.isAtRisk
+                                                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                             }`}
                                         >
-                                            {project.isAtRisk ? (
+                                            {project.isAtRisk === null ? (
+                                                <>
+                                                    <i className="fas fa-minus-circle mr-1"></i> Unknown
+                                                </>
+                                            ) : project.isAtRisk ? (
                                                 <>
                                                     <i className="fas fa-exclamation-triangle mr-1"></i> Budget Risk
                                                 </>
@@ -358,7 +376,7 @@ export default function FinOpsDashboard() {
                                         ) : project.liveDataError ? (
                                             <span className="text-[9px] font-bold text-rose-500">Error</span>
                                         ) : (
-                                            <span className="text-[9px] font-bold text-slate-400">Simulated</span>
+                                            <span className="text-[9px] font-bold text-slate-400">No Data</span>
                                         )}
                                     </td>
                                 </tr>
