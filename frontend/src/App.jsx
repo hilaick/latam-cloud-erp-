@@ -160,8 +160,8 @@ function App() {
                 <HelpDrawer
                     isOpen={isHelpOpen}
                     onClose={() => setIsHelpOpen(false)}
-                    title="ERP Migration Factory — Project Introduction"
-                    docName="PROJECT_INTRODUCTION"
+                    title="ERP Migration Factory — User Manual"
+                    docName="USER_MANUAL"
                 />
             </main>
         </div>
