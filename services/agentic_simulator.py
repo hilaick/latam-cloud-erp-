@@ -678,6 +678,12 @@ class ExecutionHistoryStore:
             "unique_projects": len(set(r.get("project") for r in cls._history)),
         }
 
+    @classmethod
+    def list_all(cls) -> list:
+        """Return ALL history records (unfiltered)."""
+        cls.initialize()
+        return cls._history
+
 
 class ServerProfiler:
     """Classify servers by OS, role, and migration strategy."""

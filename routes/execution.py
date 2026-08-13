@@ -162,12 +162,19 @@ def get_knowledge_tree():
     """Return hierarchical skill tree with usage metrics from all 3 sources."""
     try:
         from services.knowledge_provider import KnowledgeProvider
-        provider = KnowledgeProvider()
-        entries = provider.query_all()
+        result = KnowledgeProvider.query_all()
+        entries = result["entries"]
         tree = build_knowledge_tree(entries)
-        metrics = compute_knowledge_metrics(entries)
+        metrics = {
+            "total": result["total"],
+            "sourceBreakdown": result["source_breakdown"],
+            "usedCount": sum(1 for e in entries if e.get("usage_count", 0) > 0),
+            "fedCount": result["total"],
+        }
         return jsonify({"success": True, "tree": tree, "metrics": metrics})
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 

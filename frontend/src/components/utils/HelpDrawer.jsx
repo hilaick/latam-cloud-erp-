@@ -6,21 +6,33 @@ import React, { useState, useEffect, useMemo } from 'react';
  */
 function mdToHtml(md) {
   if (!md) return '';
+
+  // Slugify heading text → id (e.g. "4. Dashboard — Global View" → "4-dashboard--global-view")
+  const slugify = (text) => text.toLowerCase()
+    .replace(/[^\\w\\s-–—]/g, '')
+    .replace(/[\\s–—]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
   let html = md;
 
   // Pre: fenced code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+  html = html.replace(/```(\\w*)\\n([\\s\\S]*?)```/g, (_, lang, code) =>
     `<pre class="bg-slate-900 text-emerald-300 p-4 rounded-xl overflow-x-auto text-xs font-mono leading-relaxed my-3 border border-slate-700"><code>${escapeHtml(code.trim())}</code></pre>`
   );
 
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code class="bg-slate-200 text-rose-700 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
 
-  // Headings
-  html = html.replace(/^#### (.+)$/gm, '<h4 class="text-sm font-black text-slate-800 mt-6 mb-2">$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3 class="text-base font-black text-slate-800 mt-6 mb-3">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 class="text-lg font-black text-slate-900 mt-8 mb-4 pb-2 border-b border-slate-200">$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-black text-slate-900 mt-8 mb-6">$1</h1>');
+  // Headings (with id attributes for anchor linking)
+  html = html.replace(/^#### (.+)$/gm, (_, text) =>
+    `<h4 id="${slugify(text)}" class="text-sm font-black text-slate-800 mt-6 mb-2 scroll-mt-4">${text}</h4>`);
+  html = html.replace(/^### (.+)$/gm, (_, text) =>
+    `<h3 id="${slugify(text)}" class="text-base font-black text-slate-800 mt-6 mb-3 scroll-mt-4">${text}</h3>`);
+  html = html.replace(/^## (.+)$/gm, (_, text) =>
+    `<h2 id="${slugify(text)}" class="text-lg font-black text-slate-900 mt-8 mb-4 pb-2 border-b border-slate-200 scroll-mt-4">${text}</h2>`);
+  html = html.replace(/^# (.+)$/gm, (_, text) =>
+    `<h1 id="${slugify(text)}" class="text-2xl font-black text-slate-900 mt-8 mb-6 scroll-mt-4">${text}</h1>`);
 
   // Bold + italic
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="font-black italic">$1</strong>');
@@ -30,8 +42,13 @@ function mdToHtml(md) {
   // Images
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="rounded-lg max-w-full my-3 shadow-md border border-slate-200"/>');
 
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-indigo-600 hover:text-indigo-800 underline font-bold">$1</a>');
+  // Links — internal anchors (#...) scroll in-drawer; external links open in new tab
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
+    if (href.startsWith('#')) {
+      return `<a href="${href}" class="text-indigo-600 hover:text-indigo-800 underline font-bold scroll-link">${text}</a>`;
+    }
+    return `<a href="${href}" target="_blank" rel="noopener" class="text-indigo-600 hover:text-indigo-800 underline font-bold">${text}</a>`;
+  });
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr class="my-6 border-slate-200"/>');
@@ -160,7 +177,7 @@ export default function HelpDrawer({ isOpen, onClose, title, content, docName })
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar" style={{ scrollBehavior: 'smooth' }}>
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -177,10 +194,20 @@ export default function HelpDrawer({ isOpen, onClose, title, content, docName })
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 text-center shrink-0">
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
             ERP Migration Factory — Help System
           </p>
+          <a
+            href={`/docs/${docName || 'USER_MANUAL'}`}
+            target="_blank"
+            rel="noopener"
+            className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1 transition-colors"
+            title="Open full manual in new tab"
+          >
+            <i className="fas fa-external-link-alt text-[9px]"></i>
+            Open in New Tab
+          </a>
         </div>
       </div>
 

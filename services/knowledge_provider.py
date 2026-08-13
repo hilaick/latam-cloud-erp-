@@ -147,6 +147,12 @@ class ExternalKnowledgeStore:
             "migration_types": list({e.get("migration_type") for e in cls._entries}),
         }
 
+    @classmethod
+    def list_all(cls) -> list:
+        """Return ALL cached entries (unfiltered catalog)."""
+        cls.initialize()
+        return cls._entries
+
     # ── Internal: Git sync ──────────────────────────────────────────
 
     @classmethod
@@ -489,6 +495,50 @@ class KnowledgeProvider:
             "total_enrichment": sum(breakdown.values()),
             "top_recommendation": recommendation,
             "enrichment_count": len(all_entries),
+        }
+
+    @classmethod
+    def query_all(cls) -> dict:
+        """Return ALL knowledge entries from all 3 sources (catalog mode, no filtering).
+        
+        Returns dict with:
+          entries — flat list of all entries with source tags
+          source_breakdown — counts per source
+          total — total entries
+        """
+        from services.agentic_simulator import SkillRegistry, ExecutionHistoryStore
+        
+        all_entries = []
+        breakdown = {"skill": 0, "external": 0, "history": 0}
+        
+        # Source 1: Skills
+        skill_entries = SkillRegistry.list_all()
+        for s in skill_entries:
+            entry = {**s, "source": "skill", "priority": 1,
+                     "confidence": s.get("confidence", cls.BASE_CONFIDENCE["skill"])}
+            all_entries.append(entry)
+            breakdown["skill"] += 1
+        
+        # Source 2: External
+        ext_entries = ExternalKnowledgeStore.list_all()
+        for ext in ext_entries:
+            entry = {**ext, "source": "external", "priority": 2,
+                     "confidence": ext.get("confidence_base", cls.BASE_CONFIDENCE["external"])}
+            all_entries.append(entry)
+            breakdown["external"] += 1
+        
+        # Source 3: History
+        hist_entries = ExecutionHistoryStore.list_all()
+        for hist in hist_entries:
+            entry = {**hist, "source": "history", "priority": 3,
+                     "confidence": hist.get("success_rate", cls.BASE_CONFIDENCE["history"])}
+            all_entries.append(entry)
+            breakdown["history"] += 1
+        
+        return {
+            "entries": all_entries,
+            "source_breakdown": breakdown,
+            "total": sum(breakdown.values()),
         }
 
     @classmethod
