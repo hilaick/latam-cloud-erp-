@@ -2399,6 +2399,85 @@ def register_agentic_dry_run_routes(execution_bp):
                 "traceback": traceback.format_exc()
             }), 500
 
+    # ── Post-process: classify each trace entry by task type ──
+    def _classify_tasks(result):
+        """Add taskType to each trace entry: deployment | configuration | troubleshooting | verification"""
+        deployment_actions = {
+            'SOURCE_REGISTRATION', 'INITIAL_SYNC_START', 'NETWORK_PROVISION',
+            'INSTANCE_LAUNCH_FROM_IMAGE', 'IMAGE_EXPORT_SOURCE', 'IMAGE_DOWNLOAD_TO_MIG_WORKER',
+            'IMAGE_UPLOAD_TO_OBS', 'IMS_REGISTER_IMAGE', 'IMAGE_CONVERSION',
+            'CUTOVER_STOP_SOURCE', 'CUTOVER_START_TARGET', 'AGENT_AVAILABILITY_CHECK',
+            'INIT', 'WAVE_START',
+        }
+        config_actions = {
+            'HSS_INSTALL', 'UNIAGENT_INSTALL', 'LTS_INSTALL',
+            'FLAVOR_CAPACITY_CHECK', 'HANDOFF',
+        }
+        troubleshooting_actions = {
+            'SMS_TROUBLESHOOTING_EXHAUSTED', 'SMS_RETRY_AFTER_FIX',
+            'BOOT_FIX', 'PARTITION_FIX', 'ESCALATE_TO_IMAGE_MIGRATION',
+            'BLOCKED_STRATEGY_ANALYSIS', 'HYPOTHETICAL_PATH_WITH_METADATA',
+        }
+        verification_actions = {
+            'SMOKE_TESTS', 'VERIFY_BOOT', 'FINALIZE', 'GARBAGE_COLLECTION',
+            'WAVE_COMPLETE',
+        }
+        trace = result.get('trace', [])
+        for entry in trace:
+            action = entry.get('action', '')
+            if action in deployment_actions:
+                entry['taskType'] = 'deployment'
+            elif action in config_actions:
+                entry['taskType'] = 'configuration'
+            elif action in troubleshooting_actions:
+                entry['taskType'] = 'troubleshooting'
+            elif action in verification_actions:
+                entry['taskType'] = 'verification'
+            else:
+                # Auto-classify based on phase
+                phase = entry.get('phase', '')
+                if 'TROUBLESHOOT' in phase or 'BLOCKED' in phase or 'FAIL' in phase or 'RETRY' in phase:
+                    entry['taskType'] = 'troubleshooting'
+                elif 'POST' in phase:
+                    entry['taskType'] = 'configuration'
+                elif 'PREFLIGHT' in phase:
+                    entry['taskType'] = 'verification'
+                else:
+                    entry['taskType'] = 'deployment'
+        return result
+
+    def _handle_delete_dry_run(project_id):
+        """Clear stored simulation results for a project."""
+        try:
+            project_record = ProjectData.query.get(project_id)
+            if not project_record:
+                return jsonify({"success": False, "error": "Project not found"}), 404
+            project_data = json.loads(project_record.data) if isinstance(project_record.data, str) else project_record.data
+            # Clear simulation artifacts from project data
+            project_data.pop('simulationResult', None)
+            project_data.pop('agenticTrace', None)
+            project_data.pop('lastSimulation', None)
+            project_record.data = json.dumps(project_data)
+            from models import db
+            db.session.commit()
+            return jsonify({"success": True, "message": "Simulation results cleared"}), 200
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # Modify the dry-run handler to apply task classification
+    def _handle_dry_run_with_classification(project_id):
+        result = _handle_dry_run(project_id)
+        # If success (200), classify tasks. If error, pass through.
+        if isinstance(result, tuple):
+            resp, code = result[0], result[1] if len(result) > 1 else 200
+            if code == 200 and resp.json.get('success') is not False:
+                data = resp.json
+                data = _classify_tasks(data)
+                resp.set_data(json.dumps(data))
+            return resp, code
+        return result
+
     # Register BOTH paths — legacy + new — using the same handler
-    execution_bp.route("/api/projects/<project_id>/simulate-orchestration", methods=["POST"])(_handle_dry_run)
-    execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["POST"])(_handle_dry_run)
+    execution_bp.route("/api/projects/<project_id>/simulate-orchestration", methods=["POST"])(_handle_dry_run_with_classification)
+    execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["POST"])(_handle_dry_run_with_classification)
+    execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["DELETE"])(_handle_delete_dry_run)

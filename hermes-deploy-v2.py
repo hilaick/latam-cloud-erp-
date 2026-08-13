@@ -75,7 +75,7 @@ def deploy():
         return False
     
     print('[3/4] Restart Flask...')
-    restart_cmd = f'cd {DEPLOY_PATH} && pkill -f "python.*app.py" 2>/dev/null; sleep 2; nohup python app.py > /tmp/flask.log 2>&1 &'
+    restart_cmd = f'cd {DEPLOY_PATH} && pkill -f "python.*app.py" 2>/dev/null; sleep 2; nohup venv/bin/python3 app.py > /tmp/flask.log 2>&1 &'
     code, out = run_ssh(restart_cmd)
     print(f'  Exit: {code}')
     
