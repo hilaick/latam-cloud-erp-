@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function ToolRecommendationView({ project, activeProject, onUpdateProject }) {
+export default function ToolRecommendationView({ project, activeProject, onUpdateProject, onRefreshResources }) {
     // Handle both prop names: project or activeProject
     const currentProject = project || activeProject;
     
@@ -155,8 +155,29 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                         <div className="mt-3 flex items-center gap-3">
                             <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 px-4 py-2 rounded-lg">
                                 <div className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
-                                <div className="text-lg font-black text-emerald-400">
-                                    {currentProject?.mapperNodes?.length || 0}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg font-black text-emerald-400">
+                                        {(() => {
+                                            const nodes = currentProject?.mapperNodes || [];
+                                            const filter = currentProject?.topologyFilter || 'All';
+                                            if (filter && filter !== 'All') {
+                                                const inScope = nodes.filter(n => 
+                                                    n.status === filter || 
+                                                    (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
+                                                    n.status === 'Matched'
+                                                );
+                                                return `${inScope.length} / ${nodes.length}`;
+                                            }
+                                            return nodes.length;
+                                        })()}
+                                    </span>
+                                    <button 
+                                        onClick={onRefreshResources}
+                                        className="text-[10px] bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"
+                                        title="Refresh from saved Target Architecture"
+                                    >
+                                        <i className="fas fa-sync-alt mr-1"></i> Refresh
+                                    </button>
                                 </div>
                             </div>
                             <div className="text-xs text-slate-400">

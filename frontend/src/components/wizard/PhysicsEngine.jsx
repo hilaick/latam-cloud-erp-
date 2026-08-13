@@ -109,7 +109,7 @@ const PhysicsGuideModal = ({ onClose }) => {
     );
 };
 
-export default function PhysicsEngine({ activeProject, onUpdateProject }) {
+export default function PhysicsEngine({ activeProject, onUpdateProject, onRefreshResources }) {
     // Shared Global State
     const [engineMode, setEngineMode] = useState('cognitive'); 
     const [showGuide, setShowGuide] = useState(false);
@@ -602,8 +602,29 @@ export default function PhysicsEngine({ activeProject, onUpdateProject }) {
                     <div className="mt-3 flex items-center gap-3">
                         <div className="bg-slate-100 border border-slate-300 px-4 py-2 rounded-lg">
                             <div className="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
-                            <div className="text-lg font-black text-indigo-600">
-                                {activeProject?.mapperNodes?.length || 0}
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg font-black text-indigo-600">
+                                    {(() => {
+                                        const nodes = activeProject?.mapperNodes || [];
+                                        const filter = activeProject?.topologyFilter || 'All';
+                                        if (filter && filter !== 'All') {
+                                            const inScope = nodes.filter(n => 
+                                                n.status === filter || 
+                                                (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
+                                                n.status === 'Matched'
+                                            );
+                                            return `${inScope.length} / ${nodes.length}`;
+                                        }
+                                        return nodes.length;
+                                    })()}
+                                </span>
+                                <button 
+                                    onClick={onRefreshResources}
+                                    className="text-[10px] bg-indigo-100 text-indigo-600 hover:bg-indigo-200 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"
+                                    title="Refresh from saved Target Architecture"
+                                >
+                                    <i className="fas fa-sync-alt mr-1"></i> Refresh
+                                </button>
                             </div>
                         </div>
                         <div className="text-xs text-slate-500">

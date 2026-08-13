@@ -14,8 +14,13 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [showGateModal, setShowGateModal] = useState(false);
     const [gateWarnings, setGateWarnings] = useState([]);
     const [gatePassed, setGatePassed] = useState(false);
+    const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
 
     // 🚨 SPLIT: 3.4a = Tool Recommendations, 3.4b = Execution Mode (after tools, before runbook)
+    const handleRefreshResources = () => {
+        setResourceRefreshKey(prev => prev + 1);
+    };
+
     const menuItems = [
         { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
         { id: 'physics', num: '3.2', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
@@ -142,19 +147,19 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
 
                     {subTab === 'tools' && (
-                        <div className="animate-fade-in h-full flex flex-col">
+                        <div key={`tools-${resourceRefreshKey}`} className="animate-fade-in h-full flex flex-col">
                             <div className="bg-amber-50 border-b border-amber-200 p-6 shrink-0">
                                 <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling Allocation</h4>
                                 <p className="text-xs text-amber-700/80 mt-1 font-medium">Select optimal migration engines informed by delivery physics and cost constraints from steps 3.2–3.3.</p>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} />
+                                <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} onRefreshResources={handleRefreshResources} />
                             </div>
                         </div>
                     )}
 
                     {subTab === 'execution' && (
-                        <div className="animate-fade-in h-full flex flex-col">
+                        <div key={`execution-${resourceRefreshKey}`} className="animate-fade-in h-full flex flex-col">
                             <div className="bg-purple-50 border-b border-purple-200 p-6 shrink-0">
                                 <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest">
                                     <i className="fas fa-robot mr-2"></i> Setup Phase 4 Execution Mode
@@ -163,6 +168,42 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                     Select how workloads will be processed by the delivery team or orchestration engine.
                                     <span className="block mt-1 text-purple-500">Run recommendations (3.4a) and wave planning (3.5) first for best results.</span>
                                 </p>
+                                {/* Resource Count + Refresh */}
+                                <div className="mt-3 flex items-center gap-3">
+                                    <div className="bg-white border border-purple-200 px-4 py-2 rounded-lg">
+                                        <div className="text-[10px] text-purple-600 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg font-black text-purple-800">
+                                                {(() => {
+                                                    const nodes = project?.mapperNodes || [];
+                                                    const filter = project?.topologyFilter || 'All';
+                                                    if (filter && filter !== 'All') {
+                                                        const inScope = nodes.filter(n => 
+                                                            n.status === filter || 
+                                                            (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
+                                                            n.status === 'Matched'
+                                                        );
+                                                        return `${inScope.length} / ${nodes.length}`;
+                                                    }
+                                                    return nodes.length;
+                                                })()}
+                                            </span>
+                                            <button 
+                                                onClick={handleRefreshResources}
+                                                className="text-[10px] bg-purple-100 text-purple-600 hover:bg-purple-200 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"
+                                                title="Refresh from saved Target Architecture"
+                                            >
+                                                <i className="fas fa-sync-alt mr-1"></i> Refresh
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-purple-500">
+                                        {project?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                         project?.blueprintData ? "Using SOW/Quote Data" : 
+                                         project?.blueprint ? "Using Blueprint Data" : 
+                                         "No Architecture Data"}
+                                    </div>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                                 {/* Execution Mode Selector */}
@@ -263,12 +304,12 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     )}
 
                     {subTab === 'physics' && (
-                        <div className="h-full overflow-y-auto custom-scrollbar">
-                            <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} />
+                        <div key={`physics-${resourceRefreshKey}`} className="h-full overflow-y-auto custom-scrollbar">
+                            <PhysicsEngine activeProject={project} onUpdateProject={onUpdateProject} onRefreshResources={handleRefreshResources} />
                         </div>
                     )}
                     
-                    {subTab === 'finops' && <FinOpsCalculator project={project} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'finops' && <FinOpsCalculator key={`finops-${resourceRefreshKey}`} project={project} onUpdateProject={onUpdateProject} onRefreshResources={handleRefreshResources} />}
                     
                     {subTab === 'runbook' && (
                         <div className="p-6 h-full flex flex-col animate-fade-in">
