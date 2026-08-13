@@ -106,7 +106,12 @@ def add_header(response):
 def handle_exception(e):
     if request.path.startswith('/api/'):
         return jsonify({"success": False, "error": "Server Exception", "details": str(e)}), 500
-    return send_from_directory(app.static_folder, 'index.html')
+    # SPA fallback: serve index.html directly without send_from_directory
+    index_path = os.path.join(app.static_folder, 'index.html')
+    if os.path.exists(index_path):
+        with open(index_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return jsonify({"success": False, "error": "Frontend not found"}), 404
 
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
@@ -308,27 +313,27 @@ def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, str(path))):
         return send_from_directory(app.static_folder, path)
     
-    # Serve index.html with cache-busting version
+    # For SPA fallback: always serve index.html
     index_path = os.path.join(app.static_folder, 'index.html')
     if os.path.exists(index_path):
         with open(index_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
-            # Dynamically find and add version parameter to JS file
-            if app.static_folder:
-                assets_dir = os.path.join(app.static_folder, 'assets')
-                if os.path.exists(assets_dir):
-                    js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
-                    if js_files:
-                        # Pick the newest JS file by modification time
-                        js_files.sort(key=lambda f: os.path.getmtime(os.path.join(assets_dir, f)), reverse=True)
-                        actual_js_file = js_files[0]
-                        # Find and replace the JS file reference in the HTML
-                        import re
-                        pattern = r'src=\"/assets/index-[^"]+\.js\"'
-                        replacement = f'src=\"/assets/{actual_js_file}?v={get_js_version()}\"'
-                        html_content = re.sub(pattern, replacement, html_content)
-            return html_content
-    return send_from_directory(app.static_folder, 'index.html')
+        # Dynamically update JS reference to match the actual newest bundle
+        if app.static_folder:
+            assets_dir = os.path.join(app.static_folder, 'assets')
+            if os.path.exists(assets_dir):
+                js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
+                if js_files:
+                    js_files.sort(key=lambda f: os.path.getmtime(os.path.join(assets_dir, f)), reverse=True)
+                    actual_js_file = js_files[0]
+                    import re
+                    pattern = r'src="/assets/index-[^"]+\.js"'
+                    replacement = f'src="/assets/{actual_js_file}?v={get_js_version()}"'
+                    html_content = re.sub(pattern, replacement, html_content)
+        return html_content
+    
+    # Absolute last resort
+    return jsonify({"success": False, "error": "Frontend not found"}), 404
 
 @app.route('/api/upload_quotation', methods=['POST', 'OPTIONS'])
 @jwt_required() 
