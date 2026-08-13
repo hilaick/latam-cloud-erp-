@@ -179,18 +179,18 @@ def get_knowledge_tree():
 
 
 def build_knowledge_tree(entries):
-    """Build hierarchical tree from flat knowledge entries."""
+    """Build hierarchical tree from flat knowledge dict entries."""
     categories = {}
     for entry in entries:
-        cat = entry.migration_type or "General"
+        cat = entry.get("category") or entry.get("migration_type") or entry.get("strategy") or "General"
         if cat not in categories:
             categories[cat] = []
         categories[cat].append({
-            "id": entry.id,
-            "name": entry.trigger or entry.id,
-            "source": entry.source,     # skill | external | history
-            "usedCount": entry.usage_count or 0,
-            "confidence": entry.confidence or 0.5,
+            "id": entry.get("id") or entry.get("name") or f"entry-{hash(str(entry))%10000}",
+            "name": entry.get("trigger") or entry.get("name") or entry.get("server_name") or "Unknown",
+            "source": entry.get("source", "unknown"),
+            "usedCount": entry.get("usage_count", 0),
+            "confidence": entry.get("confidence", 0.5),
             "children": [],
         })
 
@@ -206,17 +206,15 @@ def build_knowledge_tree(entries):
 
 
 def compute_knowledge_metrics(entries):
-    """Aggregate usage stats across sources."""
-    used = sum(1 for e in entries if getattr(e, 'usage_count', 0) > 0)
-    fed = sum(1 for e in entries if getattr(e, 'fed_count', 0) > 0)
+    """Aggregate usage stats across sources (dict-safe)."""
     by_source = {}
     for e in entries:
-        src = e.source or 'unknown'
+        src = e.get("source", "unknown") if isinstance(e, dict) else getattr(e, "source", "unknown")
         by_source[src] = by_source.get(src, 0) + 1
     return {
         "total": len(entries),
-        "used": used,
-        "fed": fed,
+        "used": sum(1 for e in entries if (e.get("usage_count", 0) if isinstance(e, dict) else getattr(e, "usage_count", 0)) > 0),
+        "fed": sum(1 for e in entries if (e.get("fed_count", 0) if isinstance(e, dict) else getattr(e, "fed_count", 0)) > 0),
         "bySource": by_source,
     }
 

@@ -308,6 +308,75 @@ def list_docs():
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
+    # ── Standalone Full-Page Docs (no auth, opens in new tab) ──
+    if path.startswith('docs/'):
+        import markdown as md_lib
+        safe_name = os.path.basename(path.split('/', 1)[1])
+        doc_path = os.path.join(basedir, 'docs', f'{safe_name}.md')
+        if not os.path.exists(doc_path):
+            return '<h1 style="font-family:sans-serif;text-align:center;margin-top:80px;">Document Not Found</h1><p style="text-align:center;color:#666;">{}</p>'.format(safe_name), 404
+        with open(doc_path, 'r', encoding='utf-8') as f:
+            raw = f.read()
+        title_line = raw.strip().split('\n')[0].lstrip('# ').strip() or safe_name
+        html_body = md_lib.markdown(raw, extensions=['tables', 'fenced_code', 'toc', 'codehilite'])
+        return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_line} — ERP Migration Factory</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #334155; line-height: 1.7; }}
+  .container {{ max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }}
+  h1 {{ font-size: 2rem; font-weight: 900; color: #0f172a; margin: 2rem 0 1rem; scroll-margin-top: 1rem; }}
+  h2 {{ font-size: 1.35rem; font-weight: 900; color: #0f172a; margin: 1.75rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0; scroll-margin-top: 1rem; }}
+  h3 {{ font-size: 1.1rem; font-weight: 900; color: #1e293b; margin: 1.25rem 0 0.5rem; scroll-margin-top: 1rem; }}
+  h4 {{ font-size: 0.95rem; font-weight: 900; color: #334155; margin: 1rem 0 0.25rem; scroll-margin-top: 1rem; }}
+  p {{ margin: 0.5rem 0; }}
+  a {{ color: #4f46e5; font-weight: 700; text-decoration: underline; }}
+  a:hover {{ color: #3730a3; }}
+  code {{ background: #e2e8f0; color: #be123c; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; font-family: 'SF Mono', 'Fira Code', monospace; }}
+  pre {{ background: #0f172a; color: #6ee7b7; padding: 1rem; border-radius: 12px; overflow-x: auto; font-size: 0.78rem; line-height: 1.6; margin: 1rem 0; border: 1px solid #334155; }}
+  pre code {{ background: none; color: inherit; padding: 0; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 1rem 0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }}
+  th {{ background: #f1f5f9; padding: 12px 16px; text-align: left; font-weight: 800; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; }}
+  td {{ padding: 10px 16px; border-top: 1px solid #e2e8f0; font-weight: 600; font-size: 0.82rem; }}
+  tr:nth-child(even) td {{ background: #f8fafc; }}
+  tr:hover td {{ background: #eef2ff; }}
+  blockquote {{ border-left: 4px solid #818cf8; background: #eef2ff; padding: 12px 16px; margin: 1rem 0; border-radius: 0 8px 8px 0; font-style: italic; color: #475569; }}
+  ul, ol {{ margin: 0.75rem 0; padding-left: 1.5rem; }}
+  li {{ margin: 0.25rem 0; }}
+  hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0; }}
+  img {{ max-width: 100%; border-radius: 8px; margin: 1rem 0; }}
+  html {{ scroll-behavior: smooth; }}
+  .header {{ background: #fff; border-bottom: 1px solid #e2e8f0; padding: 16px 24px; position: sticky; top: 0; z-index: 10; }}
+  .header-inner {{ max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }}
+  .header-icon {{ width: 36px; height: 36px; background: #4f46e5; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.85rem; }}
+  .header-title {{ font-weight: 900; font-size: 0.85rem; color: #0f172a; }}
+  .header-sub {{ font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }}
+  .footer {{ text-align: center; padding: 24px; color: #94a3b8; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; border-top: 1px solid #e2e8f0; margin-top: 40px; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <div class="header-icon">&#128218;</div>
+    <div>
+      <div class="header-title">{title_line}</div>
+      <div class="header-sub">ERP Migration Factory — Documentation</div>
+    </div>
+  </div>
+</div>
+<div class="container">
+{html_body}
+</div>
+<div class="footer">
+  ERP Migration Factory — Help System &middot; &copy; 2026
+</div>
+</body>
+</html>'''
+
     if path.startswith('api/'):
         return jsonify({"success": False, "error": f"API Route Not Found: {path}"}), 404
     if path != "" and os.path.exists(os.path.join(app.static_folder, str(path))):
