@@ -110,68 +110,31 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     
     // 🚨 FIX: Helper function to save nodes to database
     const saveNodesToDatabase = (nodesToSave, shouldPromote) => {
-        // 🚨 CRITICAL FIX: Update ALL fields in ONE API call to avoid overwriting
+        // Only count in-scope (SOW-matching) items for the confirmation message
+        const inScope = nodesToSave.filter(n => n.status === 'Matched' || n.status === 'Quoted Only' || n.status === 'In SOW');
+        const total = nodesToSave.length;
+
+        // Only save mapper-specific fields — NEVER touch blueprint/blueprintData
         const updates = {
             mapperNodes: nodesToSave,
             lifecycleState: '2_architecture',
             topologyFilter: statusFilter,
             topologyTypeFilter: typeFilter
         };
-        
-        // Parse existing blueprint (could be string or object)
-        let existingBlueprint = activeProject?.blueprint;
-        let blueprintObj = {};
-        if (existingBlueprint) {
-            if (typeof existingBlueprint === 'string' && existingBlueprint.trim() !== '') {
-                try {
-                    blueprintObj = JSON.parse(existingBlueprint);
-                } catch (e) {
-                    console.error('Error parsing blueprint:', e);
-                    blueprintObj = {};
-                }
-            } else if (typeof existingBlueprint === 'object') {
-                blueprintObj = { ...existingBlueprint };
-            }
-        }
-        
-        // Update blueprint with target_architecture (merge with existing data)
-        updates.blueprint = {
-            ...blueprintObj,
-            target_architecture: nodesToSave
-        };
-        
-        // Also update blueprintData.target_architecture if blueprintData exists
-        if (activeProject?.blueprintData) {
-            let blueprintDataObj = {};
-            const blueprintData = activeProject.blueprintData;
-            if (typeof blueprintData === 'string' && blueprintData.trim() !== '') {
-                try {
-                    blueprintDataObj = JSON.parse(blueprintData);
-                } catch (e) {
-                    console.error('Error parsing blueprintData:', e);
-                    blueprintDataObj = {};
-                }
-            } else if (typeof blueprintData === 'object') {
-                blueprintDataObj = { ...blueprintData };
-            }
-            
-            updates.blueprintData = {
-                ...blueprintDataObj,
-                target_architecture: nodesToSave
-            };
-        }
-        
-        // Send ALL updates in ONE API call
+
+        // Send partial update
         onUpdateProject(activeProject.id, updates);
-        
-        // Show confirmation
-        alert(`✅ Architecture saved successfully! ${nodesToSave.length} resources saved to Target Architecture.`);
-        
+
+        // Show accurate confirmation
+        const scopeMsg = (inScope.length > 0 && inScope.length < total)
+            ? `\n\n📊 ${inScope.length} resources in-scope (SOW/Quoted) | ${total - inScope.length} discovered/live-only`
+            : `\n📋 ${total} total mapped servers`;
+        alert(`✅ Architecture saved successfully!\n\n📋 ${total} total mapped nodes${scopeMsg}\n✓ Lifecycle state set to 2_architecture\n✓ Blueprint snapshot preserved\n✓ Ready for Governance Review`);
+
         if (shouldPromote && onPromote) {
-            onPromote(); // This fires setSubTab('gov') from StepArchitecture
+            onPromote();
         } else if (!shouldPromote) {
-            // Optional: Just save quietly if editing a node sidebar
-            setSelectedNode(null); 
+            setSelectedNode(null);
         }
     };
 

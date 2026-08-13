@@ -175,14 +175,14 @@ export const ERPProvider = ({ children }) => {
         if (!targetProject) return;
 
         const isObj = typeof fieldOrObj === 'object';
-        let modifiedProject = isObj 
-            ? { ...targetProject, ...fieldOrObj } 
-            : { ...targetProject, [fieldOrObj]: value };
+        const updates = isObj ? fieldOrObj : { [fieldOrObj]: value };
+        let modifiedProject = { ...targetProject, ...updates };
 
-        fetch('/api/erp/projects', { 
-            method: 'POST', 
+        // 🚨 CRITICAL: Use PATCH (partial update) to preserve blueprintData/topology
+        fetch(`/api/erp/projects/${id}/partial`, { 
+            method: 'PATCH', 
             headers: getAuthHeaders(), 
-            body: JSON.stringify(modifiedProject) 
+            body: JSON.stringify(updates)  // Only send changed fields
         })
         .then(r => { 
             if(r.status === 401 || r.status === 422) handleAuthError();
@@ -218,12 +218,12 @@ export const ERPProvider = ({ children }) => {
                     modifiedProject.customerId = newCust.id;
                     // Inherit region from newly created customer
                     modifiedProject.region = newCust.region;
-                    fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
+                    fetch(`/api/erp/projects/${id}/partial`, { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ customerId: newCust.id, region: newCust.region }) });
                 } else {
                     modifiedProject.customerId = existingCustomer.id;
                     // Inherit region from existing customer
                     modifiedProject.region = existingCustomer.region || getRegionFromCountry(modifiedProject.country);
-                    fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(modifiedProject) });
+                    fetch(`/api/erp/projects/${id}/partial`, { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ customerId: existingCustomer.id, region: modifiedProject.region }) });
                 }
             }
         }
