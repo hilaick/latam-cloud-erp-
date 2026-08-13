@@ -100,7 +100,7 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                                 {filteredProjects.length === 0 ? (
                                     <div className="p-4 text-center text-slate-400 text-xs font-bold italic">No matching projects found.</div>
                                 ) : (
-                                    filteredProjects.map(p => (
+                                    (Array.isArray(filteredProjects) ? filteredProjects : []).map(p => (
                                         <button 
                                             key={p.id} 
                                             onClick={() => handleSelectProject(p.id)}

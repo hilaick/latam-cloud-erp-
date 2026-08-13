@@ -69,7 +69,7 @@ export default function FinOpsDashboard() {
     }, [fetchDashboard]);
 
     // ── Build enriched projects from live API data ──
-    const activeProjects = (projects || []).filter(
+    const activeProjects = (Array.isArray(projects) ? projects : []).filter(
         (p) => p && !p.isWaiting && p.lifecycleState !== '6_completed'
     );
 
@@ -84,7 +84,7 @@ export default function FinOpsDashboard() {
 
         // ── LIVE DATA PATH: check if we have live data for this project ──
         const liveProject =
-            dashboardData?.projects?.find(
+            (Array.isArray(dashboardData?.projects) ? dashboardData.projects : []).find(
                 (lp) => lp.id === project.id || lp.name === project.name
             ) || null;
 
@@ -140,6 +140,18 @@ export default function FinOpsDashboard() {
 
     const liveDataAvailable = dashboardData?.live_data_available || false;
     const totalProjectsWithLive = dashboardData?.projects_with_live_data ?? projectsWithLiveData;
+
+    // 🚨 Defensive render guard: if projects isn't an array, show loading
+    if (!Array.isArray(projects)) {
+        return (
+            <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
+                <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 p-8 text-center">
+                    <i className="fas fa-spinner fa-spin text-blue-400 text-4xl mb-4"></i>
+                    <p className="text-slate-400 font-bold">Loading project data...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
@@ -291,7 +303,7 @@ export default function FinOpsDashboard() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
-                            {enrichedProjects.map((project) => (
+                            {Array.isArray(enrichedProjects) && enrichedProjects.length > 0 && enrichedProjects.map((project) => (
                                 <tr key={project.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="p-4">
                                         <div className="font-black text-slate-800">
@@ -381,7 +393,7 @@ export default function FinOpsDashboard() {
                                     </td>
                                 </tr>
                             ))}
-                            {enrichedProjects.length === 0 && (
+                            {(!Array.isArray(enrichedProjects) || enrichedProjects.length === 0) && (
                                 <tr>
                                     <td
                                         colSpan="7"

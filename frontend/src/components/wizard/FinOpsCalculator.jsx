@@ -116,7 +116,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                 
                 // Convert to mapperNodes format for API
                 return [
-                    ...compute.map(item => ({
+                    ...(Array.isArray(compute) ? compute : []).map(item => ({
                         id: `sow-comp-${item.id || Date.now()}`,
                         name: item.name || `Compute-${item.id || 'unknown'}`,
                         type: 'ECS',
@@ -128,7 +128,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         ip: 'TBD',
                         config: {}
                     })),
-                    ...databases.map(item => ({
+                    ...(Array.isArray(databases) ? databases : []).map(item => ({
                         id: `sow-db-${item.id || Date.now()}`,
                         name: item.name || `Database-${item.id || 'unknown'}`,
                         type: 'RDS',
@@ -139,7 +139,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                         ip: 'TBD',
                         config: {}
                     })),
-                    ...storage.map(item => ({
+                    ...(Array.isArray(storage) ? storage : []).map(item => ({
                         id: `sow-stor-${item.id || Date.now()}`,
                         name: item.name || `Storage-${item.id || 'unknown'}`,
                         type: 'OBS',
@@ -164,7 +164,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     : activeProject.blueprint;
                 
                 const resources = blueprint.target_architecture || blueprint.resources || [];
-                return resources.map(resource => ({
+                return (Array.isArray(resources) ? resources : []).map(resource => ({
                     ...resource,
                     status: 'Quoted Only',
                     config: {}
@@ -227,7 +227,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
     };
 
     const toggleBomItem = (id) => {
-        const updatedBom = migrationBom.map(item => item.id === id ? { ...item, selected: !item.selected } : item);
+        const updatedBom = (Array.isArray(migrationBom) ? migrationBom : []).map(item => item.id === id ? { ...item, selected: !item.selected } : item);
         setMigrationBom(updatedBom);
         
         const dynamicOverhead = updatedBom.filter(i => i.selected).reduce((acc, curr) => acc + curr.cost_per_month, 0) * durationMonths;
@@ -327,7 +327,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
         return [...snapshots.slice(-12), current];
     }, [activeProject?.financials?.budgetSnapshots, totalAvailable, totalRunRate, budgetHealth, marginPercentage, totalMigrationBurn]);
 
-    const maxBudgetHealth = Math.max(...budgetSnapshots.map(s => Math.abs(s.budgetHealth || 0)), 1);
+    const maxBudgetHealth = Math.max(...(Array.isArray(budgetSnapshots) ? budgetSnapshots : []).map(s => Math.abs(s.budgetHealth || 0)), 1);
 
     const saveContext = () => { 
         onUpdateProject(activeProject.id, 'budget', { mrr, durationMonths, infraComplexity, penaltyRisk, commModel, partnerHours, partnerRate, internalHours, internalRate }); 
@@ -367,7 +367,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     <div className="flex items-center gap-3">
                         <label className="text-[9px] text-slate-400 uppercase font-bold">Currency:</label>
                         <select value={currency} onChange={e => { setCurrency(e.target.value); onUpdateProject(activeProject.id, 'financials', { ...(activeProject.financials || {}), currency: e.target.value }); }} className="bg-slate-800 border border-slate-600 text-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase focus:border-emerald-500 outline-none">
-                            {currencies.map(c => (<option key={c.code} value={c.code}>{c.symbol} {c.code}</option>))}
+                            {(Array.isArray(currencies) ? currencies : []).map(c => (<option key={c.code} value={c.code}>{c.symbol} {c.code}</option>))}
                         </select>
                     </div>
                 </div>
@@ -435,7 +435,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                                 <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fade-in shadow-sm">
                                     <h5 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-3 border-b border-indigo-200/50 pb-2"><i className="fas fa-clipboard-check mr-2"></i> Confirm Migration Infra (BOM) by Category</h5>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {bomGroupsArr.map((group) => (
+                                        {(Array.isArray(bomGroupsArr) ? bomGroupsArr : []).map((group) => (
                                             <div key={group.category} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                                                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
                                                     <div className="flex items-center gap-2">
@@ -453,7 +453,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                                                     <span className="text-xs font-black text-indigo-600">{fm(group.total)}/mo</span>
                                                 </div>
                                                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                                                    {group.items.map((item) => (
+                                                    {(Array.isArray(group.items) ? group.items : []).map((item) => (
                                                         <div key={item.id} className={`flex gap-2 items-start p-2 rounded-lg transition-colors ${item.selected ? 'bg-indigo-50' : 'opacity-50'}`}>
                                                             <div className="mt-0.5 shrink-0">
                                                                 <input type="checkbox" checked={item.selected} onChange={() => toggleBomItem(item.id)} className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer" />
@@ -602,7 +602,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                                 ) : (
                                     /* FALLBACK: flat line items if no category groups */
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {actualBilling.line_items.map((line, idx) => (
+                                        {(Array.isArray(actualBilling.line_items) ? actualBilling.line_items : []).map((line, idx) => (
                                             <div key={idx} className={`p-4 rounded-lg border ${line.status === 'danger' ? 'bg-rose-50/50 border-rose-200' : line.status === 'warning' ? 'bg-amber-50/50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                                                 <div className="flex justify-between items-center mb-1">
                                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{line.category}</span>
@@ -661,7 +661,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject }) {
                     <p className="text-[10px] text-slate-500 font-bold mb-4">{budgetSnapshots.length} snapshots · burn rate {(totalRunRate/Math.max(totalAvailable,1)*100).toFixed(1)}% · runway {monthsOfRunwayLeft.toFixed(1)} months</p>
                     <div className="overflow-x-auto">
                         <div className="flex gap-1 items-end h-32 min-w-[500px]">
-                            {budgetSnapshots.map((snap, idx) => {
+                            {(Array.isArray(budgetSnapshots) ? budgetSnapshots : []).map((snap, idx) => {
                                 const isLast = idx === budgetSnapshots.length - 1;
                                 const barH = maxBudgetHealth > 0 ? Math.max(8, Math.abs(snap.budgetHealth||0)/maxBudgetHealth*100) : 8;
                                 const isPositive = (snap.budgetHealth||0) >= 0;
