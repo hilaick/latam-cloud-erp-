@@ -180,6 +180,20 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                         <span className="text-[11px] font-bold text-slate-600">
                             {step.action?.replace(/_/g, ' ') || 'STEP'}
                         </span>
+                        {/* Task Type Badge */}
+                        {step.taskType && (
+                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                                step.taskType === 'deployment' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                step.taskType === 'configuration' ? 'bg-purple-50 text-purple-700 border-purple-300' :
+                                step.taskType === 'troubleshooting' ? 'bg-orange-50 text-orange-700 border-orange-300' :
+                                'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            }`}>
+                                {step.taskType === 'deployment' ? '🚀 Deploy' :
+                                 step.taskType === 'configuration' ? '🔧 Config' :
+                                 step.taskType === 'troubleshooting' ? '🩺 Fix' :
+                                 '✅ Verify'}
+                            </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-bold">{step.agent}</span>
                         <span className="text-[10px] text-slate-400 ml-auto font-mono">
                             +{step.timestamp_offset_seconds}s
@@ -346,6 +360,31 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
         }
     };
 
+    const handleClear = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setResult(null);
+                onUpdateProject(project.id, 'agenticDryRun', null);
+            } else {
+                setError(data.error || 'Failed to clear');
+            }
+        } catch (e) {
+            setError(e.message || 'Network error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const toggleStep = (id) => {
         setExpandedSteps(prev => ({ ...prev, [id]: !prev[id] }));
     };
@@ -435,6 +474,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                 <><i className="fas fa-play mr-2"></i> Run Dry-Run Simulation</>
                             )}
                         </button>
+                        {result && (
+                            <button
+                                onClick={handleClear}
+                                disabled={loading}
+                                className="ml-3 px-5 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-400/30 active:scale-95 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                            >
+                                <i className="fas fa-trash-alt mr-2"></i> Clear Results
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
