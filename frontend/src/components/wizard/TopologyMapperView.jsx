@@ -45,8 +45,8 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const [regionFilter, setRegionFilter] = useState('All');
     const [selectedNode, setSelectedNode] = useState(null);
     
-    const [statusFilter, setStatusFilter] = useState('All');
-    const [typeFilter, setTypeFilter] = useState('All');
+    const [statusFilter, setStatusFilter] = useState(activeProject?.topologyFilter || 'All');
+    const [typeFilter, setTypeFilter] = useState(activeProject?.topologyTypeFilter || 'All');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     
     useEffect(()=>{ setLocalNodes(activeProject?.mapperNodes || []); }, [activeProject]);
@@ -113,7 +113,9 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         // 🚨 CRITICAL FIX: Update ALL fields in ONE API call to avoid overwriting
         const updates = {
             mapperNodes: nodesToSave,
-            lifecycleState: '2_architecture'
+            lifecycleState: '2_architecture',
+            topologyFilter: statusFilter,
+            topologyTypeFilter: typeFilter
         };
         
         // Parse existing blueprint (could be string or object)

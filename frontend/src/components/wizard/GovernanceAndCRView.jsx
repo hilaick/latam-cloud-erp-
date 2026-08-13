@@ -18,6 +18,8 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
     const [updatePlaybook, setUpdatePlaybook] = useState(false); 
 
     const nodes = activeProject?.mapperNodes || [];
+    const topologyFilter = activeProject?.topologyFilter || 'All';
+    const topologyTypeFilter = activeProject?.topologyTypeFilter || 'All';
     const changeRequests = activeProject?.changeRequests || [];
 
     const { score, checks } = useMemo(() => {
@@ -149,6 +151,18 @@ export default function GovernanceAndCRView({ activeProject, onUpdateProject }) 
                     <div>
                         <h3 className="font-black flex items-center gap-3 text-xl text-slate-800"><i className="fas fa-balance-scale text-indigo-600"></i> DTRB Governance & Change Requests</h3>
                         <p className="text-xs text-slate-500 mt-2 font-medium">Automated Delivery Technical Review Board (DTRB) compliance and Architecture unlocking.</p>
+                        {topologyFilter !== 'All' && (
+                            <div className="mt-2 flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg">
+                                    <i className="fas fa-filter mr-1"></i> Active Filter: {topologyFilter}
+                                </span>
+                                {topologyTypeFilter !== 'All' && (
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-lg">
+                                        Type: {topologyTypeFilter}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
                     
                     <div className="flex gap-4">
