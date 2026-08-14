@@ -2373,10 +2373,31 @@ def register_agentic_dry_run_routes(execution_bp):
                 project_data = json.loads(project_data)
 
             # Build execution contract from ANY project's data
+            # 🎯 AUTHORITATIVE: Use saved Target Architecture if available
+            topology_filter = project_data.get("topologyFilter", "All")
+            if project_data.get("targetTopology") and project_data["targetTopology"].get("mapperNodes"):
+                mapper_nodes = project_data["targetTopology"]["mapperNodes"]
+                data_source = "TARGET_TOPOLOGY"
+            else:
+                mapper_nodes = project_data.get("mapperNodes", [])
+                # Filter by topologyFilter if set (mirrors frontend Phase 3 logic)
+                if topology_filter and topology_filter != "All" and mapper_nodes:
+                    if topology_filter == "In SOW":
+                        mapper_nodes = [n for n in mapper_nodes if n.get("status") in ("Matched", "Quoted Only")]
+                    elif topology_filter == "In Discovery":
+                        mapper_nodes = [n for n in mapper_nodes if n.get("status") in ("Matched", "Live Only")]
+                    elif topology_filter == "Quoted Only":
+                        mapper_nodes = [n for n in mapper_nodes if n.get("status") == "Quoted Only"]
+                    else:
+                        mapper_nodes = [n for n in mapper_nodes if n.get("status") == topology_filter]
+                data_source = "MAPPER_NODES"
+
             contract = {
                 "projectName": project_data.get("name", "UNNAMED"),
                 "region": project_data.get("region", "la-south-2"),
-                "mapperNodes": project_data.get("mapperNodes", []),
+                "mapperNodes": mapper_nodes,
+                "dataSource": data_source,
+                "topologyFilter": topology_filter,
                 "waves": project_data.get("waves", []),
                 "physics": project_data.get("physics") or {},
                 "finops": {
