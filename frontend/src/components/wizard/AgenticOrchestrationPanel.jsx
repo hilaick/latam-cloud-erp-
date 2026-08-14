@@ -1,132 +1,330 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 /* ── Sub-component: Copy-to-clipboard button ── */
 const CopyButton = ({ text }) => {
     const [copied, setCopied] = useState(false);
-    const handleCopy = (e) => {
-        e.stopPropagation();
+    const handleCopy = () => {
         navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
         });
     };
     return (
-        <button
-            onClick={handleCopy}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors shrink-0"
-            title="Copy command"
-        >
-            {copied ? '✓ Copied!' : '📋'}
+        <button onClick={handleCopy} className="text-[9px] font-bold text-purple-500 hover:text-purple-700 uppercase ml-2">
+            <i className={'fas ' + (copied ? 'fa-check text-emerald-500' : 'fa-copy')}></i>
         </button>
     );
 };
 
-/* ── Sub-component: Status badge with color coding ── */
-const STATUS_STYLES = {
-    success:      'bg-emerald-100 text-emerald-800 border-emerald-300',
-    warning:      'bg-amber-100 text-amber-800 border-amber-300',
-    error:        'bg-rose-100 text-rose-800 border-rose-300',
-    blocked:      'bg-slate-100 text-slate-600 border-slate-300',
-    progress:     'bg-blue-100 text-blue-800 border-blue-300',
-    troubleshooting: 'bg-orange-100 text-orange-800 border-orange-300',
-    handoff:      'bg-purple-100 text-purple-800 border-purple-300',
-    unknown:      'bg-slate-100 text-slate-500 border-slate-200',
-};
-
-const STATUS_MAP = {
-    // Map result strings to status
-    capacity_ok: 'success', capacity_flagged: 'warning',
-    registered: 'success', agent_validated: 'success',
-    agent_installed_by_orchestrator: 'success',
-    agent_installed_by_customer: 'warning',
-    blocked_manual_required: 'blocked', blocked_no_agent: 'blocked',
-    syncing: 'progress', delta_complete: 'success',
-    source_stopped: 'success', target_launched: 'success',
-    SMS_SUCCESS: 'success', SMS_MIGRATION_SUCCESS: 'success',
-    SMS_MIGRATION_SUCCESS_AFTER_TROUBLESHOOTING: 'success',
-    IMAGE_MIGRATION_SUCCESS: 'success',
-    BLOCKED_MANUAL_AGENT_REQUIRED: 'blocked',
-    BLOCKED: 'blocked', retrying: 'warning',
-    escalating: 'warning', troubleshooting: 'troubleshooting',
-    resolved: 'success', not_resolved: 'error',
-    boot_fixed: 'success', partition_fixed: 'success',
-    hss_installed: 'success', uniagent_installed: 'success',
-    lts_installed: 'success', smoke_tests_passed: 'success',
-    smoke_tests_failed: 'error',
-};
-
+/* ── Sub-component: Status badge (PASS / FAIL / WARN) ── */
 const StatusBadge = ({ result, outcome }) => {
-    const status = STATUS_MAP[result] || STATUS_MAP[outcome] || 'unknown';
-    const style = STATUS_STYLES[status];
-    const icon = status === 'success' ? 'fa-check-circle' :
-                 status === 'warning' ? 'fa-exclamation-triangle' :
-                 status === 'error' ? 'fa-times-circle' :
-                 status === 'blocked' ? 'fa-ban' :
-                 status === 'progress' ? 'fa-spinner fa-spin' :
-                 status === 'troubleshooting' ? 'fa-wrench' :
-                 status === 'handoff' ? 'fa-handshake' : 'fa-circle';
+    const status = (result || outcome || '').toLowerCase();
+    const isSuccess = status.includes('success') || status === 'capacity_ok' || status === 'registered' || status.includes('complete');
+    const isWarn = status.includes('warn') || status.includes('retry');
+    const isFail = status.includes('error') || status.includes('failed') || status.includes('blocked') || status === 'not_resolved';
+    
+    let color, icon, label;
+    if (isSuccess) {
+        color = 'bg-emerald-100 text-emerald-700 border-emerald-300';
+        icon = 'fa-check-circle';
+        label = 'OK';
+    } else if (isWarn) {
+        color = 'bg-amber-100 text-amber-700 border-amber-300';
+        icon = 'fa-exclamation-triangle';
+        label = 'WARN';
+    } else if (isFail) {
+        color = 'bg-rose-100 text-rose-700 border-rose-300';
+        icon = 'fa-times-circle';
+        label = 'FAIL';
+    } else {
+        color = 'bg-slate-100 text-slate-500 border-slate-200';
+        icon = 'fa-circle';
+        label = (result || outcome || 'pending').toUpperCase();
+    }
+    
     return (
-        <span className={`inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded border uppercase ${style}`}>
-            <i className={`fas ${icon} text-[9px]`}></i>
-            {(result || outcome || '?').replace(/_/g, ' ')}
+        <span className={'inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded border ' + color}>
+            <i className={'fas ' + icon + ' text-[9px]'}></i>
+            {label}
         </span>
     );
 };
 
-/* ── Sub-component: Command card in terminal style ── */
-const CommandCard = ({ cmd }) => (
-    <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs">
-        <div className="flex items-center justify-between mb-1.5">
-            <span className="text-slate-400 text-[10px] uppercase tracking-wider font-bold">
-                {cmd.desc}
-            </span>
-            <CopyButton text={cmd.cmd} />
-        </div>
-        <code className="text-emerald-400 break-all leading-relaxed block">
-            $ {cmd.cmd}
-        </code>
-    </div>
-);
-
-/* ── Sub-component: Dependency chain indicator ── */
-const DependencyChain = ({ dependencies, blocked_by }) => {
-    if (!dependencies && !blocked_by) return null;
-    const deps = dependencies || [];
+/* ── Sub-component: Dependency resolution display ── */
+const DependencyBadge = ({ deps }) => {
+    if (!deps || deps.length === 0) return null;
     return (
-        <div className="mt-2 ml-2 pl-3 border-l-2 border-amber-300 text-[11px] space-y-1">
-            {blocked_by && (
-                <div className="text-rose-600 flex items-center gap-1.5">
-                    <i className="fas fa-lock text-[9px]"></i>
-                    <span className="font-bold">BLOCKED BY:</span> {blocked_by}
-                </div>
-            )}
+        <div className="flex flex-wrap gap-1 mt-1">
             {deps.map((dep, i) => (
-                <div key={i} className={`flex items-center gap-1.5 ${dep.status === 'ok' ? 'text-emerald-600' : 'text-slate-500'}`}>
-                    <i className={`fas ${dep.status === 'ok' ? 'fa-check-circle' : 'fa-circle'} text-[9px]`}></i>
-                    <span className="font-bold">{dep.name}:</span>
-                    <span>{dep.desc}</span>
+                <div key={i} className={'flex items-center gap-1.5 ' + (dep.status === 'ok' ? 'text-emerald-600' : 'text-amber-600') + ' text-[9px] bg-white/80 rounded-full px-2 py-0.5 border border-slate-200'}>
+                    <i className={'fas ' + (dep.status === 'ok' ? 'fa-check-circle' : 'fa-circle') + ' text-[9px]'}></i>
+                    {dep.name}
                 </div>
             ))}
         </div>
     );
 };
 
-/* ── Sub-component: History enrichment callout ── */
-const HistoryCallout = ({ learnings, history_sourced, best_match_project }) => {
-    if (!history_sourced && !learnings) return null;
+/* ── Sub-component: Trace entry (one step) ── */
+const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
+    const isRunning = step.result === 'running' || step.outcome === 'in_progress';
+    const connectorLine = !isLast ? 'border-l-2 border-slate-200 ml-4 h-4' : '';
+    
     return (
-        <div className="mt-2 p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg text-[11px]">
-            <div className="flex items-center gap-1.5 mb-1 text-indigo-700 font-bold">
-                <i className="fas fa-brain text-[10px]"></i>
-                📚 Cross-Project Learning
-                {best_match_project && <span className="text-indigo-400 font-normal">— from {best_match_project}</span>}
+        <div>
+            <div
+                className={'hover:bg-slate-50/50 transition-colors cursor-pointer group ' + (isExpanded ? 'bg-slate-50/50' : '')}
+                onClick={onToggle}
+            >
+                <div className="px-5 py-3 flex items-start gap-3">
+                    {/* Status icon */}
+                    <div className={'w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ' +
+                        (isRunning ? 'bg-blue-100 text-blue-600 animate-pulse' :
+                         step.result === 'capacity_ok' || step.result === 'registered' || (step.result || '').includes('success') ? 'bg-emerald-100 text-emerald-600' :
+                         (step.result || '').includes('error') || (step.result || '').includes('failed') || step.result === 'not_resolved' ? 'bg-rose-100 text-rose-600' :
+                         'bg-slate-100 text-slate-400')}>
+                        <i className={'fas ' +
+                            (isRunning ? 'fa-spinner fa-spin' :
+                             step.result === 'capacity_ok' || step.result === 'registered' || (step.result || '').includes('success') ? 'fa-check' :
+                             (step.result || '').includes('error') || (step.result || '').includes('failed') || step.result === 'not_resolved' ? 'fa-times' :
+                             'fa-circle') + ' text-[10px]'}></i>
+                    </div>
+                    
+                    {/* Step info */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                                {step.action?.replace(/_/g, ' ')}
+                            </span>
+                            <StatusBadge result={step.result} outcome={step.outcome} />
+                            {step.duration_ms && (
+                                <span className="text-[9px] text-slate-400">{step.duration_ms}ms</span>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                            {step.description || step.decision?.message || ''}
+                        </p>
+                        <DependencyBadge deps={step.dependencies} />
+                    </div>
+                    
+                    {/* Expand indicator */}
+                    <div className="shrink-0 pt-1">
+                        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-slate-300 text-[10px] shrink-0 ml-1 group-hover:text-slate-500 transition-colors'}></i>
+                    </div>
+                </div>
             </div>
-            {learnings && Object.keys(learnings).length > 0 && (
-                <div className="space-y-0.5 text-indigo-600">
-                    {Object.entries(learnings).map(([k, v]) => (
-                        <div key={k} className="flex gap-1.5">
-                            <span className="font-bold">• {k.replace(/_/g, ' ')}:</span>
-                            <span>{typeof v === 'boolean' ? (v ? '✅' : '❌') : String(v)}</span>
+            
+            {/* Expanded body: commands, config, troubleshooting */}
+            {isExpanded && (
+                <div className="px-5 pb-3 ml-10 space-y-2">
+                    {/* CLI Commands */}
+                    {step.commands && step.commands.length > 0 && (
+                        <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs">
+                            <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1.5">CLI / API Commands</div>
+                            {step.commands.map((cmd, i) => (
+                                <div key={i} className="flex items-start gap-2 py-0.5 group/cmd">
+                                    <span className="text-emerald-400 shrink-0">$</span>
+                                    <span className="text-slate-300 break-all">{cmd}</span>
+                                    <CopyButton text={cmd} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    {/* Resource Spec */}
+                    {step.decision?.resource_spec && (
+                        <div className="bg-slate-50 rounded-lg p-3 text-xs">
+                            <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1">Resource Specification</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                {Object.entries(step.decision.resource_spec).map(([k, v]) => (
+                                    <div key={k}>
+                                        <span className="text-slate-400">{k.replace(/_/g, ' ')}</span>
+                                        <strong className="block text-slate-700">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Troubleshooting */}
+                    {step.troubleshooting && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+                            <div className="text-[9px] text-amber-600 uppercase tracking-widest mb-1 font-black">
+                                <i className="fas fa-exclamation-triangle mr-1"></i> Troubleshooting
+                            </div>
+                            <p className="text-amber-700 text-xs">{step.troubleshooting}</p>
+                        </div>
+                    )}
+                    
+                    {/* Dependencies detail */}
+                    {step.decision?.dependencies_detail && step.decision.dependencies_detail.length > 0 && (
+                        <div className="bg-indigo-50 rounded-lg p-3 text-xs">
+                            <div className="text-[9px] text-indigo-500 uppercase tracking-widest mb-1 font-black">Dependencies</div>
+                            {step.decision.dependencies_detail.map((dep, i) => (
+                                <div key={i} className="text-indigo-600">{dep}</div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+            
+            {/* Connector line */}
+            {connectorLine && <div className={connectorLine}></div>}
+        </div>
+    );
+};
+
+/* ── Sub-component: Phase grouping header ── */
+const PhaseHeader = ({ icon, label, color, count, isExpanded, onToggle }) => (
+    <div
+        className={'px-5 py-3 flex items-center gap-3 cursor-pointer transition-colors ' + (isExpanded ? 'bg-white' : 'bg-slate-50/80 hover:bg-white') + ' border-b border-slate-200'}
+        onClick={onToggle}
+    >
+        <div className={'w-9 h-9 ' + color + ' rounded-lg flex items-center justify-center shadow-sm shrink-0'}>
+            <i className={'fas ' + icon + ' text-white text-sm'}></i>
+        </div>
+        <div className="flex-1">
+            <span className="text-xs font-black text-slate-700 uppercase tracking-wider">{label}</span>
+        </div>
+        <span className="text-[10px] text-slate-400">{count} steps</span>
+        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-slate-300 text-xs'}></i>
+    </div>
+);
+
+/* ── Resource status styles ── */
+const RESOURCE_STATUS_STYLES = {
+    pending:    'bg-slate-100 text-slate-500 border-slate-200',
+    active:     'bg-blue-100 text-blue-700 border-blue-300 animate-pulse',
+    completed:  'bg-emerald-100 text-emerald-700 border-emerald-300',
+    failed:     'bg-rose-100 text-rose-700 border-rose-300',
+    skipped:    'bg-amber-100 text-amber-700 border-amber-200',
+};
+
+const RESOURCE_STATUS_ICONS = {
+    pending:   'fa-clock',
+    active:    'fa-spinner fa-spin',
+    completed: 'fa-check-circle',
+    failed:    'fa-times-circle',
+    skipped:   'fa-forward',
+};
+
+/* ── Sub-component: Individual resource card ── */
+const ResourceCard = ({ resource, status, isHighlighted }) => {
+    const style = RESOURCE_STATUS_STYLES[status] || RESOURCE_STATUS_STYLES.pending;
+    const icon = RESOURCE_STATUS_ICONS[status] || RESOURCE_STATUS_ICONS.pending;
+    const highlightClass = isHighlighted ? 'ring-2 ring-purple-400 shadow-md scale-[1.02]' : '';
+    const statusBgClass = 
+        status === 'completed' ? 'bg-emerald-200' :
+        status === 'active' ? 'bg-blue-200' :
+        status === 'failed' ? 'bg-rose-200' : 'bg-slate-200';
+    return (
+        <div className={'flex items-center gap-3 px-3 py-2.5 border rounded-lg transition-all duration-300 ' + style + ' ' + highlightClass}>
+            <div className={'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ' + statusBgClass}>
+                <i className={'fas ' + icon + ' text-xs'}></i>
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold truncate">{resource.name || resource.id || 'Unknown'}</div>
+                <div className="text-[9px] opacity-60 uppercase truncate">
+                    {resource.type || '?'}{resource.os ? ' · ' + resource.os : ''}
+                </div>
+            </div>
+            <div className="text-[9px] font-black uppercase shrink-0 opacity-50">{status}</div>
+        </div>
+    );
+};
+
+/* ── Sub-component: Resource Migration Tracker Panel ── */
+const ResourceMigrationTracker = ({ resources, resourceStatus, activeResourceId, completedCount }) => (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm h-full">
+        <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-200">
+            <h6 className="font-black text-slate-700 text-xs uppercase tracking-widest flex items-center gap-2">
+                <i className="fas fa-server text-indigo-500"></i>
+                Resource Migration Tracker
+            </h6>
+            <div className="flex gap-3 mt-1.5">
+                <span className="text-[10px] text-slate-500">
+                    <span className="font-bold text-indigo-600">{completedCount}</span>/{resources.length} completed
+                </span>
+                <div className="flex-1 bg-slate-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                    <div
+                        className="h-full bg-indigo-500 rounded-full transition-all duration-700"
+                        style={{width: (resources.length > 0 ? (completedCount / resources.length) * 100 : 0) + '%'}}
+                    ></div>
+                </div>
+            </div>
+        </div>
+        <div className="p-2 space-y-1.5 max-h-[500px] overflow-y-auto custom-scrollbar">
+            {resources.map((r, i) => (
+                <ResourceCard
+                    key={r.id || r.name || i}
+                    resource={r}
+                    status={resourceStatus[r.id] || resourceStatus[r.name] || 'pending'}
+                    isHighlighted={(r.id || r.name) === activeResourceId}
+                />
+            ))}
+            {resources.length === 0 && (
+                <div className="text-center py-6 text-slate-400 text-xs">No resources loaded</div>
+            )}
+        </div>
+    </div>
+);
+
+/* ── Sub-component: Replay controls ── */
+const ReplayControls = ({ isPlaying, currentStep, totalSteps, onPlay, onPause, onStep, onReset, speed, onSpeedChange }) => (
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900 rounded-xl">
+        <button onClick={onReset} className="text-slate-400 hover:text-white transition-colors" title="Reset">
+            <i className="fas fa-backward text-xs"></i>
+        </button>
+        <button onClick={isPlaying ? onPause : onPlay} className="text-white hover:text-purple-300 transition-colors" title={isPlaying ? 'Pause' : 'Play'}>
+            <i className={'fas ' + (isPlaying ? 'fa-pause' : 'fa-play') + ' text-sm'}></i>
+        </button>
+        <button onClick={onStep} disabled={isPlaying || currentStep >= totalSteps} className="text-slate-400 hover:text-white transition-colors disabled:opacity-30" title="Step Forward">
+            <i className="fas fa-step-forward text-xs"></i>
+        </button>
+        <span className="text-[10px] font-mono text-slate-400 ml-1">
+            {currentStep}/{totalSteps}
+        </span>
+        <div className="w-px h-4 bg-slate-700"></div>
+        <select
+            value={speed}
+            onChange={(e) => onSpeedChange(Number(e.target.value))}
+            className="bg-slate-800 text-slate-300 text-[10px] font-bold rounded px-1.5 py-1 border border-slate-700"
+        >
+            <option value={2000}>0.5x</option>
+            <option value={1000}>1x</option>
+            <option value={500}>2x</option>
+            <option value={150}>5x</option>
+            <option value={50}>10x</option>
+        </select>
+    </div>
+);
+
+/* ── Sub-component: Live step indicator ── */
+const LiveStepCard = ({ step }) => {
+    if (!step) return null;
+    const phaseLabel = (step.phase || '').replace('PHASE_', '\u03a6') || '\u2022';
+    return (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-4 mb-3">
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center animate-pulse">
+                    <i className="fas fa-bolt text-white text-xs"></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-black text-purple-600 uppercase tracking-widest">
+                        {phaseLabel + ' \u00b7 ' + step.action}
+                    </div>
+                    <div className="text-xs text-slate-600 truncate">
+                        {step.description || (step.decision && step.decision.message) || step.result || ''}
+                    </div>
+                </div>
+                <StatusBadge result={step.result} outcome={step.outcome} />
+            </div>
+            {step.commands && step.commands.length > 0 && (
+                <div className="mt-2 bg-slate-900 rounded-lg p-2 font-mono text-[10px] text-emerald-400">
+                    {step.commands.map((c, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                            <span className="text-slate-500 shrink-0">$</span>
+                            <span>{c}</span>
                         </div>
                     ))}
                 </div>
@@ -134,193 +332,6 @@ const HistoryCallout = ({ learnings, history_sourced, best_match_project }) => {
         </div>
     );
 };
-
-/* ── Sub-component: Resource spec display ── */
-const ResourceSpec = ({ spec }) => {
-    if (!spec || Object.keys(spec).length === 0) return null;
-    return (
-        <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-1.5 text-[10px]">
-            {Object.entries(spec).map(([k, v]) => (
-                <div key={k} className="bg-slate-50 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">{k.replace(/_/g, ' ')}</span>
-                    <span className="font-bold text-slate-700">{String(v)}</span>
-                </div>
-            ))}
-        </div>
-    );
-};
-
-/* ── Sub-component: Single trace entry (expandable) ── */
-const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
-    const hasCommands = step.commands && step.commands.length > 0;
-    const hasDeps = (step.dependencies && step.dependencies.length > 0) || step.blocked_by;
-    const hasLearning = step.history_sourced || (step.learnings_applied && Object.keys(step.learnings_applied).length > 0);
-    const hasDecision = step.decision && Object.keys(step.decision).length > 0;
-    const hasSpec = step.resourceSpec || step.network_spec;
-    const hasResources = step.resource_usage || step.metrics;
-
-    return (
-        <div
-            className={`hover:bg-slate-50/50 transition-colors cursor-pointer group ${isExpanded ? 'bg-slate-50/80' : ''}`}
-            onClick={() => onToggle(step.id)}
-        >
-            <div className="px-4 py-3 flex items-start gap-3">
-                {/* Timeline connector */}
-                <div className="flex flex-col items-center shrink-0 pt-1.5">
-                    <StatusBadge result={step.result} outcome={step.outcome} />
-                    {!isLast && <div className="w-0.5 flex-1 bg-slate-200 my-1 min-h-[8px]"></div>}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
-                            {step.phase?.replace('PHASE_', 'Φ').replace(/_/g, '.')}
-                        </span>
-                        <span className="text-[11px] font-bold text-slate-600">
-                            {step.action?.replace(/_/g, ' ') || 'STEP'}
-                        </span>
-                        {/* Task Type Badge */}
-                        {step.taskType && (
-                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
-                                step.taskType === 'deployment' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                step.taskType === 'configuration' ? 'bg-purple-50 text-purple-700 border-purple-300' :
-                                step.taskType === 'troubleshooting' ? 'bg-orange-50 text-orange-700 border-orange-300' :
-                                'bg-emerald-50 text-emerald-700 border-emerald-300'
-                            }`}>
-                                {step.taskType === 'deployment' ? '🚀 Deploy' :
-                                 step.taskType === 'configuration' ? '🔧 Config' :
-                                 step.taskType === 'troubleshooting' ? '🩺 Fix' :
-                                 '✅ Verify'}
-                            </span>
-                        )}
-                        <span className="text-[10px] text-slate-500 font-bold">{step.agent}</span>
-                        <span className="text-[10px] text-slate-400 ml-auto font-mono">
-                            +{step.timestamp_offset_seconds}s
-                        </span>
-                        <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'} text-slate-300 text-[10px] shrink-0 ml-1`}></i>
-                    </div>
-
-                    {/* Message */}
-                    <p className={`text-xs text-slate-600 mt-1 leading-relaxed ${isExpanded ? '' : 'line-clamp-2'}`}>
-                        {step.message}
-                    </p>
-
-                    {/* Expanded details */}
-                    {isExpanded && (
-                        <div className="mt-3 space-y-3">
-                            {/* History enrichment */}
-                            <HistoryCallout
-                                history_sourced={step.history_sourced}
-                                learnings={step.learnings_applied}
-                                best_match_project={step.best_match_project}
-                            />
-
-                            {/* Dependencies */}
-                            <DependencyChain
-                                dependencies={step.dependencies}
-                                blocked_by={step.blocked_by}
-                            />
-
-                            {/* Resource spec */}
-                            {hasSpec && <ResourceSpec spec={step.resourceSpec || step.network_spec} />}
-
-                            {/* Metrics */}
-                            {hasResources && (
-                                <div className="grid grid-cols-3 md:grid-cols-4 gap-1.5 text-[10px]">
-                                    {Object.entries(step.resource_usage || step.metrics || {}).map(([k, v]) => (
-                                        <div key={k} className="bg-slate-50 rounded px-2 py-1 text-center">
-                                            <div className="font-black text-slate-700">{typeof v === 'number' ? v.toFixed(1) : String(v)}</div>
-                                            <div className="text-slate-400">{k.replace(/_/g, ' ')}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Commands */}
-                            {hasCommands && (
-                                <div className="space-y-2">
-                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                                        <i className="fas fa-terminal text-[9px]"></i>
-                                        Commands ({step.commands.length})
-                                    </div>
-                                    {step.commands.map((cmd, i) => (
-                                        <CommandCard key={i} cmd={cmd} />
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Decision */}
-                            {hasDecision && (
-                                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-[11px]">
-                                    <div className="text-purple-700 font-bold mb-1 flex items-center gap-1.5">
-                                        <i className="fas fa-code-branch text-[10px]"></i>
-                                        Decision
-                                    </div>
-                                    <div className="space-y-0.5 text-purple-600">
-                                        {Object.entries(step.decision).map(([k, v]) => (
-                                            <div key={k} className="flex gap-1.5">
-                                                <span className="font-bold">• {k.replace(/_/g, ' ')}:</span>
-                                                <span>{v === null ? '—' : String(v)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Troubleshooting / Resolution detail */}
-                            {step.troubleshooting_steps && (
-                                <div className="p-2.5 bg-orange-50 border border-orange-200 rounded-lg text-[11px]">
-                                    <div className="text-orange-700 font-bold mb-1 flex items-center gap-1.5">
-                                        <i className="fas fa-wrench text-[10px]"></i>
-                                        Troubleshooting
-                                    </div>
-                                    <div className="space-y-1">
-                                        {step.troubleshooting_steps.map((ts, i) => (
-                                            <div key={i} className="flex gap-1.5 text-orange-600">
-                                                <span className="font-bold">Step {i+1}:</span>
-                                                <span>{ts.action} → {ts.result}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {step.resolution && (
-                                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px]">
-                                    <div className="text-emerald-700 font-bold flex items-center gap-1.5">
-                                        <i className="fas fa-check-circle text-[10px]"></i>
-                                        Resolution: {step.resolution}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-/* ── Sub-component: Phase group header ── */
-const PhaseHeader = ({ icon, label, count, color, isExpanded, onToggle }) => (
-    <div
-        className={`px-5 py-3 flex items-center gap-3 cursor-pointer transition-colors ${isExpanded ? 'bg-white' : 'bg-slate-50'} border-b border-slate-200`}
-        onClick={onToggle}
-    >
-        <div className={`w-9 h-9 ${color} rounded-lg flex items-center justify-center shadow-sm shrink-0`}>
-            <i className={`fas ${icon} text-white text-sm`}></i>
-        </div>
-        <div className="flex-1">
-            <h6 className="font-black text-slate-800 text-sm">{label}</h6>
-            <span className="text-[10px] text-slate-500">{count} steps</span>
-        </div>
-        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'right'} text-slate-400 text-sm`}></i>
-    </div>
-);
-
-
-
 
 export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
     const [loading, setLoading] = useState(false);
@@ -332,224 +343,368 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     });
     const [showSummary, setShowSummary] = useState(true);
 
+    // ── Replay state ──
+    const [replayMode, setReplayMode] = useState(false);
+    const [replayIndex, setReplayIndex] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [replaySpeed, setReplaySpeed] = useState(1000);
+    const timerRef = useRef(null);
+
     const token = sessionStorage.getItem('hermes_access_token');
+
+    // ── Extract resources from project data ──
+    const resources = useMemo(() => {
+        const topologyFilter = project?.topologyFilter || 'All';
+        let nodes = project?.mapperNodes || [];
+        // Apply same filter as backend / Phase 3
+        if (topologyFilter === 'In SOW') {
+            nodes = nodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only');
+        } else if (topologyFilter === 'In Discovery') {
+            nodes = nodes.filter(n => n.status === 'Matched' || n.status === 'Live Only');
+        } else if (topologyFilter && topologyFilter !== 'All') {
+            nodes = nodes.filter(n => n.status === topologyFilter);
+        }
+        // Only show migratable types (ECS/RDS/Storage)
+        return nodes.filter(n => {
+            const type = (n.type || '').toUpperCase();
+            return type === 'ECS' || type === 'COMPUTE' || type === 'RDS' || type === 'DATABASE' || type === 'STORAGE' || type === 'OBS';
+        });
+    }, [project?.mapperNodes, project?.topologyFilter]);
+
+    // ── Compute resource status from trace up to replayIndex ──
+    const resourceStatus = useMemo(() => {
+        if (!result?.trace || resources.length === 0) return {};
+        const status = {};
+        
+        // Initialize all as pending
+        resources.forEach(r => {
+            status[r.id || r.name] = 'pending';
+        });
+
+        const visibleTrace = replayMode ? result.trace.slice(0, replayIndex + 1) : result.trace;
+        
+        visibleTrace.forEach(step => {
+            const serverId = step.server_id || (step.decision && step.decision.server_id) || (step.decision && step.decision.server_name) || '';
+            const serverName = (step.decision && step.decision.server_name) || '';
+            
+            // Find matching resource
+            const matched = resources.find(r => 
+                (r.id && (r.id === serverId || r.id === serverName)) ||
+                (r.name && (r.name === serverId || r.name === serverName))
+            );
+
+            if (matched) {
+                const key = matched.id || matched.name;
+                const resultOutcome = (step.result || step.outcome || '').toLowerCase();
+                const isSuccess = resultOutcome.includes('success') || resultOutcome === 'capacity_ok' || resultOutcome === 'registered';
+                const isFail = resultOutcome.includes('error') || resultOutcome.includes('failed') || resultOutcome.includes('blocked') || resultOutcome === 'not_resolved';
+                const isComplete = step.action === 'WAVE_COMPLETE' || step.action === 'SERVER_COMPLETE' || step.action === 'HANDOFF';
+
+                if (isComplete || isSuccess) {
+                    status[key] = 'completed';
+                } else if (isFail) {
+                    status[key] = 'failed';
+                } else if (step.action !== 'WAVE_START') {
+                    status[key] = 'active';
+                }
+            }
+        });
+        return status;
+    }, [result, replayIndex, replayMode, resources]);
+
+    // ── Active resource and completed count ──
+    const activeResourceId = useMemo(() => {
+        if (!replayMode || !result?.trace) return null;
+        const step = result.trace[replayIndex];
+        if (!step) return null;
+        const sid = step.server_id || (step.decision && step.decision.server_id) || (step.decision && step.decision.server_name) || '';
+        const matched = resources.find(r => r.id === sid || r.name === sid);
+        return matched ? (matched.id || matched.name) : null;
+    }, [replayMode, replayIndex, result, resources]);
+
+    const completedCount = useMemo(() => {
+        return Object.values(resourceStatus).filter(s => s === 'completed').length;
+    }, [resourceStatus]);
+
+    // ── Replay timer effect ──
+    useEffect(() => {
+        if (!isPlaying || !replayMode || !result?.trace) return;
+        if (replayIndex >= result.trace.length - 1) {
+            setIsPlaying(false);
+            return;
+        }
+        timerRef.current = setTimeout(() => {
+            setReplayIndex(prev => Math.min(prev + 1, result.trace.length - 1));
+        }, replaySpeed);
+        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [isPlaying, replayIndex, replayMode, replaySpeed, result]);
+
+    // ── Replay control callbacks ──
+    const startReplay = useCallback(() => {
+        setReplayMode(true);
+        setReplayIndex(0);
+        setIsPlaying(true);
+    }, []);
+
+    const pauseReplay = useCallback(() => setIsPlaying(false), []);
+    const resumeReplay = useCallback(() => setIsPlaying(true), []);
+    const stepForward = useCallback(() => {
+        if (!result?.trace) return;
+        setReplayIndex(prev => Math.min(prev + 1, result.trace.length - 1));
+    }, [result]);
+    const resetReplay = useCallback(() => {
+        setIsPlaying(false);
+        setReplayIndex(0);
+    }, []);
+    const stopReplay = useCallback(() => {
+        setIsPlaying(false);
+        setReplayMode(false);
+        setReplayIndex(0);
+    }, []);
+
+    const toggleStep = (stepId) => {
+        setExpandedSteps(prev => ({ ...prev, [stepId]: !prev[stepId] }));
+    };
+
+    const togglePhase = (phaseKey) => {
+        setExpandedPhases(prev => ({ ...prev, [phaseKey]: !prev[phaseKey] }));
+    };
 
     const handleDryRun = async () => {
         setLoading(true);
         setError(null);
-        setResult(null);
         try {
             const res = await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 }
             });
+            if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
             const data = await res.json();
-            if (data.success) {
-                setResult(data);
-                onUpdateProject(project.id, 'agenticDryRun', data);
-            } else {
-                setError(data.error || 'Unknown error');
+            setResult(data);
+            setReplayMode(false);
+            setReplayIndex(0);
+            setIsPlaying(false);
+            if (onUpdateProject) {
+                onUpdateProject({ ...project, agenticDryRun: data });
             }
-        } catch (e) {
-            setError(e.message || 'Network error');
+        } catch (err) {
+            setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleClear = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            const data = await res.json();
-            if (data.success) {
-                setResult(null);
-                onUpdateProject(project.id, 'agenticDryRun', null);
-            } else {
-                setError(data.error || 'Failed to clear');
-            }
-        } catch (e) {
-            setError(e.message || 'Network error');
-        } finally {
-            setLoading(false);
+    const clearResults = () => {
+        setResult(null);
+        setReplayMode(false);
+        setReplayIndex(0);
+        setIsPlaying(false);
+    };
+
+    // ── Derived metadata ──
+    const builtProjectName = project?.name || project?.projectName || 'UNNAMED';
+    
+    const dataSourceLabel = useMemo(() => {
+        if (!result) return null;
+        if (project?.targetTopology?.mapperNodes?.length > 0) {
+            return 'Using Saved Architecture';
         }
-    };
+        if (project?.mapperNodes?.length > 0) {
+            return 'Using Filtered Discovery Data (Save & Proceed from Step 2.4 first)';
+        }
+        if (project?.blueprintData) {
+            return 'Using SOW/Quote Data';
+        }
+        return 'No Data Source Available';
+    }, [result, project]);
 
-    const toggleStep = (id) => {
-        setExpandedSteps(prev => ({ ...prev, [id]: !prev[id] }));
-    };
+    const inScopeCount = useMemo(() => {
+        const savedNodes = project?.targetTopology?.mapperNodes;
+        if (savedNodes && savedNodes.length > 0) return savedNodes.length;
+        const topologyFilter = project?.topologyFilter || 'All';
+        const allNodes = project?.mapperNodes || [];
+        if (topologyFilter === 'In SOW') {
+            return allNodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only').length;
+        } else if (topologyFilter === 'In Discovery') {
+            return allNodes.filter(n => n.status === 'Matched' || n.status === 'Live Only').length;
+        } else if (topologyFilter && topologyFilter !== 'All') {
+            return allNodes.filter(n => n.status === topologyFilter).length;
+        }
+        return allNodes.length;
+    }, [project]);
 
-    const togglePhase = (phase) => {
-        setExpandedPhases(prev => ({ ...prev, [phase]: !prev[phase] }));
-    };
+    const allNodesCount = useMemo(() => {
+        return (project?.mapperNodes || []).length;
+    }, [project]);
 
-    // Group trace entries by phase
-    const phaseGroups = useMemo(() => {
-        if (!result?.trace) return {};
+    // ── Trace analysis ──
+    const { totalSteps, phaseGroups, waveGroups } = useMemo(() => {
+        const trace = result?.trace || [];
+        
+        // Group by phase
         const groups = {};
-        const phaseOrder = ['PHASE_4_0', 'PHASE_4_1', 'PHASE_4_2', 'PHASE_4_7'];
-        phaseOrder.forEach(p => { groups[p] = []; });
-        result.trace.forEach(step => {
-            const phase = step.phase?.startsWith('PHASE_4_2') ? 'PHASE_4_2' : step.phase;
-            if (groups[phase]) groups[phase].push(step);
-            // Also partition by wave within 4.2
+        trace.forEach(step => {
+            const phase = step.phase || 'UNKNOWN';
+            if (!groups[phase]) groups[phase] = [];
+            groups[phase].push(step);
         });
-        return groups;
-    }, [result]);
 
-    const totalSteps = result?.trace?.length || 0;
-    const summary = result?.summary;
-
-    // Partition 4.2 entries by wave
-    const waveGroups = useMemo(() => {
-        if (!result?.trace) return [];
-        const wave4_2 = phaseGroups['PHASE_4_2'] || [];
+        // Extract wave groups from PHASE_4_2
         const waves = [];
+        const wSteps = groups['PHASE_4_2'] || [];
         let currentWave = null;
-        wave4_2.forEach(step => {
+        wSteps.forEach(step => {
             if (step.action === 'WAVE_START') {
-                if (currentWave) waves.push(currentWave);
-                currentWave = { name: step.decision?.wave || 'Wave', servers: step.decision?.server_count || 0, steps: [step] };
+                currentWave = {
+                    name: 'Wave ' + (step.wave_index || step.wave_number || (waves.length + 1)),
+                    servers: step.server_count || 0,
+                    steps: [step]
+                };
+                waves.push(currentWave);
             } else if (currentWave) {
                 currentWave.steps.push(step);
-            } else {
-                // Before first WAVE_START
-                if (!waves[0]) waves.push({ name: 'Pre-Wave', servers: 0, steps: [] });
-                waves[0].steps.push(step);
+                if (step.action === 'WAVE_COMPLETE') currentWave = null;
             }
         });
-        if (currentWave) waves.push(currentWave);
-        return waves;
-    }, [result, phaseGroups]);
 
+        return {
+            totalSteps: trace.length,
+            phaseGroups: groups,
+            waveGroups: waves
+        };
+    }, [result]);
+
+    const summary = result?.summary;
+
+    // ── Phase configuration ──
     const PHASE_CONFIG = {
-        'PHASE_4_0': { icon: 'fa-power-off', label: 'Φ4.0 — Orchestrator Initialization', color: 'bg-slate-600' },
-        'PHASE_4_1': { icon: 'fa-network-wired', label: 'Φ4.1 — Network Provisioning', color: 'bg-blue-600' },
-        'PHASE_4_2': { icon: 'fa-server', label: 'Φ4.2 — Wave Processing', color: 'bg-purple-600' },
-        'PHASE_4_7': { icon: 'fa-trash-alt', label: 'Φ4.7 — Garbage Collection', color: 'bg-emerald-600' },
+        'PHASE_4_0': { icon: 'fa-rocket', label: 'Phase 4.0 — Initialisation', color: 'bg-slate-600' },
+        'PHASE_4_1': { icon: 'fa-network-wired', label: 'Phase 4.1 — Network Fabric', color: 'bg-blue-600' },
+        'PHASE_4_2': { icon: 'fa-server', label: 'Phase 4.2 — Wave Processing', color: 'bg-purple-600' },
+        'PHASE_4_7': { icon: 'fa-broom', label: 'Phase 4.7 — Cleanup & Handoff', color: 'bg-emerald-600' },
     };
 
     return (
-        <div className="animate-fade-in space-y-6">
-            {/* Trigger Button */}
-            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-6 shadow-inner">
-                <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 bg-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-300 shrink-0">
-                        <i className="fas fa-flask text-white text-xl"></i>
-                    </div>
+        <div className="space-y-4">
+            {/* Trigger panel */}
+            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-md">
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
                     <div className="flex-1">
-                        <h5 className="font-black text-purple-900 text-lg mb-1">
+                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                            <i className="fas fa-robot text-purple-600"></i>
                             Agentic Orchestration — Dry-Run Simulation
-                        </h5>
-                        <p className="text-sm text-purple-700/80 leading-relaxed mb-4">
-                            Simulate how Hermes would autonomously process all waves for this project.
-                            <strong> No cloud resources are provisioned or modified.</strong> Each step shows
-                            the exact CLI/API commands, resource specs, dependencies, and troubleshooting
-                            paths that would execute in a live orchestration.
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed max-w-2xl">
+                            Simulate how Hermes would autonomously process all waves for this project. No cloud resources are provisioned or modified. Each step shows the exact CLI/API commands, resource specs, dependencies, and troubleshooting paths that would execute in a live orchestration.
                         </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
                         <button
                             onClick={handleDryRun}
                             disabled={loading}
-                            className={`px-6 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all ${
-                                loading
-                                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/30 active:scale-95'
-                            }`}
+                            className={'px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs transition-all ' +
+                                (loading ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-400/30')}
                         >
                             {loading ? (
-                                <><i className="fas fa-spinner fa-spin mr-2"></i> Simulating...</>
-                            ) : result ? (
-                                <><i className="fas fa-redo mr-2"></i> Re-run Simulation</>
+                                <><i className="fas fa-spinner fa-spin mr-2"></i>Simulating...</>
                             ) : (
-                                <><i className="fas fa-play mr-2"></i> Run Dry-Run Simulation</>
+                                <><i className="fas fa-play mr-2"></i>{result ? 'Re-run Simulation' : 'Run Simulation'}</>
                             )}
                         </button>
                         {result && (
                             <button
-                                onClick={handleClear}
-                                disabled={loading}
-                                className="ml-3 px-5 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-400/30 active:scale-95 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                                onClick={clearResults}
+                                className="px-4 py-2 rounded-xl font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 uppercase tracking-widest text-xs transition-colors border border-slate-200"
                             >
-                                <i className="fas fa-trash-alt mr-2"></i> Clear Results
+                                Clear Results
                             </button>
                         )}
                     </div>
                 </div>
+                
+                {/* Data source badge */}
+                {dataSourceLabel && (
+                    <div className="mt-3 flex items-center gap-3 text-xs">
+                        <span className="font-bold text-slate-500">
+                            Resources in Target Architecture 
+                            <span className="text-purple-600 mx-1">{inScopeCount} / {allNodesCount}</span>
+                        </span>
+                        <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded border ' +
+                            (project?.targetTopology?.mapperNodes?.length > 0 
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
+                                : 'bg-amber-50 text-amber-600 border-amber-200')}>
+                            {dataSourceLabel}
+                        </span>
+                    </div>
+                )}
+                
+                {error && (
+                    <div className="mt-3 bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-700">
+                        <i className="fas fa-exclamation-circle mr-1.5"></i>
+                        {error}
+                    </div>
+                )}
             </div>
 
-            {/* Error */}
-            {error && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm">
-                    <i className="fas fa-exclamation-triangle mr-2"></i> {error}
-                </div>
-            )}
-
-            {/* Results */}
             {result && (
                 <>
-                    {/* Summary Card */}
+                    {/* Summary */}
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                         <div
-                            className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center cursor-pointer"
+                            className="px-5 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 cursor-pointer flex justify-between items-center"
                             onClick={() => setShowSummary(!showSummary)}
                         >
                             <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest">
-                                <i className={`fas fa-chevron-${showSummary ? 'down' : 'right'} mr-2 text-slate-400`}></i>
+                                <i className="fas fa-chart-bar mr-2 text-blue-500"></i>
                                 Simulation Summary
                             </h5>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">
-                                {summary?.servers_processed || 0} servers • {summary?.waves_count || 0} waves
-                            </span>
+                            <i className={'fas fa-chevron-' + (showSummary ? 'down' : 'right') + ' mr-2 text-slate-400'}></i>
                         </div>
+                        
                         {showSummary && summary && (
-                            <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                    <div className="text-2xl font-black text-purple-600">{summary.servers_processed}</div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Servers</div>
-                                </div>
-                                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                    <div className="text-2xl font-black text-indigo-600">{summary.waves_count}</div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Waves</div>
-                                </div>
-                                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                    <div className="text-2xl font-black text-blue-600">{summary.peak_parallel_agents}</div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Peak Agents</div>
-                                </div>
-                                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                    <div className={`text-2xl font-black ${summary.cost_efficiency === 'UNDER_BUDGET' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {summary.estimated_wall_clock_days}d
+                            <div className="p-5 space-y-4">
+                                {/* Top-line stats */}
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
+                                        <div className="text-2xl font-black text-slate-800">{summary.servers_processed}</div>
+                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Servers</div>
                                     </div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Est. Duration</div>
-                                </div>
-                                <div className="col-span-2 md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-                                    <div className="text-xs text-slate-500">
-                                        <span className="block text-slate-400">Throughput</span>
-                                        <strong>{summary.effective_throughput_mbps} Mbps</strong>
+                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
+                                        <div className="text-2xl font-black text-slate-800">{summary.total_waves}</div>
+                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Waves</div>
                                     </div>
-                                    <div className="text-xs text-slate-500">
-                                        <span className="block text-slate-400">Est. Cost</span>
-                                        <strong>${summary.cost_estimate_usd?.toLocaleString()}</strong>
+                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
+                                        <div className="text-2xl font-black text-blue-600">{summary.peak_parallel_agents}</div>
+                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Peak Agents</div>
                                     </div>
-                                    <div className="text-xs text-slate-500">
-                                        <span className="block text-slate-400">Budget</span>
-                                        <strong>${summary.budget_usd?.toLocaleString()}</strong>
+                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
+                                        <div className={'text-2xl font-black ' + (summary.cost_efficiency === 'UNDER_BUDGET' ? 'text-emerald-600' : 'text-rose-600')}>
+                                            {summary.estimated_wall_clock_days}d
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Est. Duration</div>
                                     </div>
-                                    <div className="text-xs">
-                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                            summary.cost_efficiency === 'UNDER_BUDGET' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                                        }`}>
-                                            {summary.cost_efficiency === 'UNDER_BUDGET' ? '✅ Under Budget' : '⚠️ Over Budget'}
-                                        </span>
+                                    <div className="col-span-2 md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+                                        <div className="text-xs text-slate-500">
+                                            <span className="block text-slate-400">Throughput</span>
+                                            <strong>{summary.effective_throughput_mbps} Mbps</strong>
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                            <span className="block text-slate-400">Est. Cost</span>
+                                            <strong>${summary.cost_estimate_usd?.toLocaleString()}</strong>
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                            <span className="block text-slate-400">Budget</span>
+                                            <strong>${summary.budget_usd?.toLocaleString()}</strong>
+                                        </div>
+                                        <div className="text-xs">
+                                            <span className={'inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ' +
+                                                (summary.cost_efficiency === 'UNDER_BUDGET' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700')}>
+                                                {summary.cost_efficiency === 'UNDER_BUDGET' ? '\u2705 Under Budget' : '\u26a0\ufe0f Over Budget'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -614,6 +769,105 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                         </div>
                     )}
 
+                    {/* ── Resource Migration Comparison Board (Face-to-Face View) ── */}
+                    {resources.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                    <i className="fas fa-balance-scale text-purple-500"></i>
+                                    Migration Comparison Board
+                                </h5>
+                                <div className="flex gap-2">
+                                    {!replayMode ? (
+                                        <button
+                                            onClick={startReplay}
+                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-purple-400/30"
+                                        >
+                                            <i className="fas fa-play mr-1.5"></i> Replay Simulation
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={stopReplay}
+                                            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
+                                        >
+                                            <i className="fas fa-stop mr-1.5"></i> Exit Replay
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {replayMode && (
+                                <ReplayControls
+                                    isPlaying={isPlaying}
+                                    currentStep={replayIndex + 1}
+                                    totalSteps={result?.trace?.length || 0}
+                                    onPlay={resumeReplay}
+                                    onPause={pauseReplay}
+                                    onStep={stepForward}
+                                    onReset={resetReplay}
+                                    speed={replaySpeed}
+                                    onSpeedChange={setReplaySpeed}
+                                />
+                            )}
+
+                            {replayMode && result?.trace && (
+                                <LiveStepCard step={result.trace[replayIndex]} />
+                            )}
+
+                            <div className={'grid ' + (replayMode ? 'grid-cols-1 lg:grid-cols-2' : '') + ' gap-4'}>
+                                {/* LEFT: Resource Migration Tracker */}
+                                <ResourceMigrationTracker
+                                    resources={resources}
+                                    resourceStatus={resourceStatus}
+                                    activeResourceId={activeResourceId}
+                                    completedCount={completedCount}
+                                />
+
+                                {/* RIGHT: Cumulative Task Log (shown during replay) */}
+                                {replayMode && (
+                                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                        <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
+                                            <h6 className="font-black text-slate-700 text-xs uppercase tracking-widest flex items-center gap-2">
+                                                <i className="fas fa-tasks text-slate-500"></i>
+                                                Cumulative Task Log
+                                            </h6>
+                                        </div>
+                                        <div className="p-2 max-h-[500px] overflow-y-auto custom-scrollbar">
+                                            <div className="divide-y divide-slate-100">
+                                                {(result.trace || []).slice(0, replayIndex + 1).map((step, i) => (
+                                                    <div key={step.id || i} className="px-3 py-2 text-xs">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] font-mono text-slate-400 w-6">{i + 1}</span>
+                                                            <span className="text-[9px] font-black text-slate-500 uppercase">
+                                                                {(step.phase || '').replace('PHASE_', '\u03a6') || '\u2022'}
+                                                            </span>
+                                                            <span className="font-bold text-slate-700 truncate flex-1">
+                                                                {(step.action || '').replace(/_/g, ' ')}
+                                                            </span>
+                                                            <StatusBadge result={step.result} outcome={step.outcome} />
+                                                        </div>
+                                                        {step.commands && step.commands.length > 0 && (
+                                                            <div className="mt-1 ml-8 bg-slate-900 rounded p-1.5 font-mono text-[9px] text-emerald-400">
+                                                                {step.commands.map((c, ci) => (
+                                                                    <div key={ci}>$ {c}</div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {replayIndex < 0 && (
+                                                <div className="text-center py-6 text-slate-400 text-xs">
+                                                    No steps executed yet — press Play to begin
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── Execution Trace — Grouped by Phase ── */}
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                         <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex justify-between items-center">
@@ -657,7 +911,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                     step={step}
                                                     isLast={idx === phaseGroups['PHASE_4_0'].length - 1}
                                                     isExpanded={expandedSteps[step.id] || false}
-                                                    onToggle={toggleStep}
+                                                    onToggle={() => toggleStep(step.id)}
                                                 />
                                             ))}
                                         </div>
@@ -682,7 +936,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                     step={step}
                                                     isLast={idx === phaseGroups['PHASE_4_1'].length - 1}
                                                     isExpanded={expandedSteps[step.id] || false}
-                                                    onToggle={toggleStep}
+                                                    onToggle={() => toggleStep(step.id)}
                                                 />
                                             ))}
                                         </div>
@@ -703,7 +957,6 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                         <div className="divide-y divide-slate-200">
                                             {waveGroups.map((wave, wi) => (
                                                 <div key={wi}>
-                                                    {/* Wave sub-header */}
                                                     <div className="px-4 py-2 bg-purple-50/50 border-b border-purple-100 flex items-center gap-3">
                                                         <i className="fas fa-play-circle text-purple-500 text-xs"></i>
                                                         <span className="text-xs font-black text-purple-700 uppercase tracking-wider">
@@ -720,7 +973,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                                 step={step}
                                                                 isLast={idx === wave.steps.length - 1 && wi === waveGroups.length - 1}
                                                                 isExpanded={expandedSteps[step.id] || false}
-                                                                onToggle={toggleStep}
+                                                                onToggle={() => toggleStep(step.id)}
                                                             />
                                                         ))}
                                                     </div>
@@ -748,7 +1001,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                     step={step}
                                                     isLast={idx === phaseGroups['PHASE_4_7'].length - 1}
                                                     isExpanded={expandedSteps[step.id] || false}
-                                                    onToggle={toggleStep}
+                                                    onToggle={() => toggleStep(step.id)}
                                                 />
                                             ))}
                                         </div>
@@ -758,7 +1011,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                         </div>
                     </div>
 
-                    {/* Comparison Toggle — "Standard" vs "Agentic" view */}
+                    {/* Comparison Toggle */}
                     <div className="text-center flex items-center justify-center gap-4">
                         <button
                             className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase flex items-center gap-1.5"
