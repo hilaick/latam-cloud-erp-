@@ -60,9 +60,16 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
             return savedNodes.filter(n => n.type === 'ECS' || n.type === 'RDS').length;
         }
         
-        // Fallback: full mapperNodes
+        // Fallback: mapperNodes filtered by topologyFilter
         if (activeProject?.mapperNodes !== undefined) {
-            return activeProject.mapperNodes.filter(n => n.type === 'ECS' || n.type === 'RDS').length;
+            const filter = activeProject?.topologyFilter || 'All';
+            return activeProject.mapperNodes.filter(n => {
+                if (n.type !== 'ECS' && n.type !== 'RDS') return false;
+                if (filter === 'All') return true;
+                if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                return n.status === filter;
+            }).length;
         }
         
         // Fall back to blueprintData (SOW/Quote) only if mapperNodes doesn't exist
@@ -109,9 +116,15 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
             return savedNodes;
         }
         
-        // Fallback: full mapperNodes
+        // Fallback: mapperNodes filtered by topologyFilter
         if (activeProject?.mapperNodes !== undefined) {
-            return activeProject.mapperNodes;
+            const filter = activeProject?.topologyFilter || 'All';
+            return activeProject.mapperNodes.filter(n => {
+                if (filter === 'All') return true;
+                if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                return n.status === filter;
+            });
         }
         
         // Fall back to blueprintData (SOW/Quote) only if mapperNodes doesn't exist

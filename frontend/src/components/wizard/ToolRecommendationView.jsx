@@ -39,6 +39,17 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
             
             // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
             let targetArchitecture = [];
+            const topologyFilter = currentProject?.topologyFilter || 'All';
+            
+            const filterByTopology = (nodes) => {
+                if (topologyFilter === 'All') return [...nodes];
+                return nodes.filter(n => {
+                    if (topologyFilter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                    if (topologyFilter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                    return n.status === topologyFilter;
+                });
+            };
+            
             if (currentProject?.targetTopology?.mapperNodes && currentProject.targetTopology.mapperNodes.length > 0) {
                 targetArchitecture = currentProject.targetTopology.mapperNodes;
             } else if (currentProject?.blueprintData) {
@@ -95,7 +106,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                     ];
                 } catch (e) {
                     console.error("Error parsing blueprintData:", e);
-                    targetArchitecture = currentProject?.mapperNodes || [];
+                    targetArchitecture = filterByTopology(currentProject?.mapperNodes || []);
                 }
             } else if (currentProject?.blueprint) {
                 // Legacy support for blueprint field (deprecated)
@@ -106,7 +117,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                     targetArchitecture = blueprint.target_architecture || blueprint.resources || [];
                 } catch (e) {
                     console.error("Error parsing blueprint:", e);
-                    targetArchitecture = currentProject?.mapperNodes || [];
+                    targetArchitecture = filterByTopology(currentProject?.mapperNodes || []);
                 }
             } else {
                 targetArchitecture = currentProject?.mapperNodes || [];

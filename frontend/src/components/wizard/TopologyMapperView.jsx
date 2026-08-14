@@ -115,8 +115,18 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const total = nodesToSave.length;
 
         // Only save mapper-specific fields — NEVER touch blueprint/blueprintData
+        const inScopeNodes = nodesToSave.filter(n => 
+            n.status === 'Matched' || n.status === 'Quoted Only' || n.status === 'In SOW'
+        );
         const updates = {
             mapperNodes: nodesToSave,
+            targetTopology: {
+                mapperNodes: inScopeNodes,
+                savedAt: new Date().toISOString(),
+                filter: statusFilter,
+                totalDiscovered: nodesToSave.length,
+                inScopeCount: inScopeNodes.length
+            },
             lifecycleState: '2_architecture',
             topologyFilter: statusFilter,
             topologyTypeFilter: typeFilter

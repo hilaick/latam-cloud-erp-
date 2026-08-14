@@ -164,8 +164,9 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
             });
         }
         
-        // Fallback: full mapperNodes (discovery dataset, 104 nodes)
+        // Fallback: mapperNodes filtered by topologyFilter (mirrors TopologyMapper logic)
         if (activeProject?.mapperNodes?.length > 0) {
+            const filter = activeProject?.topologyFilter || 'All';
             return activeProject.mapperNodes.filter(n => {
                 const nodeType = String(n.type || '').toUpperCase();
                 const isCompute = computeTypes.some(c => nodeType.includes(c));
@@ -173,7 +174,13 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                 const isStorage = storageTypes.some(s => nodeType.includes(s));
                 const nonMigratableTypes = ['HSS', 'WAF', 'CBR', 'CDN', 'EIP', 'ELB', 'NAT', 'VPN', 'VPC', 'SUBNET', 'SECURITY_GROUP', 'SECURITYGROUP'];
                 const isNonMigratable = nonMigratableTypes.some(nmt => nodeType.includes(nmt));
-                return (isCompute || isDatabase || isStorage) && !isNonMigratable;
+                const isMigratable = (isCompute || isDatabase || isStorage) && !isNonMigratable;
+                if (!isMigratable) return false;
+                // Apply topology filter (same logic as TopologyMapperView)
+                if (filter === 'All') return true;
+                if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                return n.status === filter;
             });
         }
         
