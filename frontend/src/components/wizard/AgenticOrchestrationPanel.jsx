@@ -121,13 +121,20 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                     {step.commands && step.commands.length > 0 && (
                         <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs">
                             <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1.5">CLI / API Commands</div>
-                            {step.commands.map((cmd, i) => (
-                                <div key={i} className="flex items-start gap-2 py-0.5 group/cmd">
-                                    <span className="text-emerald-400 shrink-0">$</span>
-                                    <span className="text-slate-300 break-all">{cmd}</span>
-                                    <CopyButton text={cmd} />
-                                </div>
-                            ))}
+                            {step.commands.map((cmd, i) => {
+                                const cmdStr = typeof cmd === 'object' && cmd !== null ? (cmd.cmd || cmd.command || JSON.stringify(cmd)) : cmd;
+                                const descStr = typeof cmd === 'object' && cmd !== null ? (cmd.desc || cmd.description || '') : '';
+                                return (
+                                    <div key={i} className="flex items-start gap-2 py-0.5 group/cmd">
+                                        <span className="text-emerald-400 shrink-0">$</span>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-slate-300 break-all">{cmdStr}</span>
+                                            {descStr && <div className="text-[9px] text-slate-500">{descStr}</div>}
+                                        </div>
+                                        <CopyButton text={cmdStr} />
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                     
@@ -321,12 +328,19 @@ const LiveStepCard = ({ step }) => {
             </div>
             {step.commands && step.commands.length > 0 && (
                 <div className="mt-2 bg-slate-900 rounded-lg p-2 font-mono text-[10px] text-emerald-400">
-                    {step.commands.map((c, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                            <span className="text-slate-500 shrink-0">$</span>
-                            <span>{c}</span>
-                        </div>
-                    ))}
+                    {step.commands.map((c, i) => {
+                        const cmdStr = typeof c === 'object' && c !== null ? (c.cmd || c.command || JSON.stringify(c)) : c;
+                        const descStr = typeof c === 'object' && c !== null ? (c.desc || c.description || '') : '';
+                        return (
+                            <div key={i} className="flex items-start gap-2">
+                                <span className="text-slate-500 shrink-0">$</span>
+                                <div className="flex-1 min-w-0">
+                                    <span>{cmdStr}</span>
+                                    {descStr && <div className="text-[9px] text-slate-500">{descStr}</div>}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>
