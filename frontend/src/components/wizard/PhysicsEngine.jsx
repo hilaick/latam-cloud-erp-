@@ -259,7 +259,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
         }
         
         return [];
-    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region, activeProject?.topologyFilter]);
 
     useEffect(() => {
         if (!activeProject) return;

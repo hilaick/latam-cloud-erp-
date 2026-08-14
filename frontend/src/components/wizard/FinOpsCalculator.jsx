@@ -107,7 +107,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
         }
         
         return 0;
-    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.topologyFilter]);
 
     const getNodesForApi = useMemo(() => {
         // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
@@ -200,7 +200,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
         }
         
         return [];
-    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region, activeProject?.topologyFilter]);
 
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
