@@ -878,9 +878,10 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                         </div>
                                                         {step.commands && step.commands.length > 0 && (
                                                             <div className="mt-1 ml-8 bg-por-gray-90 rounded p-1.5 font-mono text-[9px] text-emerald-400">
-                                                                {step.commands.map((c, ci) => (
-                                                                    <div key={ci}>$ {c}</div>
-                                                                ))}
+                                                                {step.commands.map((c, ci) => {
+                                                                                const cmdStr = typeof c === 'object' && c !== null ? (c.cmd || c.command || JSON.stringify(c)) : c;
+                                                                                return <div key={ci}>$ {cmdStr}</div>;
+                                                                            })}
                                                             </div>
                                                         )}
                                                     </div>
