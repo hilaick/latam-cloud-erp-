@@ -149,7 +149,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
     const [calcKey, setCalcKey] = useState(0); // bumped to trigger recalculation
 
     const nodes = useMemo(() => {
-        // 🎯 AUTHORITATIVE SOURCE: Read from saved Target Architecture first
+        // v2.1 🎯 AUTHORITATIVE SOURCE: Read from saved Target Architecture first
         // targetTopology.mapperNodes = the 5 in-scope nodes saved via Save & Proceed
         const savedNodes = activeProject?.targetTopology?.mapperNodes;
         if (savedNodes && savedNodes.length > 0) {
