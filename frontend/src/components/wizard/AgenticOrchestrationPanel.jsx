@@ -1,5 +1,21 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
+/* ── Utility: safely coerce any value to a string for JSX rendering ── */
+const S = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'object') {
+        if (Array.isArray(v)) return v.map(S).join(', ');
+        if (v.cmd && v.desc) return v.cmd + ' \u2014 ' + v.desc;
+        if (v.cmd) return v.cmd;
+        if (v.desc) return v.desc;
+        if (v.message) return v.message;
+        try { return JSON.stringify(v); } catch(e) { return '[object]'; }
+    }
+    return String(v);
+};
+
 /* ── Sub-component: Copy-to-clipboard button ── */
 const CopyButton = ({ text }) => {
     const [copied, setCopied] = useState(false);
@@ -10,7 +26,7 @@ const CopyButton = ({ text }) => {
         });
     };
     return (
-        <button onClick={handleCopy} className="text-[9px] font-bold text-purple-500 hover:text-purple-700 uppercase ml-2">
+        <button onClick={handleCopy} className="text-[9px] font-por-bold text-purple-500 hover:text-purple-700 uppercase ml-2">
             <i className={'fas ' + (copied ? 'fa-check text-emerald-500' : 'fa-copy')}></i>
         </button>
     );
@@ -37,13 +53,13 @@ const StatusBadge = ({ result, outcome }) => {
         icon = 'fa-times-circle';
         label = 'FAIL';
     } else {
-        color = 'bg-slate-100 text-slate-500 border-slate-200';
+        color = 'bg-por-bg-hover text-por-text-secondary border-por-border-light';
         icon = 'fa-circle';
         label = (result || outcome || 'pending').toUpperCase();
     }
     
     return (
-        <span className={'inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded border ' + color}>
+        <span className={'inline-flex items-center gap-1 text-[10px] font-por-bold px-1.5 py-0.5 rounded border ' + color}>
             <i className={'fas ' + icon + ' text-[9px]'}></i>
             {label}
         </span>
@@ -56,7 +72,7 @@ const DependencyBadge = ({ deps }) => {
     return (
         <div className="flex flex-wrap gap-1 mt-1">
             {deps.map((dep, i) => (
-                <div key={i} className={'flex items-center gap-1.5 ' + (dep.status === 'ok' ? 'text-emerald-600' : 'text-amber-600') + ' text-[9px] bg-white/80 rounded-full px-2 py-0.5 border border-slate-200'}>
+                <div key={i} className={'flex items-center gap-1.5 ' + (dep.status === 'ok' ? 'text-emerald-600' : 'text-amber-600') + ' text-[9px] bg-white/80 rounded-por-full px-por-1 py-0.5 border border-por-border-light'}>
                     <i className={'fas ' + (dep.status === 'ok' ? 'fa-check-circle' : 'fa-circle') + ' text-[9px]'}></i>
                     {dep.name}
                 </div>
@@ -68,21 +84,21 @@ const DependencyBadge = ({ deps }) => {
 /* ── Sub-component: Trace entry (one step) ── */
 const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
     const isRunning = step.result === 'running' || step.outcome === 'in_progress';
-    const connectorLine = !isLast ? 'border-l-2 border-slate-200 ml-4 h-4' : '';
+    const connectorLine = !isLast ? 'border-l-2 border-por-border-light ml-4 h-4' : '';
     
     return (
         <div>
             <div
-                className={'hover:bg-slate-50/50 transition-colors cursor-pointer group ' + (isExpanded ? 'bg-slate-50/50' : '')}
+                className={'hover:bg-por-bg-hover/50 transition-colors cursor-pointer group ' + (isExpanded ? 'bg-por-bg-hover/50' : '')}
                 onClick={onToggle}
             >
-                <div className="px-5 py-3 flex items-start gap-3">
+                <div className="px-por-4 py-por-2 flex items-start gap-por-2">
                     {/* Status icon */}
-                    <div className={'w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ' +
-                        (isRunning ? 'bg-blue-100 text-blue-600 animate-pulse' :
+                    <div className={'w-7 h-7 rounded-por-full flex items-center justify-center shrink-0 mt-0.5 ' +
+                        (isRunning ? 'bg-blue-100 text-por-brand-blue animate-pulse' :
                          step.result === 'capacity_ok' || step.result === 'registered' || (step.result || '').includes('success') ? 'bg-emerald-100 text-emerald-600' :
                          (step.result || '').includes('error') || (step.result || '').includes('failed') || step.result === 'not_resolved' ? 'bg-rose-100 text-rose-600' :
-                         'bg-slate-100 text-slate-400')}>
+                         'bg-por-bg-hover text-por-text-secondary')}>
                         <i className={'fas ' +
                             (isRunning ? 'fa-spinner fa-spin' :
                              step.result === 'capacity_ok' || step.result === 'registered' || (step.result || '').includes('success') ? 'fa-check' :
@@ -92,16 +108,16 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                     
                     {/* Step info */}
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                        <div className="flex items-center gap-por-1 flex-wrap">
+                            <span className="text-[10px] font-por-bold text-por-text-secondary uppercase tracking-wider">
                                 {step.action?.replace(/_/g, ' ')}
                             </span>
                             <StatusBadge result={step.result} outcome={step.outcome} />
                             {step.duration_ms && (
-                                <span className="text-[9px] text-slate-400">{step.duration_ms}ms</span>
+                                <span className="text-[9px] text-por-text-secondary">{step.duration_ms}ms</span>
                             )}
                         </div>
-                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                        <p className="text-por-xs text-por-text-secondary mt-0.5 leading-relaxed">
                             {step.description || step.decision?.message || ''}
                         </p>
                         <DependencyBadge deps={step.dependencies} />
@@ -109,27 +125,27 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                     
                     {/* Expand indicator */}
                     <div className="shrink-0 pt-1">
-                        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-slate-300 text-[10px] shrink-0 ml-1 group-hover:text-slate-500 transition-colors'}></i>
+                        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-por-text-secondary text-[10px] shrink-0 ml-1 group-hover:text-por-text-secondary transition-colors'}></i>
                     </div>
                 </div>
             </div>
             
             {/* Expanded body: commands, config, troubleshooting */}
             {isExpanded && (
-                <div className="px-5 pb-3 ml-10 space-y-2">
+                <div className="px-por-4 pb-3 ml-10 space-y-2">
                     {/* CLI Commands */}
                     {step.commands && step.commands.length > 0 && (
-                        <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs">
-                            <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1.5">CLI / API Commands</div>
+                        <div className="bg-por-gray-90 rounded-por-s p-por-2 font-mono text-por-xs">
+                            <div className="text-[9px] text-por-text-secondary uppercase tracking-widest mb-1.5">CLI / API Commands</div>
                             {step.commands.map((cmd, i) => {
                                 const cmdStr = typeof cmd === 'object' && cmd !== null ? (cmd.cmd || cmd.command || JSON.stringify(cmd)) : cmd;
                                 const descStr = typeof cmd === 'object' && cmd !== null ? (cmd.desc || cmd.description || '') : '';
                                 return (
-                                    <div key={i} className="flex items-start gap-2 py-0.5 group/cmd">
+                                    <div key={i} className="flex items-start gap-por-1 py-0.5 group/cmd">
                                         <span className="text-emerald-400 shrink-0">$</span>
                                         <div className="flex-1 min-w-0">
-                                            <span className="text-slate-300 break-all">{cmdStr}</span>
-                                            {descStr && <div className="text-[9px] text-slate-500">{descStr}</div>}
+                                            <span className="text-por-text-secondary break-all">{cmdStr}</span>
+                                            {descStr && <div className="text-[9px] text-por-text-secondary">{descStr}</div>}
                                         </div>
                                         <CopyButton text={cmdStr} />
                                     </div>
@@ -140,13 +156,13 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                     
                     {/* Resource Spec */}
                     {step.decision?.resource_spec && (
-                        <div className="bg-slate-50 rounded-lg p-3 text-xs">
-                            <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1">Resource Specification</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="bg-por-bg-hover rounded-por-s p-por-2 text-por-xs">
+                            <div className="text-[9px] text-por-text-secondary uppercase tracking-widest mb-1">Resource Specification</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-por-1">
                                 {Object.entries(step.decision.resource_spec).map(([k, v]) => (
                                     <div key={k}>
-                                        <span className="text-slate-400">{k.replace(/_/g, ' ')}</span>
-                                        <strong className="block text-slate-700">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong>
+                                        <span className="text-por-text-secondary">{k.replace(/_/g, ' ')}</span>
+                                        <strong className="block text-por-text-primary">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong>
                                     </div>
                                 ))}
                             </div>
@@ -155,18 +171,18 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                     
                     {/* Troubleshooting */}
                     {step.troubleshooting && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
-                            <div className="text-[9px] text-amber-600 uppercase tracking-widest mb-1 font-black">
+                        <div className="bg-amber-50 border border-amber-200 rounded-por-s p-por-2 text-por-xs">
+                            <div className="text-[9px] text-amber-600 uppercase tracking-widest mb-1 font-por-bold">
                                 <i className="fas fa-exclamation-triangle mr-1"></i> Troubleshooting
                             </div>
-                            <p className="text-amber-700 text-xs">{step.troubleshooting}</p>
+                            <p className="text-amber-700 text-por-xs">{step.troubleshooting}</p>
                         </div>
                     )}
                     
                     {/* Dependencies detail */}
                     {step.decision?.dependencies_detail && step.decision.dependencies_detail.length > 0 && (
-                        <div className="bg-indigo-50 rounded-lg p-3 text-xs">
-                            <div className="text-[9px] text-indigo-500 uppercase tracking-widest mb-1 font-black">Dependencies</div>
+                        <div className="bg-indigo-50 rounded-por-s p-por-2 text-por-xs">
+                            <div className="text-[9px] text-indigo-500 uppercase tracking-widest mb-1 font-por-bold">Dependencies</div>
                             {step.decision.dependencies_detail.map((dep, i) => (
                                 <div key={i} className="text-indigo-600">{dep}</div>
                             ))}
@@ -184,23 +200,23 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
 /* ── Sub-component: Phase grouping header ── */
 const PhaseHeader = ({ icon, label, color, count, isExpanded, onToggle }) => (
     <div
-        className={'px-5 py-3 flex items-center gap-3 cursor-pointer transition-colors ' + (isExpanded ? 'bg-white' : 'bg-slate-50/80 hover:bg-white') + ' border-b border-slate-200'}
+        className={'px-por-4 py-por-2 flex items-center gap-por-2 cursor-pointer transition-colors ' + (isExpanded ? 'bg-white' : 'bg-por-bg-hover/80 hover:bg-white') + ' border-b border-por-border-light'}
         onClick={onToggle}
     >
-        <div className={'w-9 h-9 ' + color + ' rounded-lg flex items-center justify-center shadow-sm shrink-0'}>
-            <i className={'fas ' + icon + ' text-white text-sm'}></i>
+        <div className={'w-9 h-9 ' + color + ' rounded-por-s flex items-center justify-center shadow-por-light shrink-0'}>
+            <i className={'fas ' + icon + ' text-white text-por-sm'}></i>
         </div>
         <div className="flex-1">
-            <span className="text-xs font-black text-slate-700 uppercase tracking-wider">{label}</span>
+            <span className="text-por-xs font-por-bold text-por-text-primary uppercase tracking-wider">{label}</span>
         </div>
-        <span className="text-[10px] text-slate-400">{count} steps</span>
-        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-slate-300 text-xs'}></i>
+        <span className="text-[10px] text-por-text-secondary">{count} steps</span>
+        <i className={'fas fa-chevron-' + (isExpanded ? 'up' : 'down') + ' text-por-text-secondary text-por-xs'}></i>
     </div>
 );
 
 /* ── Resource status styles ── */
 const RESOURCE_STATUS_STYLES = {
-    pending:    'bg-slate-100 text-slate-500 border-slate-200',
+    pending:    'bg-por-bg-hover text-por-text-secondary border-por-border-light',
     active:     'bg-blue-100 text-blue-700 border-blue-300 animate-pulse',
     completed:  'bg-emerald-100 text-emerald-700 border-emerald-300',
     failed:     'bg-rose-100 text-rose-700 border-rose-300',
@@ -219,42 +235,42 @@ const RESOURCE_STATUS_ICONS = {
 const ResourceCard = ({ resource, status, isHighlighted }) => {
     const style = RESOURCE_STATUS_STYLES[status] || RESOURCE_STATUS_STYLES.pending;
     const icon = RESOURCE_STATUS_ICONS[status] || RESOURCE_STATUS_ICONS.pending;
-    const highlightClass = isHighlighted ? 'ring-2 ring-purple-400 shadow-md scale-[1.02]' : '';
+    const highlightClass = isHighlighted ? 'ring-2 ring-purple-400 shadow-por-normal scale-[1.02]' : '';
     const statusBgClass = 
         status === 'completed' ? 'bg-emerald-200' :
         status === 'active' ? 'bg-blue-200' :
-        status === 'failed' ? 'bg-rose-200' : 'bg-slate-200';
+        status === 'failed' ? 'bg-rose-200' : 'bg-por-border-light';
     return (
-        <div className={'flex items-center gap-3 px-3 py-2.5 border rounded-lg transition-all duration-300 ' + style + ' ' + highlightClass}>
-            <div className={'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ' + statusBgClass}>
-                <i className={'fas ' + icon + ' text-xs'}></i>
+        <div className={'flex items-center gap-por-2 px-por-2 py-por-1.5 border rounded-por-s transition-all duration-300 ' + style + ' ' + highlightClass}>
+            <div className={'w-8 h-8 rounded-por-s flex items-center justify-center shrink-0 ' + statusBgClass}>
+                <i className={'fas ' + icon + ' text-por-xs'}></i>
             </div>
             <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold truncate">{resource.name || resource.id || 'Unknown'}</div>
+                <div className="text-por-xs font-por-bold truncate">{resource.name || resource.id || 'Unknown'}</div>
                 <div className="text-[9px] opacity-60 uppercase truncate">
                     {resource.type || '?'}{resource.os ? ' · ' + resource.os : ''}
                 </div>
             </div>
-            <div className="text-[9px] font-black uppercase shrink-0 opacity-50">{status}</div>
+            <div className="text-[9px] font-por-bold uppercase shrink-0 opacity-50">{status}</div>
         </div>
     );
 };
 
 /* ── Sub-component: Resource Migration Tracker Panel ── */
 const ResourceMigrationTracker = ({ resources, resourceStatus, activeResourceId, completedCount }) => (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm h-full">
-        <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-200">
-            <h6 className="font-black text-slate-700 text-xs uppercase tracking-widest flex items-center gap-2">
+    <div className="bg-white border border-por-border-light rounded-por-l overflow-hidden shadow-por-light h-full">
+        <div className="px-por-3 py-por-2 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-por-border-light">
+            <h6 className="font-por-bold text-por-text-primary text-por-xs uppercase tracking-widest flex items-center gap-por-1">
                 <i className="fas fa-server text-indigo-500"></i>
                 Resource Migration Tracker
             </h6>
-            <div className="flex gap-3 mt-1.5">
-                <span className="text-[10px] text-slate-500">
-                    <span className="font-bold text-indigo-600">{completedCount}</span>/{resources.length} completed
+            <div className="flex gap-por-2 mt-1.5">
+                <span className="text-[10px] text-por-text-secondary">
+                    <span className="font-por-bold text-indigo-600">{completedCount}</span>/{resources.length} completed
                 </span>
-                <div className="flex-1 bg-slate-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                <div className="flex-1 bg-por-border-light rounded-por-full h-1.5 mt-1 overflow-hidden">
                     <div
-                        className="h-full bg-indigo-500 rounded-full transition-all duration-700"
+                        className="h-full bg-indigo-500 rounded-por-full transition-all duration-700"
                         style={{width: (resources.length > 0 ? (completedCount / resources.length) * 100 : 0) + '%'}}
                     ></div>
                 </div>
@@ -270,7 +286,7 @@ const ResourceMigrationTracker = ({ resources, resourceStatus, activeResourceId,
                 />
             ))}
             {resources.length === 0 && (
-                <div className="text-center py-6 text-slate-400 text-xs">No resources loaded</div>
+                <div className="text-center py-por-4 text-por-text-secondary text-por-xs">No resources loaded</div>
             )}
         </div>
     </div>
@@ -278,24 +294,24 @@ const ResourceMigrationTracker = ({ resources, resourceStatus, activeResourceId,
 
 /* ── Sub-component: Replay controls ── */
 const ReplayControls = ({ isPlaying, currentStep, totalSteps, onPlay, onPause, onStep, onReset, speed, onSpeedChange }) => (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900 rounded-xl">
-        <button onClick={onReset} className="text-slate-400 hover:text-white transition-colors" title="Reset">
-            <i className="fas fa-backward text-xs"></i>
+    <div className="flex items-center gap-por-2 px-por-3 py-por-1.5 bg-por-gray-90 rounded-por-l">
+        <button onClick={onReset} className="text-por-text-secondary hover:text-white transition-colors" title="Reset">
+            <i className="fas fa-backward text-por-xs"></i>
         </button>
         <button onClick={isPlaying ? onPause : onPlay} className="text-white hover:text-purple-300 transition-colors" title={isPlaying ? 'Pause' : 'Play'}>
-            <i className={'fas ' + (isPlaying ? 'fa-pause' : 'fa-play') + ' text-sm'}></i>
+            <i className={'fas ' + (isPlaying ? 'fa-pause' : 'fa-play') + ' text-por-sm'}></i>
         </button>
-        <button onClick={onStep} disabled={isPlaying || currentStep >= totalSteps} className="text-slate-400 hover:text-white transition-colors disabled:opacity-30" title="Step Forward">
-            <i className="fas fa-step-forward text-xs"></i>
+        <button onClick={onStep} disabled={isPlaying || currentStep >= totalSteps} className="text-por-text-secondary hover:text-white transition-colors disabled:opacity-30" title="Step Forward">
+            <i className="fas fa-step-forward text-por-xs"></i>
         </button>
-        <span className="text-[10px] font-mono text-slate-400 ml-1">
+        <span className="text-[10px] font-mono text-por-text-secondary ml-1">
             {currentStep}/{totalSteps}
         </span>
-        <div className="w-px h-4 bg-slate-700"></div>
+        <div className="w-px h-4 bg-por-gray-70"></div>
         <select
             value={speed}
             onChange={(e) => onSpeedChange(Number(e.target.value))}
-            className="bg-slate-800 text-slate-300 text-[10px] font-bold rounded px-1.5 py-1 border border-slate-700"
+            className="bg-por-gray-80 text-por-text-secondary text-[10px] font-por-bold rounded px-1.5 py-por-1 border border-por-gray-70"
         >
             <option value={2000}>0.5x</option>
             <option value={1000}>1x</option>
@@ -311,32 +327,32 @@ const LiveStepCard = ({ step }) => {
     if (!step) return null;
     const phaseLabel = (step.phase || '').replace('PHASE_', '\u03a6') || '\u2022';
     return (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-4 mb-3">
-            <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center animate-pulse">
-                    <i className="fas fa-bolt text-white text-xs"></i>
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-por-l p-por-3 mb-3">
+            <div className="flex items-center gap-por-2">
+                <div className="w-8 h-8 bg-purple-600 rounded-por-s flex items-center justify-center animate-pulse">
+                    <i className="fas fa-bolt text-white text-por-xs"></i>
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-black text-purple-600 uppercase tracking-widest">
+                    <div className="text-[10px] font-por-bold text-purple-600 uppercase tracking-widest">
                         {phaseLabel + ' \u00b7 ' + step.action}
                     </div>
-                    <div className="text-xs text-slate-600 truncate">
-                        {step.description || (step.decision && step.decision.message) || step.result || ''}
+                    <div className="text-por-xs text-por-text-secondary truncate">
+                        {S(step.description || (step.decision && step.decision.message) || step.result)}
                     </div>
                 </div>
                 <StatusBadge result={step.result} outcome={step.outcome} />
             </div>
             {step.commands && step.commands.length > 0 && (
-                <div className="mt-2 bg-slate-900 rounded-lg p-2 font-mono text-[10px] text-emerald-400">
+                <div className="mt-2 bg-por-gray-90 rounded-por-s p-2 font-mono text-[10px] text-emerald-400">
                     {step.commands.map((c, i) => {
                         const cmdStr = typeof c === 'object' && c !== null ? (c.cmd || c.command || JSON.stringify(c)) : c;
                         const descStr = typeof c === 'object' && c !== null ? (c.desc || c.description || '') : '';
                         return (
-                            <div key={i} className="flex items-start gap-2">
-                                <span className="text-slate-500 shrink-0">$</span>
+                            <div key={i} className="flex items-start gap-por-1">
+                                <span className="text-por-text-secondary shrink-0">$</span>
                                 <div className="flex-1 min-w-0">
                                     <span>{cmdStr}</span>
-                                    {descStr && <div className="text-[9px] text-slate-500">{descStr}</div>}
+                                    {descStr && <div className="text-[9px] text-por-text-secondary">{descStr}</div>}
                                 </div>
                             </div>
                         );
@@ -595,32 +611,32 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
 
     // ── Phase configuration ──
     const PHASE_CONFIG = {
-        'PHASE_4_0': { icon: 'fa-rocket', label: 'Phase 4.0 — Initialisation', color: 'bg-slate-600' },
-        'PHASE_4_1': { icon: 'fa-network-wired', label: 'Phase 4.1 — Network Fabric', color: 'bg-blue-600' },
+        'PHASE_4_0': { icon: 'fa-rocket', label: 'Phase 4.0 — Initialisation', color: 'bg-por-gray-70' },
+        'PHASE_4_1': { icon: 'fa-network-wired', label: 'Phase 4.1 — Network Fabric', color: 'bg-por-brand-blue' },
         'PHASE_4_2': { icon: 'fa-server', label: 'Phase 4.2 — Wave Processing', color: 'bg-purple-600' },
         'PHASE_4_7': { icon: 'fa-broom', label: 'Phase 4.7 — Cleanup & Handoff', color: 'bg-emerald-600' },
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-por-3">
             {/* Trigger panel */}
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-md">
-                <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div className="bg-white border border-por-border-light rounded-por-l p-por-5 shadow-por-normal">
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-por-3">
                     <div className="flex-1">
-                        <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                        <h4 className="font-por-bold text-por-text-primary text-por-sm uppercase tracking-widest flex items-center gap-por-1">
                             <i className="fas fa-robot text-purple-600"></i>
                             Agentic Orchestration — Dry-Run Simulation
                         </h4>
-                        <p className="text-xs text-slate-500 mt-1 leading-relaxed max-w-2xl">
+                        <p className="text-por-xs text-por-text-secondary mt-1 leading-relaxed max-w-2xl">
                             Simulate how Hermes would autonomously process all waves for this project. No cloud resources are provisioned or modified. Each step shows the exact CLI/API commands, resource specs, dependencies, and troubleshooting paths that would execute in a live orchestration.
                         </p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
+                    <div className="flex gap-por-1 shrink-0">
                         <button
                             onClick={handleDryRun}
                             disabled={loading}
-                            className={'px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs transition-all ' +
-                                (loading ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-400/30')}
+                            className={'px-por-5 py-por-1.5 rounded-por-l font-por-bold uppercase tracking-widest text-por-xs transition-all ' +
+                                (loading ? 'bg-por-gray-30 text-por-text-secondary cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-400/30')}
                         >
                             {loading ? (
                                 <><i className="fas fa-spinner fa-spin mr-2"></i>Simulating...</>
@@ -631,7 +647,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                         {result && (
                             <button
                                 onClick={clearResults}
-                                className="px-4 py-2 rounded-xl font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 uppercase tracking-widest text-xs transition-colors border border-slate-200"
+                                className="px-por-3 py-por-1 rounded-por-l font-por-bold text-por-text-secondary hover:text-por-text-primary hover:bg-por-bg-hover uppercase tracking-widest text-por-xs transition-colors border border-por-border-light"
                             >
                                 Clear Results
                             </button>
@@ -641,12 +657,12 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 
                 {/* Data source badge */}
                 {dataSourceLabel && (
-                    <div className="mt-3 flex items-center gap-3 text-xs">
-                        <span className="font-bold text-slate-500">
+                    <div className="mt-3 flex items-center gap-por-2 text-por-xs">
+                        <span className="font-por-bold text-por-text-secondary">
                             Resources in Target Architecture 
                             <span className="text-purple-600 mx-1">{inScopeCount} / {allNodesCount}</span>
                         </span>
-                        <span className={'text-[10px] font-bold uppercase px-2 py-0.5 rounded border ' +
+                        <span className={'text-[10px] font-por-bold uppercase px-por-1 py-0.5 rounded border ' +
                             (project?.targetTopology?.mapperNodes?.length > 0 
                                 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
                                 : 'bg-amber-50 text-amber-600 border-amber-200')}>
@@ -656,7 +672,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 )}
                 
                 {error && (
-                    <div className="mt-3 bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-700">
+                    <div className="mt-3 bg-rose-50 border border-rose-200 rounded-por-s p-por-2 text-por-xs text-rose-700">
                         <i className="fas fa-exclamation-circle mr-1.5"></i>
                         {error}
                     </div>
@@ -666,55 +682,55 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             {result && (
                 <>
                     {/* Summary */}
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-por-border-light rounded-por-l overflow-hidden shadow-por-light">
                         <div
-                            className="px-5 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 cursor-pointer flex justify-between items-center"
+                            className="px-por-4 py-por-2 bg-gradient-to-r from-por-bg-hover to-white border-b border-por-border-light cursor-pointer flex justify-between items-center"
                             onClick={() => setShowSummary(!showSummary)}
                         >
-                            <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest">
+                            <h5 className="font-por-bold text-por-text-primary text-por-sm uppercase tracking-widest">
                                 <i className="fas fa-chart-bar mr-2 text-blue-500"></i>
                                 Simulation Summary
                             </h5>
-                            <i className={'fas fa-chevron-' + (showSummary ? 'down' : 'right') + ' mr-2 text-slate-400'}></i>
+                            <i className={'fas fa-chevron-' + (showSummary ? 'down' : 'right') + ' mr-2 text-por-text-secondary'}></i>
                         </div>
                         
                         {showSummary && summary && (
-                            <div className="p-5 space-y-4">
+                            <div className="p-por-4 space-y-por-3">
                                 {/* Top-line stats */}
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <div className="text-2xl font-black text-slate-800">{summary.servers_processed}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Servers</div>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-por-2">
+                                    <div className="text-center p-por-2 bg-por-bg-hover rounded-por-s">
+                                        <div className="text-por-2xl font-por-bold text-por-text-primary">{summary.servers_processed}</div>
+                                        <div className="text-[10px] text-por-text-secondary uppercase tracking-wider mt-1">Servers</div>
                                     </div>
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <div className="text-2xl font-black text-slate-800">{summary.total_waves}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Waves</div>
+                                    <div className="text-center p-por-2 bg-por-bg-hover rounded-por-s">
+                                        <div className="text-por-2xl font-por-bold text-por-text-primary">{summary.total_waves}</div>
+                                        <div className="text-[10px] text-por-text-secondary uppercase tracking-wider mt-1">Waves</div>
                                     </div>
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <div className="text-2xl font-black text-blue-600">{summary.peak_parallel_agents}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Peak Agents</div>
+                                    <div className="text-center p-por-2 bg-por-bg-hover rounded-por-s">
+                                        <div className="text-por-2xl font-por-bold text-por-brand-blue">{summary.peak_parallel_agents}</div>
+                                        <div className="text-[10px] text-por-text-secondary uppercase tracking-wider mt-1">Peak Agents</div>
                                     </div>
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <div className={'text-2xl font-black ' + (summary.cost_efficiency === 'UNDER_BUDGET' ? 'text-emerald-600' : 'text-rose-600')}>
+                                    <div className="text-center p-por-2 bg-por-bg-hover rounded-por-s">
+                                        <div className={'text-por-2xl font-por-bold ' + (summary.cost_efficiency === 'UNDER_BUDGET' ? 'text-emerald-600' : 'text-rose-600')}>
                                             {summary.estimated_wall_clock_days}d
                                         </div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">Est. Duration</div>
+                                        <div className="text-[10px] text-por-text-secondary uppercase tracking-wider mt-1">Est. Duration</div>
                                     </div>
-                                    <div className="col-span-2 md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-                                        <div className="text-xs text-slate-500">
-                                            <span className="block text-slate-400">Throughput</span>
+                                    <div className="col-span-2 md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-por-2 pt-2 border-t border-por-border-lighter">
+                                        <div className="text-por-xs text-por-text-secondary">
+                                            <span className="block text-por-text-secondary">Throughput</span>
                                             <strong>{summary.effective_throughput_mbps} Mbps</strong>
                                         </div>
-                                        <div className="text-xs text-slate-500">
-                                            <span className="block text-slate-400">Est. Cost</span>
+                                        <div className="text-por-xs text-por-text-secondary">
+                                            <span className="block text-por-text-secondary">Est. Cost</span>
                                             <strong>${summary.cost_estimate_usd?.toLocaleString()}</strong>
                                         </div>
-                                        <div className="text-xs text-slate-500">
-                                            <span className="block text-slate-400">Budget</span>
+                                        <div className="text-por-xs text-por-text-secondary">
+                                            <span className="block text-por-text-secondary">Budget</span>
                                             <strong>${summary.budget_usd?.toLocaleString()}</strong>
                                         </div>
-                                        <div className="text-xs">
-                                            <span className={'inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ' +
+                                        <div className="text-por-xs">
+                                            <span className={'inline-block px-por-1 py-0.5 rounded text-[10px] font-por-bold uppercase ' +
                                                 (summary.cost_efficiency === 'UNDER_BUDGET' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700')}>
                                                 {summary.cost_efficiency === 'UNDER_BUDGET' ? '\u2705 Under Budget' : '\u26a0\ufe0f Over Budget'}
                                             </span>
@@ -727,33 +743,33 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
 
                     {/* Learning System Stats */}
                     {summary?.learning_system && (
-                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
-                            <h6 className="font-black text-indigo-800 text-xs uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-por-l p-por-3">
+                            <h6 className="font-por-bold text-indigo-800 text-por-xs uppercase tracking-widest mb-3 flex items-center gap-por-1">
                                 <i className="fas fa-brain text-indigo-600"></i>
                                 Self-Learning Engine
                             </h6>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
-                                <div className="bg-white rounded-lg p-2 shadow-sm">
-                                    <div className="text-lg font-black text-indigo-600">{summary.learning_system.total_history_records}</div>
-                                    <div className="text-[9px] text-slate-400 uppercase">History Records</div>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-por-1 text-center">
+                                <div className="bg-white rounded-por-s p-2 shadow-por-light">
+                                    <div className="text-por-lg font-por-bold text-indigo-600">{summary.learning_system.total_history_records}</div>
+                                    <div className="text-[9px] text-por-text-secondary uppercase">History Records</div>
                                 </div>
-                                <div className="bg-white rounded-lg p-2 shadow-sm">
-                                    <div className="text-lg font-black text-indigo-600">{summary.learning_system.success_rate}</div>
-                                    <div className="text-[9px] text-slate-400 uppercase">Success Rate</div>
+                                <div className="bg-white rounded-por-s p-2 shadow-por-light">
+                                    <div className="text-por-lg font-por-bold text-indigo-600">{summary.learning_system.success_rate}</div>
+                                    <div className="text-[9px] text-por-text-secondary uppercase">Success Rate</div>
                                 </div>
-                                <div className="bg-white rounded-lg p-2 shadow-sm">
-                                    <div className="text-lg font-black text-indigo-600">{summary.learning_system.unique_projects}</div>
-                                    <div className="text-[9px] text-slate-400 uppercase">Projects Learned</div>
+                                <div className="bg-white rounded-por-s p-2 shadow-por-light">
+                                    <div className="text-por-lg font-por-bold text-indigo-600">{summary.learning_system.unique_projects}</div>
+                                    <div className="text-[9px] text-por-text-secondary uppercase">Projects Learned</div>
                                 </div>
-                                <div className="bg-white rounded-lg p-2 shadow-sm">
-                                    <div className="text-lg font-black text-indigo-600">{summary.learning_system.records_ingested}</div>
-                                    <div className="text-[9px] text-slate-400 uppercase">Records Ingested</div>
+                                <div className="bg-white rounded-por-s p-2 shadow-por-light">
+                                    <div className="text-por-lg font-por-bold text-indigo-600">{summary.learning_system.records_ingested}</div>
+                                    <div className="text-[9px] text-por-text-secondary uppercase">Records Ingested</div>
                                 </div>
-                                <div className="bg-white rounded-lg p-2 shadow-sm">
-                                    <div className="text-sm font-black text-indigo-600">
+                                <div className="bg-white rounded-por-s p-2 shadow-por-light">
+                                    <div className="text-por-sm font-por-bold text-indigo-600">
                                         {Object.keys(summary.learning_system.strategy_distribution || {}).length}
                                     </div>
-                                    <div className="text-[9px] text-slate-400 uppercase">Strategies Known</div>
+                                    <div className="text-[9px] text-por-text-secondary uppercase">Strategies Known</div>
                                 </div>
                             </div>
                             <p className="text-[10px] text-indigo-500/70 mt-2 leading-relaxed">
@@ -764,16 +780,16 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
 
                     {/* Resource Usage */}
                     {summary?.resource_usage && (
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <h6 className="font-black text-slate-700 text-xs uppercase tracking-widest mb-3">
+                        <div className="bg-white border border-por-border-light rounded-por-l p-por-3">
+                            <h6 className="font-por-bold text-por-text-primary text-por-xs uppercase tracking-widest mb-3">
                                 <i className="fas fa-cloud mr-2 text-indigo-500"></i> Simulated Resource Footprint
                             </h6>
-                            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center">
+                            <div className="grid grid-cols-3 md:grid-cols-6 gap-por-1 text-center">
                                 {Object.entries(summary.resource_usage).map(([key, val]) => (
                                     key !== 'peak_parallel_agents' && (
-                                        <div key={key} className="bg-slate-50 rounded-lg p-2">
-                                            <div className="text-lg font-black text-slate-700">{val}</div>
-                                            <div className="text-[9px] text-slate-400 uppercase tracking-wider">
+                                        <div key={key} className="bg-por-bg-hover rounded-por-s p-2">
+                                            <div className="text-por-lg font-por-bold text-por-text-primary">{val}</div>
+                                            <div className="text-[9px] text-por-text-secondary uppercase tracking-wider">
                                                 {key.replace(/_/g, ' ')}
                                             </div>
                                         </div>
@@ -787,22 +803,22 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                     {resources.length > 0 && (
                         <div className="space-y-3">
                             <div className="flex items-center justify-between">
-                                <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                <h5 className="font-por-bold text-por-text-primary text-por-sm uppercase tracking-widest flex items-center gap-por-1">
                                     <i className="fas fa-balance-scale text-purple-500"></i>
                                     Migration Comparison Board
                                 </h5>
-                                <div className="flex gap-2">
+                                <div className="flex gap-por-1">
                                     {!replayMode ? (
                                         <button
                                             onClick={startReplay}
-                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-purple-400/30"
+                                            className="px-por-3 py-por-1 bg-purple-600 hover:bg-purple-700 text-white rounded-por-s text-[10px] font-por-bold uppercase tracking-widest transition-colors shadow-lg shadow-purple-400/30"
                                         >
                                             <i className="fas fa-play mr-1.5"></i> Replay Simulation
                                         </button>
                                     ) : (
                                         <button
                                             onClick={stopReplay}
-                                            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
+                                            className="px-por-3 py-por-1 bg-por-gray-70 hover:bg-por-gray-70 text-white rounded-por-s text-[10px] font-por-bold uppercase tracking-widest transition-colors"
                                         >
                                             <i className="fas fa-stop mr-1.5"></i> Exit Replay
                                         </button>
@@ -828,7 +844,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                 <LiveStepCard step={result.trace[replayIndex]} />
                             )}
 
-                            <div className={'grid ' + (replayMode ? 'grid-cols-1 lg:grid-cols-2' : '') + ' gap-4'}>
+                            <div className={'grid ' + (replayMode ? 'grid-cols-1 lg:grid-cols-2' : '') + ' gap-por-3'}>
                                 {/* LEFT: Resource Migration Tracker */}
                                 <ResourceMigrationTracker
                                     resources={resources}
@@ -839,29 +855,29 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
 
                                 {/* RIGHT: Cumulative Task Log (shown during replay) */}
                                 {replayMode && (
-                                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                                        <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-                                            <h6 className="font-black text-slate-700 text-xs uppercase tracking-widest flex items-center gap-2">
-                                                <i className="fas fa-tasks text-slate-500"></i>
+                                    <div className="bg-white border border-por-border-light rounded-por-l overflow-hidden shadow-por-light">
+                                        <div className="px-por-3 py-por-2 bg-gradient-to-r from-por-bg-hover to-white border-b border-por-border-light">
+                                            <h6 className="font-por-bold text-por-text-primary text-por-xs uppercase tracking-widest flex items-center gap-por-1">
+                                                <i className="fas fa-tasks text-por-text-secondary"></i>
                                                 Cumulative Task Log
                                             </h6>
                                         </div>
                                         <div className="p-2 max-h-[500px] overflow-y-auto custom-scrollbar">
-                                            <div className="divide-y divide-slate-100">
+                                            <div className="divide-y divide-por-border-lighter">
                                                 {(result.trace || []).slice(0, replayIndex + 1).map((step, i) => (
-                                                    <div key={step.id || i} className="px-3 py-2 text-xs">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[9px] font-mono text-slate-400 w-6">{i + 1}</span>
-                                                            <span className="text-[9px] font-black text-slate-500 uppercase">
+                                                    <div key={step.id || i} className="px-por-2 py-por-1 text-por-xs">
+                                                        <div className="flex items-center gap-por-1">
+                                                            <span className="text-[9px] font-mono text-por-text-secondary w-6">{i + 1}</span>
+                                                            <span className="text-[9px] font-por-bold text-por-text-secondary uppercase">
                                                                 {(step.phase || '').replace('PHASE_', '\u03a6') || '\u2022'}
                                                             </span>
-                                                            <span className="font-bold text-slate-700 truncate flex-1">
+                                                            <span className="font-por-bold text-por-text-primary truncate flex-1">
                                                                 {(step.action || '').replace(/_/g, ' ')}
                                                             </span>
                                                             <StatusBadge result={step.result} outcome={step.outcome} />
                                                         </div>
                                                         {step.commands && step.commands.length > 0 && (
-                                                            <div className="mt-1 ml-8 bg-slate-900 rounded p-1.5 font-mono text-[9px] text-emerald-400">
+                                                            <div className="mt-1 ml-8 bg-por-gray-90 rounded p-1.5 font-mono text-[9px] text-emerald-400">
                                                                 {step.commands.map((c, ci) => (
                                                                     <div key={ci}>$ {c}</div>
                                                                 ))}
@@ -871,7 +887,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                                 ))}
                                             </div>
                                             {replayIndex < 0 && (
-                                                <div className="text-center py-6 text-slate-400 text-xs">
+                                                <div className="text-center py-por-4 text-por-text-secondary text-por-xs">
                                                     No steps executed yet — press Play to begin
                                                 </div>
                                             )}
@@ -883,15 +899,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                     )}
 
                     {/* ── Execution Trace — Grouped by Phase ── */}
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                        <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex justify-between items-center">
-                            <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest">
+                    <div className="bg-white border border-por-border-light rounded-por-l overflow-hidden shadow-por-light">
+                        <div className="px-por-4 py-por-3 bg-gradient-to-r from-por-bg-hover to-white border-b border-por-border-light flex justify-between items-center">
+                            <h5 className="font-por-bold text-por-text-primary text-por-sm uppercase tracking-widest">
                                 <i className="fas fa-project-diagram mr-2 text-purple-500"></i>
                                 Execution Trace ({totalSteps} steps)
                             </h5>
-                            <div className="flex gap-2">
+                            <div className="flex gap-por-1">
                                 <button
-                                    className="text-[9px] font-bold text-purple-500 hover:text-purple-700 uppercase"
+                                    className="text-[9px] font-por-bold text-purple-500 hover:text-purple-700 uppercase"
                                     onClick={() => setExpandedSteps(Object.fromEntries(
                                         (result.trace || []).map(s => [s.id, true])
                                     ))}
@@ -899,7 +915,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                     Expand All
                                 </button>
                                 <button
-                                    className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                    className="text-[9px] font-por-bold text-por-text-secondary hover:text-por-text-secondary uppercase"
                                     onClick={() => setExpandedSteps({})}
                                 >
                                     Collapse All
@@ -918,7 +934,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                         onToggle={() => togglePhase('PHASE_4_0')}
                                     />
                                     {expandedPhases['PHASE_4_0'] && (
-                                        <div className="divide-y divide-slate-100">
+                                        <div className="divide-y divide-por-border-lighter">
                                             {phaseGroups['PHASE_4_0'].map((step, idx) => (
                                                 <TraceEntry
                                                     key={step.id}
@@ -943,7 +959,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                         onToggle={() => togglePhase('PHASE_4_1')}
                                     />
                                     {expandedPhases['PHASE_4_1'] && (
-                                        <div className="divide-y divide-slate-100">
+                                        <div className="divide-y divide-por-border-lighter">
                                             {phaseGroups['PHASE_4_1'].map((step, idx) => (
                                                 <TraceEntry
                                                     key={step.id}
@@ -968,19 +984,19 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                         onToggle={() => togglePhase('PHASE_4_2')}
                                     />
                                     {expandedPhases['PHASE_4_2'] && (
-                                        <div className="divide-y divide-slate-200">
+                                        <div className="divide-y divide-por-border-light">
                                             {waveGroups.map((wave, wi) => (
                                                 <div key={wi}>
-                                                    <div className="px-4 py-2 bg-purple-50/50 border-b border-purple-100 flex items-center gap-3">
-                                                        <i className="fas fa-play-circle text-purple-500 text-xs"></i>
-                                                        <span className="text-xs font-black text-purple-700 uppercase tracking-wider">
+                                                    <div className="px-por-3 py-por-1 bg-purple-50/50 border-b border-purple-100 flex items-center gap-por-2">
+                                                        <i className="fas fa-play-circle text-purple-500 text-por-xs"></i>
+                                                        <span className="text-por-xs font-por-bold text-purple-700 uppercase tracking-wider">
                                                             {wave.name}
                                                         </span>
                                                         <span className="text-[10px] text-purple-400">
                                                             {wave.servers} servers • {wave.steps.filter(s => s.action !== 'WAVE_START' && s.action !== 'WAVE_COMPLETE' && s.action !== 'HANDOFF').length} operations
                                                         </span>
                                                     </div>
-                                                    <div className="divide-y divide-slate-100">
+                                                    <div className="divide-y divide-por-border-lighter">
                                                         {wave.steps.map((step, idx) => (
                                                             <TraceEntry
                                                                 key={step.id}
@@ -1008,7 +1024,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                         onToggle={() => togglePhase('PHASE_4_7')}
                                     />
                                     {expandedPhases['PHASE_4_7'] && (
-                                        <div className="divide-y divide-slate-100">
+                                        <div className="divide-y divide-por-border-lighter">
                                             {phaseGroups['PHASE_4_7'].map((step, idx) => (
                                                 <TraceEntry
                                                     key={step.id}
@@ -1026,16 +1042,16 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                     </div>
 
                     {/* Comparison Toggle */}
-                    <div className="text-center flex items-center justify-center gap-4">
+                    <div className="text-center flex items-center justify-center gap-por-3">
                         <button
-                            className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase flex items-center gap-1.5"
+                            className="text-[10px] font-por-bold text-por-text-secondary hover:text-por-text-primary uppercase flex items-center gap-1.5"
                             onClick={() => window.dispatchEvent(new CustomEvent('hermes:show-standard-view'))}
                         >
                             <i className="fas fa-project-diagram text-[9px]"></i>
                             Switch to Standard Methodology View
                         </button>
-                        <div className="w-px h-3 bg-slate-300"></div>
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                        <div className="w-px h-3 bg-por-gray-30"></div>
+                        <span className="text-[10px] text-por-text-secondary flex items-center gap-1.5">
                             <i className="fas fa-shield-alt text-[9px]"></i>
                             DRY-RUN — No cloud resources were provisioned or modified.
                         </span>
