@@ -433,3 +433,54 @@ def update_hermes_config():
         logger.error(f"Error updating Hermes config: {str(e)}", exc_info=True)
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ══════════════════════════════════════════════════════════════
+# Internal Deploy Endpoint (browser-accessible self-update)
+# ══════════════════════════════════════════════════════════════
+import subprocess as _sp, os as _os, threading as _th, time as _time
+
+@hermes_cli_bp.route('/api/deploy/self-update', methods=['GET', 'POST'])
+def deploy_self_update():
+    """Pull latest from git, rebuild frontend, restart Flask. Browser-accessible."""
+    proj_dir = '/home/huawei-cloud/latam-cloud-erp-'
+    output_lines = []
+    
+    if request.method == 'GET':
+        return '''<!DOCTYPE html><html><head><title>ERP Deploy</title>
+<style>body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;padding:40px;text-align:center}
+button{padding:16px 48px;font-size:18px;font-weight:bold;background:#7c3aed;color:#fff;border:none;border-radius:12px;cursor:pointer;margin:10px}
+button:hover{background:#6d28d9}
+pre{background:#0d0d1a;padding:20px;border-radius:8px;text-align:left;max-width:800px;margin:20px auto;overflow-x:auto;font-size:12px}
+.success{color:#4ade80}.error{color:#f87171}</style></head><body>
+<h1>ERP Migration Factory - Self Deploy</h1>
+<p>Click to pull latest code, rebuild frontend, and restart.</p>
+<form method="POST">
+<button type="submit" name="action" value="pull_build">Pull + Build + Restart</button>
+<button type="submit" name="action" value="restart_only">Restart Only</button>
+</form></body></html>'''
+    
+    def run(cmd, cwd=proj_dir):
+        output_lines.append('$ ' + cmd)
+        try:
+            r = _sp.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=120)
+            if r.stdout.strip(): output_lines.append(r.stdout.strip())
+            if r.stderr.strip(): output_lines.append(r.stderr.strip())
+            output_lines.append('(exit=' + str(r.returncode) + ')')
+            return r.returncode == 0
+        except Exception as e:
+            output_lines.append('ERROR: ' + str(e))
+            return False
+    
+    action = request.form.get('action', 'pull_build')
+    if action == 'pull_build':
+        run('git fetch origin feature-migration-lifecycle-2')
+        run('git reset --hard origin/feature-migration-lifecycle-2')
+        run('cd frontend && npm run build')
+    
+    def _bg_restart():
+        _time.sleep(0.5)
+        _sp.run("screen -ls 2>/dev/null | grep flask | cut -d. -f1 | tr -d '\\\\t' | xargs -r kill 2>/dev/null; screen -wipe 2>/dev/null; kill $(lsof -ti:9119) 2>/dev/null; sleep 0.5; cd /home/huawei-cloud/latam-cloud-erp- && screen -dmS flask bash -c 'venv/bin/python3 app.py'", shell=True)
+    _th.Thread(target=_bg_restart, daemon=True).start()
+    output_lines.append('>>> Restart triggered - server back in ~3s.')
+    
+    return '<!DOCTYPE html><html><head><title>Deploy Result</title><style>body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;padding:40px}pre{background:#0d0d1a;padding:20px;border-radius:8px;font-size:12px}.success{color:#4ade80}</style></head><body><h1 class="success">Deploy Complete</h1><pre>' + '\\n'.join(output_lines) + '</pre><p><a href="/">Back to ERP</a> | <a href="/api/hermes-cli/api/deploy/self-update">Deploy again</a></p></body></html>'
