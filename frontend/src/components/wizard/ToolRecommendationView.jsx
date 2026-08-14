@@ -37,9 +37,11 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
             // FIX: Uses correct endpoint and securely attaches standard JWT token
             const token = sessionStorage.getItem('hermes_access_token');
             
-            // Use blueprintData (from SOW/Quote) if available, otherwise fall back to mapperNodes for backward compatibility
+            // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
             let targetArchitecture = [];
-            if (currentProject?.blueprintData) {
+            if (currentProject?.targetTopology?.mapperNodes && currentProject.targetTopology.mapperNodes.length > 0) {
+                targetArchitecture = currentProject.targetTopology.mapperNodes;
+            } else if (currentProject?.blueprintData) {
                 try {
                     // blueprintData contains the SOW/Quote topology
                     const blueprintData = typeof currentProject.blueprintData === 'string' 

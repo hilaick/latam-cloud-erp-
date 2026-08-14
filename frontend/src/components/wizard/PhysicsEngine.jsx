@@ -149,19 +149,30 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
     const [calcKey, setCalcKey] = useState(0); // bumped to trigger recalculation
 
     const nodes = useMemo(() => {
-        // First try mapperNodes (saved reconciled architecture)
-        if (activeProject?.mapperNodes?.length > 0) {
-            return activeProject.mapperNodes.filter(n => {
+        // 🎯 AUTHORITATIVE SOURCE: Read from saved Target Architecture first
+        // targetTopology.mapperNodes = the 5 in-scope nodes saved via Save & Proceed
+        const savedNodes = activeProject?.targetTopology?.mapperNodes;
+        if (savedNodes && savedNodes.length > 0) {
+            return savedNodes.filter(n => {
                 const nodeType = String(n.type || '').toUpperCase();
-                // Include only migratable resources: compute, databases, storage
                 const isCompute = computeTypes.some(c => nodeType.includes(c));
                 const isDatabase = dbTypes.some(d => nodeType.includes(d));
                 const isStorage = storageTypes.some(s => nodeType.includes(s));
-                
-                // Exclude non-migratable resources: HSS, WAF, CBR, CDN, EIP, ELB, NAT, VPN, VPC, subnet, security_group
                 const nonMigratableTypes = ['HSS', 'WAF', 'CBR', 'CDN', 'EIP', 'ELB', 'NAT', 'VPN', 'VPC', 'SUBNET', 'SECURITY_GROUP', 'SECURITYGROUP'];
                 const isNonMigratable = nonMigratableTypes.some(nmt => nodeType.includes(nmt));
-                
+                return (isCompute || isDatabase || isStorage) && !isNonMigratable;
+            });
+        }
+        
+        // Fallback: full mapperNodes (discovery dataset, 104 nodes)
+        if (activeProject?.mapperNodes?.length > 0) {
+            return activeProject.mapperNodes.filter(n => {
+                const nodeType = String(n.type || '').toUpperCase();
+                const isCompute = computeTypes.some(c => nodeType.includes(c));
+                const isDatabase = dbTypes.some(d => nodeType.includes(d));
+                const isStorage = storageTypes.some(s => nodeType.includes(s));
+                const nonMigratableTypes = ['HSS', 'WAF', 'CBR', 'CDN', 'EIP', 'ELB', 'NAT', 'VPN', 'VPC', 'SUBNET', 'SECURITY_GROUP', 'SECURITYGROUP'];
+                const isNonMigratable = nonMigratableTypes.some(nmt => nodeType.includes(nmt));
                 return (isCompute || isDatabase || isStorage) && !isNonMigratable;
             });
         }
@@ -241,7 +252,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
         }
         
         return [];
-    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
 
     useEffect(() => {
         if (!activeProject) return;

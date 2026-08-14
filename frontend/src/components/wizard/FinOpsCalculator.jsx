@@ -54,7 +54,13 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
     const changeRequests = activeProject?.changeRequests || [];
     const crTotalCost = changeRequests.reduce((acc, cr) => acc + Number(cr.cost || 0), 0);
     const totalServers = useMemo(() => {
-        // Use mapperNodes if it exists (even if empty array)
+        // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
+        const savedNodes = activeProject?.targetTopology?.mapperNodes;
+        if (savedNodes && savedNodes.length > 0) {
+            return savedNodes.filter(n => n.type === 'ECS' || n.type === 'RDS').length;
+        }
+        
+        // Fallback: full mapperNodes
         if (activeProject?.mapperNodes !== undefined) {
             return activeProject.mapperNodes.filter(n => n.type === 'ECS' || n.type === 'RDS').length;
         }
@@ -94,10 +100,16 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
         }
         
         return 0;
-    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint]);
 
     const getNodesForApi = useMemo(() => {
-        // Use mapperNodes if it exists (even if empty array)
+        // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
+        const savedNodes = activeProject?.targetTopology?.mapperNodes;
+        if (savedNodes && savedNodes.length > 0) {
+            return savedNodes;
+        }
+        
+        // Fallback: full mapperNodes
         if (activeProject?.mapperNodes !== undefined) {
             return activeProject.mapperNodes;
         }
@@ -175,7 +187,7 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
         }
         
         return [];
-    }, [activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
+    }, [activeProject?.targetTopology?.mapperNodes, activeProject?.mapperNodes, activeProject?.blueprintData, activeProject?.blueprint, activeProject?.region]);
 
     const handleScenarioChange = async (scenario) => {
         setOverheadScenario(scenario);
@@ -382,7 +394,8 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
                                 </div>
                             </div>
                             <div className="text-xs text-slate-400">
-                                {activeProject?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                {activeProject?.targetTopology?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                 activeProject?.mapperNodes?.length > 0 ? "Using Unfiltered Discovery Data (Save & Proceed from Step 2.4 first)" : 
                                  activeProject?.blueprintData ? "Using SOW/Quote Data (Not Saved)" : 
                                  activeProject?.blueprint ? "Using Blueprint Data (Not Saved)" : 
                                  "No Architecture Data"}
