@@ -158,17 +158,21 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                                 <div className="flex items-center gap-2">
                                     <span className="text-lg font-black text-emerald-400">
                                         {(() => {
-                                            const nodes = currentProject?.mapperNodes || [];
+                                            const savedNodes = currentProject?.targetTopology?.mapperNodes;
+                                            const allNodes = currentProject?.mapperNodes || [];
+                                            if (savedNodes && savedNodes.length > 0) {
+                                                return `${savedNodes.length} / ${allNodes.length}`;
+                                            }
                                             const filter = currentProject?.topologyFilter || 'All';
                                             if (filter && filter !== 'All') {
-                                                const inScope = nodes.filter(n => 
-                                                    n.status === filter || 
-                                                    (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
-                                                    n.status === 'Matched'
-                                                );
-                                                return `${inScope.length} / ${nodes.length}`;
+                                                const inScope = allNodes.filter(n => {
+                                                    if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                                                    if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                                                    return n.status === filter;
+                                                });
+                                                return `${inScope.length} / ${allNodes.length}`;
                                             }
-                                            return nodes.length;
+                                            return allNodes.length;
                                         })()}
                                     </span>
                                     <button 
@@ -181,7 +185,8 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                                 </div>
                             </div>
                             <div className="text-xs text-slate-400">
-                                {currentProject?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                {currentProject?.targetTopology?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                 currentProject?.mapperNodes?.length > 0 ? "Using Unfiltered Discovery Data (Save & Proceed from Step 2.4 first)" : 
                                  currentProject?.blueprintData ? "Using SOW/Quote Data (Not Saved)" : 
                                  currentProject?.blueprint ? "Using Blueprint Data (Not Saved)" : 
                                  "No Architecture Data"}

@@ -175,17 +175,21 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg font-black text-purple-800">
                                                 {(() => {
-                                                    const nodes = project?.mapperNodes || [];
+                                                    const savedNodes = project?.targetTopology?.mapperNodes;
+                                                    const allNodes = project?.mapperNodes || [];
+                                                    if (savedNodes && savedNodes.length > 0) {
+                                                        return `${savedNodes.length} / ${allNodes.length}`;
+                                                    }
                                                     const filter = project?.topologyFilter || 'All';
                                                     if (filter && filter !== 'All') {
-                                                        const inScope = nodes.filter(n => 
-                                                            n.status === filter || 
-                                                            (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
-                                                            n.status === 'Matched'
-                                                        );
-                                                        return `${inScope.length} / ${nodes.length}`;
+                                                        const inScope = allNodes.filter(n => {
+                                                            if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                                                            if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                                                            return n.status === filter;
+                                                        });
+                                                        return `${inScope.length} / ${allNodes.length}`;
                                                     }
-                                                    return nodes.length;
+                                                    return allNodes.length;
                                                 })()}
                                             </span>
                                             <button 
@@ -198,7 +202,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         </div>
                                     </div>
                                     <div className="text-xs text-purple-500">
-                                        {project?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                        {project?.targetTopology?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
+                                         project?.mapperNodes?.length > 0 ? "Using Unfiltered Discovery Data (Save & Proceed from Step 2.4 first)" : 
                                          project?.blueprintData ? "Using SOW/Quote Data" : 
                                          project?.blueprint ? "Using Blueprint Data" : 
                                          "No Architecture Data"}

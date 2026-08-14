@@ -354,17 +354,22 @@ function BudgetEstimatorView({ activeProject, onUpdateProject, onRefreshResource
                                 <div className="flex items-center gap-2">
                                     <span className="text-lg font-black text-emerald-400">
                                         {(() => {
-                                            const nodes = activeProject?.mapperNodes || [];
+                                            // Read from saved Target Architecture first (authoritative)
+                                            const savedNodes = activeProject?.targetTopology?.mapperNodes;
+                                            const allNodes = activeProject?.mapperNodes || [];
+                                            if (savedNodes && savedNodes.length > 0) {
+                                                return `${savedNodes.length} / ${allNodes.length}`;
+                                            }
                                             const filter = activeProject?.topologyFilter || 'All';
                                             if (filter && filter !== 'All') {
-                                                const inScope = nodes.filter(n => 
-                                                    n.status === filter || 
-                                                    (filter === 'In SOW Quote' && (n.status === 'Matched' || n.status === 'Quoted Only')) ||
-                                                    n.status === 'Matched'
-                                                );
-                                                return `${inScope.length} / ${nodes.length}`;
+                                                const inScope = allNodes.filter(n => {
+                                                    if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
+                                                    if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
+                                                    return n.status === filter;
+                                                });
+                                                return `${inScope.length} / ${allNodes.length}`;
                                             }
-                                            return nodes.length;
+                                            return allNodes.length;
                                         })()}
                                     </span>
                                     <button 
