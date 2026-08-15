@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-dom/client', 'antd', '@ant-design/icons'],
+  },
   server: {
     proxy: {
       '/api': {
