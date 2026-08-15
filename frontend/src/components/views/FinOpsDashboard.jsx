@@ -224,7 +224,7 @@ export default function FinOpsDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
                     <Card className="bg-gray-800/50 border-gray-600">
                         <Statistic
-                            title={<><FileSignatureOutlined className="text-green-400 mr-2" />Total Quoted SOW Budget</>}
+                            title={<><FileTextOutlined className="text-green-400 mr-2" />Total Quoted SOW Budget</>}
                             value={summary.totalQuotedBudget}
                             prefix="$"
                             precision={0}
@@ -267,7 +267,7 @@ export default function FinOpsDashboard() {
                     </Card>
                     <Card className="bg-gray-800/50 border-gray-600">
                         <Statistic
-                            title={<><TicketOutlined className="text-amber-400 mr-2" />Huawei Migration Coupons</>}
+                            title={<><ThunderboltFilled className="text-amber-400 mr-2" />Huawei Migration Coupons</>}
                             value={remainingCoupons}
                             prefix="$"
                             precision={0}
