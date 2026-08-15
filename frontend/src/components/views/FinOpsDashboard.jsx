@@ -1,408 +1,509 @@
 import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 import { formatShortDate } from '../../utils/helpers';
-import { Button, Badge, Tag, Card, Statistic, Empty, Spin, Alert } from 'antd';
 import {
-    SyncOutlined,
-    CheckCircleOutlined,
-    ExclamationCircleOutlined,
-    MinusCircleOutlined,
-    FileOutlined,
-    FireOutlined,
-    FileTextOutlined,
-    CloudServerOutlined,
-    ThunderboltOutlined,
-    ThunderboltFilled,
-    WarningOutlined,
+  Card, Table, Tag, Statistic, Button, Badge, Spin, Alert,
+  Row, Col, Space, Typography, Divider, Tooltip, Empty,
+  Descriptions, Collapse
+} from 'antd';
+import {
+  SyncOutlined,
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  MinusCircleOutlined,
+  FileOutlined,
+  FireOutlined,
+  FileTextOutlined,
+  CloudServerOutlined,
+  ThunderboltOutlined,
+  ThunderboltFilled,
+  WarningOutlined,
+  DollarOutlined,
+  LineChartOutlined,
+  CalendarOutlined,
+  TrophyOutlined
 } from '@ant-design/icons';
 
+const { Title, Text, Paragraph } = Typography;
+const { Panel } = Collapse;
+
 export default function FinOpsDashboard() {
-    const { projects } = useContext(ERPContext);
-    const [currentTime, setCurrentTime] = useState(new Date());
-    const [dashboardData, setDashboardData] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [lastSyncTime, setLastSyncTime] = useState(null);
+  const { projects } = useContext(ERPContext);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
 
-    useEffect(() => {
-        const interval = setInterval(() => setCurrentTime(new Date()), 60000);
-        return () => clearInterval(interval);
-    }, []);
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const fm = (num) =>
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(
-            num || 0
-        );
-
-    const fetchDashboard = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const token = sessionStorage.getItem('hermes_access_token');
-            if (!token) {
-                setError('AUTH_REQUIRED');
-                return;
-            }
-            const resp = await fetch('/api/finops/dashboard', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (resp.status === 401 || resp.status === 422) {
-                const body = await resp.json().catch(() => ({}));
-                if (body.msg && (body.msg.includes('expired') || body.msg.includes('Signature') || body.msg.includes('segments'))) {
-                    sessionStorage.removeItem('hermes_access_token');
-                    setError('SESSION_EXPIRED');
-                    return;
-                }
-                setError('AUTH_ERROR');
-                return;
-            }
-            if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-            }
-            const data = await resp.json();
-            if (data.success) {
-                setDashboardData(data);
-                setLastSyncTime(new Date());
-            } else {
-                setError(data.error || 'API returned failure');
-            }
-        } catch (err) {
-            console.error('FinOps Dashboard fetch failed:', err);
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchDashboard();
-    }, [fetchDashboard]);
-
-    const activeProjects = (Array.isArray(projects) ? projects : []).filter(
-        (p) => p && !p.isWaiting && p.lifecycleState !== '6_completed'
+  const fm = (num) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(
+      num || 0
     );
 
-    let totalQuotedBudget = 0;
-    let totalBilledToDate = 0;
-    let totalProjectedOverrun = 0;
-    let projectsWithLiveData = 0;
-
-    const enrichedProjects = activeProjects.map((project) => {
-        const mrr = parseFloat(project.mrr) || 0;
-        totalQuotedBudget += mrr;
-
-        const liveProject =
-            (Array.isArray(dashboardData?.projects) ? dashboardData.projects : []).find(
-                (lp) => lp.id === project.id || lp.name === project.name
-            ) || null;
-
-        if (liveProject?.live_data_fetched) {
-            projectsWithLiveData++;
-            if (liveProject.billedToDate) totalBilledToDate += liveProject.billedToDate;
-            if (liveProject.overrun) totalProjectedOverrun += liveProject.overrun;
-            return {
-                ...project,
-                ...liveProject,
-                isLive: true,
-            };
+  const fetchDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = sessionStorage.getItem('hermes_access_token');
+      if (!token) {
+        setError('AUTH_REQUIRED');
+        return;
+      }
+      const resp = await fetch('/api/finops/dashboard', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.status === 401 || resp.status === 422) {
+        const body = await resp.json().catch(() => ({}));
+        if (body.msg && (body.msg.includes('expired') || body.msg.includes('Signature') || body.msg.includes('segments'))) {
+          sessionStorage.removeItem('hermes_access_token');
+          setError('SESSION_EXPIRED');
+          return;
         }
+        setError('AUTH_ERROR');
+        return;
+      }
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      }
+      const data = await resp.json();
+      if (data.success) {
+        setDashboardData(data);
+        setLastSyncTime(new Date());
+      } else {
+        setError(data.error || 'API returned failure');
+      }
+    } catch (err) {
+      console.error('FinOps Dashboard fetch failed:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-        const start = new Date(project.kickoff);
-        const end = new Date(project.date);
-        let daysTotal = 30;
-        let daysElapsed = 0;
-        let daysDelayed = 0;
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
 
-        if (!isNaN(start) && !isNaN(end)) {
-            daysTotal = Math.max((end - start) / (1000 * 60 * 60 * 24), 1);
-            daysElapsed = Math.max((currentTime - start) / (1000 * 60 * 60 * 24), 0);
-            if (currentTime > end) {
-                daysDelayed = Math.floor((currentTime - end) / (1000 * 60 * 60 * 24));
-            }
-        }
+  const activeProjects = (Array.isArray(projects) ? projects : []).filter(
+    (p) => p && !p.isWaiting && p.lifecycleState !== '6_completed'
+  );
 
-        return {
-            ...project,
-            daysTotal,
-            daysElapsed: Math.floor(daysElapsed),
-            daysDelayed,
-            dailyBurnRate: null,
-            billedToDate: null,
-            overrun: null,
-            isAtRisk: null,
-            isLive: false,
-            dataAvailable: false,
-        };
-    });
+  let totalQuotedBudget = 0;
+  let totalBilledToDate = 0;
+  let totalProjectedOverrun = 0;
+  let projectsWithLiveData = 0;
 
-    const liveSummary = dashboardData?.summary || null;
-    const summary = {
-        totalQuotedBudget: liveSummary?.total_quoted_budget ?? totalQuotedBudget,
-        totalBilledToDate: liveSummary?.total_billed_to_date ?? totalBilledToDate,
-        totalProjectedOverrun: liveSummary?.total_projected_overrun ?? totalProjectedOverrun,
-        activeCoupons: liveSummary?.active_coupons ?? 25000,
-    };
-    const remainingCoupons = summary.activeCoupons - summary.totalBilledToDate;
+  const enrichedProjects = activeProjects.map((project) => {
+    const mrr = parseFloat(project.mrr) || 0;
+    totalQuotedBudget += mrr;
 
-    const liveDataAvailable = dashboardData?.live_data_available || false;
-    const totalProjectsWithLive = dashboardData?.projects_with_live_data ?? projectsWithLiveData;
+    const liveProject =
+      (Array.isArray(dashboardData?.projects) ? dashboardData.projects : []).find(
+        (lp) => lp.id === project.id || lp.name === project.name
+      ) || null;
 
-    if (!Array.isArray(projects)) {
-        return (
-            <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
-                <Card className="bg-gray-900 border-gray-700 text-center">
-                    <Spin size="large" />
-                    <p className="text-gray-400 font-semibold mt-4">Loading project data...</p>
-                </Card>
-            </div>
-        );
+    if (liveProject?.live_data_fetched) {
+      projectsWithLiveData++;
+      if (liveProject.billedToDate) totalBilledToDate += liveProject.billedToDate;
+      if (liveProject.overrun) totalProjectedOverrun += liveProject.overrun;
+      return {
+        ...project,
+        ...liveProject,
+        isLive: true,
+      };
     }
 
+    const start = new Date(project.kickoff);
+    const end = new Date(project.date);
+    let daysTotal = 30;
+    let daysElapsed = 0;
+    let daysDelayed = 0;
+
+    if (!isNaN(start) && !isNaN(end)) {
+      daysTotal = Math.max((end - start) / (1000 * 60 * 60 * 24), 1);
+      daysElapsed = Math.max((currentTime - start) / (1000 * 60 * 60 * 24), 0);
+      if (currentTime > end) {
+        daysDelayed = Math.floor((currentTime - end) / (1000 * 60 * 60 * 24));
+      }
+    }
+
+    return {
+      ...project,
+      daysTotal,
+      daysElapsed: Math.floor(daysElapsed),
+      daysDelayed,
+      dailyBurnRate: null,
+      billedToDate: null,
+      overrun: null,
+      isAtRisk: null,
+      isLive: false,
+      dataAvailable: false,
+    };
+  });
+
+  const liveSummary = dashboardData?.summary || null;
+  const summary = {
+    totalQuotedBudget: liveSummary?.total_quoted_budget ?? totalQuotedBudget,
+    totalBilledToDate: liveSummary?.total_billed_to_date ?? totalBilledToDate,
+    totalProjectedOverrun: liveSummary?.total_projected_overrun ?? totalProjectedOverrun,
+    activeCoupons: liveSummary?.active_coupons ?? 25000,
+  };
+  const remainingCoupons = summary.activeCoupons - summary.totalBilledToDate;
+
+  const liveDataAvailable = dashboardData?.live_data_available || false;
+  const totalProjectsWithLive = dashboardData?.projects_with_live_data ?? projectsWithLiveData;
+
+  if (!Array.isArray(projects)) {
     return (
-        <div className="animate-fade-in max-w-[1800px] mx-auto space-y-6 pb-12">
-            {/* Header */}
-            <Card 
-                className="bg-gray-900 border-gray-700 relative overflow-hidden"
-                styles={{ body: { padding: '32px' } }}
-            >
-                <div className="absolute top-0 right-0 w-96 h-96 bg-red-500 rounded-full blur-[100px] opacity-20 -mr-20 -mt-20 pointer-events-none"></div>
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-700 pb-6 mb-6 gap-4">
-                    <div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <CloudServerOutlined className="text-red-400" /> Huawei COC FinOps Center
-                        </h2>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mt-1">
-                            Live Customer Operations Capability (COC) Budget & Run-Rate Analysis
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {/* Status Badge */}
-                        {liveDataAvailable ? (
-                            <Badge 
-                                status="success" 
-                                text={
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-green-400">
-                                        LIVE · {totalProjectsWithLive}/{summary.totalQuotedBudget > 0 ? enrichedProjects.length : dashboardData?.total_projects ?? 0} Projects
-                                    </span>
-                                }
-                            />
-                        ) : loading ? (
-                            <Tag icon={<SyncOutlined spin />} color="warning">
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Connecting...</span>
-                            </Tag>
-                        ) : error === 'SESSION_EXPIRED' || error === 'AUTH_REQUIRED' ? (
-                            <Tag color="warning" style={{ cursor: 'pointer' }} onClick={() => window.location.href = '/login'}>
-                                <ThunderboltOutlined className="mr-1" /> Session Expired — Click to Login
-                            </Tag>
-                        ) : error === 'AUTH_ERROR' ? (
-                            <Tag color="error">
-                                <ExclamationCircleOutlined className="mr-1" /> Authentication Error
-                            </Tag>
-                        ) : error ? (
-                            <Tag color="error">
-                                <ExclamationCircleOutlined className="mr-1" /> Unavailable
-                            </Tag>
-                        ) : (
-                            <Tag color="default">
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">No Live Data</span>
-                            </Tag>
-                        )}
-
-                        <Button
-                            onClick={fetchDashboard}
-                            loading={loading}
-                            icon={<SyncOutlined spin={loading} />}
-                            type="primary"
-                            className="bg-red-600 border-red-600 hover:bg-red-700"
-                        >
-                            {loading ? 'Syncing...' : 'Sync COC APIs'}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
-                    <Card className="bg-gray-800/50 border-gray-600">
-                        <Statistic
-                            title={<><FileTextOutlined className="text-green-400 mr-2" />Total Quoted SOW Budget</>}
-                            value={summary.totalQuotedBudget}
-                            prefix="$"
-                            precision={0}
-                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
-                            suffix={<span className="text-[10px] text-gray-500 font-semibold">{activeProjects.length} Active Projects</span>}
-                        />
-                    </Card>
-                    <Card className="bg-gray-800/50 border-gray-600">
-                        <Statistic
-                            title={
-                                <span>
-                                    <FileOutlined className="text-red-400 mr-2" />
-                                    Billed to Date
-                                    {liveDataAvailable && <span className="text-green-400 ml-2 text-xs">(COC Live)</span>}
-                                </span>
-                            }
-                            value={summary.totalBilledToDate}
-                            prefix="$"
-                            precision={0}
-                            valueStyle={{ color: '#fca5a5', fontSize: '28px', fontWeight: 'bold' }}
-                            suffix={
-                                <span className="text-[10px] text-gray-500 font-semibold">
-                                    {liveDataAvailable ? 'Live consumption from COC BSS' : 'Live data unavailable for LATAM region'}
-                                </span>
-                            }
-                        />
-                    </Card>
-                    <Card className="bg-gray-800/50 border-gray-600 relative overflow-hidden">
-                        <div className="absolute right-0 bottom-0 opacity-10 text-6xl m-2">
-                            <WarningOutlined />
-                        </div>
-                        <Statistic
-                            title={<><FireOutlined className="text-red-400 mr-2" />Projected Delay Overrun</>}
-                            value={summary.totalProjectedOverrun}
-                            prefix="$"
-                            precision={0}
-                            valueStyle={{ color: summary.totalProjectedOverrun > 0 ? '#f87171' : '#d1d5db', fontSize: '28px', fontWeight: 'bold' }}
-                            suffix={<span className="text-[10px] text-gray-500 font-semibold">Cost of extended timelines</span>}
-                        />
-                    </Card>
-                    <Card className="bg-gray-800/50 border-gray-600">
-                        <Statistic
-                            title={<><ThunderboltFilled className="text-amber-400 mr-2" />Huawei Migration Coupons</>}
-                            value={remainingCoupons}
-                            prefix="$"
-                            precision={0}
-                            valueStyle={{ color: remainingCoupons >= 0 ? '#fbbf24' : '#f87171', fontSize: '28px', fontWeight: 'bold' }}
-                            suffix={<span className="text-[10px] text-gray-500 font-semibold">Balance remaining</span>}
-                        />
-                    </Card>
-                </div>
-            </Card>
-
-            {/* Project Table */}
-            <Card className="overflow-hidden">
-                <div className="px-6 py-5 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                    <div>
-                        <h3 className="font-bold text-lg text-gray-800">Timeline Impact & Run-Rate</h3>
-                        <p className="text-xs text-gray-500 mt-1 font-medium">
-                            {liveDataAvailable
-                                ? 'Live billing data from Huawei COC BSS APIs — actual consumption tracked per project.'
-                                : 'Monitoring dual-run infrastructure costs caused by partners pushing end dates.'}
-                        </p>
-                    </div>
-                    {lastSyncTime && (
-                        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
-                            Last synced: {lastSyncTime.toLocaleTimeString()}
-                        </div>
-                    )}
-                </div>
-
-                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                    <table className="w-full text-left whitespace-nowrap">
-                        <thead className="bg-gray-100 text-gray-600 text-[10px] font-bold uppercase tracking-widest border-b border-gray-200 sticky top-0 z-10">
-                            <tr>
-                                <th className="p-4 w-[18%]">Project & Identity</th>
-                                <th className="p-4 w-[12%]">SOW Budget</th>
-                                <th className="p-4 w-[14%]">Schedule & Variance</th>
-                                <th className="p-4 w-[14%]">Billed to Date</th>
-                                <th className="p-4 w-[14%]">Daily Burn Rate</th>
-                                <th className="p-4 w-[14%]">COC Health</th>
-                                <th className="p-4 w-[14%]">Data Source</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 text-sm">
-                            {Array.isArray(enrichedProjects) && enrichedProjects.length > 0 && enrichedProjects.map((project) => (
-                                <tr key={project.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="p-4">
-                                        <div className="font-bold text-gray-800">
-                                            {project.name || 'Unnamed Project'}
-                                        </div>
-                                        <div className="text-[10px] font-semibold text-gray-500 mt-1">
-                                            {project.customerName || project.customerId || 'No Customer'}
-                                        </div>
-                                        {project.liveDataError && (
-                                            <div className="text-[9px] text-red-500 mt-1 italic" title={project.liveDataError}>
-                                                <ExclamationCircleOutlined className="mr-1" />
-                                                {project.liveDataError.substring(0, 40)}...
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-bold text-green-700">
-                                            {fm(project.mrr)}{' '}
-                                            <span className="text-[9px] text-gray-400 font-semibold ml-1">Limit</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-semibold text-gray-700">
-                                            {formatShortDate(project.kickoff)} - {formatShortDate(project.date)}
-                                        </div>
-                                        <div
-                                            className={`text-[10px] font-bold mt-1 ${
-                                                project.daysDelayed > 0 ? 'text-red-500' : 'text-gray-400'
-                                            }`}
-                                        >
-                                            {project.daysElapsed} days elapsed
-                                            {project.daysDelayed > 0 && ` (+${project.daysDelayed} delayed)`}
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-semibold text-gray-800">
-                                            {fm(project.billedToDate)}
-                                        </div>
-                                        {project.overrun > 0 && (
-                                            <div className="text-[9px] font-bold text-red-500 uppercase tracking-widest mt-1">
-                                                {fm(project.overrun)} Delay Overrun
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-bold text-amber-600">
-                                            {fm(project.dailyBurnRate)}{' '}
-                                            <span className="text-[9px] text-gray-400 font-semibold ml-1">/ day</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <Tag
-                                            color={
-                                                project.isAtRisk === null ? 'default' :
-                                                project.isAtRisk ? 'error' : 'success'
-                                            }
-                                            icon={
-                                                project.isAtRisk === null ? <MinusCircleOutlined /> :
-                                                project.isAtRisk ? <ExclamationCircleOutlined /> :
-                                                <CheckCircleOutlined />
-                                            }
-                                        >
-                                            {project.isAtRisk === null ? 'Unknown' :
-                                             project.isAtRisk ? 'Budget Risk' : 'On Budget'}
-                                        </Tag>
-                                    </td>
-                                    <td className="p-4">
-                                        {project.isLive ? (
-                                            <Tag color="success" icon={<CheckCircleOutlined />}>
-                                                <span className="text-[9px] font-bold uppercase tracking-widest">COC Live</span>
-                                            </Tag>
-                                        ) : project.liveDataError ? (
-                                            <Tag color="error">Error</Tag>
-                                        ) : (
-                                            <Tag color="default">
-                                                <span className="text-[9px] font-semibold text-gray-400">No Data</span>
-                                            </Tag>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                            {(!Array.isArray(enrichedProjects) || enrichedProjects.length === 0) && (
-                                <tr>
-                                    <td colSpan="7" className="p-12 text-center text-gray-400 font-semibold">
-                                        <Empty description="No active projects in the pipeline." />
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
+      <Card style={{ borderRadius: 12 }}>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <Spin size="large" />
+          <Text type="secondary" style={{ display: 'block', marginTop: 16, fontSize: 14 }}>Loading project data...</Text>
         </div>
+      </Card>
     );
+  }
+
+  // Table columns
+  const columns = [
+    {
+      title: 'Project & Identity',
+      dataIndex: 'name',
+      key: 'project',
+      width: 280,
+      render: (name, record) => (
+        <div>
+          <Text strong style={{ fontSize: 14 }}>{name || 'Unnamed Project'}</Text>
+          <div>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {record.customerName || record.customerId || 'No Customer'}
+            </Text>
+          </div>
+          {record.liveDataError && (
+            <Tooltip title={record.liveDataError}>
+              <Text type="danger" style={{ fontSize: 10, display: 'block', marginTop: 4 }}>
+                <ExclamationCircleOutlined /> {record.liveDataError.substring(0, 40)}...
+              </Text>
+            </Tooltip>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: 'SOW Budget',
+      dataIndex: 'mrr',
+      key: 'budget',
+      width: 140,
+      render: (mrr) => (
+        <div>
+          <Text strong style={{ color: '#52c41a', fontSize: 14 }}>{fm(mrr)}</Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>Limit</Text>
+        </div>
+      ),
+    },
+    {
+      title: 'Schedule & Variance',
+      key: 'schedule',
+      width: 200,
+      render: (_, record) => (
+        <div>
+          <Text style={{ fontSize: 13 }}>
+            {formatShortDate(record.kickoff)} — {formatShortDate(record.date)}
+          </Text>
+          <div>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {record.daysElapsed} days elapsed
+            </Text>
+            {record.daysDelayed > 0 && (
+              <Text type="danger" style={{ fontSize: 11, fontWeight: 600 }}>
+                {' '}(+{record.daysDelayed} delayed)
+              </Text>
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: 'Billed to Date',
+      dataIndex: 'billedToDate',
+      key: 'billed',
+      width: 160,
+      render: (billed, record) => (
+        <div>
+          <Text style={{ fontSize: 14 }}>{fm(billed)}</Text>
+          {record.overrun > 0 && (
+            <Text type="danger" style={{ fontSize: 10, fontWeight: 600, display: 'block', marginTop: 2 }}>
+              {fm(record.overrun)} Delay Overrun
+            </Text>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: 'Daily Burn Rate',
+      dataIndex: 'dailyBurnRate',
+      key: 'burn',
+      width: 140,
+      render: (burn) => burn ? (
+        <div>
+          <Text strong style={{ color: '#faad14', fontSize: 14 }}>{fm(burn)}</Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>/ day</Text>
+        </div>
+      ) : <Text type="secondary" style={{ fontSize: 12 }}>—</Text>,
+    },
+    {
+      title: 'COC Health',
+      dataIndex: 'isAtRisk',
+      key: 'health',
+      width: 130,
+      render: (isAtRisk, record) => (
+        <Tag
+          color={
+            isAtRisk === null ? 'default' :
+            isAtRisk ? 'error' : 'success'
+          }
+          icon={
+            isAtRisk === null ? <MinusCircleOutlined /> :
+            isAtRisk ? <ExclamationCircleOutlined /> :
+            <CheckCircleOutlined />
+          }
+        >
+          {isAtRisk === null ? 'Unknown' :
+           isAtRisk ? 'Budget Risk' : 'On Budget'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Data Source',
+      dataIndex: 'isLive',
+      key: 'source',
+      width: 120,
+      render: (isLive, record) => (
+        isLive ? (
+          <Tag color="success" icon={<CheckCircleOutlined />}>
+            <Text style={{ fontSize: 10, fontWeight: 600 }}>COC Live</Text>
+          </Tag>
+        ) : record.liveDataError ? (
+          <Tag color="error">Error</Tag>
+        ) : (
+          <Tag color="default">
+            <Text style={{ fontSize: 10, color: '#8c8c8c' }}>No Data</Text>
+          </Tag>
+        )
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ maxWidth: 1600, margin: '0 auto', padding: 24 }}>
+      {/* Header Card */}
+      <Card
+        styles={{ body: { padding: '28px 32px' } }}
+        style={{ borderRadius: 12, marginBottom: 24 }}
+      >
+        <div style={{ borderBottom: '1px solid #f0f0f0', paddingBottom: 20, marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div>
+              <Title level={3} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <CloudServerOutlined style={{ color: '#ff4d4f' }} />
+                Huawei COC FinOps Center
+              </Title>
+              <Text type="secondary" style={{ fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                Live Customer Operations Capability (COC) Budget & Run-Rate Analysis
+              </Text>
+            </div>
+            <Space size={12} wrap>
+              {liveDataAvailable ? (
+                <Badge
+                  status="success"
+                  text={
+                    <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: '#52c41a' }}>
+                      LIVE · {totalProjectsWithLive}/{summary.totalQuotedBudget > 0 ? enrichedProjects.length : dashboardData?.total_projects ?? 0} Projects
+                    </Text>
+                  }
+                />
+              ) : loading ? (
+                <Tag icon={<SyncOutlined spin />} color="warning">
+                  <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Connecting...</Text>
+                </Tag>
+              ) : error === 'SESSION_EXPIRED' || error === 'AUTH_REQUIRED' ? (
+                <Tag color="warning" style={{ cursor: 'pointer' }} onClick={() => window.location.href = '/login'}>
+                  <ThunderboltOutlined style={{ marginRight: 4 }} /> Session Expired — Click to Login
+                </Tag>
+              ) : error === 'AUTH_ERROR' ? (
+                <Tag color="error">
+                  <ExclamationCircleOutlined style={{ marginRight: 4 }} /> Authentication Error
+                </Tag>
+              ) : error ? (
+                <Tag color="error">
+                  <ExclamationCircleOutlined style={{ marginRight: 4 }} /> Unavailable
+                </Tag>
+              ) : (
+                <Tag color="default">
+                  <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: '#8c8c8c' }}>No Live Data</Text>
+                </Tag>
+              )}
+
+              <Button
+                onClick={fetchDashboard}
+                loading={loading}
+                icon={<SyncOutlined spin={loading} />}
+                type="primary"
+                style={{ background: '#ff4d4f', borderColor: '#ff4d4f' }}
+              >
+                {loading ? 'Syncing...' : 'Sync COC APIs'}
+              </Button>
+            </Space>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <Row gutter={[20, 20]}>
+          <Col xs={24} sm={12} md={6}>
+            <Card
+              styles={{ body: { padding: '20px 24px' } }}
+              style={{ borderRadius: 10, background: '#f6ffed', border: '1px solid #b7eb8f' }}
+            >
+              <Statistic
+                title={
+                  <Space>
+                    <FileTextOutlined style={{ color: '#52c41a' }} />
+                    <Text style={{ fontSize: 12, fontWeight: 600 }}>Total Quoted SOW Budget</Text>
+                  </Space>
+                }
+                value={summary.totalQuotedBudget}
+                prefix="$"
+                precision={0}
+                valueStyle={{ color: '#262626', fontSize: 28, fontWeight: 700 }}
+                suffix={
+                  <Text type="secondary" style={{ fontSize: 10, fontWeight: 600 }}>
+                    {activeProjects.length} Active Projects
+                  </Text>
+                }
+              />
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={12} md={6}>
+            <Card
+              styles={{ body: { padding: '20px 24px' } }}
+              style={{ borderRadius: 10, background: '#fff2f0', border: '1px solid #ffccc7' }}
+            >
+              <Statistic
+                title={
+                  <Space>
+                    <FileOutlined style={{ color: '#ff4d4f' }} />
+                    <Text style={{ fontSize: 12, fontWeight: 600 }}>Billed to Date</Text>
+                    {liveDataAvailable && <Text type="success" style={{ fontSize: 10 }}>(COC Live)</Text>}
+                  </Space>
+                }
+                value={summary.totalBilledToDate}
+                prefix="$"
+                precision={0}
+                valueStyle={{ color: '#ff4d4f', fontSize: 28, fontWeight: 700 }}
+                suffix={
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {liveDataAvailable ? 'Live from COC BSS' : 'Live data unavailable'}
+                  </Text>
+                }
+              />
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={12} md={6}>
+            <Card
+              styles={{ body: { padding: '20px 24px', position: 'relative' } }}
+              style={{ borderRadius: 10, background: '#fff7e6', border: '1px solid #ffd591' }}
+            >
+              <WarningOutlined style={{ position: 'absolute', right: 20, bottom: 10, fontSize: 36, color: '#ff4d4f', opacity: 0.1 }} />
+              <Statistic
+                title={
+                  <Space>
+                    <FireOutlined style={{ color: '#ff4d4f' }} />
+                    <Text style={{ fontSize: 12, fontWeight: 600 }}>Projected Delay Overrun</Text>
+                  </Space>
+                }
+                value={summary.totalProjectedOverrun}
+                prefix="$"
+                precision={0}
+                valueStyle={{
+                  color: summary.totalProjectedOverrun > 0 ? '#ff4d4f' : '#8c8c8c',
+                  fontSize: 28,
+                  fontWeight: 700
+                }}
+                suffix={<Text type="secondary" style={{ fontSize: 10 }}>Cost of extended timelines</Text>}
+              />
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={12} md={6}>
+            <Card
+              styles={{ body: { padding: '20px 24px' } }}
+              style={{ borderRadius: 10, background: '#fffbe6', border: '1px solid #ffe58f' }}
+            >
+              <Statistic
+                title={
+                  <Space>
+                    <ThunderboltFilled style={{ color: '#faad14' }} />
+                    <Text style={{ fontSize: 12, fontWeight: 600 }}>Huawei Migration Coupons</Text>
+                  </Space>
+                }
+                value={remainingCoupons}
+                prefix="$"
+                precision={0}
+                valueStyle={{
+                  color: remainingCoupons >= 0 ? '#faad14' : '#ff4d4f',
+                  fontSize: 28,
+                  fontWeight: 700
+                }}
+                suffix={<Text type="secondary" style={{ fontSize: 10 }}>Balance remaining</Text>}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Project Table */}
+      <Card
+        styles={{ body: { padding: 0 } }}
+        style={{ borderRadius: 12 }}
+      >
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <Row gutter={[16, 8]} align="middle">
+            <Col flex="auto">
+              <Title level={5} style={{ margin: 0 }}>Timeline Impact & Run-Rate</Title>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {liveDataAvailable
+                  ? 'Live billing data from Huawei COC BSS APIs — actual consumption tracked per project.'
+                  : 'Monitoring dual-run infrastructure costs caused by partners pushing end dates.'}
+              </Text>
+            </Col>
+            {lastSyncTime && (
+              <Col>
+                <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' }}>
+                  Last synced: {lastSyncTime.toLocaleTimeString()}
+                </Text>
+              </Col>
+            )}
+          </Row>
+        </div>
+
+        <Table
+          columns={columns}
+          dataSource={enrichedProjects}
+          rowKey={(record) => record.id}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `Total ${total} projects` }}
+          size="middle"
+          scroll={{ y: 500 }}
+          locale={{ emptyText: <Empty description="No active projects in the pipeline." /> }}
+          rowClassName={(record) => record.isLive ? 'live-project-row' : ''}
+        />
+      </Card>
+    </div>
+  );
 }
