@@ -184,7 +184,7 @@ export default function Sidebar() {
                     type="primary"
                     shape="circle"
                     size="large"
-                    icon={mobileMenuOpen ? <CloseOutlined /> : activeItem.icon}
+                    icon={mobileMenuOpen ? <CloseOutlined /> : <activeItem.icon />}
                     className={`shadow-2xl transition-all duration-300 ${mobileMenuOpen ? 'bg-red-600 rotate-45 scale-110' : 'bg-gray-900 hover:bg-gray-800 active:scale-95'}`}
                     style={{ 
                         width: 48, 
