@@ -528,14 +528,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                 </div>
 
                                 <div className="flex-1 overflow-auto custom-scrollbar bg-white relative">
-                                    <table className="w-full text-left min-w-[1400px]">
+                                    <table className="w-full text-left">
                                         <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0 z-10 shadow-sm border-b border-slate-200">
                                             <tr>
-                                                <th className="p-4 w-56 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-44 font-black">Specifications</th>
-                                                <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>Target IP {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-24 text-center font-black">Action</th>
+                                                <th className="p-4 font-black cursor-pointer hover:bg-slate-200 transition-colors whitespace-nowrap" onClick={() => handleSort('name')}>Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 font-black whitespace-nowrap">Specifications</th>
+                                                <th className="p-4 font-black cursor-pointer hover:bg-slate-200 transition-colors whitespace-nowrap" onClick={() => handleSort('region')}>Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 font-black cursor-pointer hover:bg-slate-200 transition-colors whitespace-nowrap" onClick={() => handleSort('ip')}>Target IP {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 text-center font-black whitespace-nowrap">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-xs">
@@ -584,7 +584,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="p-4 font-mono text-[11px] text-slate-700 max-w-xs truncate" title={specStr}>{specStr}</td>
+                                                            <td className="p-4 font-mono text-[11px] text-slate-700">{specStr}</td>
                                                             <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
                                                             <td className="p-4 font-bold text-slate-500 text-[11px]">{n.ip || n.ip_address || 'TBD'}</td>
                                                             <td className="p-4 text-center">
