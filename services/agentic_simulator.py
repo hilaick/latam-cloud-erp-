@@ -184,7 +184,7 @@ class SkillRegistry:
         "huawei_cloud_sms_migration": {
             "name": "huawei-cloud-sms-migration",
             "category": "migration",
-            "description": "Complete SMS migration patterns with hcloud CLI, target config, ECS creation, task creation, disk mapping — built from real CODELPA PRTSRV migration.",
+            "description": "Complete SMS migration patterns with hcloud CLI: target config, ECS creation with EIP from start, SMS task creation with exact disk mapping, private IP workaround, SMS.0515 recovery.",
             "applies_to": ["linux", "windows"],
             "prerequisites": ["source_server_registered", "target_vpc_exists", "huawei_credentials", "ecs_with_eip"],
             "hermes_skill": "devops/huawei-cloud-sms-migration",
@@ -2733,40 +2733,131 @@ class AgenticExecutionSimulator:
         })
         total_simulated_seconds += config.STEP_TIMINGS["garbage_collection"]
 
-        # ═══ Phase 4.8: Finalize ═══
+        # ═══ Phase 4.8: Finalize & Delivery Report ═══
         step_id += 1
         total_hours = total_simulated_seconds / 3600
+
+        # ── Physics Engine (3.2) estimates ──
+        physics_engine = {
+            "bandwidth_mbps": float(physics.get("bandwidthMbps", 500)) if physics else 500,
+            "concurrency": int(physics.get("concurrency", 5)) if physics else 5,
+            "effective_throughput_mbps": round(SmsMigrationSimulator._simulate_throughput(physics), 0),
+            "estimated_per_server_hours": round(total_hours / max(servers_processed, 1), 1),
+            "total_data_transferred_gb": round(
+                servers_processed * (
+                    sum(float(s.get("diskGB", s.get("disk_gb", 100)))
+                        for s in ResourceTypeRouter.get_server_resources(mapper_nodes))
+                    or 100
+                ),
+                0
+            ),
+        }
+
+        # ── FinOps Budget & Burn (3.3) ──
         try:
             budget_raw = finops.get("budget")
             budget = float(budget_raw if budget_raw is not None else 10000)
         except Exception:
             logger.error(f"Budget parse failed: finops={finops}", exc_info=True)
             budget = 10000.0
+
         estimated_cost = AgenticExecutionSimulator._estimate_cost(
             resource_usage, total_hours, physics
         )
         cost_efficiency = "UNDER_BUDGET" if estimated_cost <= budget else "OVER_BUDGET"
+        budget_utilization_pct = round((estimated_cost / budget) * 100, 1) if budget > 0 else 0
+        monthly_mrr_estimate = round(estimated_cost * 0.3, 0)  # ~30% of total for MRR component
+        monthly_consumption_estimate = round(estimated_cost * 0.7, 0)  # ~70% is consumption
+
+        finops_summary = {
+            "budget": budget,
+            "estimated_total_cost": round(estimated_cost, 0),
+            "budget_utilization_pct": budget_utilization_pct,
+            "cost_efficiency": cost_efficiency,
+            "monthly_mrr_estimate": monthly_mrr_estimate,
+            "monthly_consumption_estimate": monthly_consumption_estimate,
+            "burn_rate_monthly": round(estimated_cost / max(total_hours / 730, 1), 0),  # monthly burn rate
+            "cost_per_server": round(estimated_cost / max(servers_processed, 1), 0),
+        }
+
+        # ── Strategic Tooling (3.4a) — which skills were used ──
+        strategic_tooling = {
+            "sms_migration": sms_total > 0,
+            "image_migration": image_count > 0,
+            "troubleshooting_incidents": resource_usage["troubleshooting_incidents"],
+            "skills_deployed": [
+                {
+                    "name": s["name"],
+                    "category": s["category"],
+                    "hermes_skill": s.get("hermes_skill"),
+                }
+                for s in SkillRegistry.SKILLS.values()
+                if s["name"] != "image-conversion" or sms_total > 0  # only report relevant skills
+            ],
+            "primary_tool": "SMS" if sms_ok > 0 else "Image" if image_count > 0 else "None",
+        }
 
         sms_ok = resource_usage["sms_migrations_succeeded"]
         sms_total = resource_usage["sms_migrations_attempted"]
         image_count = resource_usage["image_migrations_performed"]
 
+        # ── Delivery Constellation summary (what would have been delivered) ──
+        delivered_resources = []
+        for node in mapper_nodes:
+            rclass = ResourceTypeRouter.classify(node)
+            name = node.get("name", "?")
+            delivered_resources.append({
+                "name": name,
+                "type": node.get("type", rclass["resource_class"]),
+                "phase": rclass["phase"],
+                "status": "MIGRATED" if rclass["resource_class"] == "SERVER" else "PROVISIONED",
+                "flavor": node.get("flavor", node.get("specs", {}).get("flavor", "N/A")),
+                "os": node.get("os", "N/A"),
+            })
+
         trace.append({
             "id": step_id, "phase": "PHASE_4_8", "agent": "Orchestrator",
             "action": "FINALIZE",
             "message": (
-                f"🎉 AGENTIC ORCHESTRATION COMPLETE. "
-                f"Total simulated time: {total_hours:.1f} hours ({total_hours/24:.1f} days). "
-                f"Servers: {servers_processed}/{len(mapper_nodes)} processed. "
-                f"SMS migrations: {sms_ok}/{sms_total} succeeded. "
-                f"Image-based migrations: {image_count} performed. "
-                f"Troubleshooting incidents: {resource_usage['troubleshooting_incidents']}. "
-                f"Estimated cost: ${estimated_cost:.0f} / ${budget:.0f} budget → {cost_efficiency}. "
-                f"All transient resources cleaned up. Target environment ready for handoff."
+                f"🎯 DELIVERY REPORT — '{project_name}'\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"PHYSICS ENGINE (3.2)\n"
+                f"  Servers migrated: {servers_processed}/{len(ResourceTypeRouter.get_server_resources(mapper_nodes))}\n"
+                f"  Total simulated time: {total_hours:.1f}h ({total_hours/24:.1f} days)\n"
+                f"  Bandwidth: {physics_engine['bandwidth_mbps']} Mbps | Concurrency: {physics_engine['concurrency']}\n"
+                f"  Effective throughput: {physics_engine['effective_throughput_mbps']} Mbps\n"
+                f"  Data transferred: ~{physics_engine['total_data_transferred_gb']:.0f} GB\n"
+                f"  Per-server avg: {physics_engine['estimated_per_server_hours']:.1f}h\n"
+                f"\n"
+                f"BUDGET & BURN (3.3)\n"
+                f"  Budget: ${budget:,.0f} | Estimated cost: ${estimated_cost:,.0f}\n"
+                f"  Utilization: {budget_utilization_pct}% → {cost_efficiency}\n"
+                f"  Monthly MRR: ${monthly_mrr_estimate:,.0f} | Monthly consumption: ${monthly_consumption_estimate:,.0f}\n"
+                f"  Cost per server: ${finops_summary['cost_per_server']:,.0f}\n"
+                f"\n"
+                f"STRATEGIC TOOLING (3.4a)\n"
+                f"  Primary tool: {strategic_tooling['primary_tool']}\n"
+                f"  SMS migrations: {sms_ok}/{sms_total} succeeded\n"
+                f"  Image migrations: {image_count} performed\n"
+                f"  Troubleshooting incidents: {resource_usage['troubleshooting_incidents']}\n"
+                f"\n"
+                f"RESOURCES DELIVERED\n"
+                f"  Network: {len(ResourceTypeRouter.get_network_resources(mapper_nodes))} resource(s)\n"
+                f"  CBR vaults: {resource_usage['cbr_vaults_used']}\n"
+                f"  HSS agents: {len(ResourceTypeRouter.get_hss_resources(mapper_nodes))} server license(s)\n"
+                f"  All transient resources cleaned up. Target environment ready for handoff.\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             ),
             "timestamp_offset_seconds": total_simulated_seconds,
             "result": "simulated_complete",
             "decision": {"cost_efficiency": cost_efficiency},
+            "delivery_report": {
+                "physics": physics_engine,
+                "finops": finops_summary,
+                "strategic_tooling": strategic_tooling,
+                "delivered_resources": delivered_resources,
+                "resource_usage": {k: v for k, v in resource_usage.items() if not k.startswith("_")},
+            },
         })
 
         # ── Build summary ──
@@ -2786,11 +2877,20 @@ class AgenticExecutionSimulator:
             "cost_estimate_usd": round(estimated_cost, 0),
             "budget_usd": budget,
             "cost_efficiency": cost_efficiency,
+            "budget_utilization_pct": budget_utilization_pct,
+            "monthly_mrr_estimate": monthly_mrr_estimate,
+            "monthly_consumption_estimate": monthly_consumption_estimate,
+            "burn_rate_monthly": finops_summary["burn_rate_monthly"],
+            "cost_per_server": finops_summary["cost_per_server"],
             "migration_paths": {
                 "sms_primary": sms_ok,
                 "sms_total_attempted": sms_total,
                 "image_fallback": image_count,
             },
+            "physics_engine": physics_engine,
+            "finops_summary": finops_summary,
+            "strategic_tooling": strategic_tooling,
+            "delivered_resources": delivered_resources,
             "troubleshooting_incidents": resource_usage["troubleshooting_incidents"],
             "resource_usage": {
                 k: v for k, v in resource_usage.items()
