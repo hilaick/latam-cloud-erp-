@@ -58,13 +58,26 @@ const CopyButton = ({ text }) => {
   );
 };
 
-/* ── Sub-component: Status badge (PASS / FAIL / WARN) ── */
-const StatusBadge = ({ result, outcome }) => {
-  const status = (result || outcome || '').toLowerCase();
-  const isSuccess = status.includes('success') || status === 'capacity_ok' || status === 'registered' || status.includes('complete');
+/* ── Sub-component: Status badge (PASS / FAIL / BLOCKED / WARN) ── */
+const StatusBadge = ({ result, outcome, isDryRun }) => {
+  let status = (result || outcome || '').toLowerCase();
+  const raw = (result || outcome || '');
+  const isHypothetical = raw === 'hypothetical_path_displayed';
+  const isSimulated = raw === 'simulated_cleanup' || raw === 'simulated_complete';
+  const isBlocked = raw.startsWith('BLOCKED') || status.includes('blocked');
+  const isSuccess = (status.includes('success') || status === 'capacity_ok' || status === 'registered' || status.startsWith('simulated')) && !isBlocked;
   const isWarn = status.includes('warn') || status.includes('retry');
-  const isFail = status.includes('error') || status.includes('failed') || status.includes('blocked') || status === 'not_resolved';
+  const isFail = (status.includes('error') || status.includes('failed')) && !isBlocked;
   
+  if (isHypothetical) {
+    return <Tag icon={<ExperimentOutlined />} color="cyan">HYPOTHETICAL</Tag>;
+  }
+  if (isSimulated) {
+    return <Tag icon={<CheckCircleOutlined />} style={{ color: '#52c41a', borderColor: '#d9f7be', background: '#f6ffed' }}>SIMULATED (dry-run)</Tag>;
+  }
+  if (isBlocked) {
+    return <Tag icon={<CloseCircleOutlined />} style={{ color: '#fa8c16', borderColor: '#ffe7ba', background: '#fff7e6' }}>BLOCKED</Tag>;
+  }
   if (isSuccess) {
     return <Tag icon={<CheckCircleOutlined />} color="success">OK</Tag>;
   } else if (isWarn) {
@@ -120,13 +133,13 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
             <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
               {step.action?.replace(/_/g, ' ')}
             </Text>
-            <StatusBadge result={step.result} outcome={step.outcome} />
+            <StatusBadge result={step.result} outcome={step.outcome} isDryRun={true} />
             {step.duration_ms && (
               <Text type="secondary" style={{ fontSize: 10 }}>{step.duration_ms}ms</Text>
             )}
           </Space>
           <Paragraph style={{ margin: '4px 0 0', fontSize: 12, color: '#595959', lineHeight: 1.5 }}>
-            {step.description || step.decision?.message || ''}
+            {step.message || step.description || step.decision?.message || ''}
           </Paragraph>
           <DependencyBadge deps={step.dependencies} />
         </div>
@@ -142,7 +155,7 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
           {step.commands && step.commands.length > 0 && (
             <div style={{ background: '#f5f5f5', borderRadius: 6, padding: 10, marginBottom: 8 }}>
               <Text strong style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: '#8c8c8c' }}>
-                CLI / API Commands
+                CLI / API Commands (SIMULATED — dry-run)
               </Text>
               <div style={{ marginTop: 6 }}>
                 {step.commands.map((cmd, i) => {
@@ -150,9 +163,9 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
                   const descStr = typeof cmd === 'object' && cmd !== null ? (cmd.desc || cmd.description || '') : '';
                   return (
                     <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 2 }}>
-                      <span style={{ color: '#52c41a', flexShrink: 0 }}>$</span>
+                      <span style={{ color: '#d9d9d9', flexShrink: 0 }}>SIMULATED $</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <code style={{ fontSize: 11, color: '#262626', wordBreak: 'break-all' }}>{cmdStr}</code>
+                        <code style={{ fontSize: 11, color: '#262626', wordBreak: 'break-all', fontStyle: 'italic' }}>{cmdStr}</code>
                         {descStr && <div style={{ fontSize: 9, color: '#8c8c8c' }}>{descStr}</div>}
                       </div>
                       <CopyButton text={cmdStr} />
@@ -251,7 +264,7 @@ const ResourceCard = ({ resource, status, isHighlighted }) => {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      border: '1px solid #f0f0f0', borderRadius: 6, background: cfg.bg,
+      borderRadius: 6, background: cfg.bg,
       transition: 'all 0.3s',
       border: isHighlighted ? '2px solid #722ed1' : '1px solid #f0f0f0',
       boxShadow: isHighlighted ? '0 2px 8px rgba(114,46,209,0.15)' : 'none',
@@ -373,14 +386,14 @@ const LiveStepCard = ({ step }) => {
           <i className="fas fa-bolt" style={{ color: '#fff', fontSize: 14 }}></i>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Text strong style={{ fontSize: 10, color: '#722ed1', textTransform: 'uppercase', letterSpacing: 2 }}>
-            {phaseLabel} · {step.action}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {S(step.description || (step.decision && step.decision.message) || step.result)}
-          </Text>
+            <Text strong style={{ fontSize: 10, color: '#722ed1', textTransform: 'uppercase', letterSpacing: 2 }}>
+              {phaseLabel} · {step.action}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {step.message || S(step.description || (step.decision && step.decision.message) || step.result)}
+            </Text>
         </div>
-        <StatusBadge result={step.result} outcome={step.outcome} />
+        <StatusBadge result={step.result} outcome={step.outcome} isDryRun={true} />
       </Space>
       {step.commands && step.commands.length > 0 && (
         <div style={{ marginTop: 8, background: '#262626', borderRadius: 6, padding: 8, fontFamily: 'monospace' }}>
@@ -636,68 +649,79 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const summary = result?.summary;
 
   // ── Phase configuration ──
-  const PHASE_CONFIG = {
-    'PHASE_4_0': { icon: 'fa-rocket', label: 'Phase 4.0 — Initialisation', color: '#faad14' },
-    'PHASE_4_1': { icon: 'fa-network-wired', label: 'Phase 4.1 — Network Fabric', color: '#1890ff' },
-    'PHASE_4_2': { icon: 'fa-server', label: 'Phase 4.2 — Wave Processing', color: '#722ed1' },
-    'PHASE_4_7': { icon: 'fa-broom', label: 'Phase 4.7 — Cleanup & Handoff', color: '#52c41a' },
+  // ── Phase configuration — dynamic for any phase key ──
+  const getPhaseConfig = (phaseKey) => {
+    const known = {
+      'PHASE_4_0': { icon: 'fa-rocket', label: 'Phase 4.0 — Initialisation', color: '#faad14' },
+      'PHASE_4_1': { icon: 'fa-network-wired', label: 'Phase 4.1 — Network Fabric', color: '#1890ff' },
+      'PHASE_4_2': { icon: 'fa-server', label: 'Phase 4.2 — Wave Processing', color: '#722ed1' },
+      'PHASE_4_7': { icon: 'fa-broom', label: 'Phase 4.7 — Cleanup & Handoff', color: '#52c41a' },
+      'PHASE_4_8': { icon: 'fa-flag-checkered', label: 'Phase 4.8 — Finalize & Handoff', color: '#13c2c2' },
+    };
+    if (known[phaseKey]) return known[phaseKey];
+    const clean = phaseKey.replace('PHASE_', '');
+    const parts = clean.split('_');
+    const phaseNum = (parts[0] || '').replace(/_/g, '.');
+    const actionLabel = parts.slice(1).join(' ').replace(/_/g, ' ') || 'Sub-step';
+    return { icon: 'fa-cogs', label: `Phase ${phaseNum} — ${actionLabel}`, color: '#8c8c8c' };
   };
 
-  // ── Build phase collapse items ──
-  const phaseItems = Object.entries(PHASE_CONFIG)
-    .filter(([key]) => phaseGroups[key]?.length > 0)
-    .map(([key, cfg]) => ({
-      key,
-      label: (
-        <Space>
-          <i className={'fas ' + cfg.icon} style={{ color: cfg.color }}></i>
-          <Text strong style={{ fontSize: 13 }}>{cfg.label}</Text>
-          <Tag color="default">{phaseGroups[key].length} steps</Tag>
-        </Space>
-      ),
-      children: (
-        <div>
-          {key === 'PHASE_4_2' && waveGroups.length > 0 ? (
-            // Wave sub-grouping
-            waveGroups.map((wave, wi) => (
-              <div key={wi} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: '#f9f0ff', borderRadius: 6 }}>
-                  <i className="fas fa-play-circle" style={{ color: '#722ed1', fontSize: 12 }}></i>
-                  <Text strong style={{ fontSize: 12, color: '#722ed1', textTransform: 'uppercase', letterSpacing: 1 }}>
-                    {wave.name}
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 10 }}>
-                    {wave.servers} servers • {wave.steps.filter(s => s.action !== 'WAVE_START' && s.action !== 'WAVE_COMPLETE' && s.action !== 'HANDOFF').length} operations
-                  </Text>
+  // ── Build phase collapse items — iterate ALL dynamic phase groups ──
+  const phaseItems = Object.entries(phaseGroups)
+    .filter(([key, steps]) => steps && steps.length > 0)
+    .map(([key, steps]) => {
+      const cfg = getPhaseConfig(key);
+      return {
+        key,
+        label: (
+          <Space>
+            <i className={'fas ' + cfg.icon} style={{ color: cfg.color }}></i>
+            <Text strong style={{ fontSize: 13 }}>{cfg.label}</Text>
+            <Tag color="default">{steps.length} steps</Tag>
+          </Space>
+        ),
+        children: (
+          <div>
+            {key === 'PHASE_4_2' && waveGroups.length > 0 ? (
+              waveGroups.map((wave, wi) => (
+                <div key={wi} style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: '#f9f0ff', borderRadius: 6 }}>
+                    <i className="fas fa-play-circle" style={{ color: '#722ed1', fontSize: 12 }}></i>
+                    <Text strong style={{ fontSize: 12, color: '#722ed1', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      {wave.name}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 10 }}>
+                      {wave.servers} servers • {wave.steps.filter(s => s.action !== 'WAVE_START' && s.action !== 'WAVE_COMPLETE' && s.action !== 'HANDOFF').length} operations
+                    </Text>
+                  </div>
+                  <div>
+                    {wave.steps.map((step, idx) => (
+                      <TraceEntry
+                        key={step.id}
+                        step={step}
+                        isLast={idx === wave.steps.length - 1 && wi === waveGroups.length - 1}
+                        isExpanded={expandedSteps[step.id] || false}
+                        onToggle={() => toggleStep(step.id)}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  {wave.steps.map((step, idx) => (
-                    <TraceEntry
-                      key={step.id}
-                      step={step}
-                      isLast={idx === wave.steps.length - 1 && wi === waveGroups.length - 1}
-                      isExpanded={expandedSteps[step.id] || false}
-                      onToggle={() => toggleStep(step.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))
-          ) : (
-            // Regular phase steps
-            phaseGroups[key].map((step, idx) => (
-              <TraceEntry
-                key={step.id}
-                step={step}
-                isLast={idx === phaseGroups[key].length - 1}
-                isExpanded={expandedSteps[step.id] || false}
-                onToggle={() => toggleStep(step.id)}
-              />
-            ))
-          )}
-        </div>
-      ),
-    }));
+              ))
+            ) : (
+              steps.map((step, idx) => (
+                <TraceEntry
+                  key={step.id}
+                  step={step}
+                  isLast={idx === steps.length - 1}
+                  isExpanded={expandedSteps[step.id] || false}
+                  onToggle={() => toggleStep(step.id)}
+                />
+              ))
+            )}
+          </div>
+        ),
+      };
+    });
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -995,13 +1019,13 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                 <Text style={{ fontSize: 11, fontWeight: 600 }}>
                                   {(step.action || '').replace(/_/g, ' ')}
                                 </Text>
-                                <StatusBadge result={step.result} outcome={step.outcome} />
+                                <StatusBadge result={step.result} outcome={step.outcome} isDryRun={true} />
                               </Space>
                               {step.commands && step.commands.length > 0 && (
                                 <div style={{ marginLeft: 32, background: '#fafafa', borderRadius: 4, padding: 4, fontFamily: 'monospace' }}>
                                   {step.commands.map((c, ci) => {
                                     const cmdStr = typeof c === 'object' && c !== null ? (c.cmd || c.command || JSON.stringify(c)) : c;
-                                    return <div key={ci} style={{ fontSize: 9, color: '#52c41a' }}>$ {cmdStr}</div>;
+                                    return <div key={ci} style={{ fontSize: 9, color: '#52c41a' }}>SIMULATED $ {cmdStr}</div>;
                                   })}
                                 </div>
                               )}

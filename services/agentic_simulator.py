@@ -1891,6 +1891,7 @@ class AgenticExecutionSimulator:
                         "id": step_id, "phase": "PHASE_4_2", "agent": f"Agent-{hook_server_name}",
                         "action": "HANDOFF",
                         "target": hook_server_name,
+                        "result": result["outcome"],
                         "os": server_node.get("os", profile.get("os", "unknown") if 'profile' in dir() else "unknown"),
                         "role": profile.get("role", "unknown") if 'profile' in dir() else "unknown",
                         "path_taken": result["path_taken"],
@@ -1948,6 +1949,7 @@ class AgenticExecutionSimulator:
                 {"desc": "Deregister intermediate IMS images", "cmd": "hcloud ims delete --image-ids intermediate_image_ids.txt"},
             ],
             "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "simulated_cleanup",
             "decision": {"cleanup_mode": "full"},
         })
         total_simulated_seconds += config.STEP_TIMINGS["garbage_collection"]
@@ -1984,6 +1986,7 @@ class AgenticExecutionSimulator:
                 f"All transient resources cleaned up. Target environment ready for handoff."
             ),
             "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "simulated_complete",
             "decision": {"cost_efficiency": cost_efficiency},
         })
 
