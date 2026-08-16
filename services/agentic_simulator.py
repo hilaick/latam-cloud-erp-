@@ -20,7 +20,58 @@ from dataclasses import dataclass, field
 from services.knowledge_provider import (
     ExternalKnowledgeStore, KnowledgeProvider, EXTERNAL_REPO_URL
 )
+import os
+
 logger = logging.getLogger(__name__)
+
+
+# ── Skill loader from Hermes skills directory ──
+HERMES_SKILLS_DIR = None
+# Try to find the Hermes skills directory
+for candidate in [
+    os.path.expanduser("~/.hermes/skills/devops"),
+    "/root/.hermes/skills/devops",
+]:
+    if os.path.isdir(candidate):
+        HERMES_SKILLS_DIR = candidate
+        break
+
+
+def _load_hermes_skill_commands(name: str) -> dict:
+    """
+    Load commands and patterns from a Hermes skill SKILL.md.
+    Returns a dict with commands, prereqs, failure_modes extracted from the file.
+    """
+    if not HERMES_SKILLS_DIR:
+        return {}
+    skill_path = os.path.join(HERMES_SKILLS_DIR, name, "SKILL.md")
+    if not os.path.isfile(skill_path):
+        return {}
+    try:
+        with open(skill_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Extract hcloud commands from code blocks using simple heuristics
+        lines = content.split("\n")
+        commands = {}
+        in_code = False
+        code_lines = []
+        for line in lines:
+            if line.startswith("```"):
+                if in_code:
+                    block = "\n".join(code_lines)
+                    # Check if this is a bash/shell block with hcloud/cmd commands
+                    if block and ("hcloud" in block or "curl" in block or "ssh" in block or "obsutil" in block):
+                        key = f"hermes_script_{len(commands) + 1}"
+                        commands[key] = block
+                    code_lines = []
+                    in_code = False
+                else:
+                    in_code = True
+            elif in_code:
+                code_lines.append(line)
+        return {"commands": commands, "source": skill_path}
+    except Exception:
+        return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +180,86 @@ class SkillRegistry:
     
     # Registry: skill_name → capability descriptor
     SKILLS: Dict[str, dict] = {
+        # ── Loaded from server Hermes skills directory ──
+        "huawei_cloud_sms_migration": {
+            "name": "huawei-cloud-sms-migration",
+            "category": "migration",
+            "description": "Complete SMS migration patterns with hcloud CLI, target config, ECS creation, task creation, disk mapping — built from real CODELPA PRTSRV migration.",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_server_registered", "target_vpc_exists", "huawei_credentials", "ecs_with_eip"],
+            "hermes_skill": "devops/huawei-cloud-sms-migration",
+            "commands": {
+                "hcloud_configure": "hcloud configure set --cli-profile=<project> --cli-mode=AKSK --cli-access-key=<ak> --cli-secret-key=<sk> --cli-region=<sms_region> --cli-project-id=<project_id>",
+                "eip_create": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=\"<name>-EIP\" --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic",
+                "ecs_create": "hcloud ECS CreateServers --server.name=\"<name>-TARGET\" --server.imageRef=<image_id> --server.flavorRef=<flavor> --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone=<az> --server.root_volume.volumetype=SAS --server.root_volume.size=<disk_gb> --server.security_groups.1.id=<sg_id> --server.adminPass=<password> --server.count=1",
+                "eip_bind": "hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>",
+                "sms_show_server": "hcloud SMS ShowServer --source_id=<source_id> --cli-region=<sms_region> | jq '.disks[0].id'",
+                "sms_create_task": "hcloud SMS CreateTask --name='MigrationTask' --project_id=<project_id> --project_name=<project> --region_id=<target_region> --source_server.id=<source_id> --target_server.name=<target_name> --target_server.vm_id=<ecs_id> --type=MIGRATE_BLOCK --os_type=<os> --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip=<ecs_ip> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name='Disk 0' --target_server.disks.1.size=<size_bytes> --target_server.disks.1.disk_id=<sms_disk_id>",
+                "sms_monitor": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=<sms_region> | jq '.state, .progress'",
+                "sms_0515_workaround": "hcloud SMS UpdateServerName --source_id=<source_id> --name='<name>-REFRESH' && sleep 600 && hcloud SMS CreateTask ... # or use console",
+            },
+            "failure_modes": [
+                "sms_0515_invalid_agency_token",
+                "sms_0515_source_disk_changed",
+                "sms_6602_invalid_floating_ip",
+                "sms_6103_missing_disk_id",
+                "sms_7711_illegal_task_name",
+                "ecs_created_without_eip",
+                "sms_disk_id_vs_evs_volume_id_mismatch",
+            ],
+            "avg_duration_minutes": 120,
+            "skill_file": HERMES_SKILLS_DIR + "/huawei-cloud-sms-migration/SKILL.md" if HERMES_SKILLS_DIR else "skills/huawei-cloud-sms-migration/SKILL.md",
+        },
+        "huawei_cloud_sms_api_only": {
+            "name": "huawei-cloud-sms-api-only",
+            "category": "migration",
+            "description": "API/SDK-only SMS migration when console is prohibited. SMS.0515 resolution, task naming, CRITICAL dont-delete-source-server warning.",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_server_registered", "huawei_credentials", "no_console_access"],
+            "hermes_skill": "devops/huawei-cloud-sms-api-only",
+            "commands": {
+                "delete_failed_task": "hcloud SMS DeleteTask --task_id=<FAILED_TASK_ID>",
+                "refresh_source_name": "hcloud SMS UpdateServerName --source_id=<SOURCE_ID> --name='<NAME>-REFRESH'",
+                "check_source_state": "hcloud SMS ShowServer --source_id=<SOURCE_ID> --cli-region=ap-southeast-3 | grep -E '\"state\"|\"migration_cycle\"'",
+                "create_task_api": "hcloud SMS CreateTask --name='<TASK_NAME>' --project_id=<PID> --project_name=<PN> --region_id=<REGION> --source_server.id=<SID> --target_server.name=<TN> --target_server.vm_id=<VID> --type=MIGRATE_BLOCK --os_type=<OS> --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip=<IP> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name='Disk 0' --target_server.disks.1.size=<BYTES> --target_server.disks.1.disk_id=<DID>",
+            },
+            "failure_modes": ["accidental_source_server_deletion", "sms_0515_console_vs_api", "token_region_mismatch"],
+            "avg_duration_minutes": 90,
+            "skill_file": HERMES_SKILLS_DIR + "/huawei-cloud-sms-api-only/SKILL.md" if HERMES_SKILLS_DIR else "skills/huawei-cloud-sms-api-only/SKILL.md",
+        },
+        "erp_execution_orchestration": {
+            "name": "erp-execution-orchestration",
+            "category": "orchestration",
+            "description": "Drive the ERP 4.0-4.7 migration pipeline using Hermes delegate_task — VPC, Terraform, RFS, SMS, cutover, GC.",
+            "applies_to": ["all"],
+            "prerequisites": ["project_created", "blueprint_ready", "creds_configured", "budget_approved"],
+            "hermes_skill": "devops/erp-execution-orchestration",
+            "commands": {
+                "pipeline_start": "POST /api/execution/start  {migration_mode: 'agentic', project_id: <id>}",
+                "advance_phase": "POST /api/execution/advance {project_id: <id>, current_phase: <phase>, result: <result>}",
+                "readiness_check": "GET /api/execution/readiness/<id>",
+                "block_phase": "POST /api/execution/block {project_id: <id>, reason: <reason>}",
+                "unblock_phase": "POST /api/execution/unblock {project_id: <id>}",
+            },
+            "failure_modes": ["phase_prerequisite_not_met", "credentials_expired", "human_gate_blocked"],
+            "avg_duration_minutes": 0,
+            "skill_file": HERMES_SKILLS_DIR + "/erp-execution-orchestration/SKILL.md" if HERMES_SKILLS_DIR else "skills/erp-execution-orchestration/SKILL.md",
+        },
+        "sms_exact_disk_config": {
+            "name": "huawei-cloud-sms-migration-exact-disk-config",
+            "category": "migration",
+            "description": "Exact 1:1 disk configuration for SMS tasks — every partition, device_use (BOOT/OS), and volume ID must match source to avoid SMS.0515.",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["source_server_accessible", "sms_disk_ids_known"],
+            "hermes_skill": "devops/huawei-cloud-sms-migration-exact-disk-config",
+            "commands": {
+                "query_source_disks": "hcloud SMS ShowServer --cli-region=<region> --source_id=<source_id>",
+                "build_disk_mapping": "hcloud SMS CreateTask ... --target_server.disks.1.device_use=<BOOT|OS> --target_server.disks.1.name='<name>' --target_server.disks.1.size=<bytes> --target_server.disks.1.disk_id=<sms_disk_id>",
+            },
+            "failure_modes": ["disk_device_use_mismatch", "partition_count_mismatch", "volume_id_used_instead_of_sms_disk_id"],
+            "avg_duration_minutes": 10,
+            "skill_file": HERMES_SKILLS_DIR + "/huawei-cloud-sms-migration-exact-disk-config/SKILL.md" if HERMES_SKILLS_DIR else "skills/huawei-cloud-sms-migration-exact-disk-config/SKILL.md",
+        },
         "image_conversion": {
             "name": "image-conversion",
             "category": "migration",
@@ -383,20 +514,25 @@ class SkillRegistry:
     def get_skills_for_server(cls, profile: dict, mapper_node: dict) -> List[dict]:
         """
         Return all skills applicable to a specific server, ordered by migration phase.
-        This is the core of project-agnostic simulation — skills are matched
-        based on server characteristics, not hardcoded paths.
+        Now includes skills loaded from the server's Hermes skills directory.
         """
         applicable = []
         os_family = profile.get("os_family", "linux")
         role = profile.get("role", "app")
         strategy = profile.get("strategy", "manual_agent_required")
+
+        # Always include the real SMS migration skill (from CODELPA PRTSRV patterns)
+        if "huawei_cloud_sms_migration" in cls.SKILLS:
+            applicable.append(cls.SKILLS["huawei_cloud_sms_migration"])
+        if "sms_exact_disk_config" in cls.SKILLS:
+            applicable.append(cls.SKILLS["sms_exact_disk_config"])
         
         # Migration path skills
         if strategy in ("sms_primary", "sms_with_agent_push"):
-            applicable.append(cls.SKILLS["sms_handler"])
+            applicable.append(cls.SKILLS.get("sms_handler", {}))
         if strategy == "image_primary" or strategy == "manual_agent_required":
-            applicable.append(cls.SKILLS["image_conversion"])
-            applicable.append(cls.SKILLS["obs_migration"])
+            applicable.append(cls.SKILLS.get("image_conversion", {}))
+            applicable.append(cls.SKILLS.get("obs_migration", {}))
         
         # Infrastructure
         if strategy in ("sms_with_agent_push", "image_primary"):
