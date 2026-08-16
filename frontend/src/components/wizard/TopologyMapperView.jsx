@@ -268,6 +268,15 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     type: tempQuoted[matchIdx].type, 
                     storage: mNode.storage || tempQuoted[matchIdx].storage, 
                     os: mNode.os || tempQuoted[matchIdx].os, 
+                    flavor: tempQuoted[matchIdx].flavor || mNode.flavor || '',
+                    cpu: tempQuoted[matchIdx].cpu || mNode.cpu || tempQuoted[matchIdx].vcpus || mNode.vcpus || '',
+                    memory: tempQuoted[matchIdx].memory || mNode.memory || tempQuoted[matchIdx].ram_gb || mNode.ram_gb || '',
+                    engine: tempQuoted[matchIdx].engine || mNode.engine || '',
+                    specifications: tempQuoted[matchIdx].specifications || mNode.specifications || '',
+                    description: tempQuoted[matchIdx].description || mNode.description || '',
+                    billing: tempQuoted[matchIdx].billing || mNode.billing || '',
+                    monthly_price: tempQuoted[matchIdx].monthly_price || mNode.monthly_price || 0,
+                    sub_items: tempQuoted[matchIdx].sub_items || mNode.sub_items || [],
                     status: 'Matched', 
                     config: {} 
                 }); 
