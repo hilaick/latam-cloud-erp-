@@ -7,39 +7,29 @@ SERVER = '159.138.148.45'
 PORT = 8443
 PROXY = ('proxy.huawei.com', 8080)
 TARGET_BASE = '/home/huawei-cloud/latam-cloud-erp-'
-SERVICE_BASE = '/opt/latam-cloud-erp'
 
-# Build tar
+# === 1. Build tar of dist/ + changed source files (for backup) ===
 buf = io.BytesIO()
 with tarfile.open(fileobj=buf, mode='w:gz') as t:
     dist_dir = os.path.join(REPO, 'frontend', 'dist')
     for root, dirs, files in os.walk(dist_dir):
         for fn in files:
             fp = os.path.join(root, fn)
-            t.add(fp, arcname='dist/' + os.path.relpath(fp, dist_dir).replace('\\', '/'))
-    # Deploy all 12 patched source files (localStorage → sessionStorage fix)
-    patched = [
-        r'frontend\src\components\utils\GlobalCommandDrawer.jsx',
-        r'frontend\src\components\views\CustomerDirectory.jsx',
-        r'frontend\src\components\views\ExcelUploader.jsx',
-        r'frontend\src\components\views\LiveCloudNOC.jsx',
-        r'frontend\src\components\views\MasterExecutionHub.jsx',
-        r'frontend\src\components\views\QuotationHistory.jsx',
-        r'frontend\src\components\views\UserManagement.jsx',
-        r'frontend\src\components\wizard\FinOpsCalculator.jsx',
-        r'frontend\src\components\wizard\GovernanceAndCRView.jsx',
-        r'frontend\src\components\wizard\MgCReconciliationView.jsx',
-        r'frontend\src\components\wizard\StepExecution.jsx',
-        r'frontend\src\components\wizard\ToolRecommendationView.jsx',
+            rel = os.path.relpath(fp, dist_dir).replace('\\', '/')
+            t.add(fp, arcname='dist/' + rel)
+    # Backup changed source files
+    srcs = [
+        r'frontend\src\components\wizard\AgenticOrchestrationPanel.jsx',
+        r'services\agentic_simulator.py',
     ]
-    for pf in patched:
-        t.add(os.path.join(REPO, pf), arcname='dist/' + os.path.basename(pf))
+    for s in srcs:
+        t.add(os.path.join(REPO, s), arcname='src/' + os.path.basename(s))
 
 data = buf.getvalue()
-print(f'[1/5] Tar built: {len(data)/1024:.1f} KB')
+print(f'[1/6] Tar built: {len(data)/1024:.1f} KB')
 
-# HTTP CONNECT tunnel
-print('[2/5] Connecting via proxy...')
+# === 2. HTTP CONNECT tunnel ===
+print('[2/6] Connecting via proxy...')
 sock = socket.socket(); sock.settimeout(15)
 sock.connect(PROXY)
 sock.sendall(f'CONNECT {SERVER}:{PORT} HTTP/1.0\r\nHost: {SERVER}\r\n\r\n'.encode())
@@ -48,53 +38,48 @@ while b'\r\n\r\n' not in resp:
     resp += sock.recv(4096)
 print(f'  Proxy response: {resp.splitlines()[0].decode()}')
 
-# SSH
-print('[3/5] SSH to server...')
+# === 3. SSH ===
+print('[3/6] SSH to server...')
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 c.connect(SERVER, PORT, username='root',
           key_filename=os.path.expanduser('~/.ssh/id_ed25519'),
           sock=sock, timeout=15)
 
-# Upload tar
-print('[4/5] Uploading + extracting...')
+# === 4. Upload tar ===
+print('[4/6] Uploading tar...')
 sftp = c.open_sftp()
 sftp.putfo(io.BytesIO(data), '/tmp/deploy.tar.gz')
 sftp.close()
 
-# Extract and deploy
-cmds = [
-    'cd /tmp && rm -rf dist && tar xzf deploy.tar.gz',
-    # Deploy dist
-    f'rm -rf {TARGET_BASE}/frontend/dist/assets/* {TARGET_BASE}/frontend/dist/index.html',
-    f'cp -r /tmp/dist/assets/* {TARGET_BASE}/frontend/dist/assets/',
-    f'cp /tmp/dist/index.html {TARGET_BASE}/frontend/dist/index.html',
-    # Deploy all patched source files
-    f'cp /tmp/dist/GlobalCommandDrawer.jsx {TARGET_BASE}/frontend/src/components/utils/GlobalCommandDrawer.jsx',
-    f'cp /tmp/dist/CustomerDirectory.jsx {TARGET_BASE}/frontend/src/components/views/CustomerDirectory.jsx',
-    f'cp /tmp/dist/ExcelUploader.jsx {TARGET_BASE}/frontend/src/components/views/ExcelUploader.jsx',
-    f'cp /tmp/dist/LiveCloudNOC.jsx {TARGET_BASE}/frontend/src/components/views/LiveCloudNOC.jsx',
-    f'cp /tmp/dist/MasterExecutionHub.jsx {TARGET_BASE}/frontend/src/components/views/MasterExecutionHub.jsx',
-    f'cp /tmp/dist/QuotationHistory.jsx {TARGET_BASE}/frontend/src/components/views/QuotationHistory.jsx',
-    f'cp /tmp/dist/UserManagement.jsx {TARGET_BASE}/frontend/src/components/views/UserManagement.jsx',
-    f'cp /tmp/dist/FinOpsCalculator.jsx {TARGET_BASE}/frontend/src/components/wizard/FinOpsCalculator.jsx',
-    f'cp /tmp/dist/GovernanceAndCRView.jsx {TARGET_BASE}/frontend/src/components/wizard/GovernanceAndCRView.jsx',
-    f'cp /tmp/dist/MgCReconciliationView.jsx {TARGET_BASE}/frontend/src/components/wizard/MgCReconciliationView.jsx',
-    f'cp /tmp/dist/StepExecution.jsx {TARGET_BASE}/frontend/src/components/wizard/StepExecution.jsx',
-    f'cp /tmp/dist/ToolRecommendationView.jsx {TARGET_BASE}/frontend/src/components/wizard/ToolRecommendationView.jsx',
-    # Restart Flask (handle both flask run and python3 app.py)
-    'pkill -f "python3 app.py" 2>/dev/null; pkill -f "flask run" 2>/dev/null; sleep 1',
-    f'cd {TARGET_BASE} && . venv/bin/activate && nohup python3 app.py --port 9119 > /tmp/flask.log 2>&1 &',
-    'sleep 2',
-    f'ls -la {TARGET_BASE}/frontend/dist/assets/index-*.js',
-]
-for cmd in cmds:
-    _, o, e = c.exec_command(cmd, timeout=10)
-    out = o.read().decode().strip()
-    err = e.read().decode().strip()
-    if out: print(f'  {out[:120]}')
-    if err: print(f'  ERR: {err[:120]}')
+# === 5. Server-side: git pull + deploy + restart ===
+print('[5/6] Git pull + deploy + restart...')
+cmds = (
+    # Git: stash local, pull, restore stashes
+    f'cd {TARGET_BASE} && git stash -m "pre-depoy-backup" && '
+    f'git pull origin feature-migration-lifecycle-2 && '
+    f'git stash pop 2>/dev/null; '
+    # Purge stale bytecode
+    f'cd {TARGET_BASE} && find . -name "*.pyc" -delete && find . -name "__pycache__" -type d -exec rm -rf {{}} +; '
+    # Deploy dist/ bundle
+    'cd /tmp && rm -rf /tmp/deploy_dist && mkdir -p /tmp/deploy_dist && tar xzf deploy.tar.gz -C /tmp/deploy_dist; '
+    # Remove old assets, copy new bundle
+    f'rm -rf {TARGET_BASE}/frontend/dist/assets/* && '
+    f'cp -r /tmp/deploy_dist/dist/assets/* {TARGET_BASE}/frontend/dist/assets/ && '
+    f'cp /tmp/deploy_dist/dist/index.html {TARGET_BASE}/frontend/dist/index.html; '
+    # Stop old Flask, restart
+    'pkill -f "python3 app.py" 2>/dev/null; sleep 1; '
+    f'cd {TARGET_BASE} && PYTHONDONTWRITEBYTECODE=1 bash -c "source venv/bin/activate && nohup python3 app.py --port 9119 > /tmp/flask.log 2>&1 &"; '
+    'sleep 2; '
+    # Verify: check bundle hash + server is up
+    f'python3 -c "import http.client; c=http.client.HTTPConnection(\"localhost\", 9119, timeout=5); c.request(\"GET\", \"/\"); r=c.getresponse(); print(\"HTTP\", r.status); b=r.read()[:200]; print(\"bundle\", [l for l in b.decode().split(\"\\n\") if \"index-\" in l.lower()][0] if any(\"index-\" in l.lower() for l in b.decode().split(\"\\n\")) else \"no bundle ref\")"
+)
+_, o, e = c.exec_command(cmds, timeout=120)
+out = o.read().decode()
+err = e.read().decode()
+print(out[:600])
+if err.strip(): print('ERR:', err[:300])
 
 c.close()
 sock.close()
-print('[5/5] Done!')
+print('[6/6] Done!')

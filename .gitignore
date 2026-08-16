@@ -6,7 +6,8 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+dist/          # kept for Python build/ artifacts — frontend/dist is NOT matched because it's in a subdirectory
+# The above applies to repo root only
 downloads/
 eggs/
 .eggs/
