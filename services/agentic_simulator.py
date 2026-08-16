@@ -1462,11 +1462,280 @@ class ImageMigrationSimulator:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Resource Type Router — Maps SOW resources to correct execution pipelines
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ResourceTypeRouter:
+    """
+    Routes each SOW-quoted resource to the correct execution pipeline.
+    Prevents non-ECS resources (VPC, EIP, CBR, HSS) from being treated as
+    SMS migration servers.
+    """
+    
+    # Resource types that are actual servers needing migration
+    SERVER_TYPES = {"ECS", "COMPUTE", "SERVER", "VM", "EC2"}
+    
+    # Resource types that are infrastructure (Phase 4.1)
+    NETWORK_TYPES = {"VPC", "VIRTUAL_PRIVATE_NETWORK", "SUBNET", "SECURITY_GROUP", "NAT", "NAT_GATEWAY"}
+    
+    # Resource types that are virtual IPs (Phase 4.1)
+    EIP_TYPES = {"EIP", "ELASTIC_IP", "PUBLIC_IP"}
+    
+    # Resource types that are backup/vault services (Phase 4.3)
+    CBR_TYPES = {"CBR", "BACKUP", "CLOUD_BACKUP", "VAULT", "CLOUD_BACKUP_AND_RECOVERY"}
+    
+    # Resource types that are agent/security services (Phase 4.4)
+    HSS_TYPES = {"HSS", "HOST_SECURITY", "HOST_SECURITY_SERVICE"}
+    
+    # Resource types that are database-as-a-service (Phase 4.3)
+    PAAS_DB_TYPES = {"RDS", "DATABASE", "MYSQL", "POSTGRESQL", "MONGODB", "SQLSERVER"}
+
+    @classmethod
+    def classify(cls, node: dict) -> dict:
+        """Classify a mapper node into its resource type and execution phase."""
+        type_raw = (node.get("type") or node.get("resourceType") or "").upper().replace(" ", "_")
+        name_raw = (node.get("name") or node.get("hostname") or "").upper().replace(" ", "_")
+        
+        # Check explicit type field first
+        for check in [type_raw, name_raw]:
+            if any(st in check for st in cls.SERVER_TYPES):
+                return {"resource_class": "SERVER", "phase": "PHASE_4_2", "skill": "sms_migration"}
+            if any(st in check for st in cls.CBR_TYPES):
+                return {"resource_class": "CBR", "phase": "PHASE_4_3", "skill": "cbr_provision"}
+            if any(st in check for st in cls.HSS_TYPES):
+                return {"resource_class": "HSS", "phase": "PHASE_4_4", "skill": "agent_orchestrator"}
+            if any(st in check for st in cls.EIP_TYPES):
+                return {"resource_class": "EIP", "phase": "PHASE_4_1", "skill": "network_provision"}
+            if any(st in check for st in cls.NETWORK_TYPES):
+                return {"resource_class": "NETWORK", "phase": "PHASE_4_1", "skill": "network_provision"}
+            if any(st in check for st in cls.PAAS_DB_TYPES):
+                return {"resource_class": "PAAS_DB", "phase": "PHASE_4_3", "skill": "paas_db_provision"}
+        
+        # Fallback: if it has compute-like fields, treat as server
+        if node.get("flavor") or node.get("os") or node.get("osType"):
+            return {"resource_class": "SERVER", "phase": "PHASE_4_2", "skill": "sms_migration"}
+        
+        # Default: infrastructure
+        return {"resource_class": "OTHER", "phase": "PHASE_4_1", "skill": "network_provision"}
+
+    @classmethod
+    def get_server_resources(cls, mapper_nodes: list) -> list:
+        """Filter to only actual server/compute resources."""
+        return [n for n in mapper_nodes if cls.classify(n)["resource_class"] == "SERVER"]
+
+    @classmethod
+    def get_network_resources(cls, mapper_nodes: list) -> list:
+        """Filter to only network/infra resources."""
+        return [n for n in mapper_nodes if cls.classify(n)["phase"] == "PHASE_4_1"]
+
+    @classmethod
+    def get_cbr_resources(cls, mapper_nodes: list) -> list:
+        """Filter to only CBR/backup resources."""
+        return [n for n in mapper_nodes if cls.classify(n)["resource_class"] == "CBR"]
+
+    @classmethod
+    def get_hss_resources(cls, mapper_nodes: list) -> list:
+        """Filter to only HSS/security resources."""
+        return [n for n in mapper_nodes if cls.classify(n)["resource_class"] == "HSS"]
+
+    @classmethod
+    def get_paas_db_resources(cls, mapper_nodes: list) -> list:
+        """Filter to only PaaS DB resources."""
+        return [n for n in mapper_nodes if cls.classify(n)["resource_class"] == "PAAS_DB"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CBR (Cloud Backup and Recovery) Simulator — Phase 4.3
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CbrSimulator:
+    """Simulate CBR vault creation, policy configuration, and server binding."""
+
+    @staticmethod
+    def simulate(
+        resource: dict,
+        step_id: int,
+        offset: float,
+        region: str,
+        config: SimulationConfig,
+        server_names: list = None,
+    ) -> dict:
+        """Create CBR vault + backup policy + bind servers."""
+        server_names = server_names or []
+        resource_name = resource.get("name", "CBR-backup")
+        trace: List[dict] = []
+        sid = step_id
+        total_offset = offset
+        vault_size = int(resource.get("size", resource.get("volume_size", 1000)))
+        vault_name = f"erp-vault-{region}"
+
+        # Step 1: Create backup policy
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_3", "agent": "Orchestrator → CBR Agent",
+            "action": "CBR_POLICY_CREATE",
+            "message": (
+                f"Creating daily backup policy for vault '{vault_name}'. "
+                f"Retention: 7 days. Schedule: midnight UTC."
+            ),
+            "commands": [
+                {"desc": "Create backup policy", "cmd": (
+                    f"curl -X POST 'https://cbr.{region}.myhuaweicloud.com/v3/policies' "
+                    f"-H 'Content-Type: application/json' "
+                    f"-d '{{\\\"name\\\":\\\"erp-backup-policy-{region[-6:]}\\\","
+                    f"\\\"type\\\":\\\"backup\\\",\\\"time_period\\\":24,"
+                    f"\\\"retention_day_count\\\":7,"
+                    f"\\\"scheduling_pattern\\\":\\\"TZ=+00:00 00:00\\\"}}'"
+                )},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_policy_created",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 2: Create CBR vault
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_3", "agent": "Orchestrator → CBR Agent",
+            "action": "CBR_VAULT_CREATE",
+            "message": (
+                f"Creating CBR vault '{vault_name}' with {vault_size}GB capacity, "
+                f"type: server backup."
+            ),
+            "commands": [
+                {"desc": "Create vault", "cmd": (
+                    f"hcloud cbr vault create --name {vault_name} --type server "
+                    f"--size {vault_size} --policy-id <policy-id> "
+                    f"--tags erp_managed=true"
+                )},
+                {"desc": "Verify vault status", "cmd": f"hcloud cbr vault describe --name {vault_name}"},
+            ],
+            "metrics": {"vault_size_gb": vault_size, "vault_type": "server"},
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_vault_created",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 3: Bind servers to vault (if any)
+        if server_names:
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_3", "agent": "Orchestrator → CBR Agent",
+                "action": "CBR_BIND_SERVERS",
+                "message": (
+                    f"Binding {len(server_names)} migrated server(s) to backup vault: "
+                    f"{', '.join(server_names)}."
+                ),
+                "commands": [
+                    {"desc": "Bind ECS instances to vault", "cmd": (
+                        f"hcloud cbr vault bind --vault {vault_name} "
+                        f"--servers {' '.join(server_names)}"
+                    )},
+                    {"desc": "Verify binding", "cmd": f"hcloud cbr vault show-bindings --name {vault_name}"},
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_servers_bound",
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 4: Enable auto-backup
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_3", "agent": "Orchestrator → CBR Agent",
+            "action": "CBR_ENABLE_AUTO_BACKUP",
+            "message": "Enabling automatic scheduled backups for all bound servers.",
+            "commands": [
+                {"desc": "Associate policy with vault", "cmd": (
+                    f"hcloud cbr policy associate --vault {vault_name} --policy-id <policy-id>"
+                )},
+                {"desc": "Verify auto-backup enabled", "cmd": (
+                    f"hcloud cbr vault describe --name {vault_name} | jq '.auto_bind'"
+                )},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_auto_backup_enabled",
+        })
+        total_offset += config.STEP_TIMINGS["hss_install"]
+
+        return {"trace": trace, "final_step_id": sid, "final_offset": total_offset}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HSS Agent Simulator — Phase 4.4
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class HssAgentSimulator:
+    """Simulate HSS (Host Security Service) agent installation on target servers."""
+
+    @staticmethod
+    def simulate(
+        resource: dict,
+        step_id: int,
+        offset: float,
+        region: str,
+        config: SimulationConfig,
+        server_names: list = None,
+    ) -> dict:
+        """Install HSS agent on target servers."""
+        resource_name = resource.get("name", "HSS-security")
+        server_names = server_names or []
+        trace: List[dict] = []
+        sid = step_id
+        total_offset = offset
+
+        # Step 1: Enable HSS protection
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_4", "agent": "Orchestrator → HSS Agent",
+            "action": "HSS_ENABLE_PROTECTION",
+            "message": (
+                f"Enabling Host Security Service (HSS) for project. "
+                f"Quota: {max(len(server_names), 1)} server license(s)."
+            ),
+            "commands": [
+                {"desc": "Enable HSS", "cmd": (
+                    f"hcloud hss enable --region {region} --quota {max(len(server_names), 1)}"
+                )},
+                {"desc": "Verify HSS quota", "cmd": f"hcloud hss show-quota --region {region}"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_hss_enabled",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 2: Install HSS agent on each target
+        for idx, srv in enumerate(server_names):
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_4", "agent": f"Agent-{srv} → HSS",
+                "action": "HSS_AGENT_INSTALL",
+                "target": srv,
+                "message": (
+                    f"Installing HSS agent on target server '{srv}'. "
+                    f"Using hss-agent install script from OBS."
+                ),
+                "commands": [
+                    {"desc": "Download and install HSS agent", "cmd": (
+                        f"ssh root@{srv} 'wget -t 3 -T 15 "
+                        f"https://hss-agent.obs.{region}.myhuaweicloud.com/linux/install_hss.sh && "
+                        f"bash install_hss.sh && echo HSS_INSTALL_OK'"
+                    )},
+                    {"desc": "Verify agent running", "cmd": f"ssh root@{srv} 'ps aux | grep hss'"},  
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_hss_installed",
+            })
+            total_offset += config.STEP_TIMINGS["hss_install"]
+
+        return {"trace": trace, "final_step_id": sid, "final_offset": total_offset}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Post-Migration Simulator (Boot Fix, Partition, HSS, UniAgent, LTS, Smoke)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class PostMigrationSimulator:
-    """Simulate all post-migration steps: boot fix, partition fix, agent installs, smoke tests."""
 
     @staticmethod
     def simulate(
@@ -1762,9 +2031,17 @@ class AgenticExecutionSimulator:
         })
         total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
 
-        # ═══ PHASE 4.1: Network Provisioning ═══
+        # ═══ PHASE 4.1: Network Provisioning — handles VPC, EIP, subnets from SOW ──
         step_id += 1
         network = NetworkTemplateBuilder.build_from_topology(mapper_nodes, region, config)
+        
+        # Count what we're provisioning
+        net_resources = ResourceTypeRouter.get_network_resources(mapper_nodes)
+        net_resource_names = [n.get("name", "?") for n in net_resources]
+        server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
+        cbr_resources = ResourceTypeRouter.get_cbr_resources(mapper_nodes)
+        hss_resources = ResourceTypeRouter.get_hss_resources(mapper_nodes)
+        paas_db_resources = ResourceTypeRouter.get_paas_db_resources(mapper_nodes)
 
         trace.append({
             "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator → RFS Agent",
@@ -1777,7 +2054,10 @@ class AgenticExecutionSimulator:
                 f"data {network['subnets'][2]['cidr']}. "
                 f"Security Groups: sg-mgmt (SSH/RDP/HTTPS), sg-app (app ports), sg-data (DB ports). "
                 f"NAT Gateway: {network['nat_gateway']['name']} with EIP. "
-                f"Tier distribution: {network['tier_summary']}."
+                f"Tier distribution: {network['tier_summary']}. "
+                f"SOW resources mapped: {len(mapper_nodes)} total — "
+                f"{len(server_resources)} servers, {len(net_resources)} network, "
+                f"{len(cbr_resources)} CBR, {len(hss_resources)} HSS, {len(paas_db_resources)} PaaS DB."
             ),
             "commands": [
                 {"desc": "Apply RFS template", "cmd": f"hcloud rfs apply-template --name latam-erp-landing-zone-v3 --region {region} --params vpc_cidr={network['vpc_cidr']}"},
@@ -1797,23 +2077,49 @@ class AgenticExecutionSimulator:
         resource_usage["security_groups_created"] += 3
         resource_usage["eips_consumed"] += 1  # NAT gateway
 
-        # ═══ PHASE 4.2: Wave Processing ═══
+        # If there are EIP resources quoted in SOW, show them separately
+        eip_resources = [n for n in net_resources if ResourceTypeRouter.classify(n)["resource_class"] == "EIP"]
+        if eip_resources:
+            for eip_node in eip_resources:
+                step_id += 1
+                eip_name = eip_node.get("name", "elastic-ip")
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator → RFS Agent",
+                    "action": "EIP_ALLOCATE",
+                    "message": f"Allocating EIP from SOW quota '{eip_name}'. Bandwidth: 100 Mbps, Traffic billing.",
+                    "commands": [
+                        {"desc": "Create EIP", "cmd": f"hcloud eip create --bandwidth 100 --charge-mode traffic --name {eip_name}"},
+                        {"desc": "Bind EIP to NAT Gateway", "cmd": f"hcloud nat bind-eip --nat {network['nat_gateway']['name']} --eip <eip-id>"},
+                    ],
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "simulated_eip_allocated",
+                })
+                total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
+                resource_usage["eips_consumed"] += 1
+
+        # ═══ PHASE 4.2: Wave Processing — only actual SERVER resources ═══
         servers_processed = 0
+        server_names = [s.get("name", s.get("id", "?")) for s in server_resources]
         for wave_idx, wave in enumerate(waves):
             wave_name = wave.get("name", f"Wave-{wave_idx + 1}")
             wave_servers_raw = wave.get("servers", [])
 
-            # Resolve server IDs to full objects
+            # Resolve server IDs to full objects and FILTER to only SERVER resources
             wave_servers = []
             for s in wave_servers_raw:
                 if isinstance(s, str):
                     resolved = next((n for n in mapper_nodes if n.get("id") == s or n.get("name") == s), None)
                     if resolved:
-                        wave_servers.append(resolved)
+                        rclass = ResourceTypeRouter.classify(resolved)["resource_class"]
+                        if rclass == "SERVER":
+                            wave_servers.append(resolved)
                     else:
-                        wave_servers.append({"id": s, "name": s})
+                        # Unknown — might still be a server
+                        wave_servers.append({"id": s, "name": s, "_is_server": True})
                 else:
-                    wave_servers.append(s)
+                    rclass = ResourceTypeRouter.classify(s)["resource_class"]
+                    if rclass == "SERVER":
+                        wave_servers.append(s)
 
             if not wave_servers:
                 continue
@@ -1823,12 +2129,12 @@ class AgenticExecutionSimulator:
                 "id": step_id, "phase": "PHASE_4_2", "agent": "Orchestrator",
                 "action": "WAVE_START",
                 "message": (
-                    f"▶️ Starting {wave_name}: {len(wave_servers)} servers. "
-                    f"Based on Physics Engine estimates: ~{len(wave_servers) * 2:.0f}h-{len(wave_servers) * 4:.0f}h window. "
+                    f"▶️ Starting {wave_name}: {len(wave_servers)} server(s) of "
+                    f"{len(mapper_nodes)} total SOW resources. "
                     f"Servers: {[s.get('name',s.get('id','?')) for s in wave_servers]}."
                 ),
                 "timestamp_offset_seconds": total_simulated_seconds,
-                "decision": {"wave": wave_name, "server_count": len(wave_servers)},
+                "decision": {"wave": wave_name, "server_count": len(wave_servers), "total_sow_resources": len(mapper_nodes)},
             })
             total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1931,6 +2237,117 @@ class AgenticExecutionSimulator:
                 "server_outcomes": [all_server_outcomes.get(s.get("name", s.get("id", "?")), {}) for s in wave_servers],
             })
             total_simulated_seconds += config.STEP_TIMINGS["post_validation"]
+
+        # ═══ PHASE 4.3: App Landing Zone — CBR Vaults & PaaS DBs ═══
+        if cbr_resources:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_3", "agent": "Orchestrator",
+                "action": "CBR_PHASE_START",
+                "message": f"🏗️ Provisioning CBR backup infrastructure: {len(cbr_resources)} resource(s). "
+                           f"Binding to {len(server_names)} migrated server(s): {', '.join(server_names)}.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_cbr_started",
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
+
+            for cbr_node in cbr_resources:
+                cbr_result = CbrSimulator.simulate(
+                    cbr_node, step_id, total_simulated_seconds, region, config,
+                    server_names=server_names
+                )
+                trace.extend(cbr_result["trace"])
+                step_id = cbr_result["final_step_id"]
+                total_simulated_seconds = cbr_result["final_offset"]
+                resource_usage["cbr_vaults_used"] += 1
+
+        if paas_db_resources:
+            step_id += 1
+            db_names = [n.get("name", "?") for n in paas_db_resources]
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_3", "agent": "Orchestrator → RFS Agent",
+                "action": "PAAS_DB_PROVISION",
+                "message": f"Provisioning {len(paas_db_resources)} PaaS database(s): {', '.join(db_names)}.",
+                "commands": [
+                    {"desc": "Create RDS instance", "cmd": f"hcloud rds create --name <db-name> --flavor <db-flavor> --region {region}"},
+                    {"desc": "Configure DB parameters", "cmd": "hcloud rds configure --parameters <parameter-group>"},
+                ],
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_paas_db_provisioned",
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["handoff"]
+            resource_usage["instances_provisioned"] += len(paas_db_resources)
+
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_3", "agent": "Orchestrator",
+            "action": "APP_LANDING_ZONE_COMPLETE",
+            "message": "Application landing zone complete — target ECS, CBR vaults, and PaaS DBs provisioned.",
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "simulated_landing_zone_ready",
+        })
+        total_simulated_seconds += config.STEP_TIMINGS["post_validation"]
+
+        # ═══ PHASE 4.4: Deploy Data Agents — HSS on target servers ═══
+        if hss_resources and server_names:
+            for hss_node in hss_resources:
+                hss_result = HssAgentSimulator.simulate(
+                    hss_node, step_id, total_simulated_seconds, region, config,
+                    server_names=server_names
+                )
+                trace.extend(hss_result["trace"])
+                step_id = hss_result["final_step_id"]
+                total_simulated_seconds = hss_result["final_offset"]
+
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_4", "agent": "Orchestrator",
+                "action": "DATA_AGENTS_DEPLOYED",
+                "message": f"HSS agents deployed on all {len(server_names)} target server(s). "
+                           f"Next: Continuous Sync Monitoring (Phase 4.5) — waiting for 100% sync.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_agents_deployed",
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["handoff"]
+
+        # ═══ PHASE 4.5: Continuous Sync Monitor (placeholder) ═══
+        if server_names:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_5", "agent": "Orchestrator",
+                "action": "CONTINUOUS_SYNC_MONITOR",
+                "message": f"Monitoring SMS sync progress for {len(server_names)} server(s). "
+                           f"Waiting for 100% byte-by-byte synchronization before cutover. "
+                           f"(Simulated: sync complete, ready for cutover.)",
+                "commands": [
+                    {"desc": "Query sync status", "cmd": "hcloud sms query-task --server-id <server-id> | jq '.progress'"},
+                    {"desc": "Lock state before cutover", "cmd": "hcloud sms update-task --action pre-cutover-lock --task-id <task-id>"},
+                ],
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_sync_complete",
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["delta_sync_cycle"]
+
+        # ═══ PHASE 4.6: Cutover (human-gate) ═══
+        if server_names:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_6", "agent": "Orchestrator",
+                "action": "COLD_CUTOVER",
+                "message": (
+                    f"Cold cutover for {len(server_names)} server(s). "
+                    f"Severs on-premise connection, promotes VPC bindings. "
+                    f"[HUMAN GATE — requires approval]"
+                ),
+                "commands": [
+                    {"desc": "Stop source services", "cmd": "systemctl stop <app-service> --all-servers"},
+                    {"desc": "Trigger final SMS sync", "cmd": "SMS Console → Final Sync for all servers"},
+                    {"desc": "Verify target ECS reachable", "cmd": "hcloud ecs describe --instance-id <id> | jq '.status'"},
+                ],
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_cutover_complete",
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["cutover_stop_source"]
 
         # ═══ PHASE 4.7: Garbage Collection ═══
         step_id += 1

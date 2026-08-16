@@ -427,7 +427,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     'PHASE_4_2a': true, 'PHASE_4_2a_BLOCKED': true,
     'PHASE_4_2b': true, 'PHASE_4_2c': true, 'PHASE_4_2d': true,
     'PHASE_4_2e': true, 'PHASE_4_2f': true, 'PHASE_4_2f_POST': true,
-    'PHASE_4_7': true, 'PHASE_4_8': true,
+    'PHASE_4_3': true, 'PHASE_4_4': true, 'PHASE_4_5': true,
+    'PHASE_4_6': true, 'PHASE_4_7': true, 'PHASE_4_8': true,
   });
   const [showSummary, setShowSummary] = useState(true);
 
