@@ -974,7 +974,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                       size="small"
                       title={
                         <Space>
-                          <ProjectorOutlined style={{ color: '#8c8c8c' }} />
+                          <FileTextOutlined style={{ color: '#8c8c8c' }} />
                           <Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Cumulative Task Log</Text>
                         </Space>
                       }
@@ -1023,7 +1023,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
           <Card
             title={
               <Space>
-                <ProjectorOutlined style={{ color: '#722ed1' }} />
+                <FileTextOutlined style={{ color: '#722ed1' }} />
                 <Text strong style={{ fontSize: 14 }}>Execution Trace ({totalSteps} steps)</Text>
               </Space>
             }
