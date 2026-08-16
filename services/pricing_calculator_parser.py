@@ -499,8 +499,11 @@ def parse_pricing_calculator(file_path: str, customer_name: str = "TBD_Customer"
             blueprint["topology"]["compute"].append({
                 "name": _clean_name(item_name),
                 "flavor": parsed['instance_type'] if parsed['instance_type'] != 'Unknown' else service_type,
+                "type": service_type.split(' ')[0] if service_type else 'ECS',
                 "is_public": False,
                 "status": "OK" if parsed['vcpus'] > 0 else "WARNING",
+                "description": item.get('description', ''),
+                "specifications": item.get('specifications', ''),
                 "metadata": {
                     "tier": item.get('source_sheet', ''),
                     "os_type": parsed['os'],
@@ -508,7 +511,9 @@ def parse_pricing_calculator(file_path: str, customer_name: str = "TBD_Customer"
                     "ram_gb": parsed['ram_gb'],
                     "storage_gb": parsed['storage_gb'],
                     "billing_mode": item.get('billing_mode', ''),
-                    "monthly_price": item.get('monthly_price', 0)
+                    "monthly_price": item.get('monthly_price', 0),
+                    "description": item.get('description', ''),
+                    "specifications": item.get('specifications', ''),
                 },
                 "sub_items": item.get('sub_items', [])
             })

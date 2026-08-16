@@ -501,14 +501,14 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         {targetView === 'list' && (
                             <div className="flex flex-col flex-1 bg-slate-50 overflow-hidden">
                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none shadow-sm z-10 relative">
-                                    <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter:</div>
+                                    <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter: <span className="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-bold ml-1">{localNodes.length} total</span></div>
 
                                     <div onClick={() => setStatusFilter(statusFilter === 'In SOW' ? 'All' : 'In SOW')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In SOW' ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources included in the Sales Quotation.">
-                                        <i className="fas fa-file-invoice text-indigo-500"></i> In SOW Quote <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only').length}</span>
+                                        <i className="fas fa-file-invoice text-indigo-500"></i> In SOW <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only').length}</span>
                                     </div>
 
                                     <div onClick={() => setStatusFilter(statusFilter === 'In Discovery' ? 'All' : 'In Discovery')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In Discovery' ? 'bg-teal-50 border-teal-300 text-teal-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources discovered in the source environment.">
-                                        <i className="fas fa-radar text-teal-500"></i> In Discovery <span className="bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Live Only').length}</span>
+                                        <i className="fas fa-radar text-teal-500"></i> Discovery <span className="bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Live Only').length}</span>
                                     </div>
 
                                     <div className="w-px h-4 bg-slate-300 mx-1"></div>
@@ -532,9 +532,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                         <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0 z-10 shadow-sm border-b border-slate-200">
                                             <tr>
                                                 <th className="p-4 w-56 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-24 font-black">Specs (CPU / RAM / Storage)</th>
-                                                <th className="p-4 w-20 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-20 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('os')}>OS / Engine {sortConfig.key==='os' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-44 font-black">Specifications</th>
                                                 <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>Target IP {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-24 text-center font-black">Action</th>
@@ -542,18 +540,37 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-xs">
                                             {filteredAndSortedNodes.length === 0 ? (
-                                                <tr><td colSpan="7" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">No resources match the current filter or data is empty. Click Merge in the Reconcile tab.</td></tr>
+                                                <tr><td colSpan="5" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">No resources match the current filter or data is empty. Click Merge in the Reconcile tab.</td></tr>
                                             ) : (
                                                 filteredAndSortedNodes.map(n => {
                                                     const inSow = n.status === 'Matched' || n.status === 'Quoted Only';
-                                                    // Build spec string from available data
-                                                    const specParts = [];
-                                                    if (n.cpu) specParts.push(n.cpu + ' vCPU');
-                                                    if (n.memory) specParts.push(n.memory + ' GB');
-                                                    if (n.storage) specParts.push(n.storage + ' GB');
-                                                    const specStr = specParts.join(' / ') || (n.engine ? 'DB' : '-');
-                                                    const typeLabel = n.engine ? n.type + ' (' + n.engine + ')' : n.type;
-                                                    const osLabel = n.os || n.engine || '-';
+                                                    // Build full specification string from quotation data
+                                                    const buildSpecString = (n) => {
+                                                        const parts = [];
+                                                        // Use raw specifications + description from quotation parser if available
+                                                        if (n.specifications) parts.push(n.specifications);
+                                                        if (n.description && n.description !== n.name) parts.push(n.description);
+                                                        // Build from parsed fields as fallback
+                                                        if (!n.specifications) {
+                                                            const s = [];
+                                                            if (n.flavor && !n.specifications) s.push(n.flavor);
+                                                            if (n.cpu || n.vcpus) s.push((n.cpu || n.vcpus) + ' vCPUs');
+                                                            if (n.memory || n.ram_gb) s.push((n.memory || n.ram_gb) + ' GiB');
+                                                            if (n.os) s.push(n.os);
+                                                            if (n.engine) s.push(n.engine);
+                                                            if (n.storage || n.disk) s.push('Storage: ' + (n.storage || n.disk) + ' GB');
+                                                            if (s.length) parts.unshift(s.join(' | '));
+                                                        }
+                                                        // Include sub_items (attached disks) if present
+                                                        if (n.sub_items && n.sub_items.length > 0) {
+                                                            n.sub_items.forEach(si => {
+                                                                const siDesc = si.description || si.specifications || si.type || '';
+                                                                if (siDesc) parts.push('+' + siDesc);
+                                                            });
+                                                        }
+                                                        return parts.join('; ') || '-';
+                                                    };
+                                                    const specStr = buildSpecString(n);
                                                     return (
                                                         <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                             <td className="p-4 font-bold text-slate-800">
@@ -567,9 +584,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="p-4 font-mono text-[11px] text-slate-700 font-bold">{specStr}</td>
-                                                            <td className="p-4 font-bold text-indigo-700 text-[11px]">{typeLabel}</td>
-                                                            <td className="p-4 font-bold text-slate-500 text-[11px]">{osLabel}</td>
+                                                            <td className="p-4 font-mono text-[11px] text-slate-700 max-w-xs truncate" title={specStr}>{specStr}</td>
                                                             <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
                                                             <td className="p-4 font-bold text-slate-500 text-[11px]">{n.ip || n.ip_address || 'TBD'}</td>
                                                             <td className="p-4 text-center">
