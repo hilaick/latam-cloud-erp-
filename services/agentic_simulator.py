@@ -2780,6 +2780,10 @@ class AgenticExecutionSimulator:
             "cost_per_server": round(estimated_cost / max(servers_processed, 1), 0),
         }
 
+        sms_ok = resource_usage["sms_migrations_succeeded"]
+        sms_total = resource_usage["sms_migrations_attempted"]
+        image_count = resource_usage["image_migrations_performed"]
+
         # ── Strategic Tooling (3.4a) — which skills were used ──
         strategic_tooling = {
             "sms_migration": sms_total > 0,
@@ -2796,10 +2800,6 @@ class AgenticExecutionSimulator:
             ],
             "primary_tool": "SMS" if sms_ok > 0 else "Image" if image_count > 0 else "None",
         }
-
-        sms_ok = resource_usage["sms_migrations_succeeded"]
-        sms_total = resource_usage["sms_migrations_attempted"]
-        image_count = resource_usage["image_migrations_performed"]
 
         # ── Delivery Constellation summary (what would have been delivered) ──
         delivered_resources = []
