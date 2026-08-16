@@ -181,13 +181,52 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
         const qNodes = [];
         const bp = activeProject?.blueprintData?.topology || {};
 
-        (bp.compute || []).forEach((s, i) => qNodes.push({ id: `q-srv-${i}`, name: s.name || s.flavor || `Compute-${i}`, type: normalizeHuaweiType(s.type || s.flavor, 'ECS'), storage: s.storage || s.metadata?.storage_gb, os: s.os || s.metadata?.os_type, location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
+        (bp.compute || []).forEach((s, i) => qNodes.push({
+            id: `q-srv-${i}`, name: s.name || s.flavor || `Compute-${i}`,
+            type: normalizeHuaweiType(s.type || s.flavor, 'ECS'),
+            flavor: s.flavor || (s.metadata?.cpu_cores ? `custom-${s.metadata.cpu_cores}c${s.metadata.ram_gb}g` : ''),
+            cpu: s.metadata?.cpu_cores || s.cpu_cores || s.vcpus || '',
+            memory: s.metadata?.ram_gb || s.ram_gb || '',
+            storage: s.storage || s.metadata?.storage_gb || s.disk || '',
+            os: s.os || s.metadata?.os_type || '',
+            billing: s.metadata?.billing_mode || s.billing_mode || '',
+            monthly_price: s.metadata?.monthly_price || s.monthly_price || 0,
+            location: 'Compute-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only',
+            source: 'sow',
+        }));
         const dbs = bp.databases || bp.database || [];
-        dbs.forEach((d, i) => qNodes.push({ id: `q-db-${i}`, name: d.name || d.engine || `DB-${i}`, type: normalizeHuaweiType(d.engine || d.type, 'RDS'), storage: d.storage || d.metadata?.storage_gb, location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (bp.network || []).forEach((n, i) => qNodes.push({ id: `q-net-${i}`, name: n.name || `Network-${i}`, type: normalizeHuaweiType(n.type, 'VPC'), location: 'Cloud-Network', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (bp.storage || []).forEach((s, i) => qNodes.push({ id: `q-st-${i}`, name: s.name || `Storage-${i}`, type: normalizeHuaweiType(s.type, 'OBS'), storage: s.storage || s.metadata?.storage_gb, location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        (bp.security || []).forEach((sec, i) => qNodes.push({ id: `q-sec-${i}`, name: sec.name || `Security-${i}`, type: normalizeHuaweiType(sec.type, 'SG'), location: 'Global', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only' }));
-        
+        dbs.forEach((d, i) => qNodes.push({
+            id: `q-db-${i}`, name: d.name || d.engine || `DB-${i}`,
+            type: normalizeHuaweiType(d.engine || d.type, 'RDS'),
+            engine: d.engine || d.type || '',
+            flavor: d.metadata?.specs || d.specs || '',
+            cpu: d.metadata?.vcpus || d.vcpus || '',
+            memory: d.metadata?.ram_gb || d.ram_gb || '',
+            storage: d.storage || d.metadata?.storage_gb || d.allocated_storage || '',
+            monthly_price: d.metadata?.monthly_price || d.monthly_price || 0,
+            location: 'Data-Subnet', region: fallbackRegion, ip: 'TBD', status: 'Quoted Only',
+            source: 'sow',
+        }));
+        (bp.network || []).forEach((n, i) => qNodes.push({
+            id: `q-net-${i}`, name: n.name || `Network-${i}`,
+            type: normalizeHuaweiType(n.type, 'VPC'),
+            location: 'Cloud-Network', region: fallbackRegion, ip: n.cidr || 'TBD',
+            status: 'Quoted Only', source: 'sow',
+        }));
+        (bp.storage || []).forEach((s, i) => qNodes.push({
+            id: `q-st-${i}`, name: s.name || `Storage-${i}`,
+            type: normalizeHuaweiType(s.type, 'OBS'),
+            storage: s.storage || s.metadata?.storage_gb || '',
+            location: 'Global', region: fallbackRegion, ip: 'TBD',
+            status: 'Quoted Only', source: 'sow',
+        }));
+        (bp.security || []).forEach((sec, i) => qNodes.push({
+            id: `q-sec-${i}`, name: sec.name || `Security-${i}`,
+            type: normalizeHuaweiType(sec.type, 'SG'),
+            location: 'Global', region: fallbackRegion, ip: 'TBD',
+            status: 'Quoted Only', source: 'sow',
+        }));
+
         return qNodes;
     }, [activeProject?.blueprintData, activeProject?.region]);
 
@@ -463,49 +502,58 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                             <div className="flex flex-col flex-1 bg-slate-50 overflow-hidden">
                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0 flex-wrap select-none shadow-sm z-10 relative">
                                     <div className="mr-2 text-slate-400 flex items-center"><i className="fas fa-filter mr-2"></i> Status Filter:</div>
-                                    
+
                                     <div onClick={() => setStatusFilter(statusFilter === 'In SOW' ? 'All' : 'In SOW')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In SOW' ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources included in the Sales Quotation.">
-                                        <i className="fas fa-file-invoice text-indigo-500"></i> In SOW Quote
+                                        <i className="fas fa-file-invoice text-indigo-500"></i> In SOW Quote <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only').length}</span>
                                     </div>
-                                    
+
                                     <div onClick={() => setStatusFilter(statusFilter === 'In Discovery' ? 'All' : 'In Discovery')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'In Discovery' ? 'bg-teal-50 border-teal-300 text-teal-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Shows all resources discovered in the source environment.">
-                                        <i className="fas fa-radar text-teal-500"></i> In Discovery
+                                        <i className="fas fa-radar text-teal-500"></i> In Discovery <span className="bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched' || n.status === 'Live Only').length}</span>
                                     </div>
-                                    
+
                                     <div className="w-px h-4 bg-slate-300 mx-1"></div>
 
                                     <div onClick={() => setStatusFilter(statusFilter === 'Matched' ? 'All' : 'Matched')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Matched' ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Resource exists in BOTH the signed Quotation (SOW) and the live Discovery data.">
-                                        <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)]"></div> Matched
+                                        <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_5px_rgba(16,185,129,0.5)]"></div> Matched <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Matched').length}</span>
                                     </div>
                                     <div onClick={() => setStatusFilter(statusFilter === 'Live Only' ? 'All' : 'Live Only')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Live Only' ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Resource was discovered in the live environment but is NOT in the signed Quotation (SOW). May require a Change Request (CR).">
-                                        <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)]"></div> Scope Creep
+                                        <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.5)]"></div> Scope Creep <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Live Only').length}</span>
                                     </div>
                                     <div onClick={() => setStatusFilter(statusFilter === 'Quoted Only' ? 'All' : 'Quoted Only')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Quoted Only' ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Resource is in the signed Quotation (SOW) but could not be found in the live environment.">
-                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)]"></div> Missing SOW
+                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_5px_rgba(244,63,94,0.5)]"></div> Missing SOW <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Quoted Only').length}</span>
                                     </div>
                                     <div onClick={() => setStatusFilter(statusFilter === 'Manual' ? 'All' : 'Manual')} className={`flex items-center gap-2 cursor-pointer transition-all px-2 py-1 rounded border ${statusFilter === 'Manual' ? 'bg-blue-50 border-blue-300 text-blue-800 shadow-inner' : 'border-transparent hover:bg-slate-200'}`} title="Manually added to the Target Architecture by an engineer.">
-                                        <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)]"></div> Manual Addition
+                                        <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,0.5)]"></div> Manual Addition <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px] font-bold">{localNodes.filter(n => n.status === 'Manual').length}</span>
                                     </div>
                                 </div>
 
                                 <div className="flex-1 overflow-auto custom-scrollbar bg-white relative">
-                                    <table className="w-full text-left min-w-[1000px]">
+                                    <table className="w-full text-left min-w-[1400px]">
                                         <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 sticky top-0 z-10 shadow-sm border-b border-slate-200">
                                             <tr>
-                                                <th className="p-4 w-72 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>Target Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>Target Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-48 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>Resource Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-32 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>Target IP / CIDR {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
-                                                <th className="p-4 w-40 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('location')}>Target Subnet / Zone {sortConfig.key==='location' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-56 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>Resource Name {sortConfig.key==='name' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-24 font-black">Specs (CPU / RAM / Storage)</th>
+                                                <th className="p-4 w-20 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('type')}>Type {sortConfig.key==='type' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-20 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('os')}>OS / Engine {sortConfig.key==='os' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('region')}>Region {sortConfig.key==='region' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
+                                                <th className="p-4 w-28 font-black cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('ip')}>Target IP {sortConfig.key==='ip' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'up':'down'} ml-1 text-indigo-500`}></i>}</th>
                                                 <th className="p-4 w-24 text-center font-black">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-xs">
                                             {filteredAndSortedNodes.length === 0 ? (
-                                                <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">No resources match the current filter or data is empty. Click Merge in the Reconcile tab.</td></tr>
+                                                <tr><td colSpan="7" className="p-16 text-center text-slate-400 font-bold border-2 border-dashed bg-slate-50 m-4 rounded-xl">No resources match the current filter or data is empty. Click Merge in the Reconcile tab.</td></tr>
                                             ) : (
                                                 filteredAndSortedNodes.map(n => {
                                                     const inSow = n.status === 'Matched' || n.status === 'Quoted Only';
+                                                    // Build spec string from available data
+                                                    const specParts = [];
+                                                    if (n.cpu) specParts.push(n.cpu + ' vCPU');
+                                                    if (n.memory) specParts.push(n.memory + ' GB');
+                                                    if (n.storage) specParts.push(n.storage + ' GB');
+                                                    const specStr = specParts.join(' / ') || (n.engine ? 'DB' : '-');
+                                                    const typeLabel = n.engine ? n.type + ' (' + n.engine + ')' : n.type;
+                                                    const osLabel = n.os || n.engine || '-';
                                                     return (
                                                         <tr key={n.id} className="hover:bg-indigo-50/30 transition-colors group">
                                                             <td className="p-4 font-bold text-slate-800">
@@ -519,10 +567,13 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                                     </div>
                                                                 </div>
                                                             </td>
+                                                            <td className="p-4 font-mono text-[11px] text-slate-700 font-bold">{specStr}</td>
+                                                            <td className="p-4 font-bold text-indigo-700 text-[11px]">{typeLabel}</td>
+                                                            <td className="p-4 font-bold text-slate-500 text-[11px]">{osLabel}</td>
                                                             <td className="p-4 font-bold text-slate-600 uppercase text-[10px] tracking-widest"><EditableCell value={n.region} onSave={v=>handleUpdateNode(n.id, 'region', v)} /></td>
-                                                            
-                                                            <td className="p-4 font-bold text-indigo-700">
-                                                                <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer">
+                                                            <td className="p-4 font-bold text-slate-500 text-[11px]">{n.ip || n.ip_address || 'TBD'}</td>
+                                                            <td className="p-4 text-center">
+                                                                <select value={n.type} onChange={e => handleUpdateNode(n.id, 'type', e.target.value)} className="bg-transparent border border-transparent hover:border-slate-200 rounded p-1 outline-none cursor-pointer text-[11px] font-bold text-indigo-700">
                                                                     <optgroup label="Compute & Containers">
                                                                         <option value="ECS">ECS (Compute VM)</option>
                                                                         <option value="BMS">BMS (Bare Metal)</option>
@@ -564,8 +615,6 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                                                                     </optgroup>
                                                                 </select>
                                                             </td>
-                                                            <td className="p-4 font-mono text-slate-600 font-bold"><EditableCell value={n.ip} onSave={v=>handleUpdateNode(n.id, 'ip', v)} /></td>
-                                                            <td className="p-4 font-bold text-slate-600"><EditableCell value={n.location} onSave={v=>handleUpdateNode(n.id, 'location', v)} /></td>
                                                             <td className="p-4 text-center space-x-3">
                                                                 <button onClick={()=>setSelectedNode(n)} className="text-slate-400 hover:text-blue-500 transition-colors" title="Edit Configuration Properties"><i className="fas fa-cog"></i></button>
                                                                 <button onClick={()=>handleDeleteNode(n.id)} className="text-slate-400 hover:text-rose-500 transition-colors"><i className="fas fa-trash-alt"></i></button>
