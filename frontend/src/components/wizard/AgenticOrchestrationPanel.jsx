@@ -423,7 +423,11 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [error, setError] = useState(null);
   const [expandedSteps, setExpandedSteps] = useState({});
   const [expandedPhases, setExpandedPhases] = useState({
-    'PHASE_4_0': true, 'PHASE_4_1': true, 'PHASE_4_2': true, 'PHASE_4_7': true
+    'PHASE_4_0': true, 'PHASE_4_1': true, 'PHASE_4_2': true,
+    'PHASE_4_2a': true, 'PHASE_4_2a_BLOCKED': true,
+    'PHASE_4_2b': true, 'PHASE_4_2c': true, 'PHASE_4_2d': true,
+    'PHASE_4_2e': true, 'PHASE_4_2f': true, 'PHASE_4_2f_POST': true,
+    'PHASE_4_7': true, 'PHASE_4_8': true,
   });
   const [showSummary, setShowSummary] = useState(true);
 
@@ -1071,12 +1075,12 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             }
           >
             <Collapse
-              accordion
               activeKey={Object.entries(expandedPhases).filter(([k, v]) => v).map(([k]) => k)}
               onChange={(keys) => {
-                const newExpanded = {};
-                keys.forEach(k => { newExpanded[k] = true; });
-                setExpandedPhases(prev => ({ ...prev, ...newExpanded }));
+                const arr = Array.isArray(keys) ? keys : (keys ? [keys] : []);
+                const next = {};
+                arr.forEach(k => { next[k] = true; });
+                setExpandedPhases(next);
               }}
               items={phaseItems}
             />
