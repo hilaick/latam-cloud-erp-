@@ -1056,7 +1056,21 @@ class SmsMigrationSimulator:
         region: str,
         config: SimulationConfig,
     ) -> dict:
-        """Run SMS migration path. Returns trace entries + outcome."""
+        """Run SMS migration path — CODELPA PRTSRV real skill pattern.
+        
+        Follows the proven 7-step hcloud CLI + API flow built during the
+        CODELPA Windows Server migration, with preflight checks at each stage:
+        
+        1. PREFLIGHT: Source Registration (agent running, disk IDs)
+        2. PREFLIGHT: hcloud CLI (profile, region, creds)
+        3. TARGET: EIP Creation (300 Mbit traffic billing)
+        4. TARGET: ECS Creation (exact flavor/image/VPC/SG/eip from start)
+        5. TARGET: Bind EIP to ECS (port ID)
+        6. TARGET: SMS Disk ID Discovery (ShowServer)
+        7. TARGET: Create SMS Task (private IP workaround)
+        8. MONITOR: Task progress with SMS.0515 recovery
+        9. POST: Finalize
+        """
         server_name = server.get("name", server.get("hostname", server.get("id", "unknown")))
         trace: List[dict] = []
         total_offset = offset
@@ -1064,136 +1078,348 @@ class SmsMigrationSimulator:
         outcome = "UNKNOWN"
         sync_hours = 0.0
         path_taken = "sms_primary"
-
-        # ── Step 1: Source Registration ──
-        sid += 1
+        resource_usage_local = {"eips_consumed": 0, "instances_provisioned": 0}
         is_linux = profile["os_family"] == "linux"
-        sms_domain = f"sms.{region}.myhuaweicloud.com"
-        install_cmd = SmsMigrationSimulator._agent_install_cmd(server_name, is_linux, sms_domain, region)
+        sms_region = "ap-southeast-3"  # CODELPA pattern: SMS in ap-southeast-3
+        target_region = region
+        vm_id = server.get("id", server_name)
+        flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
+        disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
+        target_ip = "172.16.1." + str(10 + abs(hash(server_name)) % 240)
+
+        # ═══ PHASE 4.2b: SOURCE PREFLIGHT ═══
+
+        # Step 1: PREFLIGHT — Source Registration
+        sid += 1
+        sms_domain = f"sms.{sms_region}.myhuaweicloud.com"
+        install_cmd = SmsMigrationSimulator._agent_install_cmd(server_name, is_linux, sms_domain, target_region)
         check_cmd = SmsMigrationSimulator._agent_check_cmd(is_linux)
 
         trace.append({
-            "id": sid, "phase": "PHASE_4_2a", "agent": f"Agent-{server_name}",
-            "action": "SOURCE_REGISTRATION",
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_SOURCE_REGISTRATION",
             "target": server_name,
-            "message": f"Registering '{server_name}' in Huawei SMS Console. "
-                       f"OS: {profile['os']}, Source IP: {profile['source_ip']}.",
+            "message": (
+                f"[PREFLIGHT] Verifying '{server_name}' is registered in Huawei SMS ({sms_region}). "
+                f"OS: {profile['os']}. Expected state: 'waiting', 'connected': true."
+            ),
             "commands": [
-                {"desc": "Check if SMS agent already installed", "cmd": check_cmd},
-                {"desc": "If not, install SMS agent", "cmd": install_cmd},
+                {"desc": "Check SMS source server status", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.state, .connected'"},
+                {"desc": "Check SMS agent running", "cmd": check_cmd},
+                {"desc": "Query source disk IDs", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.disks[] | {{id, name, device_use, size}}'"},
             ],
+            "preflight_check": True,
             "timestamp_offset_seconds": total_offset,
-            "result": "registered",
+            "result": "simulated_source_registered",
         })
         total_offset += config.STEP_TIMINGS["source_registration"]
 
-        # ── Step 2: Agent Availability ──
+        # Step 2: PREFLIGHT — hcloud CLI configuration
         sid += 1
-        agent_status = SmsMigrationSimulator._agent_availability(profile)
         trace.append({
-            "id": sid, "phase": "PHASE_4_2a", "agent": f"Agent-{server_name}",
-            "action": "AGENT_AVAILABILITY_CHECK",
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_HCLOUD_CLI",
             "target": server_name,
-            "message": agent_status["message"],
-            "commands": agent_status["commands"],
-            "timestamp_offset_seconds": total_offset,
-            "decision": agent_status["decision"],
-            "result": agent_status["result"],
-        })
-        total_offset += agent_status["time_cost"]
-
-        # If manual agent required, we can't proceed
-        if agent_status["result"] == "blocked_manual_required":
-            outcome = "BLOCKED_MANUAL_AGENT_REQUIRED"
-            return {
-                "trace": trace,
-                "final_step_id": sid,
-                "final_offset": total_offset,
-                "outcome": outcome,
-                "sync_hours": 0.0,
-                "server_name": server_name,
-                "path_taken": "blocked",
-            }
-
-        # ── Step 3: Initial Full Sync ──
-        sid += 1
-        disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
-        effective_mbps = SmsMigrationSimulator._simulate_throughput(physics)
-        initial_sync_hours = (disk_gb * 8000) / (effective_mbps * 3600)  # GB→Mb / Mbps→hours
-        initial_sync_hours = max(initial_sync_hours, 0.5)
-
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2b", "agent": f"Agent-{server_name}",
-            "action": "INITIAL_SYNC_START",
-            "target": server_name,
-            "message": f"Starting full disk sync: {disk_gb:.0f} GB @ {effective_mbps:.0f} Mbps effective throughput. "
-                       f"Estimated: {initial_sync_hours:.1f}h.",
+            "message": (
+                f"[PREFLIGHT] Configuring hcloud CLI profile for SMS operations. "
+                f"Profile: <project>, Region: {sms_region}. "
+                f"Authentication: HMAC-SHA256 (no cumulative tokens)."
+            ),
             "commands": [
-                {"desc": "Trigger SMS full replication", "cmd": "SMS Console → Start Full Replication"},
-                {"desc": "Monitor progress", "cmd": f"hcloud SMS Query-Task --server-id {server.get('id','')}"},
+                {"desc": "Configure hcloud profile", "cmd": f"hcloud configure set --cli-profile=<project> --cli-mode=AKSK --cli-access-key=<ak> --cli-secret-key=<sk> --cli-region={sms_region} --cli-project-id=<project_id>"},
+                {"desc": "Verify profile", "cmd": "hcloud configure list | grep -A5 '\"current\"'"},
+                {"desc": "Test SMS API access", "cmd": f"hcloud SMS ListServers --cli-region={sms_region} --limit=1"},
             ],
-            "metrics": {"disk_gb": disk_gb, "effective_mbps": effective_mbps, "est_hours": initial_sync_hours},
+            "preflight_check": True,
             "timestamp_offset_seconds": total_offset,
-            "result": "syncing",
+            "decision": {"auth_method": "HMAC-SHA256", "profile": "<project>"},
+            "result": "simulated_cli_configured",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # ═══ PHASE 4.2c: TARGET CONFIGURATION ═══
+
+        # Step 3: Create EIP with 300 Mbit/s Traffic billing (CODELPA pattern)
+        sid += 1
+        eip_name = f"{server_name}-EIP"
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+            "action": "TARGET_EIP_CREATE",
+            "target": server_name,
+            "message": (
+                f"[TARGET CONFIG] Creating EIP for '{server_name}' with 300 Mbit/s Traffic billing. "
+                f"CRITICAL: ECS must be created WITH eip field from start (SMS.6602 fix)."
+            ),
+            "commands": [
+                {"desc": "Create EIP (Traffic billing)", "cmd": f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name='{eip_name}' --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic"},
+                {"desc": "Save EIP ID for later binding", "cmd": "echo '<eip_id>' > /tmp/eip_ids.txt"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_eip_created",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+        resource_usage_local["eips_consumed"] = resource_usage_local.get("eips_consumed", 0) + 1
+
+        # Step 4: PREFLIGHT — Check quota before ECS creation
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_ECS_QUOTA",
+            "target": server_name,
+            "message": (
+                f"[PREFLIGHT] Checking ECS quota for flavor '{flavor}' in {target_region}. "
+                f"Expected: flavor available, VPC exists, subnet exists, EP ID valid."
+            ),
+            "commands": [
+                {"desc": "Check flavor availability", "cmd": f"hcloud ecs flavor-describe --flavor {flavor} --region {target_region}"},
+                {"desc": "Check VPC exists", "cmd": f"hcloud vpc describe --name latam-erp-{target_region}-vpc"},
+                {"desc": "Check quota not exceeded", "cmd": "hcloud ecs quota --region {target_region} | jq '.cores.free, .ram.free'"},
+            ],
+            "preflight_check": True,
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_quota_ok",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 5: Create Target ECS (with eip from start — CODELPA SMS.6602 lesson)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+            "action": "TARGET_ECS_CREATE",
+            "target": server_name,
+            "message": (
+                f"[TARGET CONFIG] Launching target ECS '{server_name}-TARGET' on flavor '{flavor}' "
+                f"({disk_gb:.0f}GB SSD). Type: {'Linux' if is_linux else 'Windows'}. "
+                f"ECS created WITH eip field from start (SMS.6602 prevention)."
+            ),
+            "commands": [
+                {"desc": "Create ECS with exact quotation specs", "cmd": (
+                    f"hcloud ECS CreateServers "
+                    f"--server.name='{server_name}-TARGET' "
+                    f"--server.flavorRef='{flavor}' "
+                    f"--server.vpcid='<vpc_id>' "
+                    f"--server.nics.1.subnet_id='<subnet_id>' "
+                    f"--server.availability_zone='{target_region}a' "
+                    f"--server.root_volume.volumetype=SAS "
+                    f"--server.root_volume.size={int(disk_gb)} "
+                    f"--server.security_groups.1.id='<sg_id>' "
+                    f"--server.adminPass='<auto-generated>' "
+                    f"--server.count=1 "
+                    f"--server.publicip.eip.iptype=5_bgp "
+                    f"--server.publicip.eip.bandwidth.size=100 "
+                    f"--server.publicip.eip.bandwidth.sharetype=PER"
+                )},
+                {"desc": "Wait for ECS ACTIVE", "cmd": "hcloud ecs describe --instance-id <new-id> | jq '.status' (wait for ACTIVE)"},
+                {"desc": "Get private IP for SMS task", "cmd": f"hcloud ecs describe --instance-id <new-id> | jq '.addresses' | grep -oE '172\\.\\S+'"},
+            ],
+            "metrics": {"flavor": flavor, "disk_gb": disk_gb, "os": "linux" if is_linux else "windows"},
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_ecs_created",
+        })
+        total_offset += config.STEP_TIMINGS["instance_launch"]
+        resource_usage_local["instances_provisioned"] = resource_usage_local.get("instances_provisioned", 0) + 1
+
+        # Step 6: Bind EIP to ECS (port ID extraction)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+            "action": "TARGET_EIP_BIND",
+            "target": server_name,
+            "message": (
+                f"[TARGET CONFIG] Binding EIP '<eip_id>' to ECS '{server_name}-TARGET'. "
+                f"Using port ID from ECS network interface."
+            ),
+            "commands": [
+                {"desc": "Get ECS port ID", "cmd": f"hcloud ecs describe --instance-id <new-id> | jq '.os_extended_ports:[].id'"},
+                {"desc": "Bind EIP to port", "cmd": f"hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>"},
+                {"desc": "Verify EIP bound", "cmd": "hcloud EIP ShowPublicip --publicip_id=<eip_id> | jq '.status' (expect ACTIVE)"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_eip_bound",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 7: PREFLIGHT — Query source disk config (exact 1:1 mapping)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_SMS_DISK_ID",
+            "target": server_name,
+            "message": (
+                f"[PREFLIGHT] Querying source server disk configuration. "
+                f"CRITICAL: Use SMS disk ID (from ShowServer), NOT EVS volume ID (from ECS API). "
+                f"SMS.6103 error if wrong ID used."
+            ),
+            "commands": [
+                {"desc": "Get SMS disk ID", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.disks[0].id'"},
+                {"desc": "Get all partitions", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.disks[].physical_volumes[] | {{name, device_use, file_system, size}}'"},
+            ],
+            "preflight_check": True,
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_disk_id_discovered",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 8: Create SMS Migration Task (private IP workaround — CODELPA SMS.6602 lesson)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+            "action": "TARGET_SMS_TASK_CREATE",
+            "target": server_name,
+            "message": (
+                f"[TARGET CONFIG] Creating SMS migration task for '{server_name}'. "
+                f"Using PRIVATE IP ({target_ip}) with use_public_ip=true — CODELPA SMS.6602 workaround. "
+                f"Disk ID: SMS disk ID (<sms_disk_id>), not EVS volume ID."
+            ),
+            "commands": [
+                {"desc": "Create SMS migration task", "cmd": (
+                    f"hcloud SMS CreateTask "
+                    f"--name='MigrationTask' "
+                    f"--project_id=<project_id> "
+                    f"--project_name='<project>' "
+                    f"--region_id={target_region} "
+                    f"--source_server.id={vm_id} "
+                    f"--target_server.name='{server_name}-TARGET' "
+                    f"--target_server.vm_id=<ecs_id> "
+                    f"--type=MIGRATE_BLOCK "
+                    f"--os_type={'LINUX' if is_linux else 'WINDOWS'} "
+                    f"--auto_start=true "
+                    f"--start_target_server=true "
+                    f"--use_public_ip=true "
+                    f"--migration_ip={target_ip} "
+                    f"--target_server.disks.1.device_use=BOOT "
+                    f"--target_server.disks.1.name='Disk 0' "
+                    f"--target_server.disks.1.size={int(disk_gb * 1073741824)} "
+                    f"--target_server.disks.1.disk_id=<sms_disk_id>"
+                )},
+                {"desc": "Verify task state READY", "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region={sms_region} | jq '.state, .syncing'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_sms_task_created",
         })
         total_offset += config.STEP_TIMINGS["initial_sync_start"]
 
-        # ── Step 4: Delta Sync Cycles ──
-        num_deltas = max(2, int(initial_sync_hours / 2))  # delta every ~2h of sync
+        # ═══ PHASE 4.2d: SYNC MONITOR & SMS.0515 RECOVERY ═══
+
+        # Step 9: Monitor sync with SMS.0515 recovery loop
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
+            "action": "SYNC_MONITOR_START",
+            "target": server_name,
+            "message": (
+                f"[SYNC MONITOR] Monitoring SMS task progress. "
+                f"Expected: source='waiting' → sync 0%→100%. "
+                f"SMS.0515 recovery: if error, delete task → refresh source name → wait → retry."
+            ),
+            "commands": [
+                {"desc": "Monitor task state and progress", "cmd": f"hcloud SMS ShowTask --task_id=<task_id> --cli-region={sms_region} | jq '.state, .progress, .sub_tasks[] | {{name, progress}}'"},
+                {"desc": "Check source server status", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.state, .migration_cycle, .connected'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_sync_monitoring",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        # Simulate sync progress
+        effective_mbps = SmsMigrationSimulator._simulate_throughput(physics)
+        initial_sync_hours = max((disk_gb * 8000) / (effective_mbps * 3600), 0.5)
+
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
+            "action": "SYNC_FULL_REPLICATION",
+            "target": server_name,
+            "message": (
+                f"[SYNC] Full replication in progress: {disk_gb:.0f}GB @ {effective_mbps:.0f}Mbps. "
+                f"Estimated: {initial_sync_hours:.1f}h. 4 sub-tasks: SSL_CONFIG, ATTACH_AGENT_IMAGE, "
+                f"FORMAT_DISK_{'LINUX' if is_linux else 'WINDOWS'}, MIGRATE_BLOCK."
+            ),
+            "metrics": {"disk_gb": disk_gb, "throughput_mbps": effective_mbps, "est_hours": initial_sync_hours},
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_syncing",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        # SMS.0515 recovery simulation
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
+            "action": "SMS_0515_RECOVERY_CHECK",
+            "target": server_name,
+            "message": (
+                f"[SMS.0515 CHECK] Verifying no disk configuration changes. "
+                f"Console workaround preferred if SMS.0515 occurs: Use SMS Console UI, "
+                f"it bypasses strict validation that causes API failures. "
+                f"(CODELPA lesson: console task 3a768198 succeeded without agent restart.)"
+            ),
+            "commands": [
+                {"desc": "Console workaround (preferred)", "cmd": "Huawei Cloud Console → SMS → Migration Tasks → Create Task (bypasses SMS.0515)"},
+                {"desc": "API recovery: refresh source", "cmd": f"hcloud SMS UpdateServerName --source_id={vm_id} --name='{server_name}-REFRESH' --cli-region={sms_region}"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_0515_clear",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Delta syncs
+        num_deltas = max(2, int(initial_sync_hours / 2))
         for d in range(num_deltas):
             sid += 1
-            change_rate = 0.03 + random.uniform(-0.01, 0.02)  # 2-5% change rate
+            change_rate = 0.03 + random.uniform(-0.01, 0.02)
             delta_gb = disk_gb * change_rate
             delta_hours = (delta_gb * 8000) / (effective_mbps * 3600)
             delta_hours = max(delta_hours, 0.05)
 
             trace.append({
-                "id": sid, "phase": "PHASE_4_2b", "agent": f"Agent-{server_name}",
+                "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
                 "action": f"DELTA_SYNC_{d+1}",
                 "target": server_name,
-                "message": f"Delta sync #{d+1}: {delta_gb:.1f} GB changed ({change_rate*100:.0f}% churn). "
-                           f"Sync time: {delta_hours:.2f}h.",
+                "message": f"[SYNC] Delta #{d+1}: {delta_gb:.1f}GB ({change_rate*100:.0f}% churn). Time: {delta_hours:.2f}h.",
                 "metrics": {"delta_gb": round(delta_gb, 2), "change_rate_pct": round(change_rate*100, 1)},
                 "timestamp_offset_seconds": total_offset,
-                "result": "delta_complete",
+                "result": "simulated_delta_complete",
             })
             total_offset += config.STEP_TIMINGS["delta_sync_cycle"]
             sync_hours += delta_hours
-
         sync_hours += initial_sync_hours
 
-        # ── Step 5: Cutover ──
+        # ═══ PHASE 4.2e: CUTOVER ═══
+
         sid += 1
         trace.append({
-            "id": sid, "phase": "PHASE_4_2c", "agent": f"Agent-{server_name}",
+            "id": sid, "phase": "PHASE_4_2e_CUTOVER", "agent": f"Agent-{server_name}",
             "action": "CUTOVER_STOP_SOURCE",
             "target": server_name,
-            "message": f"Stopping source services on '{server_name}'. Final sync in progress.",
+            "message": (
+                f"[CUTOVER] Stopping source services on '{server_name}'. "
+                f"Final sync in progress. DNS cutover prepared."
+            ),
             "commands": [
-                {"desc": "Stop application services on source", "cmd": "systemctl stop <app-service> || service <app> stop"},
-                {"desc": "Trigger final SMS sync", "cmd": "SMS Console → Final Sync"},
+                {"desc": "Stop app services on source", "cmd": "systemctl stop <app-service> || service <app> stop"},
+                {"desc": "Trigger SMS final sync", "cmd": "SMS Console → Final Sync"},
+                {"desc": "Verify source stopped", "cmd": "curl -s -o /dev/null -w '%{http_code}' http://<source-ip>:<health-port> (expect 5xx)"},
             ],
             "timestamp_offset_seconds": total_offset,
-            "result": "source_stopped",
+            "result": "simulated_source_stopped",
         })
         total_offset += config.STEP_TIMINGS["cutover_stop_source"]
 
         sid += 1
-        target_flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
-        target_ip = "172.16.1." + str(10 + int(server.get("id", "00")[-2:]) if len(server.get("id", "")) >= 2 else 10)
-
         trace.append({
-            "id": sid, "phase": "PHASE_4_2c", "agent": f"Agent-{server_name}",
+            "id": sid, "phase": "PHASE_4_2e_CUTOVER", "agent": f"Agent-{server_name}",
             "action": "CUTOVER_START_TARGET",
             "target": server_name,
-            "message": f"Launching target ECS '{server_name}' on flavor '{target_flavor}' "
-                       f"with IP {target_ip}. Subnet: application.",
+            "message": (
+                f"[CUTOVER] Starting target ECS '{server_name}-TARGET' on flavor '{flavor}' "
+                f"with IP {target_ip}. Verifying ECS is RUNNING and reachable."
+            ),
             "commands": [
-                {"desc": "Create ECS from SMS target image", "cmd": f"hcloud ecs create --flavor {target_flavor} --vpc latam-erp-{region}-vpc --subnet application --ip {target_ip}"},
-                {"desc": "Verify ECS status RUNNING", "cmd": f"hcloud ecs describe --instance-id <new-id>"},
+                {"desc": "Verify target ECS RUNNING", "cmd": f"hcloud ecs describe --instance-id <ecs_id> | jq '.status'"},
+                {"desc": "Verify target reachable", "cmd": f"ping -c 4 {target_ip} && echo 'TARGET_REACHABLE'"},
             ],
             "timestamp_offset_seconds": total_offset,
-            "result": "target_launched",
+            "result": "simulated_target_launched",
         })
         total_offset += config.STEP_TIMINGS["cutover_start_target"]
         outcome = "SMS_SUCCESS"
