@@ -178,6 +178,46 @@ def get_knowledge_tree():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@execution_bp.route('/api/knowledge/sync', methods=['POST'])
+@jwt_required()
+def sync_knowledge():
+    """Force sync external knowledge from GitHub and return before/after counts."""
+    try:
+        from services.knowledge_provider import ExternalKnowledgeStore
+        import os, json
+        
+        # Get before count
+        before_count = 0
+        cache_file = ExternalKnowledgeStore._entries
+        if hasattr(ExternalKnowledgeStore, '_entries') and ExternalKnowledgeStore._entries:
+            before_count = len(ExternalKnowledgeStore._entries)
+        else:
+            # Try to read from cache file directly
+            cache_path = os.path.expanduser("~/.hermes/knowledge-cache/1-3-Cloud-Adoption-Skills/.entries.json")
+            if os.path.exists(cache_path):
+                with open(cache_path, 'r') as f:
+                    before_count = len(json.load(f))
+        
+        # Force sync
+        ExternalKnowledgeStore.initialize(force_sync=True)
+        
+        # Get after count
+        after_count = len(ExternalKnowledgeStore._entries)
+        last_sync = ExternalKnowledgeStore._last_sync
+        
+        return jsonify({
+            "success": True,
+            "before": before_count,
+            "after": after_count,
+            "last_sync": last_sync,
+            "message": f"Synced: {before_count} → {after_count} entries"
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def build_knowledge_tree(entries):
     """Build hierarchical tree from flat knowledge dict entries."""
     categories = {}

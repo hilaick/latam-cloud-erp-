@@ -10,6 +10,8 @@ export default function KnowledgeTreePanel() {
     const [tree, setTree] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState(null);
     const [expandedNodes, setExpandedNodes] = useState(new Set());
     const [metrics, setMetrics] = useState({ total: 0, used: 0, fed: 0, bySource: {} });
 
@@ -33,6 +35,31 @@ export default function KnowledgeTreePanel() {
             setError('Network error: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const forceSync = async () => {
+        setSyncing(true);
+        setSyncMessage(null);
+        setError(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch('/api/knowledge/sync', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSyncMessage(`${data.message} (last sync: ${data.last_sync})`);
+                // Reload tree after sync
+                await loadKnowledge();
+            } else {
+                setError(data.error || 'Sync failed');
+            }
+        } catch (err) {
+            setError('Sync error: ' + err.message);
+        } finally {
+            setSyncing(false);
         }
     };
 
@@ -197,7 +224,7 @@ export default function KnowledgeTreePanel() {
             </div>
 
             {/* Controls */}
-            <div className="flex gap-2 mb-3">
+            <div className="flex gap-2 mb-3 items-center">
                 <button
                     onClick={expandAll}
                     className="text-[9px] font-bold text-slate-500 hover:text-slate-800 uppercase tracking-wider bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg transition-colors"
@@ -211,13 +238,27 @@ export default function KnowledgeTreePanel() {
                     <i className="fas fa-compress mr-1"></i>Collapse All
                 </button>
                 <button
-                    onClick={loadKnowledge}
-                    className="text-[9px] font-bold text-slate-500 hover:text-slate-800 uppercase tracking-wider bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg transition-colors ml-auto"
-                    title="Refresh knowledge tree"
+                    onClick={forceSync}
+                    disabled={syncing}
+                    className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg transition-colors ml-auto ${
+                        syncing 
+                            ? 'bg-blue-100 text-blue-600 cursor-wait' 
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                    }`}
+                    title="Force sync external knowledge from GitHub"
                 >
-                    <i className="fas fa-sync-alt"></i>
+                    <i className={`fas ${syncing ? 'fa-spinner fa-spin' : 'fa-cloud-upload-alt'} mr-1`}></i>
+                    {syncing ? 'Syncing...' : 'Sync External'}
                 </button>
             </div>
+            
+            {/* Sync message */}
+            {syncMessage && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-2 mb-3 text-xs text-green-700">
+                    <i className="fas fa-check-circle mr-1"></i>
+                    {syncMessage}
+                </div>
+            )}
 
             {/* Tree */}
             <div className="max-h-[400px] overflow-y-auto custom-scrollbar border border-slate-100 rounded-xl bg-white p-2">

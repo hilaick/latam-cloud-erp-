@@ -2173,8 +2173,38 @@ class AgenticExecutionSimulator:
                 path_taken = "sms_primary"
                 resource_usage_local["sms_succeeded"] = 1
             elif sms_result["outcome"] == "BLOCKED_MANUAL_AGENT_REQUIRED":
-                final_outcome = "BLOCKED"
-                path_taken = "blocked_no_agent"
+                # DRY-RUN: Do not stop — simulate full retrospective path
+                sid += 1
+                all_trace.append({
+                    "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
+                    "action": "DRYRUN_SIMULATE_FULL_PATH",
+                    "target": server_name,
+                    "message": (
+                        f"🔁 DRY-RUN MODE: SMS blocked for '{server_name}' (agent not available). "
+                        f"Simulating complete agentic pipeline as retrospective twin."
+                    ),
+                    "timestamp_offset_seconds": current_offset,
+                    "result": "simulated_continue",
+                })
+                current_offset += 5
+
+                # Re-run SMS simulation with an agent-available profile
+                sim_profile = dict(profile)
+                sim_profile["agent_preinstalled"] = True
+                sim_profile["has_data_plane_admin"] = True
+                sim_profile["has_source_access"] = True
+                sms_retry_result = SmsMigrationSimulator.simulate(
+                    server, sim_profile, physics, sid, current_offset, region, config
+                )
+                for entry in sms_retry_result["trace"]:
+                    if "result" in entry and not entry["result"].startswith("simulated_"):
+                        entry["result"] = f"simulated_{entry['result']}"
+                all_trace.extend(sms_retry_result["trace"])
+                sid = sms_retry_result["final_step_id"]
+                current_offset = sms_retry_result["final_offset"]
+                final_outcome = "SIMULATED_SMS_SUCCESS"
+                final_sync_hours = sms_retry_result["sync_hours"]
+                path_taken = "retrospective_sms_simulated"
             else:
                 # SMS failed — attempt troubleshooting
                 resource_usage_local["troubleshoots"] = 1
@@ -2244,50 +2274,68 @@ class AgenticExecutionSimulator:
             path_taken = "image_primary"
 
         elif strategy == "manual_agent_required":
-            # ── BLOCKED: Full decision tree visibility even when blocked ──
+            # ── BLOCKED: Show why, then continue in dry-run mode ──
             sid += 1
             all_trace.append({
                 "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
                 "action": "BLOCKED_STRATEGY_ANALYSIS",
                 "target": server_name,
                 "message": (
-                    f"⛔ Server '{server_name}' is BLOCKED — missing metadata for agentic path. "
-                    f"Reason: No data-plane admin access ({profile.get('has_data_plane_admin', False)}), "
-                    f"no agent preinstalled ({profile.get('agent_preinstalled', False)}), "
-                    f"no source access ({profile.get('has_source_access', False)})."
+                    f"⛔ Server '{server_name}' would be BLOCKED in live execution — "
+                    f"missing metadata for agentic path. "
+                    f"Reason: No data-plane admin access, no agent preinstalled, no source access."
                 ),
                 "decision": {"recommended_action": "manual_agent_install_or_image_upload"},
                 "result": "blocked",
             })
             current_offset += 5
 
-            # Show what WOULD happen if metadata were provided
             sid += 1
             all_trace.append({
                 "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
                 "action": "HYPOTHETICAL_PATH_WITH_METADATA",
                 "target": server_name,
                 "message": (
-                    f"💡 If metadata were enriched (e.g., has_data_plane_admin=true), this server would follow: "
-                    f"SMS Agent Install via SSH → Full Disk Sync → Delta Syncs → Cutover → Post-Migration Hardening. "
-                    f"Applicable skills: {[s['name'] for s in skills]}. "
-                    f"History shows {len(history_matches or [])} similar past migrations."
+                    f"💡 If metadata were enriched, this server would follow: "
+                    f"SMS Agent Install → Full Disk Sync → Delta Syncs → Cutover → Post-Migration Hardening."
                 ),
-                "dependencies": [
-                    {"name": "metadata_enrichment", "desc": "Run source discovery or add fields to mapperNode", "status": "needed"},
-                    {"name": "sms_agent_install", "desc": "Orchestrator pushes agent via SSH with Tier1 credentials", "status": "blocked_on_metadata"},
-                    {"name": "network_path", "desc": "VPC/subnet must be provisioned (Phase 4.1)", "status": "ok"},
-                ],
-                "commands": [
-                    {"desc": "If metadata were present, agent install command", "cmd": f"ssh root@<source_ip> 'wget https://sms.{region}.myhuaweicloud.com/sms_agent/sms_agent_linux.tar.gz && tar xzf sms_agent_linux.tar.gz && cd SMS-Agent && ./install.sh --ak <HCLOUD_AK> --sk <HCLOUD_SK> --quiet'"},
-                ],
                 "timestamp_offset_seconds": current_offset,
                 "result": "hypothetical_path_displayed",
             })
             current_offset += 5
 
-            final_outcome = "BLOCKED_MANUAL_AGENT_REQUIRED"
-            path_taken = "blocked"
+            # DRY-RUN: Do not stop — simulate the complete pipeline
+            sim_profile = dict(profile)
+            sim_profile["agent_preinstalled"] = True
+            sim_profile["has_data_plane_admin"] = True
+            sim_profile["has_source_access"] = True
+
+            sid += 1
+            all_trace.append({
+                "id": sid, "phase": "PHASE_4_2a_BLOCKED", "agent": f"Agent-{server_name}",
+                "action": "DRYRUN_SIMULATE_FULL_PATH",
+                "target": server_name,
+                "message": (
+                    f"🔁 DRY-RUN MODE: Simulating complete agentic pipeline for '{server_name}' "
+                    f"as retrospective twin. (Blocked in live, shown in dry-run.)"
+                ),
+                "timestamp_offset_seconds": current_offset,
+                "result": "simulated_continue",
+            })
+            current_offset += 5
+
+            sms_retry_result = SmsMigrationSimulator.simulate(
+                server, sim_profile, physics, sid, current_offset, region, config
+            )
+            for entry in sms_retry_result["trace"]:
+                if "result" in entry and not entry["result"].startswith("simulated_"):
+                    entry["result"] = f"simulated_{entry['result']}"
+            all_trace.extend(sms_retry_result["trace"])
+            sid = sms_retry_result["final_step_id"]
+            current_offset = sms_retry_result["final_offset"]
+            final_outcome = "SIMULATED_SMS_SUCCESS"
+            final_sync_hours = sms_retry_result["sync_hours"]
+            path_taken = "retrospective_sms_simulated"
 
         # Aggregate resource usage (handled by caller)
         return {
