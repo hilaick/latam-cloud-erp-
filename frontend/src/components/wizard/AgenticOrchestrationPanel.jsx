@@ -13,7 +13,8 @@ import {
   BarChartOutlined, SettingOutlined, GlobalOutlined,
   CopyOutlined, CheckOutlined, ArrowRightOutlined,
   DatabaseOutlined, DesktopOutlined, WifiOutlined,
-  SwapOutlined, SafetyCertificateOutlined, FileTextOutlined
+  SwapOutlined, SafetyCertificateOutlined, FileTextOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
@@ -847,7 +848,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             <Card
               title={
                 <Space>
-                  <BrainOutlined style={{ color: '#4a6cf7' }} />
+                  <ExperimentOutlined style={{ color: '#4a6cf7' }} />
                   <Text strong style={{ fontSize: 14 }}>Self-Learning Engine</Text>
                 </Space>
               }
