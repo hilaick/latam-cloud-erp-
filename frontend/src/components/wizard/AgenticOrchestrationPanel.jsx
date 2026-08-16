@@ -437,6 +437,29 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [replayIndex, setReplayIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [replaySpeed, setReplaySpeed] = useState(1000);
+
+  // 🐛 FIX: Reset all local state when project changes (prevents stale simulation from previous project)
+  const prevProjectId = useRef(project?.id);
+  useEffect(() => {
+    if (prevProjectId.current !== project?.id) {
+      setResult(project?.agenticDryRun || null);
+      setError(null);
+      setExpandedSteps({});
+      setExpandedPhases({
+        'PHASE_4_0': true, 'PHASE_4_1': true, 'PHASE_4_2': true,
+        'PHASE_4_2a': true, 'PHASE_4_2a_BLOCKED': true,
+        'PHASE_4_2b': true, 'PHASE_4_2c': true, 'PHASE_4_2d': true,
+        'PHASE_4_2e': true, 'PHASE_4_2f': true, 'PHASE_4_2f_POST': true,
+        'PHASE_4_3': true, 'PHASE_4_4': true, 'PHASE_4_5': true,
+        'PHASE_4_6': true, 'PHASE_4_7': true, 'PHASE_4_8': true,
+      });
+      setShowSummary(true);
+      setReplayMode(false);
+      setReplayIndex(0);
+      setIsPlaying(false);
+      prevProjectId.current = project?.id;
+    }
+  }, [project?.id]);
   const timerRef = useRef(null);
 
   const token = sessionStorage.getItem('hermes_access_token');

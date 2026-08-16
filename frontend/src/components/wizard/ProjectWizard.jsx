@@ -41,6 +41,19 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
         if (!currentStep) setCurrentStep(1);
     }, [activeProject?.id]);
 
+    // 🐛 FIX: Sync wizard step to lifecycleState when navigating from dashboard
+    useEffect(() => {
+        if (!activeProject?.lifecycleState) return;
+        const lifecycleToStep = {
+            '1_arb': 1, '2_architecture': 2, '3_planning': 3,
+            '4_execution': 4, '5_postlive': 5,
+        };
+        const step = lifecycleToStep[activeProject.lifecycleState];
+        if (step && step !== currentStep) {
+            setCurrentStep(step);
+        }
+    }, [activeProject?.id]);
+
     const phases = [
         { id: 1, label: "1. ARB Handover", full: "Architecture Review Board & BOM Setup" },
         { id: 2, label: "2. Architecture", full: "Discovery, Mapper & DTRB Governance" },
