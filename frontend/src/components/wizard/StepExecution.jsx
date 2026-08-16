@@ -286,6 +286,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     };
 
     // 🚨 AGENTIC: Orchestrate pipeline via real Hermes delegate-task API (Fix #4: phase-level resume)
+    // INTEGRATED with dry-run simulator: passes simulation trace as context to each Hermes agent
     const handleOrchestrateAll = async (startFrom = 0) => {
         // Build completed-set from backend delegateTasks on first run
         if (startFrom === 0 && project?.delegateTasks?.length) {
@@ -304,6 +305,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
 
         const token = sessionStorage.getItem('hermes_access_token');
+
+        // ── Read dry-run simulation result for rich phase context ──
+        const simResult = project?.agenticDryRun;
+        const simTrace = simResult?.trace || [];
+        const simSummary = simResult?.summary || {};
+
         const chain = [
             { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', goal: 'Validate and prepare the Wave 0 network fabric: provision isolated Transit VPC, subnets, security groups, and identity foundation via Terraform. Confirm all prerequisites for the migration landing zone.' },
             { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', goal: 'Run OS pre-flight diagnostics: validate source OS constraints against target cloud availability. Check that quoted flavors are in stock and flag any mismatches requiring Change Requests.' },
@@ -313,6 +320,38 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', goal: 'Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure.' },
             { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', goal: 'Destroy transient migration resources: factory VMs, staging EIPs, and temporary disks. Confirm PPU costs drop to quoted baseline. Verify no orphaned resources remain.' },
         ];
+
+        // ── Pre-compute phase context from simulation traces ──
+        const buildPhaseContext = (phaseKey) => {
+            if (!simTrace.length) return null;
+            const phaseSteps = simTrace.filter(t => t.phase === phaseKey);
+            if (!phaseSteps.length) return null;
+
+            const commands = phaseSteps
+                .filter(t => Array.isArray(t.commands) && t.commands.length > 0)
+                .flatMap(t => t.commands.map(c => c.cmd || c.command || ''))
+                .filter(Boolean);
+            const serverNames = [...new Set(phaseSteps
+                .filter(t => t.target || (t.decision && t.decision.server_name))
+                .map(t => t.target || t.decision.server_name))];
+            const resourceSpecs = phaseSteps
+                .filter(t => t.network_spec || t.resourceSpec || (t.decision && t.decision.resource_spec))
+                .map(t => t.network_spec || t.resourceSpec || t.decision.resource_spec);
+
+            return {
+                phaseSteps: phaseSteps.length,
+                commands: commands.slice(0, 20),
+                serverNames: serverNames.slice(0, 10),
+                resourceSpecs: resourceSpecs.slice(0, 3),
+                estimatedDurationDays: simSummary.estimated_wall_clock_days,
+                serversProcessed: simSummary.servers_processed,
+                totalWaves: simSummary.total_waves,
+            };
+        };
+
+        if (simTrace.length > 0) {
+            log(`[simulator] Using dry-run simulation (${simTrace.length} trace entries) as context for orchestration.`);
+        }
 
         for (let i = startFrom; i < chain.length; i++) {
             const step = chain[i];
@@ -328,6 +367,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             updatePhase(step.phase, 'IN_PROGRESS');
             setPhaseStatus(prev => ({ ...prev, [step.phase]: 'running' }));
 
+            // ── Build enriched context using simulation trace ──
+            const phaseCtx = buildPhaseContext(step.phase);
+            let enrichedContext = `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`;
+            if (phaseCtx) {
+                enrichedContext += `\n\n=== SIMULATION CONTEXT for ${step.phase} ===`;
+                enrichedContext += `\nSimulated steps in this phase: ${phaseCtx.phaseSteps}`;
+                if (phaseCtx.commands.length > 0) {
+                    enrichedContext += `\nSimulated CLI commands for this phase:\n  ` + phaseCtx.commands.map((c, j) => `${j+1}. ${c}`).join('\n  ');
+                }
+                if (phaseCtx.serverNames.length > 0) {
+                    enrichedContext += `\nTarget servers: ${phaseCtx.serverNames.join(', ')}`;
+                }
+                enrichedContext += `\n\n=== END SIMULATION CONTEXT ===`;
+            }
+
             try {
                 const res = await fetch('/api/hermes-cli/delegate-task', {
                     method: 'POST',
@@ -337,7 +391,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     },
                     body: JSON.stringify({
                             goal: step.goal,
-                            context: `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`,
+                            context: enrichedContext,
                             profile: 'exec',
                             project_id: project?.id || ''
                         })
