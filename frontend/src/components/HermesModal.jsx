@@ -134,8 +134,9 @@ const HermesModal = ({ isOpen, onClose }) => {
     // Emit event payload to kick off the backend ReAct/Streaming loop
     socket.emit("hermes_query_stream", {
       query: currentInput,
-      projectId: "global",
+      projectId: projectId || "global",
       messages: conversationHistory,
+      token: sessionStorage.getItem('hermes_access_token') || '',
     });
   };
 

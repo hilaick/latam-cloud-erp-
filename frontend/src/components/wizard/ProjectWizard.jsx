@@ -143,11 +143,11 @@ export default function ProjectWizard({ activeProject, onUpdateProject, onClose 
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
-                {currentStep === 1 && <StepARB project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(2)} />}
-                {currentStep === 2 && <StepArchitecture project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(3)} />}
-                {currentStep === 3 && <StepPlanning project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(4)} />}
-                {currentStep === 4 && <StepExecution project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(5)} />}
-                {currentStep === 5 && <StepPostLive project={activeProject} onUpdateProject={onUpdateProject} isCurrent={true} />}
+                {currentStep === 1 && <StepARB key={activeProject?.id || 'no-project'} project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(2)} />}
+                {currentStep === 2 && <StepArchitecture key={activeProject?.id || 'no-project'} project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(3)} />}
+                {currentStep === 3 && <StepPlanning key={activeProject?.id || 'no-project'} project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(4)} />}
+                {currentStep === 4 && <StepExecution key={activeProject?.id || 'no-project'} project={activeProject} onUpdateProject={onUpdateProject} onPromote={() => setCurrentStep(5)} />}
+                {currentStep === 5 && <StepPostLive key={activeProject?.id || 'no-project'} project={activeProject} onUpdateProject={onUpdateProject} isCurrent={true} />}
             </div>
 
             {showConfig && (

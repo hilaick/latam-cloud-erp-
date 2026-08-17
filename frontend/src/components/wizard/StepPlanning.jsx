@@ -75,6 +75,21 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
 
     const handleProceedToExecution = () => {
         // Build ExecutionPlan contract — now includes physics & finops
+        
+        // Validate prerequisites exist
+        const missingPrereqs = [];
+        if (!project?.mapperNodes || project.mapperNodes.length === 0) {
+            missingPrereqs.push('Topology nodes (Architecture & Scope step)');
+        }
+        if (!project?.ora?.riskScore) {
+            missingPrereqs.push('Risk assessment (ORA)');
+        }
+        
+        if (missingPrereqs.length > 0) {
+            alert(`Cannot proceed to Execution: missing prerequisites.\n\n${missingPrereqs.map(m => `• ${m}`).join('\n')}\n\nComplete the Architecture & Scope step first.`);
+            return;
+        }
+
         const executionPlan = {
             mode: project?.executionMode || executionMode || 'manual',
             planningCompletedAt: new Date().toISOString(),

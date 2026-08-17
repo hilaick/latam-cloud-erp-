@@ -15,6 +15,8 @@ from models import Customer, ProjectData, db
 logger = logging.getLogger(__name__)
 hermes_bp = Blueprint('hermes', __name__)
 
+from services.model_config import ModelConfigStore
+
 LOAD_BALANCER_URL = "http://localhost:8666/v1/chat/completions"
 LOAD_BALANCER_AUTH = "Basic YWRtaW46ODIxODcwZWVlNGQzMTA4NGUxYmZmNDA1YWJhMTVjYTY="
 
@@ -61,6 +63,21 @@ def handle_hermes_stream(payload):
     and streams DeepSeek text tokens back to the React view instantaneously.
     """
     try:
+        # Authenticate: extract JWT from payload
+        from flask import request
+        token = payload.get('token', '')
+        if not token:
+            socketio.emit('hermes_error', {'error': 'Authentication required: no token provided'})
+            return
+        
+        # Validate JWT token
+        try:
+            from flask_jwt_extended import decode_token
+            decode_token(token)
+        except Exception:
+            socketio.emit('hermes_error', {'error': 'Authentication failed: invalid or expired token'})
+            return
+
         user_query = payload.get('query', '')
         project_id = payload.get('projectId', 'global')
         historical_messages = payload.get('messages', [])

@@ -48,9 +48,11 @@ class HermesExecutor:
                 ip = params.get("ip")
                 command = params.get("command")
                 
-                # Setup SSH Client
+                # Setup SSH Client with host key verification
                 ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                # Load system host keys for verification
+                ssh.load_system_host_keys()
+                ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
                 
                 # NOTE: Update key_filename to your actual worker pem key path
                 key_path = os.environ.get('WORKER_SSH_KEY', '/root/.ssh/id_rsa') 
@@ -67,7 +69,14 @@ class HermesExecutor:
             elif tool_name == "read_erp_code":
                 filepath = params.get("filepath")
                 # Security: Prevent directory traversal outside the ERP
-                if ".." in filepath or filepath.startswith("/"):
+                # Normalize and resolve the path
+                import re
+                ERP_BASE = os.environ.get('ERP_HOME', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                full_path = os.path.normpath(os.path.join(ERP_BASE, filepath))
+                # Ensure the resolved path stays within ERP_BASE
+                if not full_path.startswith(os.path.normpath(ERP_BASE)):
+                    return "Error: Directory traversal blocked. Path is outside ERP root."
+                if ".." in filepath.split(os.sep) or filepath.startswith("/"):
                     return "Error: Directory traversal blocked. Use relative paths."
                 
                 if not os.path.exists(filepath):

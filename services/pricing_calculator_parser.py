@@ -24,7 +24,9 @@ def is_pricing_calculator_format(file_path: str) -> bool:
         return False
     
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        # NOTE: removed read_only=True — incompatible with ws.cell().value access pattern
+        # and ws.max_row/max_column in read-only mode returns None/estimates
         sheet_names = [s.lower() for s in wb.sheetnames]
         
         # Must have "Price Calculator Summary" or similar summary sheet

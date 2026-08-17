@@ -321,7 +321,23 @@ def validate_sts_token():
         ephemeral_keys = project_data.get('ephemeralKeys')
         
         if not ephemeral_keys: return jsonify({"success": False, "error": "No ephemeral keys found."}), 400
-        return jsonify({"success": True, "valid": True, "message": "STS token validated successfully", "status_code": 200, "expires": ephemeral_keys.get('expires')})
+        # Actually validate the STS token against Huawei Cloud IAM
+        from services.identity_provisioner import IdentityProvisioner
+        try:
+            valid = IdentityProvisioner.validate_token(
+                ak=ephemeral_keys.get('ak'),
+                sk=ephemeral_keys.get('sk'),
+                security_token=ephemeral_keys.get('security_token'),
+                region=project_data.get('targetRegion', project_data.get('region', 'la-south-2'))
+            )
+            return jsonify({
+                "success": True,
+                "valid": valid,
+                "message": "STS token is valid" if valid else "STS token has expired or is invalid",
+                "expires": ephemeral_keys.get('expires')
+            })
+        except Exception as validation_err:
+            return jsonify({"success": True, "valid": False, "message": f"Validation attempted but failed: {str(validation_err)}", "expires": ephemeral_keys.get('expires')})
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 
 @execution_bp.route('/api/projects/<project_id>/execute', methods=['POST'])
@@ -372,7 +388,7 @@ def execute_project(project_id):
         )
         
         if rfs_result.get("success"): return jsonify({"success": True, "message": f"Terraform successfully deployed via Huawei RFS. Stack ID: {rfs_result.get('stack_id')}"})
-        else: return jsonify({"success": True, "message": "Landing Zone pre-provisioned in local simulation mode.", "warning": rfs_result.get('error')})
+        else: return jsonify({"success": False, "error": "Landing Zone deployment failed via Huawei RFS.", "detail": rfs_result.get('error', 'No error detail provided'), "stack_id": rfs_result.get('stack_id')}), 500
         
     except Exception as e: return jsonify({"success": False, "error": str(e)}), 500
 

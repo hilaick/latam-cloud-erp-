@@ -1083,6 +1083,8 @@ class SmsMigrationSimulator:
         sms_region = "ap-southeast-3"  # Default: SMS in ap-southeast-3
         target_region = region
         vm_id = server.get("id", server_name)
+        ecs_id = server.get("targetEcsId", "<ecs_id>")
+        os_type = server.get("osType", profile.get("os", "linux"))
         flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
         disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
         target_ip = "172.16.1." + str(10 + abs(hash(server_name)) % 240)
@@ -1422,7 +1424,13 @@ class SmsMigrationSimulator:
             "result": "simulated_target_launched",
         })
         total_offset += config.STEP_TIMINGS["cutover_start_target"]
-        outcome = "SMS_SUCCESS"
+        
+        # Determine outcome based on agent availability
+        availability = cls._agent_availability(profile)
+        if availability.get("result") == "blocked_manual_required":
+            outcome = "BLOCKED_MANUAL_AGENT_REQUIRED"
+        else:
+            outcome = "SMS_SUCCESS"
 
         # ── Step 6: Post-Migration ──
         post_trace, sid, total_offset = PostMigrationSimulator.simulate(
@@ -1858,10 +1866,9 @@ class ResourceTypeRouter:
         type_raw = (node.get("type") or node.get("resourceType") or "").upper().replace(" ", "_")
         name_raw = (node.get("name") or node.get("hostname") or "").upper().replace(" ", "_")
         
-        # Check explicit type field first
+        # Check explicit type field first — order matters: check PAAS_DB before SERVER
+        # to avoid substring collisions (e.g. "SQLSERVER" matching "SERVER")
         for check in [type_raw, name_raw]:
-            if any(st in check for st in cls.SERVER_TYPES):
-                return {"resource_class": "SERVER", "phase": "PHASE_4_2", "skill": "sms_migration"}
             if any(st in check for st in cls.CBR_TYPES):
                 return {"resource_class": "CBR", "phase": "PHASE_4_3", "skill": "cbr_provision"}
             if any(st in check for st in cls.HSS_TYPES):
@@ -1872,6 +1879,8 @@ class ResourceTypeRouter:
                 return {"resource_class": "NETWORK", "phase": "PHASE_4_1", "skill": "network_provision"}
             if any(st in check for st in cls.PAAS_DB_TYPES):
                 return {"resource_class": "PAAS_DB", "phase": "PHASE_4_3", "skill": "paas_db_provision"}
+            if any(st in check for st in cls.SERVER_TYPES):
+                return {"resource_class": "SERVER", "phase": "PHASE_4_2", "skill": "sms_migration"}
         
         # Fallback: if it has compute-like fields, treat as server
         if node.get("flavor") or node.get("os") or node.get("osType"):
@@ -2517,17 +2526,23 @@ class AgenticExecutionSimulator:
                     applicable_skills = SkillRegistry.get_skills_for_server(enriched_profile, server)
                     history_matches = ExecutionHistoryStore.query_similar(enriched_profile, server)
                     # ── Federated knowledge: query all 3 sources ──
-                    knowledge = KnowledgeProvider.query(
-                        enriched_profile, server,
-                        skill_matches=applicable_skills,
-                        history_matches=history_matches
-                    )
+                    try:
+                        knowledge = KnowledgeProvider.query(
+                            enriched_profile, server,
+                            skill_matches=applicable_skills,
+                            history_matches=history_matches
+                        )
+                    except Exception:
+                        knowledge = {}
                     # Inject knowledge trace enrichment into trace
-                    enrichment = KnowledgeProvider.generate_trace_enrichment(
-                        enriched_profile, server, step_id
-                    )
-                    trace.extend(enrichment["trace_entries"])
-                    step_id += len(enrichment["trace_entries"])
+                    try:
+                        enrichment = KnowledgeProvider.generate_trace_enrichment(
+                            enriched_profile, server, step_id
+                        )
+                        trace.extend(enrichment["trace_entries"])
+                        step_id += len(enrichment["trace_entries"])
+                    except Exception:
+                        pass
                     
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,
@@ -2560,8 +2575,8 @@ class AgenticExecutionSimulator:
                         "action": "HANDOFF",
                         "target": hook_server_name,
                         "result": result["outcome"],
-                        "os": server_node.get("os", profile.get("os", "unknown") if 'profile' in dir() else "unknown"),
-                        "role": profile.get("role", "unknown") if 'profile' in dir() else "unknown",
+                        "os": server_node.get("os", server_node.get("osType", "unknown")),
+                        "role": server_node.get("role", server_node.get("resourceType", "unknown")),
                         "path_taken": result["path_taken"],
                         "outcome": result["outcome"],
                         "message": (
@@ -3400,6 +3415,8 @@ def register_agentic_dry_run_routes(execution_bp):
     def _handle_delete_dry_run(project_id):
         """Clear stored simulation results for a project."""
         try:
+            from models import ProjectData
+            from models import db
             project_record = ProjectData.query.get(project_id)
             if not project_record:
                 return jsonify({"success": False, "error": "Project not found"}), 404
@@ -3409,7 +3426,6 @@ def register_agentic_dry_run_routes(execution_bp):
             project_data.pop('agenticTrace', None)
             project_data.pop('lastSimulation', None)
             project_record.data = json.dumps(project_data)
-            from models import db
             db.session.commit()
             return jsonify({"success": True, "message": "Simulation results cleared"}), 200
         except Exception as e:

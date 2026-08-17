@@ -446,7 +446,11 @@ class KnowledgeProvider:
             cmds = e.get("commands", [])
             if isinstance(cmds, list):
                 for cmd in cmds[:3]:
-                    known_sigs.add(hash(cmd.get("cmd", "")) % 10_000_000)
+                    # Use SHA256 for collision-resistant dedup (birthday paradox:
+                    # 10M bucket = ~50% collision at 4K entries; SHA256 is safe)
+                    import hashlib
+                    cmd_str = cmd.get("cmd", "")
+                    known_sigs.add(hashlib.sha256(cmd_str.encode()).hexdigest()[:16])
 
         covered_strategies = {
             e.get("migration_type") or e.get("strategy", "")

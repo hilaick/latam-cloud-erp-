@@ -123,12 +123,25 @@ class ModelConfigStore:
         os.makedirs(instance_dir, exist_ok=True)
         self._config_path = os.path.join(instance_dir, "model_config.enc.json")
 
-        # Derive encryption key from app secret + machine fingerprint
+        # Derive encryption key from app secret + machine fingerprint + stable salt
+        # NOTE: The machine_id dependency means keys may become undecryptable after
+        # VM migration. To mitigate this, we also persist a key derivation salt that
+        # survives hostname changes. The salt is stored in instance/fernet.salt.
         secret = app.config.get("SECRET_KEY", "erp-migration-factory")
         machine_id = os.environ.get("COMPUTERNAME", os.environ.get("HOSTNAME", "unknown"))
+        
+        # Load or create stable salt that survives hostname changes
+        salt_path = os.path.join(instance_dir, "fernet.salt")
+        try:
+            with open(salt_path, 'rb') as f:
+                salt = f.read()
+        except FileNotFoundError:
+            salt = os.urandom(32)
+            with open(salt_path, 'wb') as f:
+                f.write(salt)
+        
         key_material = f"{secret}:{machine_id}:erp-orchestrator"
-        # SHA256 → 32 bytes → base64 url-safe = 44 chars (valid Fernet key)
-        key_bytes = hashlib.sha256(key_material.encode()).digest()
+        key_bytes = hashlib.pbkdf2_hmac('sha256', key_material.encode(), salt, 100000, dklen=32)
         self._fernet = Fernet(base64.urlsafe_b64encode(key_bytes))
 
         self._load()
