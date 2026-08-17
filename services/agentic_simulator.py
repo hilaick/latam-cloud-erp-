@@ -1426,7 +1426,7 @@ class SmsMigrationSimulator:
         total_offset += config.STEP_TIMINGS["cutover_start_target"]
         
         # Determine outcome based on agent availability
-        availability = cls._agent_availability(profile)
+        availability = SmsMigrationSimulator._agent_availability(profile)
         if availability.get("result") == "blocked_manual_required":
             outcome = "BLOCKED_MANUAL_AGENT_REQUIRED"
         else:
