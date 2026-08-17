@@ -8,7 +8,7 @@ const HermesModal = ({ isOpen, onClose }) => {
       id: 1,
       role: "assistant",
       content:
-        "👋 **Welcome to ERP Agent!**\n\nI'm your dedicated Huawei Cloud ERP assistant. I can help with:\n• Migration workflow guidance\n• Cloud infrastructure operations\n• System queries and troubleshooting\n• Project management assistance\n\nHow can I assist with your Huawei Cloud operations today?",
+        "👋 **Welcome to ERP Agent!** This is your direct AI-powered interface to the entire ERP Migration Factory system.\n\n**Capabilities:**\n• 💬 Ask anything about your project's topology, SOW, or migration state\n• 🚀 Issue delivery commands: `/status`, `/preflight`, `/deploy-wave 0`, `/simulate`\n• 🔍 Query infrastructure, validate scope alignment, check system health\n• ⚡ All actions execute against live project data through the Control Plane\n\n**How can I assist?**",
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -18,6 +18,14 @@ const HermesModal = ({ isOpen, onClose }) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
 
   // Initialize unified persistent TCP WebSocket session when component mounts
   useEffect(() => {
@@ -200,8 +208,8 @@ const HermesModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800" onClick={(e) => e.stopPropagation()}>
         {/* Modal Branding Header */}
         <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white shadow-md">
           <div className="flex items-center space-x-3">
