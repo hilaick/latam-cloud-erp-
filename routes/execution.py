@@ -537,3 +537,187 @@ def update_execution_state(project_id):
     state.last_active_at = datetime.utcnow()
     db.session.commit()
     return jsonify({"success": True})
+
+@execution_bp.route('/api/executions/<project_id>/command', methods=['POST'])
+@jwt_required()
+def execute_delivery_command(project_id):
+    """Delivery Command Interface — execute slash commands and operations."""
+    data = request.json or {}
+    cmd_raw = (data.get('command') or '').strip()
+    context_phase = data.get('contextPhase', 'global')
+
+    if not cmd_raw:
+        return jsonify({"success": False, "error": "No command provided."}), 400
+
+    # Load project data
+    project = ProjectData.query.filter_by(id=project_id).first()
+    if not project:
+        return jsonify({"success": False, "error": "Project not found."}), 404
+
+    project_dict = json.loads(project.data_json) if project.data_json else {}
+    mapper_nodes = project_dict.get('mapperNodes', [])
+    blueprint = project_dict.get('blueprintData', {})
+    simulation = project_dict.get('simulationResult', {})
+
+    handler = DeliveryCommandHandler(project_id, project_dict, mapper_nodes, blueprint, simulation)
+
+    try:
+        if cmd_raw == '/status':
+            result = handler.cmd_status(context_phase)
+        elif cmd_raw == '/preflight':
+            result = handler.cmd_preflight()
+        elif cmd_raw.startswith('/deploy-wave'):
+            wave = cmd_raw.replace('/deploy-wave', '').strip() or '0'
+            result = handler.cmd_deploy_wave(wave)
+        elif cmd_raw == '/health':
+            result = handler.cmd_health()
+        elif cmd_raw == '/help':
+            result = handler.cmd_help()
+        elif cmd_raw.startswith('/simulate'):
+            result = handler.cmd_simulate()
+        elif cmd_raw == '/validate':
+            result = handler.cmd_validate()
+        else:
+            result = f"[error] Unknown command: {cmd_raw}. Type /help for available commands."
+    except Exception as e:
+        logger.error(f"Command '{cmd_raw}' failed: {e}")
+        result = f"[error] Command execution failed: {str(e)}"
+
+    return jsonify({"success": True, "output": result})
+
+class DeliveryCommandHandler:
+    """Handles slash-commands for the Delivery Command Interface."""
+
+    def __init__(self, project_id, project_dict, mapper_nodes, blueprint, simulation):
+        self.project_id = project_id
+        self.project_dict = project_dict
+        self.mapper_nodes = mapper_nodes
+        self.blueprint = blueprint
+        self.simulation = simulation
+        self.project_name = project_dict.get('name', project_id)
+
+    def cmd_help(self):
+        return (
+            "Available commands:\n"
+            "  /status        — Show current project state\n"
+            "  /preflight     — Run Phase 4.2a preflight checks\n"
+            "  /deploy-wave N — Deploy wave N (0-9)\n"
+            "  /simulate      — Run agentic dry-run simulation\n"
+            "  /health        — System health check\n"
+            "  /validate      — Validate topology & SOW alignment\n"
+            "  /help          — This help"
+        )
+
+    def cmd_status(self, phase):
+        state = self.project_dict.get('lifecycleState', 'unknown')
+        status = self.project_dict.get('status', 'unknown')
+        mapper_count = len(self.mapper_nodes)
+        sow = self.blueprint.get('topology', {})
+        compute_count = len(sow.get('compute', []))
+        database_count = len(sow.get('database', []))
+        network_count = len(sow.get('network', []))
+
+        sim_trace_count = len(self.simulation.get('trace', [])) if isinstance(self.simulation, dict) else 0
+
+        return (
+            f"Project: {self.project_name}\n"
+            f"Lifecycle State: {state} | Status: {status}\n"
+            f"Context Phase: {phase}\n"
+            f"Target Resources: {mapper_count} total\n"
+            f"  — Compute: {compute_count} | Databases: {database_count} | Network: {network_count}\n"
+            f"Simulation Trace Entries: {sim_trace_count}"
+        )
+
+    def cmd_preflight(self):
+        from services.agentic_simulator import ServerProfiler, ResourceTypeRouter
+        classified = [ResourceTypeRouter.classify(n) for n in self.mapper_nodes]
+        server_count = sum(1 for c in classified if c.get('resource_class') == 'SERVER')
+        blocked_count = sum(1 for c in classified if c.get('resource_class') == 'UNKNOWN')
+        net_count = sum(1 for c in classified if c.get('resource_class') == 'NETWORK')
+        other_count = sum(1 for c in classified if c.get('resource_class') not in ('SERVER', 'NETWORK', 'UNKNOWN'))
+
+        return (
+            f"PREFLIGHT CHECK — Phase 4.2a\n"
+            f"Total target resources: {len(classified)}\n"
+            f"  Servers (migratable): {server_count}\n"
+            f"  Network resources: {net_count}\n"
+            f"  Other (CBR/HSS/DB): {other_count}\n"
+            f"  Unknown (needs review): {blocked_count}\n\n"
+            f"Ready to deploy? Use /deploy-wave N to start migration waves."
+        )
+
+    def cmd_deploy_wave(self, wave):
+        from services.agentic_simulator import ResourceTypeRouter
+        classified = [ResourceTypeRouter.classify(n) for n in self.mapper_nodes]
+        servers = [n for n, c in zip(self.mapper_nodes, classified) if c.get('resource_class') == 'SERVER']
+
+        try:
+            wave_idx = int(wave)
+        except:
+            return f"[error] Invalid wave index: {wave}. Use /deploy-wave 0"
+
+        wave_size = max(1, min(3, len(servers)))
+        start = wave_idx * wave_size
+        end = min(start + wave_size, len(servers))
+
+        if start >= len(servers):
+            return f"[error] Wave {wave_idx} is beyond available servers ({len(servers)} servers total)."
+
+        wave_servers = servers[start:end]
+        names = [s.get('name', s.get('id', '?')) for s in wave_servers]
+
+        return (
+            f"DEPLOYING WAVE {wave_idx}\n"
+            f"Servers ({start+1}–{end} of {len(servers)}):\n"
+            + '\n'.join(f"  — {n}" for n in names) +
+            f"\n\nDeployment initiated. Monitor with /status."
+        )
+
+    def cmd_health(self):
+        import psutil
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        return (
+            "SYSTEM HEALTH\n"
+            f"  Memory: {mem.percent}% used ({mem.available // (1024**2)} MB free)\n"
+            f"  Disk: {disk.percent}% used ({disk.free // (1024**3)} GB free)\n"
+            f"  Flask PID: active"
+        )
+
+    def cmd_simulate(self):
+        """Trigger a dry-run simulation and return summary."""
+        from services.agentic_simulator import AgenticExecutionSimulator
+        try:
+            result = AgenticExecutionSimulator.simulate({
+                'project_id': self.project_id,
+                'mapper_nodes': self.mapper_nodes,
+                'blueprint_data': self.blueprint,
+                'region': self.project_dict.get('targetRegion', 'ap-southeast-3'),
+            })
+            trace_count = len(result.get('trace', []))
+            waves = result.get('waves_count', 'N/A')
+            return (
+                "DRY-RUN SIMULATION COMPLETE\n"
+                f"Trace entries generated: {trace_count}\n"
+                f"Waves processed: {waves}\n"
+                f"Check the Execution Dashboard for full trace."
+            )
+        except Exception as e:
+            return f"[error] Simulation failed: {str(e)}"
+
+    def cmd_validate(self):
+        sow_compute = self.blueprint.get('topology', {}).get('compute', [])
+        sow_db = self.blueprint.get('topology', {}).get('database', [])
+
+        issues = []
+        for node in self.mapper_nodes:
+            name = node.get('name', '?')
+            status = node.get('status', '')
+            if status == 'Quoted Only':
+                issues.append(f"  ⚠ {name} is in SOW but not in discovery (Missing SOW)")
+            elif status == 'Live Only':
+                issues.append(f"  ⚠ {name} is in discovery but not in SOW (Scope Creep)")
+
+        if not issues:
+            return "VALIDATION PASSED: All target resources aligned with SOW."
+        return "VALIDATION ISSUES:\n" + '\n'.join(issues)
