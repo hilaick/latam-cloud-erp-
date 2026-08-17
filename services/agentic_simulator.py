@@ -1355,7 +1355,7 @@ class SmsMigrationSimulator:
             ),
             "commands": [
                 {"desc": "Programmatic recovery: refresh source name to unstick SMS.0515", "cmd": f"hcloud SMS UpdateServerName --source_id={vm_id} --name='{server_name}-REFRESH' --cli-region={sms_region}"},
-                {"desc": "Programmatic retry: re-create task with public IP workaround", "cmd": f"hcloud SMS CreateTask --name='{server_name}-RETRY' --source_server.id={vm_id} --target_server.name={target_name} --target_server.vm_id={ecs_id} --type=MIGRATE_BLOCK --os_type={os_type} --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip={target_ip}"},
+                {"desc": "Programmatic retry: re-create task with public IP workaround", "cmd": f"hcloud SMS CreateTask --name='{server_name}-RETRY' --source_server.id={vm_id} --target_server.name='{server_name}-TARGET' --target_server.vm_id={ecs_id} --type=MIGRATE_BLOCK --os_type={os_type} --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip={target_ip}"},
             ],
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_0515_clear",
