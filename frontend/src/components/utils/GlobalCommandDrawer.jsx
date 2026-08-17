@@ -21,6 +21,14 @@ export default function GlobalCommandDrawer({ isOpen, onClose }) {
         }
     }, [terminalOutput]);
 
+    // Close on Escape
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handleKey);
+        return () => document.removeEventListener('keydown', handleKey);
+    }, [isOpen, onClose]);
+
     const handleCommand = async (cmdOverride = null) => {
         const cmdToRun = cmdOverride || command;
         if (!cmdToRun || isExecuting) return;
