@@ -18,6 +18,17 @@ hermes_bp = Blueprint('hermes', __name__)
 LOAD_BALANCER_URL = "http://localhost:8666/v1/chat/completions"
 LOAD_BALANCER_AUTH = "Basic YWRtaW46ODIxODcwZWVlNGQzMTA4NGUxYmZmNDA1YWJhMTVjYTY="
 
+def _get_model_config():
+    """Get the profile's configured model for the ERP Agent, falling back to LB defaults."""
+    try:
+        store = ModelConfigStore()
+        cfg = store.get_public_config()
+        provider = cfg.get('primary_provider', 'deepseek')
+        model = cfg.get('primary_model', 'deepseek-v4-pro')
+        return provider, model
+    except Exception:
+        return 'deepseek', 'deepseek-v3.2'
+
 def build_hermes_context(project_id):
     """Build context about the ERP system for Hermes AI"""
     context = {
@@ -59,6 +70,7 @@ def handle_hermes_stream(payload):
         context_string = json.dumps(context_data, indent=2)
 
         # 2. Build unified execution context instructions
+        provider, configured_model = _get_model_config()
         system_instruction = f"""You are Hermes, the high-privilege AI orchestrator for LATAM Cloud ERP.
 You possess root-level terminal capability, filesystem read/write permissions, and direct database access via your background daemon framework.
 
@@ -80,14 +92,15 @@ Break down execution guidelines and delivery methodologies with absolute analyti
         }
 
         llm_payload = {
-            "model": "deepseek-v3.2",
+            "model": configured_model,
             "messages": messages,
-            "stream": True,  # Fire token stream mode
+            "stream": True,
             "temperature": 0.1
         }
 
-        # 3. Issue non-blocking streaming call directly to the ModelArts compute cluster
-        # Timeout is set very high (3 minutes) to allow deep analysis
+        # 3. Route through load balancer (port 8666) using profile-configured model
+        # The LB proxies to ModelArts/Alibaba/ZAI etc. based on the model name
+        logger.info(f"ERP Agent using profile config: provider={provider}, model={configured_model}")
         response = requests.post(LOAD_BALANCER_URL, headers=headers, json=llm_payload, stream=True, timeout=180)
         
         if response.status_code != 200:
