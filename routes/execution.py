@@ -554,7 +554,7 @@ def execute_delivery_command(project_id):
     if not project:
         return jsonify({"success": False, "error": "Project not found."}), 404
 
-    project_dict = json.loads(project.data_json) if project.data_json else {}
+    project_dict = json.loads(project.data) if project.data else {}
     mapper_nodes = project_dict.get('mapperNodes', [])
     blueprint = project_dict.get('blueprintData', {})
     simulation = project_dict.get('simulationResult', {})
@@ -674,13 +674,34 @@ class DeliveryCommandHandler:
         )
 
     def cmd_health(self):
-        import psutil
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        import os
+        meminfo = {}
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if 'MemTotal' in line or 'MemAvailable' in line or 'MemFree' in line:
+                        parts = line.split()
+                        meminfo[parts[0].rstrip(':')] = int(parts[1]) // 1024
+        except:
+            meminfo = {'MemTotal': '?', 'MemAvailable': '?'}
+
+        avail_mb = meminfo.get('MemAvailable', '?')
+        total_mb = meminfo.get('MemTotal', '?')
+        pct = round((1 - avail_mb / total_mb) * 100) if isinstance(total_mb, int) and isinstance(avail_mb, int) and total_mb > 0 else '?'
+
+        try:
+            import shutil
+            du = shutil.disk_usage('/')
+            disk_pct = du.used / du.total * 100
+            disk_free = du.free // (1024**3)
+        except:
+            disk_pct = '?'
+            disk_free = '?'
+
         return (
             "SYSTEM HEALTH\n"
-            f"  Memory: {mem.percent}% used ({mem.available // (1024**2)} MB free)\n"
-            f"  Disk: {disk.percent}% used ({disk.free // (1024**3)} GB free)\n"
+            f"  Memory: {pct}% used ({avail_mb} MB free)\n"
+            f"  Disk: {disk_pct:.1f}% used ({disk_free} GB free)\n"
             f"  Flask PID: active"
         )
 
