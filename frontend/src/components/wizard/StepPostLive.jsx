@@ -598,7 +598,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             databases: [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
             network: [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
             storage: [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
-            security: [...(raw.security || []), ...(raw.waf || [])]
+            security: [...(raw.security || []), ...(raw.waf || []), ...(raw.hss || [])]
         };
 
         const standardSet = [
@@ -627,7 +627,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
     }, [project]);
 
     const runFinalNocScan = async () => {
-        if (!project.customerId) { alert("NOC Scan Error: No Customer linked to this project."); return; }
+        if (!project.customerId) { alert("3-Way Diff Error: No Customer linked to this project."); return; }
         setIsScanningNoc(true);
         setScanDiagnostics([]);
         setCredStatus({ master: 'checking', source: 'checking' });
@@ -671,9 +671,9 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     statuses.source = hasSourceError ? 'invalid' : (hybrid.source && !hybrid.source.error ? 'valid' : 'unknown');
                 }
                 setCredStatus(statuses);
-                alert(`NOC Hybrid Scan Complete.\nTarget: ${statuses.master === 'valid' ? '✓ Valid' : '✗ Issues'}\nSource: ${statuses.source === 'valid' ? '✓ Valid' : '✗ Issues'}`);
-            } else { alert(`NOC Scan Error: ${data.error}`); }
-        } catch (err) { alert(`Network error during NOC scan: ${err.message}`); } finally { setIsScanningNoc(false); }
+                alert(`3-Way Infrastructure Diff Complete.\nTarget: ${statuses.master === 'valid' ? '✓ Valid' : '✗ Issues'}\nSource: ${statuses.source === 'valid' ? '✓ Valid' : '✗ Issues'}`);
+            } else { alert(`3-Way Diff Error: ${data.error}`); }
+        } catch (err) { alert(`Network error during 3-Way Diff scan: ${err.message}`); } finally { setIsScanningNoc(false); }
     };
 
     const handleSaveState = () => { onUpdateProject(project.id, 'crApproved', crApproved); alert("3-Way Diff State Saved."); };
@@ -717,7 +717,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
             <div className={`px-8 py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center rounded-2xl gap-4 shadow-sm border ${isScanningNoc ? 'pointer-events-none opacity-40' : ''}`}>
                 <div>
                     <h3 className="font-black text-lg tracking-wide text-slate-800"><i className="fas fa-balance-scale text-indigo-500 mr-2"></i> 3-Way Infrastructure Diff <span className="text-[9px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full ml-2">HYBRID</span></h3>
-                    <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">TARGET (Master) vs SOURCE (Legacy) infrastructure comparison.</p>
+                    <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">SOURCE (Legacy) vs TARGET (Master) infrastructure comparison.</p>
                     <div className="flex items-center gap-3 mt-2">
                         <CredBadge type="Master" status={credStatus.master} />
                         <CredBadge type="Source" status={credStatus.source} />
@@ -743,7 +743,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                 <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-black text-base text-slate-800"><i className="fas fa-search text-indigo-500 mr-2"></i> Telemetry Scan Engine</h3>
                     <button onClick={runFinalNocScan} disabled={isScanningNoc} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-50 flex items-center">
-                        {isScanningNoc ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target + Source APIs</> : <><i className="fas fa-radar mr-2"></i> Run Hybrid NOC Scan</>}
+                        {isScanningNoc ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning Target + Source APIs</> : <><i className="fas fa-radar mr-2"></i> Run 3-Way Infrastructure Diff</>}
                     </button>
                 </div>
 
@@ -751,8 +751,8 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                     {!hasNocScanned ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400 min-h-[300px]">
                             <i className="fas fa-search-dollar text-6xl mb-4 opacity-30"></i>
-                            <h3 className="font-black text-lg">Awaiting Hybrid Cloud Scan</h3>
-                            <p className="text-xs font-medium mt-2 max-w-sm text-center">Run the NOC Scan to verify actual cloud infrastructure against the SOW baseline — comparing BOTH target and source accounts.</p>
+                            <h3 className="font-black text-lg">Awaiting 3-Way Infrastructure Diff</h3>
+                            <p className="text-xs font-medium mt-2 max-w-sm text-center">Run the 3-Way Infrastructure Diff to compare source account, target account, and SOW blueprint — detecting scope creep, missing resources, and cross-account drift.</p>
                         </div>
                     ) : (
                         <div className="animate-fade-in space-y-6">
@@ -762,16 +762,16 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                     <thead className="bg-slate-100 text-[10px] uppercase text-slate-500">
                                         <tr>
                                             <th className="p-3" rowSpan="2">Resource Category</th>
-                                            <th className="p-3 text-center border-l border-slate-200" colSpan="2">TARGET ACCOUNT (Master AK/SK)</th>
-                                            <th className="p-3 text-center border-l border-slate-200 bg-slate-50" colSpan="2">SOURCE ACCOUNT (Source AK/SK)</th>
+                                            <th className="p-3 text-center border-l border-slate-200" colSpan="2">SOURCE ACCOUNT (Source AK/SK)</th>
+                                            <th className="p-3 text-center border-l border-slate-200 bg-slate-50" colSpan="2">TARGET ACCOUNT (Master AK/SK)</th>
                                             <th className="p-3 text-center border-l border-slate-200 bg-blue-50/50">SOW Blueprint</th>
                                             <th className="p-3 text-center border-l border-slate-200 font-black text-slate-800">Delta</th>
                                         </tr>
                                         <tr>
-                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Resources</th>
-                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Status</th>
                                             <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-amber-600 bg-amber-50/30">Resources</th>
                                             <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-amber-600 bg-amber-50/30">Status</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Resources</th>
+                                            <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-emerald-600 bg-emerald-50/30">Status</th>
                                             <th className="p-2 text-center border-l border-slate-200 text-[9px] font-normal text-blue-600 bg-blue-50/30" rowSpan="2">Resources</th>
                                             <th className="p-2 text-center border-l border-slate-200 text-[9px]" rowSpan="2"></th>
                                         </tr>
@@ -788,7 +788,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                 databases: [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
                                                 network: [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
                                                 storage: [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
-                                                security: [...(raw.security || []), ...(raw.waf || [])]
+                                                security: [...(raw.security || []), ...(raw.waf || []), ...(raw.hss || [])]
                                             });
 
                                             const targetNorm = targetError ? {} : normalize(targetRaw);
@@ -813,16 +813,6 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                 return (
                                                     <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
                                                         <td className="p-3 font-bold text-slate-700 uppercase tracking-wider text-xs"><i className={`fas ${cat.icon} text-slate-400 w-5`}></i> {cat.label}</td>
-                                                        <td className={`p-3 text-center font-mono font-bold border-l border-slate-100 ${tCount > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-50' : 'text-slate-400'}`}
-                                                            onClick={() => { if (tCount > 0 && !targetError) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: targetNorm[cat.id], source: 'target' }); }}>
-                                                            {targetError ? '—' : tCount}
-                                                        </td>
-                                                        <td className="p-3 text-center border-l border-slate-100">
-                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
-                                                                targetStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
-                                                                targetStatus === 'ERR' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
-                                                            }`}>{targetStatus}</span>
-                                                        </td>
                                                         <td className={`p-3 text-center font-mono font-bold border-l border-slate-100 ${sCount > 0 ? 'text-amber-700 cursor-pointer hover:bg-amber-50' : 'text-slate-400'}`}
                                                             onClick={() => { if (sCount > 0 && !sourceError) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: sourceNorm[cat.id], source: 'source' }); }}>
                                                             {sourceError ? '—' : sCount}
@@ -832,6 +822,16 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                                                 sourceStatus === 'ACTIVE' ? 'bg-amber-100 text-amber-700' :
                                                                 sourceStatus === 'ERR' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
                                                             }`}>{sourceStatus}</span>
+                                                        </td>
+                                                        <td className={`p-3 text-center font-mono font-bold border-l border-slate-100 ${tCount > 0 ? 'text-emerald-700 cursor-pointer hover:bg-emerald-50' : 'text-slate-400'}`}
+                                                            onClick={() => { if (tCount > 0 && !targetError) setDetailsModal({ show: true, category: cat.id, label: cat.label, items: targetNorm[cat.id], source: 'target' }); }}>
+                                                            {targetError ? '—' : tCount}
+                                                        </td>
+                                                        <td className="p-3 text-center border-l border-slate-100">
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                                targetStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
+                                                                targetStatus === 'ERR' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                                                            }`}>{targetStatus}</span>
                                                         </td>
                                                         <td className="p-3 text-center font-mono font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">{quoted}</td>
                                                         <td className="p-3 text-center border-l border-slate-100">
@@ -949,7 +949,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                             'Databases (RDS/GaussDB)': [...(raw.databases || []), ...(raw.database || []), ...(raw.rds || [])],
                                             'Network (VPC/EIP/NAT)': [...(raw.network || []), ...(raw.vpc || []), ...(raw.eip || []), ...(raw.nat || [])],
                                             'Storage (OBS/CBR)': [...(raw.storage || []), ...(raw.obs || []), ...(raw.cbr || [])],
-                                            'Security (WAF/Shield)': [...(raw.security || []), ...(raw.waf || [])]
+                                            'Security (HSS/WAF)': [...(raw.security || []), ...(raw.waf || []), ...(raw.hss || [])]
                                         };
                                         const topo = project?.blueprintData?.topology || {};
                                         const topoMap = {
@@ -957,7 +957,7 @@ function PhaseThreeWayDiff({ project, onUpdateProject }) {
                                             'Databases (RDS/GaussDB)': (topo.databases || []).length,
                                             'Network (VPC/EIP/NAT)': (topo.network || []).length,
                                             'Storage (OBS/CBR)': (topo.storage || []).length,
-                                            'Security (WAF/Shield)': (topo.security || []).length
+                                            'Security (HSS/WAF)': (topo.security || []).length
                                         };
                                         return Object.entries(normalized).map(([catLabel, items]) => {
                                             if (!items || items.length === 0) return null;

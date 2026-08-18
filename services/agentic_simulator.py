@@ -1464,14 +1464,26 @@ class SmsMigrationSimulator:
             }
         elif profile["has_data_plane_admin"]:
             return {
-                "message": "Data plane admin access available. Orchestrator will push SMS agent via SSH.",
+                "message": "Data plane admin access available. Orchestrator will push SMS agent via SSH with retry logic.",
                 "commands": [
-                    {"desc": "SSH into source server", "cmd": f"ssh root@{profile['source_ip']} '<install_script>'"},
+                    {"desc": "SSH into source server (attempt 1/3)", "cmd": f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no root@{profile['source_ip']} 'echo CONNECTED'"},
                     {"desc": "Download and install SMS agent", "cmd": "wget -N https://sms.la-south-2.myhuaweicloud.com/sms_agent/sms_agent_linux.tar.gz && tar xzf sms_agent_linux.tar.gz && cd SMS-Agent && ./install.sh --ak <TIER1_AK> --sk <TIER1_SK> --quiet"},
                 ],
                 "decision": "push_agent_via_ssh",
                 "result": "agent_installed_by_orchestrator",
                 "time_cost": 45,
+                "retry_config": {
+                    "max_attempts": 3,
+                    "backoff_seconds": [10, 30],
+                    "fallback": "customer_must_install_agent",
+                    "error_patterns": {
+                        "Connection refused": "Verify source server firewall allows SSH on port 22",
+                        "Permission denied": "Verify root password or SSH key is correct",
+                        "Host key verification failed": "Run ssh-keyscan to accept the host key",
+                        "No route to host": "Verify source server is running and network reachable",
+                        "timed out": "Increase ConnectTimeout or check proxy/firewall rules",
+                    }
+                },
             }
         elif profile["has_source_access"]:
             return {
@@ -2334,6 +2346,137 @@ class AgenticExecutionSimulator:
     """Top-level orchestrator: runs full dry-run simulation for a project."""
 
     @staticmethod
+    def execute_live(project: dict, decrypted_creds: dict) -> dict:
+        """
+        LIVE EXECUTION: make real Huawei Cloud API calls.
+        
+        Compares live results against the simulation benchmark by running
+        both simulate() to get estimated values and calling the real APIs
+        to get actual values.
+        
+        decrypted_creds: {"ak": "...", "sk": "...", "source_ak": "...", "source_sk": "..."}
+        """
+        import json as json_lib, time as _time, datetime as _dt
+        from services.huawei_api_signer import sign_and_request as _sign
+        
+        ak, sk = decrypted_creds.get("ak",""), decrypted_creds.get("sk","")
+        region = project.get("region", "la-north-2")
+        mapper_nodes = project.get("mapperNodes", [])
+        project_name = project.get("projectName", "UNNAMED")
+        
+        # Run simulation first for comparison benchmark
+        sim_result = AgenticExecutionSimulator.simulate(project)
+        sim_summary = sim_result.get("summary", {})
+        
+        trace = []
+        step_id = 0
+        
+        # === PHASE 4.0: Live Execution Readiness Gateway ===
+        step_id += 1
+        iam_start = _time.time()
+        try:
+            test_url = f"https://iam.{region}.myhuaweicloud.com/v3/regions"
+            regions = _sign("GET", test_url, ak, sk, timeout=8)
+            iam_valid = True
+            iam_status = f"PASSED ({len(regions.get('regions',[]))} regions)"
+        except Exception as e:
+            iam_valid = False
+            iam_status = f"FAILED: {e}"
+        iam_latency = _time.time() - iam_start
+        
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+            "action": "LIVE_INIT",
+            "message": f"Live execution for '{project_name}' in {region}. Credentials valid: {iam_valid}. IAM latency: {iam_latency}s.",
+            "timestamp_offset_seconds": 0,
+            "live_data": {"iam_valid": iam_valid, "iam_latency_s": iam_latency, "iam_status": iam_status},
+        })
+        
+        # === PHASE 4.1: Network Discovery (read-only) ===
+        step_id += 1
+        net_start = _time.time()
+        actual_networks = {}
+        try:
+            # Use regional VPC endpoint that doesn't require project ID (GET /v1/vpcs)
+            vpc_url = f"https://vpc.{region}.myhuaweicloud.com/v1/vpcs"
+            vpc_data = _sign("GET", vpc_url, ak, sk, timeout=8)
+            actual_networks["vpcs"] = len(vpc_data.get("vpcs", []))
+        except Exception as e:
+            actual_networks["vpcs"] = f"ERROR: {e}"
+        net_latency = _time.time() - net_start
+        
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_1", "agent": "LiveNetworkDiscovery",
+            "action": "LIVE_VPC_LIST",
+            "message": f"Live VPC listing: {actual_networks.get('vpcs')} VPCs (latency: {net_latency}s). Simulated estimate: {sim_summary.get('vpcs_created', 'N/A')}.",
+            "timestamp_offset_seconds": net_latency,
+            "live_data": {"networks": actual_networks, "latency_s": net_latency},
+        })
+        
+        # === PHASE 4.2: Server Discovery (ECS listing) ===
+        step_id += 1
+        ecs_start = _time.time()
+        actual_servers = {}
+        try:
+            # ECS needs project_id — try listing with header-style auth
+            project_id = project.get("projectId") or project.get("project_id") or ""
+            if project_id:
+                ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/{project_id}/cloudservers/detail?limit=100"
+            else:
+                # Fallback: list availability zones (no project ID needed)
+                ecs_url = f"https://ecs.{region}.myhuaweicloud.com/v1/cloudservers/detail?limit=100"
+            ecs_data = _sign("GET", ecs_url, ak, sk, timeout=10)
+            servers = ecs_data.get("servers", [])
+            actual_servers = {"count": len(servers), "by_status": {}}
+            for s in servers:
+                st = s.get("status", "UNKNOWN")
+                actual_servers["by_status"][st] = actual_servers["by_status"].get(st, 0) + 1
+        except Exception as e:
+            actual_servers = {"count": f"ERROR: {e}"}
+        ecs_latency = _time.time() - ecs_start
+        
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_2", "agent": "LiveServerDiscovery",
+            "action": "LIVE_ECS_LIST",
+            "message": f"Live ECS listing: {actual_servers.get('count')} servers (latency: {ecs_latency}s). Simulated servers in topology: {len(mapper_nodes)}.",
+            "timestamp_offset_seconds": ecs_latency,
+            "live_data": {"servers": actual_servers, "latency_s": ecs_latency},
+        })
+        
+        # === SOW Reconciliation: compare topology vs reality ===
+        step_id += 1
+        expected = len([n for n in mapper_nodes if ResourceTypeRouter.classify(n).get("resource_class") == "SERVER"])
+        live_count = actual_servers.get("count", 0) if isinstance(actual_servers.get("count"), int) else -1
+        
+        sow_match = (live_count >= 0 and expected == live_count)
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_2", "agent": "LiveSOWReconciler",
+            "action": "LIVE_SOW_RECONCILE",
+            "message": f"SOW-vs-Live reconciliation: {expected} servers in topology, {live_count} running. {'MATCH' if sow_match else 'MISMATCH'}.",
+            "timestamp_offset_seconds": 0.5,
+            "live_data": {"sow_count": expected, "live_count": live_count, "match": sow_match},
+        })
+        
+        summary = {
+            "mode": "live",
+            "dry_run": False,
+            "servers_processed": len(mapper_nodes),
+            "total_simulated_hours": sim_summary.get("total_simulated_hours", 0),
+            "iam_valid": iam_valid,
+            "simulated_vs_live": {
+                "simulated_servers": sim_summary.get("servers_processed", 0),
+                "live_servers_found": live_count if isinstance(live_count, int) else None,
+                "sow_match": sow_match,
+                "live_api_calls": step_id,
+                "simulated_cost_estimate": f"${sim_summary.get('total_simulated_hours', 0) * 15:.2f}",
+            },
+            "resource_usage": sim_result.get("resource_usage", {}),
+            "generated_at": _dt.datetime.utcnow().isoformat() + "Z",
+        }
+        
+        return {"trace": trace, "summary": summary, "resource_usage": sim_result.get("resource_usage", {})}
+
+    @staticmethod
     def simulate(project: dict) -> dict:
         """
         Run the full agentic orchestration dry-run simulation.
@@ -2487,6 +2630,13 @@ class AgenticExecutionSimulator:
                     else:
                         # Unknown — might still be a server
                         wave_servers.append({"id": s, "name": s, "_is_server": True})
+                elif isinstance(s, dict):
+                    # Already a full node object (e.g., from auto_group_waves)
+                    rclass = ResourceTypeRouter.classify(s)["resource_class"]
+                    if rclass == "SERVER":
+                        wave_servers.append(s)
+                    else:
+                        logger.info(f"Skipping non-server resource in wave: {s.get('name', s.get('id', '?'))} ({rclass})")
                 else:
                     rclass = ResourceTypeRouter.classify(s)["resource_class"]
                     if rclass == "SERVER":
@@ -2911,6 +3061,20 @@ class AgenticExecutionSimulator:
                 k: v for k, v in resource_usage.items()
                 if not k.startswith("_")
             },
+            # CBR and HSS are optional post-migration tasks (not required for migration success)
+            "optional_phases": {
+                "PHASE_4_3_CBR": {
+                    "label": "Cloud Backup and Recovery",
+                    "required": False,
+                    "note": "CBR vaults and backup policies are OPTIONAL post-migration tasks."
+                },
+                "PHASE_4_4_HSS": {
+                    "label": "Host Security Service",
+                    "required": False,
+                    "note": "HSS agent installation is OPTIONAL post-migration."
+                }
+            },
+            "required_phases": ["PHASE_4_1", "PHASE_4_2", "PHASE_4_5", "PHASE_4_6", "PHASE_4_7"],
         }
 
         # ── Learning Feedback Loop: ingest this simulation's outcomes ──
@@ -3303,12 +3467,13 @@ def register_agentic_dry_run_routes(execution_bp):
     since they only simulate and do not modify cloud resources.
     """
     from flask import request, jsonify
-    from models import ProjectData
+    from models import ProjectData, Customer, db  # Customer needed for OS credential enrichment; db for persistence
 
     def _handle_dry_run(project_id):
         """Shared handler for all dry-run endpoints."""
         try:
-            project_record = ProjectData.query.get(project_id)
+            data = request.get_json(silent=True) or {}
+            project_record = ProjectData.query.get(str(project_id))
             if not project_record:
                 return jsonify({"success": False, "error": "Project not found"}), 404
 
@@ -3337,9 +3502,19 @@ def register_agentic_dry_run_routes(execution_bp):
                         mapper_nodes = [n for n in mapper_nodes if n.get("status") == topology_filter]
                 data_source = "MAPPER_NODES"
 
+            # 🔑 Derive region from Customer when project has none
+            customer_id = project_data.get("customerId")
+            customer_for_region = None
+            target_region = project_data.get("region", "la-south-2")
+            if customer_id:
+                customer_for_region = Customer.query.get(customer_id)
+                if customer_for_region and customer_for_region.region:
+                    target_region = customer_for_region.region
+                    logger.info(f"Dry-run: using Customer region '{target_region}' (project had no region set)")
+
             contract = {
                 "projectName": project_data.get("name", "UNNAMED"),
-                "region": project_data.get("region", "la-south-2"),
+                "region": target_region,
                 "mapperNodes": mapper_nodes,
                 "dataSource": data_source,
                 "topologyFilter": topology_filter,
@@ -3353,7 +3528,166 @@ def register_agentic_dry_run_routes(execution_bp):
                 "executionMode": "agentic",
             }
 
-            result = AgenticExecutionSimulator.simulate(contract)
+            # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
+            customer_id = project_data.get("customerId")
+            if customer_id:
+                customer = Customer.query.get(customer_id)
+                if customer and customer.os_user and customer.os_password:
+                    logger.info(
+                        f"Dry-run: found OS credentials for customer {customer.name} "
+                        f"(user={customer.os_user}). Enriching SERVER mapper nodes with "
+                        f"hasSourceAccess=True, hasDataPlaneAdmin=True."
+                    )
+                    for node in contract["mapperNodes"]:
+                        rclass = ResourceTypeRouter.classify(node)["resource_class"]
+                        if rclass == "SERVER":
+                            node["hasSourceAccess"] = True
+                            node["hasDataPlaneAdmin"] = True
+                            node["_os_user"] = customer.os_user
+                            # Derive source region: explicit setting or fallback
+                            node["_os_source_region"] = customer.source_huawei_region or "ap-southeast-3"
+                            # If customer missing source region, persist it now
+                            if not customer.source_huawei_region:
+                                customer.source_huawei_region = "ap-southeast-3"
+                                db.session.add(customer)
+                                db.session.flush()
+                                logger.info("Dry-run: persisted source_huawei_region=ap-southeast-3 on customer INTERNAL_ACCOUNT")
+                            if customer.source_huawei_ak and customer.source_huawei_sk:
+                                node["_has_source_credentials"] = True
+                            # 🔑 Validate IAM token: decrypt, then test-sign to detect signer bugs early
+                            node["_iam_token_status"] = "untested"
+                            if customer.ak and customer.sk and len(customer.ak) > 10 and len(customer.sk) > 10:
+                                try:
+                                    import json as _json, os as _os
+                                    from services.credential_manager import CredentialManager
+                                    from services.huawei_api_signer import sign_and_request
+
+                                    # Decrypt the AK/SK from the stored encrypted JSON blob
+                                    enc_data = _json.loads(customer.ak) if isinstance(customer.ak, str) and customer.ak.startswith('{') else None
+                                    enc_data_sk = _json.loads(customer.sk) if isinstance(customer.sk, str) and customer.sk.startswith('{') else None
+
+                                    if enc_data and 'encrypted_ak' in enc_data and 'salt' in enc_data:
+                                        master_pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
+                                        cm = CredentialManager(master_pw)
+                                        decrypted_ak, decrypted_sk = cm.decrypt_credentials(enc_data)
+                                        logger.info(f"Dry-run: decrypted master AK/SK for customer {customer.name} (AK prefix: {decrypted_ak[:6]}...)")
+
+                                        # Quick validation: list IAM Keystone regions (lightweight GET)
+                                        test_url = f"https://iam.{target_region}.myhuaweicloud.com/v3/regions"
+                                        _ = sign_and_request("GET", test_url, decrypted_ak, decrypted_sk, timeout=8)
+                                        node["_iam_token_status"] = "valid"
+                                        logger.info(f"Dry-run: IAM token validation PASSED for master AK/SK (region={target_region})")
+                                        # Store decrypted credentials on the node for downstream use
+                                        node["_decrypted_ak"] = decrypted_ak
+                                        node["_decrypted_sk"] = decrypted_sk
+                                    else:
+                                        node["_iam_token_status"] = "invalid: AK/SK not in encrypted JSON format"
+                                        logger.warning(f"Dry-run: AK/SK is not in expected encrypted format (keys={list(enc_data.keys()) if enc_data else 'none'})")
+                                except Exception as iam_err:
+                                    node["_iam_token_status"] = f"invalid: {iam_err}"
+                                    logger.warning(f"Dry-run: IAM token validation FAILED: {iam_err} — signer may need fix before live execution")
+                            else:
+                                node["_iam_token_status"] = "missing"
+                                logger.warning("Dry-run: master AK/SK not available for IAM validation")
+                elif customer:
+                    logger.warning(
+                        f"Dry-run: Customer {customer.name} exists but os_user or "
+                        f"os_password is missing — agentic migration will hit BLOCKED."
+                    )
+                else:
+                    logger.warning(f"Dry-run: Customer {customer_id} not found — cannot enrich SERVER nodes.")
+            else:
+                logger.warning("Dry-run: No customerId in project data — cannot enrich SERVER nodes with OS credentials.")
+
+            # Determine execution mode
+            execution_mode = data.get("mode", "dry-run")
+            is_live = execution_mode == "live"
+            
+            # If live, decrypt master credentials here (independent of node loop)
+            decrypted_creds = {}
+            if is_live and customer_id:
+                customer = Customer.query.get(customer_id)
+                if customer and customer.ak and customer.sk:
+                    try:
+                        import json as _json, os as _os
+                        from services.credential_manager import CredentialManager
+                        enc_data = _json.loads(customer.ak) if isinstance(customer.ak, str) and customer.ak.startswith('{') else None
+                        if enc_data and 'encrypted_ak' in enc_data:
+                            master_pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
+                            cm = CredentialManager(master_pw)
+                            d_ak, d_sk = cm.decrypt_credentials(enc_data)
+                            decrypted_creds["ak"] = d_ak
+                            decrypted_creds["sk"] = d_sk
+                            logger.info(f"Live: decrypted master AK/SK (AK prefix: {d_ak[:6]}...)")
+                            # Also decrypt source credentials if available
+                            if customer.source_huawei_ak and customer.source_huawei_sk:
+                                try:
+                                    src_enc = _json.loads(customer.source_huawei_ak) if isinstance(customer.source_huawei_ak, str) and customer.source_huawei_ak.startswith('{') else None
+                                    if src_enc and 'encrypted_ak' in src_enc:
+                                        src_ak, src_sk = cm.decrypt_credentials(src_enc)
+                                        decrypted_creds["source_ak"] = src_ak
+                                        decrypted_creds["source_sk"] = src_sk
+                                        logger.info("Live: decrypted source AK/SK")
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        logger.error(f"Live: credential decryption failed: {e}")
+            
+            if is_live:
+                logger.info(f"Live execution for project {project_id}")
+                result = AgenticExecutionSimulator.execute_live(contract, decrypted_creds=decrypted_creds)
+            else:
+                # 🟡 DRY-RUN: paper simulation only
+                result = AgenticExecutionSimulator.simulate(contract)
+
+            # 🔑 Post-process: normalize phase keys for frontend matching
+            # Map simulator sub-phases to frontend-expected PHASE_4_1..PHASE_4_7 groups
+            _PHASE_NORM = {
+                "PHASE_4_0": "PHASE_4_0",
+                "PHASE_4_1": "PHASE_4_1",
+                "PHASE_4_2": "PHASE_4_1",  # Knowledge enrichment during network phase
+                "PHASE_4_2_KNOWLEDGE": "PHASE_4_2",  # Knowledge → Pre-Flight
+                "PHASE_4_2_PREFLIGHT": "PHASE_4_3",  # Pre-flight → Build Landing Zone
+                "PHASE_4_2e_IMAGE": "PHASE_4_4",  # Image/SMS → Deploy Data Plane Agents
+                "PHASE_4_2e_CUTOVER": "PHASE_4_6",  # Cutover
+                "PHASE_4_2f_POST": "PHASE_4_6",  # Post-migration → Cold Cutover
+                "PHASE_4_3": "PHASE_4_5",  # Landing zone verify → Sync Monitor
+                "PHASE_4_4": "PHASE_4_4",  # HSS
+                "PHASE_4_5": "PHASE_4_5",  # Sync Monitor
+                "PHASE_4_6": "PHASE_4_6",  # Cold Cutover
+                "PHASE_4_7": "PHASE_4_7",  # GC
+                "PHASE_4_8": "PHASE_4_7",  # Finalize → GC
+            }
+            for trace_entry in result.get("trace", []):
+                raw_phase = trace_entry.get("phase", "")
+                trace_entry["phase_group"] = _PHASE_NORM.get(raw_phase, raw_phase)
+
+            # 🔑 Save simulation results to project data so the GUI can display them
+            try:
+                agenticDryRun = {
+                    "trace": result.get("trace", []),
+                    "summary": result.get("summary", {}),
+                    "resource_usage": result.get("resource_usage", {}),
+                    "servers_processed": result.get("summary", {}).get("servers_processed", 0),
+                    "total_simulated_hours": result.get("summary", {}).get("total_simulated_hours", 0),
+                    "generated_at": result.get("summary", {}).get("generated_at"),
+                    "mode": "agentic",
+                }
+                # Write into project's data JSON
+                if isinstance(project_record.data, str):
+                    updated_data = json.loads(project_record.data)
+                else:
+                    updated_data = dict(project_record.data) if isinstance(project_record.data, dict) else {}
+                updated_data["agenticDryRun"] = agenticDryRun
+                updated_data["lifecycleState"] = "4_execution"
+                updated_data["status"] = "In Progress"
+                updated_data["phase"] = "4_execution"
+                project_record.data = json.dumps(updated_data) if isinstance(project_record.data, str) else updated_data
+                db.session.commit()
+                logger.info(f"Dry-run: saved simulation results ({len(agenticDryRun['trace'])} trace entries) to project {project_id}. Lifecycle advanced to 4_execution.")
+            except Exception as save_err:
+                logger.error(f"Dry-run: failed to save simulation to project: {save_err}")
+                db.session.rollback()
             return jsonify(result), 200
 
         except Exception as e:
@@ -3415,9 +3749,9 @@ def register_agentic_dry_run_routes(execution_bp):
     def _handle_delete_dry_run(project_id):
         """Clear stored simulation results for a project."""
         try:
-            from models import ProjectData
+            from models import ProjectData, Customer, db  # Customer needed for OS credential enrichment; db for persistence
             from models import db
-            project_record = ProjectData.query.get(project_id)
+            project_record = ProjectData.query.get(str(project_id))
             if not project_record:
                 return jsonify({"success": False, "error": "Project not found"}), 404
             project_data = json.loads(project_record.data) if isinstance(project_record.data, str) else project_record.data

@@ -3,7 +3,7 @@ import { ERPContext } from '../../context/ERPContext';
 import { EditableCell } from '../../utils/helpers';
 
 export default function MasterPipeline() {
-    const { projects, handleUpdateProject, handleDeleteProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
+    const { projects, handleUpdateProject, handleDeleteProject, handleHaltProject, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const [searchTerm, setSearchTerm] = useState('');
 
     const openProject = (id) => {
@@ -201,15 +201,16 @@ export default function MasterPipeline() {
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     if (!targetId) {
-                                                        alert("This project lacks a valid ID (likely a manual database entry). Please remove it directly from the database.");
+                                                        alert("This project lacks a valid ID. Cannot halt.");
                                                         return;
                                                     }
-                                                    handleDeleteProject(targetId);
+                                                    if (!window.confirm("⚠️ 2FA REQUIRED: This will send a halt request. Are you sure?")) return;
+                                                    handleHaltProject(targetId, { action: 'cancel', reason: 'Halted from pipeline view', author: sessionStorage.getItem('hermes_user_name') || 'System' });
                                                 }}
-                                                className={`px-3 py-1.5 border rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm ${!targetId ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border-rose-200 hover:border-rose-300'}`}
-                                                title={!targetId ? "Cannot delete: Missing DB Identity" : "Delete Project"}
+                                                className="px-3 py-1.5 border rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300"
+                                                title="Halt / Cancel Project (2FA Required)"
                                             >
-                                                <i className="fas fa-trash-alt mr-1"></i> Delete
+                                                <i className="fas fa-ban mr-1"></i> Halt
                                             </button>
                                         </td>
                                     </tr>

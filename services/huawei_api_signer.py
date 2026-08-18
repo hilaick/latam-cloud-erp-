@@ -16,6 +16,11 @@ def _hmac_sha256_hex(key: bytes, s: str | bytes) -> str:
         s = s.encode('utf-8')
     return hmac.new(key, s, hashlib.sha256).hexdigest()
 
+def _hmac_sha256_bytes(key: bytes, s: str | bytes) -> bytes:
+    if isinstance(s, str):
+        s = s.encode('utf-8')
+    return hmac.new(key, s, hashlib.sha256).digest()
+
 def sign_and_request(method: str, url: str, ak: str, sk: str,
                      body: str = '', headers: dict | None = None,
                      timeout: int = 15) -> dict:
@@ -30,9 +35,12 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     parsed = urllib.request.urlparse(url)
     host = parsed.hostname or ''
     path = parsed.path or '/'
+    # Huawei requires trailing slash on URI paths (per SDK signer _process_canonical_uri)
+    if not path.endswith('/'):
+        path = path + '/'
     query = parsed.query
 
-    content_type = 'application/json'
+    content_type = 'application/json; charset=utf-8'
     payload_hash = _sha256_hex(body)
 
     method_upper = method.upper()
@@ -44,21 +52,20 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     canonical_request = f'{method_upper}\n{path}\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}'
     canonical_hash = _sha256_hex(canonical_request)
 
-    # 2. String to sign
+    # 2. String to sign (matches huaweicloudsdkcore Signer._process_string_to_sign)
+    # Format: SDK-HMAC-SHA256\n{timestamp}\n{sha256(canonical_request)}
     algorithm = 'SDK-HMAC-SHA256'
-    credential_scope = f'{timestamp[:8]}/{host.split(".")[0]}/sdk_request'
-    string_to_sign = f'{algorithm}\n{timestamp}\n{credential_scope}\n{canonical_hash}'
+    string_to_sign = f'{algorithm}\n{timestamp}\n{canonical_hash}'
 
-    # 3. Signature
-    k_date = _hmac_sha256_hex(algorithm.encode() + sk.encode(), timestamp[:8])
-    k_region = _hmac_sha256_hex(k_date.encode(), host.split('.')[0])
-    k_service = _hmac_sha256_hex(k_region.encode(), 'sdk_request')
-    signature = _hmac_sha256_hex(k_service.encode(), string_to_sign)
+    # 3. Signature — HMAC string_to_sign directly with SK (matches SDK _sign_string_to_sign)
+    signature = _hmac_sha256_hex(sk.encode('utf-8'), string_to_sign)
 
-    # 4. Authorization header
+    # 4. Authorization header (matches SDK _process_auth_header_value)
+    # Format: SDK-HMAC-SHA256 Access={ak}, SignedHeaders={...}, Signature={...}
     authorization = (
-        f'{algorithm} Credential={ak}/{credential_scope}, '
-        f'SignedHeaders={signed_headers}, Signature={signature}'
+        f'{algorithm} Access={ak}, '
+        f'SignedHeaders={signed_headers}, '
+        f'Signature={signature}'
     )
 
     # 5. Request

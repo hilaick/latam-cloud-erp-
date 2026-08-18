@@ -123,10 +123,11 @@ class HuaweiDiscovery:
 
     def discover_all(self) -> Dict[str, Any]:
         inventory = { 
-            "compute": [],  # ECS, AS, FunctionGraph, HSS, IMS Images
+            "compute": [],  # ECS, AS, FunctionGraph, IMS Images
             "database": [],  # RDS, DDS, DCS  
             "network": [],  # VPC, Subnet, SG, EIP, ELB, NAT, VPN
             "storage": [],  # EVS, OBS, CBR
+            "security": [],  # HSS, WAF
             "other": [],    # DMS, SMN, etc.
             "diagnostics": []
         }
@@ -475,19 +476,23 @@ class HuaweiDiscovery:
                 except Exception as e:
                     inventory["diagnostics"].append(f"[{target_region}] SMN Connect Error: {str(e)}")
 
-                # 2g. HSS (Host Security Service) - 1 Agent
+                # 2g. HSS (Host Security Service) — only include hosts with active agent
                 try:
                     hss_region = Region(id=target_region, endpoint=f"https://hss.{target_region}.myhuaweicloud.com")
                     hss_client = HssClient.new_builder().with_credentials(region_creds).with_region(hss_region).build()
                     response = hss_client.list_host_status(ListHostStatusRequest())
                     if response and hasattr(response, 'data_list'):
                         for host in response.data_list or []:
-                            inventory["compute"].append({
+                            agent_status = str(getattr(host, 'agent_status', getattr(host, 'status', ''))).lower()
+                            # ONLY include hosts where HSS agent is actually installed and online
+                            if agent_status not in ('online', 'active', 'running'):
+                                continue
+                            inventory["security"].append({
                                 "id": getattr(host, 'host_id', getattr(host, 'id', 'Unknown')),
                                 "name": getattr(host, 'host_name', 'Unknown'),
-                                "type": "HSS Agent",
+                                "type": "HSS",
                                 "region": target_region,
-                                "status": getattr(host, 'agent_status', getattr(host, 'status', 'Unknown')),
+                                "agent_status": agent_status,
                                 "os": getattr(host, 'os_type', 'Unknown')
                             })
                 except Exception as e:
@@ -673,14 +678,16 @@ class HuaweiDiscovery:
                 region_database = len([r for r in inventory.get("database", []) if r.get("region") == target_region])
                 region_network = len([r for r in inventory.get("network", []) if r.get("region") == target_region])
                 region_storage = len([r for r in inventory.get("storage", []) if r.get("region") == target_region])
+                region_security = len([r for r in inventory.get("security", []) if r.get("region") == target_region])
                 region_other = len([r for r in inventory.get("other", []) if r.get("region") == target_region])
-                region_total = region_compute + region_database + region_network + region_storage + region_other
+                region_total = region_compute + region_database + region_network + region_storage + region_security + region_other
                 
                 logger.info(f"[{target_region}] Discovery completed:")
-                logger.info(f"  • Compute (ECS/AS/FunctionGraph/HSS/IMS): {region_compute} resources")
+                logger.info(f"  • Compute (ECS/AS/FunctionGraph/IMS): {region_compute} resources")
                 logger.info(f"  • Database (RDS/DDS/DCS): {region_database} resources")
                 logger.info(f"  • Network (VPC/Subnet/SG/EIP/ELB/NAT/VPN): {region_network} resources")
                 logger.info(f"  • Storage (EVS/OBS/CBR): {region_storage} resources")
+                logger.info(f"  • Security (HSS): {region_security} resources")
                 logger.info(f"  • Other (DMS/SMN): {region_other} resources")
                 logger.info(f"  • Total: {region_total} resources")
 

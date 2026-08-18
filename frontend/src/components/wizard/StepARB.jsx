@@ -43,7 +43,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                             
                             <div className="mb-6">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Customer Account</div><div className="font-black text-sm text-slate-800">{project.customerName || project.name.split('-')[0] || 'TBD'}</div></div>
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Customer Account</div><div className="font-black text-sm text-slate-800">{project.customerName || (project.name ? project.name.split('-')[0] : 'TBD') || 'TBD'}</div></div>
                                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Target Country</div><div className="font-bold text-sm text-slate-800">{project.country || 'TBD'}</div></div>
                                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Sales Architect</div><div className="font-bold text-sm text-blue-600">{project.sa || 'TBD'}</div></div>
                                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Delivery Partner</div><div className="font-bold text-sm text-slate-800">{project.partner || 'TBD'}</div></div>
@@ -99,7 +99,21 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                             {blueprintData ? (
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                                    <h4 className="font-black text-lg text-slate-800 mb-1 text-center">Active SOW Blueprint Snapshot</h4>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <h4 className="font-black text-lg text-slate-800">Active SOW Blueprint Snapshot</h4>
+                                        <button
+                                            onClick={() => {
+                                                onUpdateProject(project.id, 'blueprintData', null);
+                                                const updated = { ...artefacts, sow: false };
+                                                setArtefacts(updated);
+                                                onUpdateProject(project.id, 'artefacts', updated);
+                                            }}
+                                            className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"
+                                            title="Clear the SOW blueprint data"
+                                        >
+                                            <i className="fas fa-trash-alt mr-1"></i> Clear SOW
+                                        </button>
+                                    </div>
                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center mb-6 border-b pb-4">Parsed Quotation Data feeding Topology & Physics</p>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><div className="text-[10px] text-slate-500 uppercase font-black">Customer</div><div className="font-bold text-sm truncate">{blueprintData.customer || project.customerName}</div></div>
@@ -135,7 +149,7 @@ export default function StepARB({ project, onUpdateProject, onPromote, isCurrent
                 {subTab === 'wbs' && <WBSImportView activeProject={project} onUpdateProject={onUpdateProject} />}
             </div>
             {showUploader && <ExcelUploader 
-                defaultCustomer={project.customerName || project.name.split('-')[0].trim()} 
+                defaultCustomer={project.customerName || (project.name ? project.name.split('-')[0].trim() : '')} 
                 projectId={project.id}
                 onUpdateData={(data) => { 
                     onUpdateProject(project.id, 'blueprintData', data); 

@@ -200,7 +200,7 @@ export const ERPProvider = ({ children }) => {
         const isMovingToPipeline = targetProject.isWaiting === true && modifiedProject.isWaiting === false;
         
         if (isMovingToPipeline) {
-            const custName = (modifiedProject.customerName || modifiedProject.name.split('-')[0]).trim();
+            const custName = (modifiedProject.customerName || (modifiedProject.name ? modifiedProject.name.split('-')[0] : '')).trim();
             if (custName) {
                 const existingCustomer = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
                 
@@ -292,7 +292,7 @@ export const ERPProvider = ({ children }) => {
         if (customerName) {
             const customerProjects = projects.filter(p => {
                 const projectCustomerId = p.customerId;
-                const projectCustomerName = p.customerName || p.name.split('-')[0]?.trim();
+                const projectCustomerName = p.customerName || (p.name ? p.name.split('-')[0]?.trim() : '');
                 return (projectCustomerId === id) || 
                        (projectCustomerName && projectCustomerName.toLowerCase() === customerName.toLowerCase());
             });

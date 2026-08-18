@@ -260,7 +260,7 @@ export default function DeliveryConstellation({ workflow, compact }) {
 
             {allEdges.map(edge=>{
               if(edge.type==='cross'){
-                const srcGate = allNodes.find(n=>n.phaseId===edge.id.split('_2_')[0] && n.isLast);
+                const srcGate = allNodes.find(n=>n.phaseId===(edge.id||'').split('_2_')[0] && n.isLast);
                 if(!srcGate || allNodes.indexOf(srcGate)>=step) return null;
               }else{
                 const parts = edge.id.match(/_g(\d+)2g(\d+)$/);
@@ -388,7 +388,7 @@ export default function DeliveryConstellation({ workflow, compact }) {
 
           {/* Cross-phase edge labels */}
           {allEdges.filter(e=>e.type==='cross').map(edge=>{
-            const [fromId] = edge.id.split('_2_');
+            const [fromId] = (edge.id||'').split('_2_');
             const srcGate = allNodes.find(n=>n.phaseId===fromId && n.isLast);
             if(!srcGate || allNodes.indexOf(srcGate)>=step) return null;
             const mx=(edge.from.x+edge.to.x)/2, my=(edge.from.y+edge.to.y)/2;

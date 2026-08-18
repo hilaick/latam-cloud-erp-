@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
-const HermesModal = ({ isOpen, onClose }) => {
+const HermesModal = ({ isOpen, onClose, projectId }) => {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([
     {

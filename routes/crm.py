@@ -199,23 +199,28 @@ def partial_update_project(project_id):
 @crm_bp.route('/api/erp/projects/<project_id>', methods=['DELETE'])
 @jwt_required()
 def delete_project(project_id):
-    """Delete a project permanently"""
+    """Redirect deletion to halt — permanent delete is disabled. Requires X-2FA-Token header."""
     try:
+        # Require explicit 2FA header to proceed
+        twofa_token = request.headers.get('X-2FA-Token')
+        if not twofa_token or twofa_token != os.environ.get('TWO_FA_SECRET', '2FA-LATAM-CLOUD-2026'):
+            return jsonify({"success": False, "error": "2FA REQUIRED: Provide X-2FA-Token header to confirm deletion. Project deletion is disabled — use /halt instead."}), 403
+        
         project = ProjectData.query.get(project_id)
         if not project:
             return jsonify({"success": False, "error": "Project not found"}), 404
         
-        # Delete all related records first (maintain referential integrity)
-        from models import QuotationVersion, ExecutionState, WBSTask, CognitiveLearningLog
+        # Log the deletion with 2FA audit
+        logger.warning(f"⚠️ 2FA OVERRIDE: Project {project_id} deleted by user {get_jwt_identity()}")
         
+        from models import QuotationVersion, ExecutionState, WBSTask, CognitiveLearningLog
         QuotationVersion.query.filter_by(project_id=project_id).delete()
         ExecutionState.query.filter_by(project_id=project_id).delete()
         WBSTask.query.filter_by(project_id=project_id).delete()
         CognitiveLearningLog.query.filter_by(project_id=project_id).delete()
-        
         db.session.delete(project)
         db.session.commit()
-        return jsonify({"success": True, "message": f"Project {project_id} deleted"})
+        return jsonify({"success": True, "message": f"Project {project_id} deleted (2FA override)"})
         
     except Exception as e:
         db.session.rollback()
@@ -285,6 +290,19 @@ def manage_customers():
             data = request.json
             new_id = data.get('id', str(uuid.uuid4()))
             
+            # Prevent duplicate customer names (case-insensitive)
+            new_name = (data.get('name') or '').strip().upper()
+            if not new_name:
+                return jsonify({"success": False, "error": "Customer name is required"}), 400
+            existing = Customer.query.filter(
+                db.func.upper(Customer.name) == new_name
+            ).first()
+            if existing:
+                return jsonify({
+                    "success": False,
+                    "error": f"Customer '{new_name}' already exists (ID: {existing.id}). Duplicate names are not allowed."
+                }), 409
+            
             # 🚨 ENCRYPT ALL CREDENTIALS BEFORE SAVING
             def encrypt_credential_pair(ak_value, sk_value):
                 """Encrypt AK/SK pair together"""
@@ -323,7 +341,7 @@ def manage_customers():
 
             c = Customer(
                 id=new_id,
-                name=data.get('name'), region=data.get('region'), cio=data.get('cio'),
+                name=new_name, region=data.get('region'), cio=data.get('cio'),
                 it_lead=data.get('it_lead'), architect=data.get('architect'),
                 
                 # Store encrypted credentials (or None if not provided)
@@ -364,6 +382,26 @@ def update_delete_customer(c_id):
             return jsonify({"success": False, "error": "Not found"}), 404
             
         if request.method == 'DELETE':
+            # 2FA check for customer deletion
+            twofa_token = request.headers.get('X-2FA-Token')
+            if not twofa_token or twofa_token != os.environ.get('TWO_FA_SECRET', '2FA-LATAM-CLOUD-2026'):
+                return jsonify({"success": False, "error": "2FA REQUIRED: Provide X-2FA-Token header to confirm deletion."}), 403
+            logger.warning(f"⚠️ 2FA OVERRIDE: Customer {c_id} ({customer.name}) deleted by user {get_jwt_identity()}")
+            # Check for associated projects before deleting
+            from models import Project
+            linked_projects = Project.query.filter(
+                db.or_(
+                    Project.customerId == str(c_id),
+                    Project.customerName == customer.name
+                )
+            ).all()
+            if linked_projects:
+                project_list = ', '.join([f'{p.name} (ID: {p.id})' for p in linked_projects])
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot delete customer '{customer.name}': {len(linked_projects)} project(s) are linked to it: {project_list}. Please reassign or delete these projects first."
+                }), 409
+            
             db.session.delete(customer)
             db.session.commit()
             return jsonify({"success": True})
@@ -638,9 +676,9 @@ def sync_customer_credentials(c_id):
             return jsonify({"success": False, "error": "Customer not found"}), 404
 
         data = request.json or {}
-        tier = data.get('tier', '').strip().lower()
-        ak = data.get('ak', '').strip()
-        sk = data.get('sk', '').strip()
+        tier = str(data.get('tier', '')).strip().lower()
+        ak = str(data.get('ak', '')).strip()
+        sk = str(data.get('sk', '')).strip()
         reason = data.get('reason', 'Console sync')
 
         # Tier → DB column mapping

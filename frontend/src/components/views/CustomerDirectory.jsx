@@ -53,7 +53,15 @@ export default function CustomerDirectory() {
         c => String(c.id) === custId || c.name === decodeURIComponent(custName)
       );
       if (target) {
-        setEditingCustomer({ ...target });
+        // Normalize booleans to empty strings (same as handleEditCustomer)
+        const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
+          'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
+          'azureTenant', 'azureClient', 'azureSecret'];
+        const normalized = { ...target };
+        credentialFields.forEach(f => {
+          if (typeof normalized[f] === 'boolean') normalized[f] = '';
+        });
+        setEditingCustomer(normalized);
         setActiveTab('vault');
       }
     }
@@ -111,7 +119,15 @@ export default function CustomerDirectory() {
   };
 
   const handleEditCustomer = (customer) => {
-    setEditingCustomer({ ...customer });
+    // Normalize boolean credential indicators back to empty strings
+    const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
+      'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
+      'azureTenant', 'azureClient', 'azureSecret'];
+    const normalized = { ...customer };
+    credentialFields.forEach(f => {
+      if (typeof normalized[f] === 'boolean') normalized[f] = '';
+    });
+    setEditingCustomer(normalized);
     setIsCreating(false);
     setValidationStatus({});
     setActiveTab('vault');
@@ -175,8 +191,8 @@ export default function CustomerDirectory() {
     };
     const f = fieldMap[provider];
     if (!f) return;
-    const ak = editingCustomer[f.ak];
-    const sk = editingCustomer[f.sk];
+    const ak = typeof editingCustomer[f.ak] === 'string' ? editingCustomer[f.ak] : '';
+    const sk = typeof editingCustomer[f.sk] === 'string' ? editingCustomer[f.sk] : '';
     if (!ak || !sk) return alert(`Enter new ${provider} AK/SK first.`);
     if (ak.length < 10 || sk.length < 10) return alert('AK/SK look too short to be valid.');
     setIsValidating(true);
@@ -564,18 +580,47 @@ export default function CustomerDirectory() {
                   <div className="grid grid-cols-2 gap-5">
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Company Name *</label>
-                      <input type="text" value={editingCustomer.name} onChange={e => setEditingCustomer({ ...editingCustomer, name: e.target.value })} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500" />
+                      <input type="text" value={editingCustomer.name} onChange={e => setEditingCustomer({ ...editingCustomer, name: e.target.value.toUpperCase() })} style={{ textTransform: 'uppercase' }} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500" placeholder="CLINICA UNION MEDICA" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Default Cloud Region</label>
-                      <select value={editingCustomer.region || 'la-south-2'} onChange={e => setEditingCustomer({ ...editingCustomer, region: e.target.value })} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-white cursor-pointer">
+                      <select value={editingCustomer.region || 'la-north-2'} onChange={e => setEditingCustomer({ ...editingCustomer, region: e.target.value })} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-white cursor-pointer">
                         <optgroup label="Latin America">
                           <option value="la-south-2">Santiago, Chile (la-south-2)</option>
                           <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
                           <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
                         </optgroup>
+                        <optgroup label="Asia Pacific">
+                          <option value="ap-southeast-1">Hong Kong (ap-southeast-1)</option>
+                          <option value="ap-southeast-2">Bangkok, Thailand (ap-southeast-2)</option>
+                          <option value="ap-southeast-3">Singapore (ap-southeast-3)</option>
+                          <option value="ap-southeast-4">Jakarta, Indonesia (ap-southeast-4)</option>
+                          <option value="ap-southeast-5">Manila, Philippines (ap-southeast-5)</option>
+                          <option value="cn-north-1">Beijing 1 (cn-north-1)</option>
+                          <option value="cn-north-4">Beijing 4 (cn-north-4)</option>
+                          <option value="cn-east-2">Shanghai 1 (cn-east-2)</option>
+                          <option value="cn-east-3">Shanghai 2 (cn-east-3)</option>
+                          <option value="cn-south-1">Guangzhou (cn-south-1)</option>
+                          <option value="cn-southwest-2">Guiyang (cn-southwest-2)</option>
+                        </optgroup>
                         <optgroup label="Africa">
                           <option value="af-south-1">Johannesburg, South Africa (af-south-1)</option>
+                          <option value="af-north-1">Casablanca, Morocco (af-north-1)</option>
+                        </optgroup>
+                        <optgroup label="Europe">
+                          <option value="eu-west-0">Paris, France (eu-west-0)</option>
+                          <option value="eu-west-101">Dublin, Ireland (eu-west-101)</option>
+                          <option value="eu-central-1">Berlin, Germany (eu-central-1)</option>
+                          <option value="eu-south-1">Madrid, Spain (eu-south-1)</option>
+                          <option value="la-nicaragua-1">Nicaragua (la-nicaragua-1)</option>
+                        </optgroup>
+                        <optgroup label="Middle East">
+                          <option value="me-east-1">Dubai, UAE (me-east-1)</option>
+                          <option value="me-east-2">Riyadh, Saudi Arabia (me-east-2)</option>
+                        </optgroup>
+                        <optgroup label="North America">
+                          <option value="na-mexico-1">Mexico (na-mexico-1)</option>
+                          <option value="us-east-1">Virginia, USA (us-east-1)</option>
                         </optgroup>
                       </select>
                     </div>
@@ -680,7 +725,45 @@ export default function CustomerDirectory() {
                     </div>
                     <div className="flex justify-between items-end">
                       <div className="grid grid-cols-3 gap-4 flex-1 mr-4">
-                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><input type="text" value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} placeholder="ap-southeast-3" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
+                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><select value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white cursor-pointer">
+                          <option value="">-- Select Source Region --</option>
+                          <optgroup label="Latin America">
+                            <option value="la-south-2">Santiago, Chile (la-south-2)</option>
+                            <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
+                            <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
+                          </optgroup>
+                          <optgroup label="Asia Pacific">
+                            <option value="ap-southeast-1">Hong Kong (ap-southeast-1)</option>
+                            <option value="ap-southeast-2">Bangkok, Thailand (ap-southeast-2)</option>
+                            <option value="ap-southeast-3">Singapore (ap-southeast-3)</option>
+                            <option value="ap-southeast-4">Jakarta, Indonesia (ap-southeast-4)</option>
+                            <option value="ap-southeast-5">Manila, Philippines (ap-southeast-5)</option>
+                            <option value="cn-north-1">Beijing 1 (cn-north-1)</option>
+                            <option value="cn-north-4">Beijing 4 (cn-north-4)</option>
+                            <option value="cn-east-2">Shanghai 1 (cn-east-2)</option>
+                            <option value="cn-east-3">Shanghai 2 (cn-east-3)</option>
+                            <option value="cn-south-1">Guangzhou (cn-south-1)</option>
+                            <option value="cn-southwest-2">Guiyang (cn-southwest-2)</option>
+                          </optgroup>
+                          <optgroup label="Africa">
+                            <option value="af-south-1">Johannesburg, South Africa (af-south-1)</option>
+                            <option value="af-north-1">Casablanca, Morocco (af-north-1)</option>
+                          </optgroup>
+                          <optgroup label="Europe">
+                            <option value="eu-west-0">Paris, France (eu-west-0)</option>
+                            <option value="eu-west-101">Dublin, Ireland (eu-west-101)</option>
+                            <option value="eu-central-1">Berlin, Germany (eu-central-1)</option>
+                            <option value="eu-south-1">Madrid, Spain (eu-south-1)</option>
+                          </optgroup>
+                          <optgroup label="Middle East">
+                            <option value="me-east-1">Dubai, UAE (me-east-1)</option>
+                            <option value="me-east-2">Riyadh, Saudi Arabia (me-east-2)</option>
+                          </optgroup>
+                          <optgroup label="North America">
+                            <option value="na-mexico-1">Mexico (na-mexico-1)</option>
+                            <option value="us-east-1">Virginia, USA (us-east-1)</option>
+                          </optgroup>
+                        </select></div>
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_project_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_domain_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                       </div>

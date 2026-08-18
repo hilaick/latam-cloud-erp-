@@ -291,7 +291,12 @@ def update_project(project_id):
 @jwt_required()
 @require_role('Admin')
 def delete_project(project_id):
-    """Delete a project. Admin only."""
+    """Delete a project. Admin only. Requires X-2FA-Token header."""
+    # 2FA check
+    twofa_token = request.headers.get('X-2FA-Token')
+    if not twofa_token or twofa_token != os.environ.get('TWO_FA_SECRET', '2FA-LATAM-CLOUD-2026'):
+        return jsonify({"success": False, "error": "2FA REQUIRED: Provide X-2FA-Token header to confirm deletion."}), 403
+    
     project = ProjectData.query.get(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
@@ -306,7 +311,7 @@ def delete_project(project_id):
     db.session.delete(project)
     db.session.commit()
 
-    logger.info(f"Admin {user_id} deleted project '{project_id}'")
+    logger.warning(f"⚠️ 2FA OVERRIDE: Admin {user_id} deleted project '{project_id}'")
     return jsonify({'success': True, 'message': f'Project {project_id} deleted'})
 
 

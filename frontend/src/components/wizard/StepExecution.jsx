@@ -324,7 +324,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         // ── Pre-compute phase context from simulation traces ──
         const buildPhaseContext = (phaseKey) => {
             if (!simTrace.length) return null;
-            const phaseSteps = simTrace.filter(t => t.phase === phaseKey);
+            const phaseSteps = simTrace.filter(t => t.phase === phaseKey || t.phase_group === phaseKey);
             if (!phaseSteps.length) return null;
 
             const commands = phaseSteps

@@ -86,8 +86,8 @@ export default function LiveCloudNOC() {
             <i className="fas fa-tv text-white"></i>
           </div>
           <div>
-            <h1 className="text-xl font-black text-white tracking-tight">Live Cloud NOC</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-Time Target Infrastructure Monitoring</p>
+            <h1 className="text-xl font-black text-white tracking-tight">Cloud Infrastructure Scanner</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target & Source Infrastructure Discovery</p>
           </div>
         </div>
 
@@ -133,7 +133,7 @@ export default function LiveCloudNOC() {
             >
               {isLoading
                 ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning...</>
-                : <><i className="fas fa-search mr-2"></i> Run NOC Scan</>}
+                : <><i className="fas fa-search mr-2"></i> Run Cloud Scanner</>}
             </button>
           </div>
 
