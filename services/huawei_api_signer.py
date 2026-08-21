@@ -35,9 +35,6 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     parsed = urllib.request.urlparse(url)
     host = parsed.hostname or ''
     path = parsed.path or '/'
-    # Huawei requires trailing slash on URI paths (per SDK signer _process_canonical_uri)
-    if not path.endswith('/'):
-        path = path + '/'
     query = parsed.query
 
     content_type = 'application/json; charset=utf-8'
@@ -46,24 +43,50 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     method_upper = method.upper()
     now = datetime.datetime.utcnow()
     timestamp = now.strftime('%Y%m%dT%H%M%SZ')
+    datestamp = now.strftime('%Y%m%d')
 
-    canonical_headers = f'host:{host}\nx-sdk-date:{timestamp}\n'
-    signed_headers = 'host;x-sdk-date'
+    # Derive region and service from the hostname
+    # host format: service.region.myhuaweicloud.com
+    host_parts = host.split('.')
+    if len(host_parts) >= 2:
+        service = host_parts[0]
+        region = host_parts[1]
+    else:
+        service = 'ecs'
+        region = 'la-north-2'
+    credential_scope = f'{datestamp}/{region}/{service}/sdk_request'
+
+    canonical_headers = f'host:{host}\nx-sdk-content-sha256:{payload_hash}\nx-sdk-date:{timestamp}\n'
+    signed_headers_list = ['host', 'x-sdk-content-sha256', 'x-sdk-date']
+    # Add X-Project-Id to signature if provided
+    if headers and 'X-Project-Id' in headers:
+        xpid = headers['X-Project-Id']
+        # Insert in alphabetical order: x-p comes before x-s
+        canonical_headers = (f'host:{host}\n'
+                             f'x-project-id:{xpid}\n'
+                             f'x-sdk-content-sha256:{payload_hash}\n'
+                             f'x-sdk-date:{timestamp}\n')
+        signed_headers_list = ['host', 'x-project-id', 'x-sdk-content-sha256', 'x-sdk-date']
+    # Sort signed headers alphabetically (Huawei requirement)
+    signed_headers_list.sort()
+    signed_headers = ';'.join(signed_headers_list)
+    if path and not path.endswith('/'):
+        path = path + '/'
     canonical_request = f'{method_upper}\n{path}\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}'
     canonical_hash = _sha256_hex(canonical_request)
 
     # 2. String to sign (matches huaweicloudsdkcore Signer._process_string_to_sign)
-    # Format: SDK-HMAC-SHA256\n{timestamp}\n{sha256(canonical_request)}
+    # Format: SDK-HMAC-SHA256\n{timestamp}\n{credential_scope}\n{sha256(canonical_request)}
     algorithm = 'SDK-HMAC-SHA256'
-    string_to_sign = f'{algorithm}\n{timestamp}\n{canonical_hash}'
+    string_to_sign = f'{algorithm}\n{timestamp}\n{credential_scope}\n{canonical_hash}'
 
     # 3. Signature — HMAC string_to_sign directly with SK (matches SDK _sign_string_to_sign)
     signature = _hmac_sha256_hex(sk.encode('utf-8'), string_to_sign)
 
     # 4. Authorization header (matches SDK _process_auth_header_value)
-    # Format: SDK-HMAC-SHA256 Access={ak}, SignedHeaders={...}, Signature={...}
+    # Format: SDK-HMAC-SHA256 Credential={ak}/{credential_scope}, SignedHeaders={...}, Signature={...}
     authorization = (
-        f'{algorithm} Access={ak}, '
+        f'{algorithm} Credential={ak}/{credential_scope}, '
         f'SignedHeaders={signed_headers}, '
         f'Signature={signature}'
     )
@@ -71,6 +94,7 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     # 5. Request
     req_headers = {
         'Host': host,
+        'X-Sdk-Content-Sha256': payload_hash,
         'X-Sdk-Date': timestamp,
         'Authorization': authorization,
         'Content-Type': content_type,
