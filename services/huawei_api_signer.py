@@ -70,8 +70,6 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     # Sort signed headers alphabetically (Huawei requirement)
     signed_headers_list.sort()
     signed_headers = ';'.join(signed_headers_list)
-    if path and not path.endswith('/'):
-        path = path + '/'
     canonical_request = f'{method_upper}\n{path}\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}'
     canonical_hash = _sha256_hex(canonical_request)
 
