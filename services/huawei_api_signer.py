@@ -84,9 +84,9 @@ def sign_and_request(method: str, url: str, ak: str, sk: str,
     # 4. Authorization header (matches SDK _process_auth_header_value)
     # Format: SDK-HMAC-SHA256 Credential={ak}/{credential_scope}, SignedHeaders={...}, Signature={...}
     authorization = (
-        f'{algorithm} Credential={ak}/{credential_scope}, '
-        f'SignedHeaders={signed_headers}, '
-        f'Signature={signature}'
+        f"{algorithm} Credential={ak}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, "
+        f"Signature={signature}"
     )
 
     # 5. Request
