@@ -1140,6 +1140,75 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
+        # ═══ PHASE 4.2b2: PRESALES-DRIVEN PREFLIGHT (discovered 2026-08-23) ═══
+
+        # Step 2b: PREFLIGHT — Security Group Rules (SMS.3805 prevention)
+        # Official Huawei Cloud SMS port requirements:
+        #   Linux:   TCP 8900 (data) + TCP 22 (SSH)
+        #   Windows: TCP 8899 + TCP 8900 (data) + TCP 22 (SSH)
+        sid += 1
+        required_ports = [8900, 22] if is_linux else [8899, 8900, 22]
+        port_desc = "8900(data)+22(SSH)" if is_linux else "8899(Win)+8900(data)+22(SSH)"
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_SG_RULES",
+            "target": server_name,
+            "message": (
+                f"[PREFLIGHT] Configuring target Security Group rules for SMS migration. "
+                f"Required ports ({'Linux' if is_linux else 'Windows'}): {port_desc}. "
+                f"CRITICAL: SMS.3805 (connection timeout) occurs if these ports are not open BEFORE task creation."
+            ),
+            "commands": [
+                {"desc": f"Add SG ingress TCP {port_desc} from source IP", "cmd": (
+                    f"hcloud VPC CreateSecurityGroupRule "
+                    f"--security_group_id=<target_sg_id> "
+                    f"--direction=ingress --protocol=tcp "
+                    f"--port_range_min={required_ports[0]} --port_range_max={required_ports[-1]} "
+                    f"--remote_ip_prefix=0.0.0.0/0"
+                )},
+                {"desc": "Add SG ingress ICMP", "cmd": "hcloud VPC CreateSecurityGroupRule --security_group_id=<target_sg_id> --direction=ingress --protocol=icmp --remote_ip_prefix=0.0.0.0/0"},
+                {"desc": "Add SG egress all TCP", "cmd": "hcloud VPC CreateSecurityGroupRule --security_group_id=<target_sg_id> --direction=egress --protocol=tcp --port_range_min=1 --port_range_max=65535 --remote_ip_prefix=0.0.0.0/0"},
+                {"desc": "Verify SSH reachable to target", "cmd": f"ssh -o ConnectTimeout=10 root@<target_eip> (should connect, not timeout)"},
+            ],
+            "preflight_check": True,
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_sg_rules_configured",
+            "error_prevention": {"code": "SMS.3805", "ports": required_ports, "os_type": "Linux" if is_linux else "Windows"},
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 2c: PREFLIGHT — Flavor & Image availability in target region
+        # Source flavors may be abandoned in target region (e.g. x1.2u.* abandoned in la-north-2)
+        # Images are region-scoped — source image ID won't work in target region
+        sid += 1
+        is_windows = not is_linux
+        mock_image_note = ""
+        if is_windows:
+            mock_image_note = (
+                " If no Windows image exists in target region, import mock image "
+                "(assets/mock-windows.vmdk) via IMS ImportImage API as placeholder."
+            )
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "PREFLIGHT_FLAVOR_IMAGE",
+            "target": server_name,
+            "message": (
+                f"[PREFLIGHT] Checking flavor '{flavor}' and image availability in {target_region}. "
+                f"Source flavors may be abandoned in target region (e.g. x1.2u.* in la-north-2). "
+                f"Images are region-scoped — source image ID won't work in target region."
+                f"{mock_image_note}"
+            ),
+            "commands": [
+                {"desc": "Check flavor availability in target region", "cmd": f"hcloud ECS ListFlavors --cli-region={target_region} | jq '.flavors[] | select(.name==\"{flavor}\")'"},
+                {"desc": "Find compatible image in target region", "cmd": f"hcloud IMS ListImages --cli-region={target_region} --imagetype=gold --__support_kvm=true | jq '.images[] | select(.os_type==\"{'Linux' if is_linux else 'Windows'}\") | {{id, name}}'"},
+            ] + ([{"desc": "Import Windows mock image if no image found", "cmd": "hcloud IMS ImportImage --image_url=obs://erp-assets/mock-windows.vmdk --name=mock-windows-server --os_type=Windows --is_quick_import=false"}] if is_windows else []),
+            "preflight_check": True,
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_flavor_image_ok",
+            "error_prevention": {"code": "Ecs.0019", "flavor": flavor, "region": target_region},
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
         # ═══ PHASE 4.2c: TARGET CONFIGURATION ═══
 
         # Step 3: Create EIP with 300 Mbit/s Traffic billing (production pattern)
@@ -1242,24 +1311,30 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
-        # Step 7: PREFLIGHT — Query source disk config (exact 1:1 mapping)
+        # Step 7: PREFLIGHT — MGC-Style Disk Mapping (discovered 2026-08-23)
+        # CRITICAL: Use get_sms_source_detail → init_target_server.disks → target disk IDs
+        # SMS.0515 if disk info doesn't match, SMS.6519 if no disk mapping
         sid += 1
         trace.append({
             "id": sid, "phase": "PHASE_4_2c_TARGET_PREFLIGHT", "agent": f"Agent-{server_name}",
-            "action": "PREFLIGHT_SMS_DISK_ID",
+            "action": "DISK_MAPPING",
             "target": server_name,
             "message": (
-                f"[PREFLIGHT] Querying source server disk configuration. "
-                f"CRITICAL: Use SMS disk ID (from ShowServer), NOT EVS volume ID (from ECS API). "
-                f"SMS.6103 error if wrong ID used."
+                f"[PREFLIGHT] MGC-style disk mapping for '{server_name}'. "
+                f"Step 1: get_sms_source_detail → init_target_server.disks (source disk info from SMS API). "
+                f"Step 2: get_server_attached_disks → target disk IDs by device name (e.g. /dev/vda → disk_id). "
+                f"Step 3: Map source disks to target disks, include physical_volumes. "
+                f"CRITICAL: SMS.0515 if disk info changed (fresh agent install fixes). SMS.6519 if no disk mapping."
             ),
             "commands": [
-                {"desc": "Get SMS disk ID", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.disks[0].id'"},
-                {"desc": "Get all partitions", "cmd": f"hcloud SMS ShowServer --source_id={vm_id} --cli-region={sms_region} | jq '.disks[].physical_volumes[] | {{name, device_use, file_system, size}}'"},
+                {"desc": "Get source disk info from SMS API", "cmd": f"python3 -c \"from mgc_migrate import get_sms_source_detail; d=get_sms_source_detail(client, '{sms_region}', '{vm_id}'); print(d.get('init_target_server',{{}}).get('disks',[]))\""},
+                {"desc": "Get target attached disk IDs", "cmd": f"python3 -c \"from mgc_migrate import get_server_attached_disks; d=get_server_attached_disks(client, '{target_region}', '<project_id>', '<ecs_id>'); print([(a['device'], a['id']) for a in d])\""},
+                {"desc": "Map source disks to target disks", "cmd": "# by_device = {a['device']: a['id'] for a in attached}; disk['disk_id'] = by_device.get(disk['name'], boot_disk_id)"},
             ],
             "preflight_check": True,
             "timestamp_offset_seconds": total_offset,
-            "result": "simulated_disk_id_discovered",
+            "result": "simulated_disk_mapping_complete",
+            "error_prevention": {"code": "SMS.0515", "fix": "Fresh agent install + delete source server from SMS + re-register"},
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -3261,6 +3336,74 @@ class AgenticExecutionSimulator:
             "decision": None,
         })
         total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
+
+        # ═══ PHASE 4.0b: PRESALES TRIAGE ANALYSIS (discovered 2026-08-23) ═══
+        # Read presales radar triage data to determine migration strategy
+        presales = project.get("presales", {})
+        auth_level = presales.get("authLevel", [])
+        source_env = presales.get("sourceEnvironment", [])
+        migration_scope = presales.get("migrationScope", [])
+        delivery_scope = presales.get("deliveryScope", [])
+        project_type = presales.get("project_type", "")
+
+        # Determine strategy from presales triage
+        is_advisory_only = any(a in ["Read-Only (Customer Managed)", "No Access (Advisory Only)"] for a in (auth_level if isinstance(auth_level, list) else [auth_level]))
+        has_vmware = any("vmware" in s.lower() for s in (source_env if isinstance(source_env, list) else [source_env]))
+        has_hyperv = any("hyper-v" in s.lower() for s in (source_env if isinstance(source_env, list) else [source_env]))
+        is_cross_region = any("cross-region" in s.lower() for s in (migration_scope if isinstance(migration_scope, list) else [migration_scope]))
+        is_cross_cloud = any("cross-cloud" in s.lower() for s in (migration_scope if isinstance(migration_scope, list) else [migration_scope]))
+        needs_image_conversion = has_vmware or has_hyperv
+
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+            "action": "PRESALES_TRIAGE_ANALYSIS",
+            "message": (
+                f"[PRESALES] Analyzing triage data for strategy selection. "
+                f"Auth Level: {auth_level}. Source Env: {source_env}. Migration Scope: {migration_scope}. "
+                f"Strategy: {'ADVISORY-ONLY (no agent install, recommendations only)' if is_advisory_only else 'FULL AUTOMATION (agent orchestration)'}. "
+                f"Image Conversion: {'YES (VMware/Hyper-V source)' if needs_image_conversion else 'NO'}. "
+                f"Cross-Region: {'YES (pre-created ECS approach)' if is_cross_region else 'NO'}. "
+                f"Cross-Cloud: {'YES (cross-account credentials needed)' if is_cross_cloud else 'NO'}."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "decision": {
+                "advisory_only": is_advisory_only,
+                "needs_image_conversion": needs_image_conversion,
+                "cross_region": is_cross_region,
+                "cross_cloud": is_cross_cloud,
+                "auth_level": auth_level,
+                "source_env": source_env,
+                "migration_scope": migration_scope,
+            },
+        })
+        total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
+
+        # If advisory-only, skip agent orchestration and generate recommendations
+        if is_advisory_only:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+                "action": "ADVISORY_MODE_SKIP",
+                "message": (
+                    "[ADVISORY] Auth level is Read-Only or No Access. "
+                    "Skipping agent orchestration, task creation, and data sync. "
+                    "Generating advisory recommendations and runbook for customer self-execution."
+                ),
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "advisory_recommendations_generated",
+            })
+            return {
+                "trace": trace,
+                "resource_usage": resource_usage,
+                "summary": {
+                    "mode": "dry_run",
+                    "advisory_only": True,
+                    "message": "Advisory mode — no automated migration. Recommendations generated for customer self-execution.",
+                    "strategy": "advisory",
+                    "auth_level": auth_level,
+                },
+            }
 
         # ═══ PHASE 4.1: Network Provisioning — handles VPC, EIP, subnets from SOW ──
         step_id += 1
