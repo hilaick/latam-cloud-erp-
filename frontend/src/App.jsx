@@ -10,6 +10,7 @@ import LiveCloudNOC from './components/views/LiveCloudNOC';
 import RegionalMap from './components/views/RegionalMap';
 import MasterPipeline from './components/views/MasterPipeline';
 import PreSalesRadar from './components/views/PreSalesRadar';
+import McpServerView from './components/views/McpServerView';
 import ProjectWizard from './components/wizard/ProjectWizard';
 import GlobalDashboard from './components/views/GlobalDashboard';
 import GlobalSchedule from './components/views/GlobalSchedule';
@@ -114,6 +115,7 @@ function App() {
                     {activePhase === 'resource-discovery' && <ResourceDiscoveryMap />}
                     {activePhase === 'halted' && <HaltedProjects />}
                     {activePhase === 'users' && <UserManagement />}
+                    {activePhase === 'mcp' && <McpServerView />}
                     
                     {activePhase === 'login' && <LoginPage />}
                     

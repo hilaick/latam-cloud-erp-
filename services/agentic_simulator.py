@@ -909,7 +909,9 @@ class ServerProfiler:
 
         strategy = ServerProfiler._determine_strategy(
             is_windows, has_source_access, has_data_plane_admin,
-            agent_preinstalled, role
+            agent_preinstalled, role,
+            is_huaweicloud=any(h in str(server.get("cloud", server.get("sourceCloud", ""))).lower() for h in ["huawei", "hwc", "hcs"]) or "ecs" in name,
+            source_region=str(server.get("region", server.get("sourceRegion", ""))).lower(),
         )
 
         return {
@@ -930,9 +932,22 @@ class ServerProfiler:
         has_source_access: bool,
         has_data_plane_admin: bool,
         agent_preinstalled: bool,
-        role: str
+        role: str,
+        is_huaweicloud: bool = False,
+        source_region: str = "",
     ) -> str:
-        """Determine the optimal migration strategy."""
+        """Determine the optimal migration strategy.
+        
+        Strategy priority (discovered 2026-08-23):
+        1. Huawei Cloud source → SMS primary (proven cross-region: ap-southeast-3 → la-north-2)
+        2. Agent preinstalled → SMS primary
+        3. Data plane access → SMS with agent push
+        4. Database role → image primary (consistency)
+        5. No access → manual agent required
+        """
+        # Huawei Cloud ECS → SMS is primary (proven working cross-region)
+        if is_huaweicloud:
+            return "sms_primary"
         if agent_preinstalled:
             return "sms_primary"
         if has_data_plane_admin or has_source_access:
