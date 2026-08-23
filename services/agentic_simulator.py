@@ -1274,107 +1274,69 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
-        # ═══ PHASE 4.2c: TARGET CONFIGURATION ═══
+        # ═══ PHASE 4.2c: TARGET ECS — verify existing or create new ═══
+        # If Phase 3 already created the target ECS (targetArchitecture has servers), VERIFY it.
+        # If not, CREATE it with EIP from start (SMS.6602 prevention).
 
-        # Step 3: Create EIP with 300 Mbit/s Traffic billing (production pattern)
-        sid += 1
-        eip_name = f"{server_name}-EIP"
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
-            "action": "TARGET_EIP_CREATE",
-            "target": server_name,
-            "message": (
-                f"[TARGET CONFIG] Creating EIP for '{server_name}' with 300 Mbit/s Traffic billing. "
-                f"CRITICAL: ECS must be created WITH eip field from start (SMS.6602 fix)."
-            ),
-            "commands": [
-                {"desc": "Create EIP (Traffic billing)", "cmd": f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name='{eip_name}' --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic"},
-                {"desc": "Save EIP ID for later binding", "cmd": "echo '<eip_id>' > /tmp/eip_ids.txt"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_eip_created",
-        })
-        total_offset += config.STEP_TIMINGS["agent_spawn"]
-        resource_usage_local["eips_consumed"] = resource_usage_local.get("eips_consumed", 0) + 1
+        if server.get("_has_existing_targets", False):
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+                "action": "TARGET_VERIFY",
+                "target": server_name,
+                "message": (
+                    f"[TARGET VERIFY] Target ECS already provisioned in Phase 3. "
+                    f"Verifying ACTIVE, EIP attached, flavor '{flavor}', disk {disk_gb:.0f}GB."
+                ),
+                "commands": [
+                    {"desc": "Verify target ECS ACTIVE", "cmd": f"hcloud ECS ShowServer --server_id=<ecs_id> --cli-region={target_region} | jq '.status'"},
+                    {"desc": "Verify EIP attached", "cmd": f"hcloud EIP ShowPublicip --publicip_id=<eip_id> | jq '.status'"},
+                    {"desc": "Get target IP for SMS task", "cmd": f"hcloud ECS ShowServer --server_id=<ecs_id> --cli-region={target_region} | jq '.addresses'"},
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_target_verified",
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
+        else:
+            sid += 1
+            eip_name = f"{server_name}-EIP"
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+                "action": "TARGET_EIP_CREATE",
+                "target": server_name,
+                "message": f"[TARGET CONFIG] Creating EIP for '{server_name}' with 300 Mbit/s Traffic billing.",
+                "commands": [{"desc": "Create EIP", "cmd": f"hcloud EIP CreatePublicip --publicip.type=5_bgp --bandwidth.name='{eip_name}' --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic"}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_eip_created",
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
+            resource_usage_local["eips_consumed"] = resource_usage_local.get("eips_consumed", 0) + 1
 
-        # Step 4: PREFLIGHT — Check quota before ECS creation
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2c_TARGET_PREFLIGHT", "agent": f"Agent-{server_name}",
-            "action": "PREFLIGHT_ECS_QUOTA",
-            "target": server_name,
-            "message": (
-                f"[PREFLIGHT] Checking ECS quota for flavor '{flavor}' in {target_region}. "
-                f"Expected: flavor available, VPC exists, subnet exists, EP ID valid."
-            ),
-            "commands": [
-                {"desc": "Check flavor availability", "cmd": f"hcloud ecs flavor-describe --flavor {flavor} --region {target_region}"},
-                {"desc": "Check VPC exists", "cmd": f"hcloud vpc describe --name latam-erp-{target_region}-vpc"},
-                {"desc": "Check quota not exceeded", "cmd": "hcloud ecs quota --region {target_region} | jq '.cores.free, .ram.free'"},
-            ],
-            "preflight_check": True,
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_quota_ok",
-        })
-        total_offset += config.STEP_TIMINGS["agent_spawn"]
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+                "action": "TARGET_ECS_CREATE",
+                "target": server_name,
+                "message": f"[TARGET CONFIG] Launching target ECS '{server_name}-TARGET' on flavor '{flavor}' ({disk_gb:.0f}GB). ECS WITH eip from start (SMS.6602 prevention).",
+                "commands": [{"desc": "Create ECS", "cmd": f"hcloud ECS CreateServers --server.name='{server_name}-TARGET' --server.flavorRef='{flavor}' --server.vpcid='<vpc_id>' --server.nics.1.subnet_id='<subnet_id>' --server.availability_zone='{target_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size={int(disk_gb)} --server.security_groups.1.id='<sg_id>' --server.count=1 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.publicip.eip.bandwidth.sharetype=PER"}],
+                "metrics": {"flavor": flavor, "disk_gb": disk_gb},
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_ecs_created",
+            })
+            total_offset += config.STEP_TIMINGS["instance_launch"]
+            resource_usage_local["instances_provisioned"] = resource_usage_local.get("instances_provisioned", 0) + 1
 
-        # Step 5: Create Target ECS (with eip from start — production SMS.6602 lesson)
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
-            "action": "TARGET_ECS_CREATE",
-            "target": server_name,
-            "message": (
-                f"[TARGET CONFIG] Launching target ECS '{server_name}-TARGET' on flavor '{flavor}' "
-                f"({disk_gb:.0f}GB SSD). Type: {'Linux' if is_linux else 'Windows'}. "
-                f"ECS created WITH eip field from start (SMS.6602 prevention)."
-            ),
-            "commands": [
-                {"desc": "Create ECS with exact quotation specs", "cmd": (
-                    f"hcloud ECS CreateServers "
-                    f"--server.name='{server_name}-TARGET' "
-                    f"--server.flavorRef='{flavor}' "
-                    f"--server.vpcid='<vpc_id>' "
-                    f"--server.nics.1.subnet_id='<subnet_id>' "
-                    f"--server.availability_zone='{target_region}a' "
-                    f"--server.root_volume.volumetype=SAS "
-                    f"--server.root_volume.size={int(disk_gb)} "
-                    f"--server.security_groups.1.id='<sg_id>' "
-                    f"--server.adminPass='<auto-generated>' "
-                    f"--server.count=1 "
-                    f"--server.publicip.eip.iptype=5_bgp "
-                    f"--server.publicip.eip.bandwidth.size=100 "
-                    f"--server.publicip.eip.bandwidth.sharetype=PER"
-                )},
-                {"desc": "Wait for ECS ACTIVE", "cmd": "hcloud ecs describe --instance-id <new-id> | jq '.status' (wait for ACTIVE)"},
-                {"desc": "Get private IP for SMS task", "cmd": f"hcloud ecs describe --instance-id <new-id> | jq '.addresses' | grep -oE '172\\.\\S+'"},
-            ],
-            "metrics": {"flavor": flavor, "disk_gb": disk_gb, "os": "linux" if is_linux else "windows"},
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_ecs_created",
-        })
-        total_offset += config.STEP_TIMINGS["instance_launch"]
-        resource_usage_local["instances_provisioned"] = resource_usage_local.get("instances_provisioned", 0) + 1
-
-        # Step 6: Bind EIP to ECS (port ID extraction)
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
-            "action": "TARGET_EIP_BIND",
-            "target": server_name,
-            "message": (
-                f"[TARGET CONFIG] Binding EIP '<eip_id>' to ECS '{server_name}-TARGET'. "
-                f"Using port ID from ECS network interface."
-            ),
-            "commands": [
-                {"desc": "Get ECS port ID", "cmd": f"hcloud ecs describe --instance-id <new-id> | jq '.os_extended_ports:[].id'"},
-                {"desc": "Bind EIP to port", "cmd": f"hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>"},
-                {"desc": "Verify EIP bound", "cmd": "hcloud EIP ShowPublicip --publicip_id=<eip_id> | jq '.status' (expect ACTIVE)"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_eip_bound",
-        })
-        total_offset += config.STEP_TIMINGS["agent_spawn"]
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"Agent-{server_name}",
+                "action": "TARGET_EIP_BIND",
+                "target": server_name,
+                "message": f"[TARGET CONFIG] Binding EIP to ECS '{server_name}-TARGET'.",
+                "commands": [{"desc": "Bind EIP", "cmd": f"hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>"}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_eip_bound",
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
 
         # Step 7: PREFLIGHT — MGC-Style Disk Mapping (discovered 2026-08-23)
         # CRITICAL: Use get_sms_source_detail → init_target_server.disks → target disk IDs
@@ -2311,20 +2273,23 @@ class PostMigrationSimulator:
         })
         total_offset += 60
 
-        # ── Partition Fix ──
-        sid += 1
-        part_fix_cmd = PostMigrationSimulator._partition_fix_command(is_linux)
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
-            "action": "PARTITION_FIX",
-            "target": server_name,
-            "message": f"Checking and expanding disk partitions for '{server_name}'. "
-                       f"{'growpart + resize2fs/xfs_growfs' if is_linux else 'Set-Disk + Resize-Partition'}.",
-            "commands": [{"desc": "Partition expansion script", "cmd": part_fix_cmd}],
-            "timestamp_offset_seconds": total_offset,
-            "result": "partitions_expanded",
-        })
-        total_offset += config.STEP_TIMINGS["partition_fix"]
+        # ── Partition Fix (only for image-based migration or disk size mismatch) ──
+        # SMS MIGRATE_FILE copies exact disk layout — no partition fix needed
+        # Only needed when target disk is larger than source (image-based migration)
+        if is_image_based:
+            sid += 1
+            part_fix_cmd = PostMigrationSimulator._partition_fix_command(is_linux)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
+                "action": "PARTITION_FIX",
+                "target": server_name,
+                "message": f"Checking and expanding disk partitions for '{server_name}'. "
+                           f"{'growpart + resize2fs/xfs_growfs' if is_linux else 'Set-Disk + Resize-Partition'}.",
+                "commands": [{"desc": "Partition expansion script", "cmd": part_fix_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "partitions_expanded",
+            })
+            total_offset += config.STEP_TIMINGS["partition_fix"]
 
         # ── HSS Agent Install (only if HSS resources in SOW) ──
         # Discovered 2026-08-23: HSS/UniAgent/LTS should only appear if the SOW includes them
@@ -3476,65 +3441,73 @@ class AgenticExecutionSimulator:
                 },
             }
 
-        # ═══ PHASE 4.1: Network Provisioning — handles VPC, EIP, subnets from SOW ──
-        step_id += 1
-        network = NetworkTemplateBuilder.build_from_topology(mapper_nodes, region, config)
-        
-        # Count what we're provisioning
+        # ═══ PHASE 4.1: Network Fabric — verify or provision ═══
+        # If Phase 2-3 already built the network (targetArchitecture exists), VERIFY it.
+        # If not (greenfield), PROVISION it.
+        has_existing_network = bool(project.get("targetArchitecture", {}).get("network"))
+        has_existing_targets = bool(project.get("targetArchitecture", {}).get("servers"))
+
         net_resources = ResourceTypeRouter.get_network_resources(mapper_nodes)
-        net_resource_names = [n.get("name", "?") for n in net_resources]
         server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
         cbr_resources = ResourceTypeRouter.get_cbr_resources(mapper_nodes)
         hss_resources = ResourceTypeRouter.get_hss_resources(mapper_nodes)
         paas_db_resources = ResourceTypeRouter.get_paas_db_resources(mapper_nodes)
 
-        trace.append({
-            "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator → RFS Agent",
-            "action": "NETWORK_PROVISION",
-            "message": (
-                f"Deploying landing zone via {network['deployment_tool']} using template "
-                f"'{network['deployment_template']}'. VPC: {network['vpc_cidr']} ({network['vpc_name']}). "
-                f"Subnets: management {network['subnets'][0]['cidr']}, "
-                f"application {network['subnets'][1]['cidr']}, "
-                f"data {network['subnets'][2]['cidr']}. "
-                f"Security Groups: sg-mgmt (SSH/RDP/HTTPS), sg-app (app ports), sg-data (DB ports). "
-                f"NAT Gateway: {network['nat_gateway']['name']} with EIP. "
-                f"Tier distribution: {network['tier_summary']}. "
-                f"SOW resources mapped: {len(mapper_nodes)} total — "
-                f"{len(server_resources)} servers, {len(net_resources)} network, "
-                f"{len(cbr_resources)} CBR, {len(hss_resources)} HSS, {len(paas_db_resources)} PaaS DB."
-            ),
-            "commands": [
-                {"desc": "Apply RFS template", "cmd": f"hcloud rfs apply-template --name latam-erp-landing-zone-v3 --region {region} --params vpc_cidr={network['vpc_cidr']}"},
-                {"desc": "Verify VPC created", "cmd": f"hcloud vpc describe --name {network['vpc_name']}"},
-                {"desc": "Verify subnets", "cmd": f"hcloud vpc subnets --vpc {network['vpc_name']}"},
-                {"desc": "Create security groups", "cmd": "hcloud vpc security-group create --name sg-mgmt && hcloud vpc security-group create --name sg-app && hcloud vpc security-group create --name sg-data"},
-                {"desc": "Apply SG rules", "cmd": "for sg in sg-mgmt sg-app sg-data; do hcloud vpc security-group-rule import --file $sg-rules.json; done"},
-                {"desc": "Create NAT Gateway + EIP", "cmd": f"hcloud nat create --vpc {network['vpc_name']} --subnet management && hcloud eip create --bandwidth 100 && hcloud nat bind-eip --nat {network['nat_gateway']['name']}"},
-            ],
-            "network_spec": network,
-            "timestamp_offset_seconds": total_simulated_seconds,
-            "decision": {"tool": network["deployment_tool"], "template": network["deployment_template"]},
-        })
-        total_simulated_seconds += config.STEP_TIMINGS["network_provision"]
-        resource_usage["vpcs_created"] += 1
-        resource_usage["subnets_created"] += 3
-        resource_usage["security_groups_created"] += 3
-        resource_usage["eips_consumed"] += 1  # NAT gateway
+        step_id += 1
+        if has_existing_network:
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator",
+                "action": "NETWORK_VERIFY",
+                "message": (
+                    f"[VERIFY] Network fabric already provisioned in Phase 2-3. "
+                    f"Verifying VPC, subnets, SGs, NAT Gateway exist and are healthy. "
+                    f"SOW resources: {len(server_resources)} servers, {len(net_resources)} network, "
+                    f"{len(cbr_resources)} CBR, {len(hss_resources)} HSS, {len(paas_db_resources)} PaaS DB."
+                ),
+                "commands": [
+                    {"desc": "Verify VPC exists", "cmd": f"hcloud VPC ListVpcs --cli-region={region} | jq '.vpcs[] | select(.name | contains(\"latam-erp\"))'"},
+                    {"desc": "Verify subnets", "cmd": f"hcloud VPC ListSubnets --cli-region={region} | jq '.subnets | length'"},
+                    {"desc": "Verify SGs exist", "cmd": f"hcloud VPC ListSecurityGroups --cli-region={region} | jq '.security_groups[] | .name'"},
+                ],
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "network_verified_existing",
+            })
+        else:
+            network = NetworkTemplateBuilder.build_from_topology(mapper_nodes, region, config)
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator → RFS Agent",
+                "action": "NETWORK_PROVISION",
+                "message": (
+                    f"[PROVISION] Deploying landing zone via {network['deployment_tool']} using template "
+                    f"'{network['deployment_template']}'. VPC: {network['vpc_cidr']} ({network['vpc_name']}). "
+                    f"SOW resources mapped: {len(mapper_nodes)} total — "
+                    f"{len(server_resources)} servers, {len(net_resources)} network, "
+                    f"{len(cbr_resources)} CBR, {len(hss_resources)} HSS, {len(paas_db_resources)} PaaS DB."
+                ),
+                "commands": [
+                    {"desc": "Apply RFS template", "cmd": f"hcloud rfs apply-template --name latam-erp-landing-zone-v3 --region {region} --params vpc_cidr={network['vpc_cidr']}"},
+                    {"desc": "Create security groups", "cmd": "hcloud vpc security-group create --name sg-mgmt && hcloud vpc security-group create --name sg-app"},
+                    {"desc": "Create NAT Gateway + EIP", "cmd": f"hcloud nat create --vpc {network['vpc_name']} --subnet management && hcloud eip create --bandwidth 100"},
+                ],
+                "network_spec": network,
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "decision": {"tool": network["deployment_tool"], "template": network["deployment_template"]},
+            })
+            total_simulated_seconds += config.STEP_TIMINGS["network_provision"]
+            resource_usage["vpcs_created"] += 1
+            resource_usage["subnets_created"] += 3
+            resource_usage["security_groups_created"] += 3
+            resource_usage["eips_consumed"] += 1
 
-        # If there are EIP resources quoted in SOW, show them separately
-        eip_resources = [n for n in net_resources if ResourceTypeRouter.classify(n)["resource_class"] == "EIP"]
-        if eip_resources:
+            eip_resources = [n for n in net_resources if ResourceTypeRouter.classify(n)["resource_class"] == "EIP"]
             for eip_node in eip_resources:
                 step_id += 1
-                eip_name = eip_node.get("name", "elastic-ip")
                 trace.append({
                     "id": step_id, "phase": "PHASE_4_1", "agent": "Orchestrator → RFS Agent",
                     "action": "EIP_ALLOCATE",
-                    "message": f"Allocating EIP from SOW quota '{eip_name}'. Bandwidth: 100 Mbps, Traffic billing.",
+                    "message": f"Allocating EIP from SOW quota '{eip_node.get('name', 'elastic-ip')}'. Bandwidth: 100 Mbps, Traffic billing.",
                     "commands": [
-                        {"desc": "Create EIP", "cmd": f"hcloud eip create --bandwidth 100 --charge-mode traffic --name {eip_name}"},
-                        {"desc": "Bind EIP to NAT Gateway", "cmd": f"hcloud nat bind-eip --nat {network['nat_gateway']['name']} --eip <eip-id>"},
+                        {"desc": "Create EIP", "cmd": f"hcloud eip create --bandwidth 100 --charge-mode traffic --name {eip_node.get('name', 'eip')}"},
                     ],
                     "timestamp_offset_seconds": total_simulated_seconds,
                     "result": "simulated_eip_allocated",
@@ -3627,6 +3600,7 @@ class AgenticExecutionSimulator:
                     
                     # Tag server with SOW resource flags for conditional steps
                     server["_hss_in_sow"] = len(hss_resources) > 0
+                    server["_has_existing_targets"] = has_existing_targets
                     
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,
@@ -3672,6 +3646,16 @@ class AgenticExecutionSimulator:
                         "decision": {"outcome": result["outcome"], "sync_hours": result["sync_hours"]},
                     })
                     total_simulated_seconds += config.STEP_TIMINGS["handoff"]
+
+                    # 🔑 Update resource_usage counters from outcome (discovered 2026-08-23)
+                    outcome_str = result["outcome"]
+                    if "SMS" in outcome_str and "SUCCESS" in outcome_str:
+                        resource_usage["sms_migrations_attempted"] = resource_usage.get("sms_migrations_attempted", 0) + 1
+                        resource_usage["sms_migrations_succeeded"] = resource_usage.get("sms_migrations_succeeded", 0) + 1
+                    elif "SMS" in outcome_str:
+                        resource_usage["sms_migrations_attempted"] = resource_usage.get("sms_migrations_attempted", 0) + 1
+                    if "IMAGE" in outcome_str and "SUCCESS" in outcome_str:
+                        resource_usage["image_migrations_performed"] = resource_usage.get("image_migrations_performed", 0) + 1
 
             # Wave completion
             wave_start_time = total_simulated_seconds - len(wave_servers) * 1000  # approximate
@@ -4461,6 +4445,19 @@ def register_agentic_dry_run_routes(execution_bp):
                 },
                 "toolAssignments": project_data.get("toolAssignments", project_data.get("recommendations", [])),
                 "executionMode": "agentic",
+                # 🔑 Pass ALL previous phase data to the simulator (discovered 2026-08-23)
+                "presales": {
+                    "authLevel": project_data.get("authLevel", []),
+                    "sourceEnvironment": project_data.get("sourceEnvironment", []),
+                    "migrationScope": project_data.get("migrationScope", []),
+                    "deliveryScope": project_data.get("deliveryScope", []),
+                    "project_type": project_data.get("project_type", ""),
+                },
+                "source_region": project_data.get("sourceRegion", customer_for_region.source_huawei_region if customer_for_region else "ap-southeast-3"),
+                "targetArchitecture": project_data.get("targetArchitecture", {}),
+                "lifecycleState": project_data.get("lifecycleState", ""),
+                "arbResults": project_data.get("arbResults", {}),
+                "sowResources": project_data.get("sowResources", {}),
             }
 
             # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
