@@ -919,6 +919,7 @@ class ServerProfiler:
             "os_family": "windows" if is_windows else "linux",
             "role": role,
             "is_windows": is_windows,
+            "is_huaweicloud": any(h in str(server.get("cloud", server.get("sourceCloud", ""))).lower() for h in ["huawei", "hwc", "hcs"]) or "ecs" in name,
             "has_source_access": has_source_access,
             "has_data_plane_admin": has_data_plane_admin,
             "agent_preinstalled": agent_preinstalled,
@@ -980,8 +981,10 @@ class ServerProfiler:
             enriched["history_learnings"] = learnings
             
             # If history shows SMS is risky for this config, suggest image fallback
+            # BUT: Huawei Cloud ECS cross-region should always use SMS (proven 2026-08-23)
             if (learnings.get("prefer_qemu_direct_conversion") and 
-                profile.get("strategy") in ("sms_primary", "sms_with_agent_push")):
+                profile.get("strategy") in ("sms_primary", "sms_with_agent_push") and
+                not profile.get("is_huaweicloud", False)):
                 enriched["suggested_strategy"] = "image_primary"
                 enriched["suggestion_reason"] = (
                     f"Past project '{best.get('project')}' found image-based migration "
@@ -1234,6 +1237,7 @@ class SmsMigrationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_sg_rules_configured",
             "error_prevention": {"code": "SMS.3805", "ports": required_ports, "os_type": "Linux" if is_linux else "Windows"},
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1266,6 +1270,7 @@ class SmsMigrationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_flavor_image_ok",
             "error_prevention": {"code": "Ecs.0019", "flavor": flavor, "region": target_region},
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1395,6 +1400,7 @@ class SmsMigrationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_disk_mapping_complete",
             "error_prevention": {"code": "SMS.0515", "fix": "Fresh agent install + delete source server from SMS + re-register"},
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -4073,7 +4079,8 @@ class AgenticExecutionSimulator:
 
         strategy = profile.get("suggested_strategy", profile["strategy"])
         # ── Knowledge-informed strategy override ──
-        if knowledge and knowledge.get("top_recommendation"):
+        # BUT: Huawei Cloud ECS should always use SMS (proven 2026-08-23)
+        if knowledge and knowledge.get("top_recommendation") and not profile.get("is_huaweicloud", False):
             rec = knowledge["top_recommendation"]
             if rec["confidence"] > 0.8 and rec["source"] in ("skill", "external"):
                 old_strategy = strategy
