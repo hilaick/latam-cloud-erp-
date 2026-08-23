@@ -3628,23 +3628,9 @@ class AgenticExecutionSimulator:
                     # Get the server node for OS/role info
                     server_node = batch[idx] if idx < len(batch) else {}
                     hook_server_name = result['server_name']
-                    trace.append({
-                        "id": step_id, "phase": "PHASE_4_2", "agent": f"Agent-{hook_server_name}",
-                        "action": "HANDOFF",
-                        "target": hook_server_name,
-                        "result": result["outcome"],
-                        "os": server_node.get("os", server_node.get("osType", "unknown")),
-                        "role": server_node.get("role", server_node.get("resourceType", "unknown")),
-                        "path_taken": result["path_taken"],
-                        "outcome": result["outcome"],
-                        "message": (
-                            f"Agent for '{hook_server_name}' reports: {result['outcome']}. "
-                            f"Path: {result['path_taken']}. Sync time: {result['sync_hours']:.1f}h."
-                        ),
-                        "timestamp_offset_seconds": total_simulated_seconds,
-                        "metrics": {"sync_hours": result['sync_hours']},
-                        "decision": {"outcome": result["outcome"], "sync_hours": result["sync_hours"]},
-                    })
+                    # HANDOFF trace removed — redundant with WAVE_COMPLETE summary.
+                    # The detailed per-server steps (preflight, SG, disk mapping, SMS task, sync)
+                    # are already in the trace from _process_single_server.
                     total_simulated_seconds += config.STEP_TIMINGS["handoff"]
 
                     # 🔑 Update resource_usage counters from outcome (discovered 2026-08-23)
