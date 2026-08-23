@@ -602,6 +602,9 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     setReplayMode(false);
     setReplayIndex(0);
     setIsPlaying(false);
+    if (onUpdateProject) {
+      onUpdateProject({ ...project, agenticDryRun: null });
+    }
   };
 
   // ── Derived metadata ──

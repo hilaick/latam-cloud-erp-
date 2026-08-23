@@ -2326,48 +2326,53 @@ class PostMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["partition_fix"]
 
-        # ── HSS Agent Install ──
-        sid += 1
-        hss_cmd = PostMigrationSimulator._hss_install_command(is_linux)
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → HSS",
-            "action": "HSS_INSTALL",
-            "target": server_name,
-            "message": f"Installing Host Security Service (HSS) agent on '{server_name}' "
-                       f"for endpoint protection and ransomware defense.",
-            "commands": [{"desc": "Install HSS agent", "cmd": hss_cmd}],
-            "timestamp_offset_seconds": total_offset,
-            "result": "hss_installed",
-        })
-        total_offset += config.STEP_TIMINGS["hss_install"]
+        # ── HSS Agent Install (only if HSS resources in SOW) ──
+        # Discovered 2026-08-23: HSS/UniAgent/LTS should only appear if the SOW includes them
+        # Don't install agents not in the target architecture
+        hss_in_sow = server.get("_hss_in_sow", True)  # Default True for backward compat
+        
+        if hss_in_sow:
+            sid += 1
+            hss_cmd = PostMigrationSimulator._hss_install_command(is_linux)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → HSS",
+                "action": "HSS_INSTALL",
+                "target": server_name,
+                "message": f"Installing Host Security Service (HSS) agent on '{server_name}' "
+                           f"for endpoint protection and ransomware defense.",
+                "commands": [{"desc": "Install HSS agent", "cmd": hss_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "hss_installed",
+            })
+            total_offset += config.STEP_TIMINGS["hss_install"]
 
-        # ── UniAgent Install (CES Monitoring) ──
-        sid += 1
-        uni_cmd = PostMigrationSimulator._uniagent_install_command(is_linux)
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → UniAgent",
-            "action": "UNIAGENT_INSTALL",
-            "target": server_name,
-            "message": f"Installing UniAgent (CES monitoring) for RAM/Disk/CPU observability on '{server_name}'.",
-            "commands": [{"desc": "Install UniAgent", "cmd": uni_cmd}],
-            "timestamp_offset_seconds": total_offset,
-            "result": "uniagent_installed",
-        })
-        total_offset += config.STEP_TIMINGS["uniagent_install"]
+            # ── UniAgent Install (CES Monitoring) ──
+            sid += 1
+            uni_cmd = PostMigrationSimulator._uniagent_install_command(is_linux)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → UniAgent",
+                "action": "UNIAGENT_INSTALL",
+                "target": server_name,
+                "message": f"Installing UniAgent (CES monitoring) for RAM/Disk/CPU observability on '{server_name}'.",
+                "commands": [{"desc": "Install UniAgent", "cmd": uni_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "uniagent_installed",
+            })
+            total_offset += config.STEP_TIMINGS["uniagent_install"]
 
-        # ── LTS Log Agent Install ──
-        sid += 1
-        lts_cmd = PostMigrationSimulator._lts_install_command(is_linux, region)
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → LTS",
-            "action": "LTS_INSTALL",
-            "target": server_name,
-            "message": f"Installing Log Tank Service (LTS) ICAgent for centralized logging on '{server_name}'.",
-            "commands": [{"desc": "Install LTS ICAgent", "cmd": lts_cmd}],
-            "timestamp_offset_seconds": total_offset,
-            "result": "lts_installed",
-        })
-        total_offset += config.STEP_TIMINGS["lts_install"]
+            # ── LTS Log Agent Install ──
+            sid += 1
+            lts_cmd = PostMigrationSimulator._lts_install_command(is_linux, region)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name} → LTS",
+                "action": "LTS_INSTALL",
+                "target": server_name,
+                "message": f"Installing Log Tank Service (LTS) ICAgent for centralized logging on '{server_name}'.",
+                "commands": [{"desc": "Install LTS ICAgent", "cmd": lts_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "lts_installed",
+            })
+            total_offset += config.STEP_TIMINGS["lts_install"]
 
         # ── Smoke Tests ──
         sid += 1
@@ -3619,6 +3624,9 @@ class AgenticExecutionSimulator:
                         step_id += len(enrichment["trace_entries"])
                     except Exception:
                         pass
+                    
+                    # Tag server with SOW resource flags for conditional steps
+                    server["_hss_in_sow"] = len(hss_resources) > 0
                     
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,
