@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import TwoFactorModal from '../utils/TwoFactorModal';
 import ModelConfigPanel from '../wizard/ModelConfigPanel';
 import KnowledgeTreePanel from '../utils/KnowledgeTreePanel';
+import McpServerView from './McpServerView';
 
 export default function UserManagement() {
     const roles = [
@@ -85,6 +86,19 @@ export default function UserManagement() {
                             </p>
                         </div>
                         <KnowledgeTreePanel />
+                    </div>
+
+                    {/* ── MCP Servers ── */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                        <div className="border-b border-slate-100 pb-3 mb-4">
+                            <h3 className="font-black text-base text-slate-800">
+                                <i className="fas fa-plug text-blue-600 mr-2"></i> MCP Servers
+                            </h3>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                Model Context Protocol servers for Huawei Cloud IaaS APIs
+                            </p>
+                        </div>
+                        <McpServerView />
                     </div>
                 </div>
 
