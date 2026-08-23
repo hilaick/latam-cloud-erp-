@@ -37,7 +37,6 @@ const navItems = [
     { id: 'migration_monitor', icon: DesktopOutlined, label: 'Cloud Scanner', mobileLabel: 'Scanner' },
     { id: 'workflow', icon: ProjectOutlined, label: 'Workflow Graph', mobileLabel: 'Flow' },
     { id: 'halted', icon: PauseCircleOutlined, label: 'Halted Projects', mobileLabel: 'Halted' },
-    { id: 'mcp', icon: ApiOutlined, label: 'MCP Servers', mobileLabel: 'MCP' },
 ];
 
 export default function Sidebar() {

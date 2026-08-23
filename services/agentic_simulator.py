@@ -1425,7 +1425,7 @@ class SmsMigrationSimulator:
                     f"--source_server.id={vm_id} "
                     f"--target_server.name='{server_name}-TARGET' "
                     f"--target_server.vm_id=<ecs_id> "
-                    f"--type=MIGRATE_BLOCK "
+                    f"--type={'MIGRATE_FILE' if is_linux else 'MIGRATE_BLOCK'} "
                     f"--os_type={'LINUX' if is_linux else 'WINDOWS'} "
                     f"--auto_start=true "
                     f"--start_target_server=true "
@@ -1477,7 +1477,7 @@ class SmsMigrationSimulator:
             "message": (
                 f"[SYNC] Full replication in progress: {disk_gb:.0f}GB @ {effective_mbps:.0f}Mbps. "
                 f"Estimated: {initial_sync_hours:.1f}h. 4 sub-tasks: SSL_CONFIG, ATTACH_AGENT_IMAGE, "
-                f"FORMAT_DISK_{'LINUX' if is_linux else 'WINDOWS'}, MIGRATE_BLOCK."
+                f"FORMAT_DISK_{'LINUX' if is_linux else 'WINDOWS'}, {'MIGRATE_LINUX_FILE' if is_linux else 'MIGRATE_BLOCK'}."
             ),
             "metrics": {"disk_gb": disk_gb, "throughput_mbps": effective_mbps, "est_hours": initial_sync_hours},
             "timestamp_offset_seconds": total_offset,
@@ -1499,7 +1499,7 @@ class SmsMigrationSimulator:
             ),
             "commands": [
                 {"desc": "Programmatic recovery: refresh source name to unstick SMS.0515", "cmd": f"hcloud SMS UpdateServerName --source_id={vm_id} --name='{server_name}-REFRESH' --cli-region={sms_region}"},
-                {"desc": "Programmatic retry: re-create task with public IP workaround", "cmd": f"hcloud SMS CreateTask --name='{server_name}-RETRY' --source_server.id={vm_id} --target_server.name='{server_name}-TARGET' --target_server.vm_id={ecs_id} --type=MIGRATE_BLOCK --os_type={os_type} --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip={target_ip}"},
+                {"desc": "Programmatic retry: re-create task with public IP workaround", "cmd": f"hcloud SMS CreateTask --name='{server_name}-RETRY' --source_server.id={vm_id} --target_server.name='{server_name}-TARGET' --target_server.vm_id=<ecs_id> --type={'MIGRATE_FILE' if is_linux else 'MIGRATE_BLOCK'} --os_type={os_type} --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip={target_ip}"},
             ],
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_0515_clear",

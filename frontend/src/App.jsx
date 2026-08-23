@@ -115,7 +115,6 @@ function App() {
                     {activePhase === 'resource-discovery' && <ResourceDiscoveryMap />}
                     {activePhase === 'halted' && <HaltedProjects />}
                     {activePhase === 'users' && <UserManagement />}
-                    {activePhase === 'mcp' && <McpServerView />}
                     
                     {activePhase === 'login' && <LoginPage />}
                     
