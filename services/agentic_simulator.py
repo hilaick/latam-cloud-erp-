@@ -2490,6 +2490,127 @@ class PostMigrationSimulator:
 # Main Orchestration Simulator
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class MigWorkerDeployer:
+    """P1: Autonomous mig_worker deployment for resilience.
+
+    Deploys a mig_worker ECS in the target VPC when:
+    - ERP availability is at risk (Flask health check fails)
+    - Concurrent migration overload (>3 active SMS tasks)
+    - Cross-region latency (>200ms between source and target)
+    - Proxy instability (>10% timeout rate)
+    - Manual trigger from Execution panel
+
+    The mig_worker comes baked with:
+    - hcloud CLI (configured with customer AK/SK)
+    - obsutil (OBS bucket operations)
+    - qemu-img (image conversion)
+    - paramiko + SSH keys
+    - SMS migration scripts (from skills knowledge tree)
+    - MCP client (connects to iaas-mcp-server)
+    - Skills knowledge tree (local copy, synced from ERP)
+    - Agency/IAM credentials (scoped to target project)
+    """
+
+    @staticmethod
+    def should_deploy(active_sms_tasks: int = 0, flask_health_ok: bool = True,
+                      proxy_timeout_rate: float = 0, source_region: str = "",
+                      target_region: str = "", manual_trigger: bool = False) -> dict:
+        """Determine if a mig_worker should be deployed."""
+        triggers = []
+        if not flask_health_ok:
+            triggers.append({"reason": "erp_availability_risk", "detail": "Flask health check failed"})
+        if active_sms_tasks > 3:
+            triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>3 threshold)"})
+        if proxy_timeout_rate > 0.10:
+            triggers.append({"reason": "proxy_instability", "detail": f"{proxy_timeout_rate*100:.0f}% timeout rate (>10% threshold)"})
+        if source_region and target_region and source_region != target_region:
+            triggers.append({"reason": "cross_region", "detail": f"Source {source_region} → Target {target_region} (local API calls needed)"})
+        if manual_trigger:
+            triggers.append({"reason": "manual", "detail": "Manually triggered from Execution panel"})
+
+        return {
+            "should_deploy": len(triggers) > 0,
+            "triggers": triggers,
+            "recommended_flavor": "s6.large.2",
+            "recommended_image": "Ubuntu 22.04",
+            "tools_included": [
+                "hcloud CLI", "obsutil", "qemu-img", "paramiko",
+                "SMS migration scripts", "MCP client", "Skills knowledge tree",
+            ],
+        }
+
+    @staticmethod
+    def simulate_deploy(triggers: list, region: str, step_id: int, offset: float, config) -> dict:
+        """Simulate mig_worker deployment for the trace."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+
+        # Step 1: Deploy mig_worker ECS
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_0", "agent": "MigWorkerDeployer",
+            "action": "MIG_WORKER_DEPLOY",
+            "message": (
+                f"[MIG_WORKER] Deploying mig_worker in {region} for resilience. "
+                f"Triggers: {', '.join(t['reason'] for t in triggers)}. "
+                f"Flavor: s6.large.2, Image: Ubuntu 22.04. "
+                f"Tools: hcloud, obsutil, qemu-img, paramiko, SMS scripts, MCP client, Skills tree."
+            ),
+            "commands": [
+                {"desc": "Create mig_worker ECS", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{region}' --server.flavorRef='s6.large.2' --server.vpcid='<vpc_id>' --server.nics.1.subnet_id='<subnet_id>' --server.availability_zone='{region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id='<sg_id>' --server.count=1"},
+                {"desc": "Install tools via cloud-init", "cmd": "cloud-init: apt-get install -y qemu-utils obsutil python3-pip && pip3 install paramiko && hcloud configure set --cli-profile=agent-test --cli-mode=AKSK"},
+                {"desc": "Sync skills from ERP", "cmd": "scp -r /root/ulearning-migration/skills/ root@<mig_worker_ip>:/opt/skills/"},
+                {"desc": "Register with ERP", "cmd": "curl -X POST http://erp:9119/api/mig-worker/register -d '{\"worker_id\":\"<ecs_id>\",\"region\":\""+region+"\",\"status\":\"ready\"}'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_mig_worker_deployed",
+            "source_label": "🔧 Skilled (mig-worker-framework)",
+            "rollback_action": {"cmd": "hcloud ECS DeleteServer --server_id=<mig_worker_ecs_id>", "label": "Terminate mig_worker ECS"},
+        })
+        total_offset += config.STEP_TIMINGS["instance_launch"]
+
+        # Step 2: Assign agency (IAM role equivalent)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_0", "agent": "MigWorkerDeployer",
+            "action": "MIG_WORKER_AGENCY_ASSIGN",
+            "message": (
+                "[MIG_WORKER] Assigning IAM agency to mig_worker. "
+                "Agency scoped to customer Enterprise Project (least privilege). "
+                "Equivalent to AWS Transform's IAM role — mig_worker can create/modify "
+                "resources in the EPS without master AK/SK."
+            ),
+            "commands": [
+                {"desc": "Create IAM agency", "cmd": "hcloud IAM CreateAgency --agency_name='mig-worker-agency' --domain_id='<customer_domain_id>' --project_id='<eps_project_id>' --roles='ECS_Admin,VPC_Admin,SMS_Admin'"},
+                {"desc": "Generate scoped AK/SK", "cmd": "hcloud IAM CreatePermanentAccessKey --agency_name='mig-worker-agency' --project_id='<eps_project_id>'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_agency_assigned",
+            "source_label": "🔧 Skilled (mig-worker-framework)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 3: Heartbeat registration
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_0", "agent": "MigWorkerDeployer",
+            "action": "MIG_WORKER_REGISTER",
+            "message": (
+                "[MIG_WORKER] mig_worker registered with ERP. Heartbeat every 30s. "
+                "Can operate independently if ERP goes down — will continue migration "
+                "and report back when ERP is available."
+            ),
+            "commands": [{"desc": "Start heartbeat daemon", "cmd": "screen -dmS heartbeat bash -c 'while true; do curl -s http://erp:9119/api/mig-worker/heartbeat -d \"{worker_id, status, active_tasks}\"; sleep 30; done'"}],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_mig_worker_registered",
+            "source_label": "🔧 Skilled (mig-worker-framework)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        return {"trace": trace, "final_step_id": sid, "final_offset": total_offset}
+
+
 class AgenticExecutionSimulator:
     """Top-level orchestrator: runs full dry-run simulation for a project."""
 
@@ -3589,6 +3710,20 @@ class AgenticExecutionSimulator:
             "source_label": "🔌 MCP (iaas-mcp-server)" if mcp_tools_available else None,
         })
         total_simulated_seconds += 1
+
+        # ── P1: mig_worker deployment check (resilience for cross-region) ──
+        mig_check = MigWorkerDeployer.should_deploy(
+            source_region=project.get("source_region", ""),
+            target_region=region,
+        )
+        if mig_check["should_deploy"]:
+            mw_result = MigWorkerDeployer.simulate_deploy(
+                mig_check["triggers"], region, step_id, total_simulated_seconds, config
+            )
+            trace.extend(mw_result["trace"])
+            step_id = mw_result["final_step_id"]
+            total_simulated_seconds = mw_result["final_offset"]
+            resource_usage["mig_workers_deployed"] = resource_usage.get("mig_workers_deployed", 0) + 1
 
         step_id += 1
         trace.append({
