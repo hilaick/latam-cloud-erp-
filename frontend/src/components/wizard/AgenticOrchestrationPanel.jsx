@@ -1050,6 +1050,11 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                                 <Text style={{ fontSize: 11, fontWeight: 600 }}>
                                   {(step.action || '').replace(/_/g, ' ')}
                                 </Text>
+                                {step.source_label && (
+                                  <Tag color="purple" style={{ fontSize: 8, padding: '0 4px', margin: 0, lineHeight: '16px' }}>
+                                    {step.source_label}
+                                  </Tag>
+                                )}
                                 <StatusBadge result={step.result} outcome={step.outcome} isDryRun={true} />
                               </Space>
                               {step.commands && step.commands.length > 0 && (
