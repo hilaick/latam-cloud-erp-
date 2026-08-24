@@ -29,6 +29,7 @@ from routes.gateway import gateway_bp
 from routes.resource_discovery import resource_discovery_bp
 from routes.projects import projects_bp
 from routes.mcp import mcp_bp
+from routes.mig_worker import mig_worker_bp
 
 load_dotenv()
 
@@ -211,6 +212,7 @@ app.register_blueprint(gateway_bp)
 app.register_blueprint(resource_discovery_bp)
 app.register_blueprint(projects_bp)
 app.register_blueprint(mcp_bp)
+app.register_blueprint(mig_worker_bp)
 
 # ── Standalone Full-Page Docs (no auth, opens in new tab) ──
 @app.route('/docs/<doc_name>', methods=['GET'])
