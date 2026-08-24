@@ -14,7 +14,7 @@ import {
   CopyOutlined, CheckOutlined, ArrowRightOutlined,
   DatabaseOutlined, DesktopOutlined, WifiOutlined,
   SwapOutlined, SafetyCertificateOutlined, FileTextOutlined,
-  ExperimentOutlined
+  ExperimentOutlined, FullscreenOutlined, CloseOutlined
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
@@ -538,6 +538,20 @@ function buildConstellationData(trace, resourceUsage, resources) {
     }
   });
 
+  // Detect source/target cloud from PRESALES_TRIAGE step
+  let sourceCloud = 'Huawei Cloud';
+  let targetCloud = 'Huawei Cloud';
+  const triageStep = trace.find(s => s.action === 'PRESALES_TRIAGE_ANALYSIS');
+  if (triageStep && triageStep.message) {
+    const msg = triageStep.message;
+    const srcMatch = msg.match(/Source Env:?\s*\[?([^\].]+)/);
+    if (srcMatch) sourceCloud = srcMatch[1].trim();
+    const tgtMatch = msg.match(/Cross-Region:?\s*(YES|NO)/);
+    if (tgtMatch && tgtMatch[1] === 'YES') {
+      targetCloud = 'Huawei Cloud';
+    }
+  }
+
   // Resource counts from resource_usage
   const counts = {
     ecs: resourceUsage?.ecs_instances || resourceUsage?.ecs || servers.length,
@@ -548,7 +562,7 @@ function buildConstellationData(trace, resourceUsage, resources) {
     subnets: resourceUsage?.subnet || resourceUsage?.subnets || 1,
   };
 
-  return { servers, networkNodes, migWorker, counts };
+  return { servers, networkNodes, migWorker, counts, sourceCloud, targetCloud };
 }
 
 /* ── SVG layout constants ── */
@@ -559,17 +573,21 @@ function computeConstellationLayout(data) {
   const allNodes = [];
   const allEdges = [];
 
+  // Determine source cloud label from data
+  const sourceLabel = data.sourceCloud || 'Huawei Cloud';
+  const targetLabel = data.targetCloud || 'Huawei Cloud';
+
   // ── Source cloud (left side) ──
   const sourceX = 120, sourceY = CON_CY;
   allNodes.push({
-    id: 'source_cloud', type: 'cloud', label: 'SOURCE\nAzure', x: sourceX, y: sourceY,
+    id: 'source_cloud', type: 'cloud', label: `SOURCE\n${sourceLabel}`, x: sourceX, y: sourceY,
     color: '#6b7280', icon: 'fa-cloud', size: 'lg',
   });
 
   // ── Target cloud (right side) ──
   const targetX = CON_W - 120, targetY = CON_CY;
   allNodes.push({
-    id: 'target_cloud', type: 'cloud', label: 'TARGET\nHuawei Cloud', x: targetX, y: targetY,
+    id: 'target_cloud', type: 'cloud', label: `TARGET\n${targetLabel}`, x: targetX, y: targetY,
     color: '#3b82f6', icon: 'fa-cloud', size: 'lg',
   });
 
@@ -835,9 +853,9 @@ function SimulationConstellation({ trace, resourceUsage, resources }) {
             background: '#111827aa', backdropFilter: 'blur(6px)',
             borderRadius: 8, padding: '4px 10px', border: '1px solid #374151',
           }}>
-            <span style={{ color: '#6b7280', fontSize: 9, fontWeight: 700 }}>Azure</span>
+            <span style={{ color: '#6b7280', fontSize: 9, fontWeight: 700 }}>{sourceLabel}</span>
             <ArrowRightOutlined style={{ color: '#818cf8', fontSize: 12 }} />
-            <span style={{ color: '#3b82f6', fontSize: 9, fontWeight: 700 }}>Huawei Cloud</span>
+            <span style={{ color: '#3b82f6', fontSize: 9, fontWeight: 700 }}>{targetLabel}</span>
           </div>
 
           <svg width="100%" height="100%" viewBox={`0 0 ${CON_W} ${CON_H}`}
@@ -902,6 +920,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     'PHASE_4_6': true, 'PHASE_4_7': true, 'PHASE_4_8': true,
   });
   const [showSummary, setShowSummary] = useState(true);
+  const [showConstellation, setShowConstellation] = useState(false);
+  const [constellationFullscreen, setConstellationFullscreen] = useState(false);
 
   // ── Replay state ──
   const [replayMode, setReplayMode] = useState(false);
@@ -1550,9 +1570,6 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             </Card>
           )}
 
-          {/* ── Simulation Constellation (Phase 3.4b) ── */}
-          <SimulationConstellation trace={result?.trace || []} resourceUsage={summary?.resource_usage || {}} resources={resources} />
-
           {/* ── Execution Trace — Grouped by Phase ── */}
           <Card
             title={
@@ -1591,6 +1608,61 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               items={phaseItems}
             />
           </Card>
+
+          {/* ── Simulation Constellation (at end, with button + fullscreen) ── */}
+          <div style={{ textAlign: 'center', marginTop: 16, marginBottom: 8 }}>
+            <Button
+              type={showConstellation ? 'primary' : 'default'}
+              icon={<i className="fas fa-project-diagram" />}
+              onClick={() => setShowConstellation(!showConstellation)}
+            >
+              {showConstellation ? 'Hide' : 'View'} Simulation Constellation
+            </Button>
+            {showConstellation && (
+              <Button
+                type="link"
+                icon={<FullscreenOutlined />}
+                onClick={() => setConstellationFullscreen(true)}
+                style={{ marginLeft: 8 }}
+              >
+                Fullscreen
+              </Button>
+            )}
+          </div>
+          {showConstellation && (
+            <SimulationConstellation
+              trace={result?.trace || []}
+              resourceUsage={summary?.resource_usage || {}}
+              resources={resources}
+            />
+          )}
+
+          {/* Fullscreen constellation modal */}
+          {constellationFullscreen && (
+            <div
+              style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                background: '#0f0f1a', zIndex: 9999, padding: 24,
+                overflow: 'auto',
+              }}
+            >
+              <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 10000 }}>
+                <Button
+                  type="primary"
+                  danger
+                  icon={<CloseOutlined />}
+                  onClick={() => setConstellationFullscreen(false)}
+                >
+                  Close Fullscreen
+                </Button>
+              </div>
+              <SimulationConstellation
+                trace={result?.trace || []}
+                resourceUsage={summary?.resource_usage || {}}
+                resources={resources}
+              />
+            </div>
+          )}
 
           {/* Comparison Toggle */}
           <div style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
