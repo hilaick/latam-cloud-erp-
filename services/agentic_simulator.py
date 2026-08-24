@@ -2909,32 +2909,44 @@ class MigWorkerDeployer:
 
     @staticmethod
     def should_deploy(active_sms_tasks: int = 0, flask_health_ok: bool = True,
-                      proxy_timeout_rate: float = 0, source_region: str = "",
-                      target_region: str = "", manual_trigger: bool = False) -> dict:
-        """Determine if a mig_worker should be deployed.
+                      source_region: str = "", target_region: str = "",
+                      manual_trigger: bool = False,
+                      is_cross_cloud: bool = False, source_account_accessible: bool = True) -> dict:
+        """Determine if a mig_worker should be deployed and in which account.
 
-        mig_worker is deployed ONLY when there's a genuine resilience need:
-        - ERP availability risk (Flask health check fails)
-        - Concurrent migration overload (>3 active SMS tasks)
-        - Proxy instability (>10% timeout rate)
-        - Manual trigger from Execution panel
+        mig_worker deployment criteria:
+        1. ERP availability risk — Flask health check fails (deploy in target to continue autonomously)
+        2. Concurrent overload — >3 active SMS tasks (deploy in target to offload work)
+        3. Cross-cloud migration — AWS/Azure → Huawei (deploy in target for image conversion: qemu-img)
+        4. Source account not directly accessible — source behind firewall/VPN (deploy in source for agent install + discovery)
+        5. Manual trigger — on-demand from Execution panel
 
-        Cross-region alone does NOT trigger mig_worker — SMS handles cross-region
-        natively. mig_worker is for resilience, not for basic cross-region.
+        mig_worker can be deployed in BOTH source and target accounts:
+        - Target: resource creation (ECS, SG, EIP), image conversion, SMS task management
+        - Source: SMS agent install, source discovery, data plane operations
+
+        Cross-region (same cloud) does NOT trigger mig_worker — SMS handles this natively.
+        Proxy instability is NOT a trigger — the ERP server connects to Huawei APIs directly.
         """
         triggers = []
+        deploy_location = "target"  # default
+
         if not flask_health_ok:
-            triggers.append({"reason": "erp_availability_risk", "detail": "Flask health check failed"})
+            triggers.append({"reason": "erp_availability_risk", "detail": "ERP health check failed — mig_worker continues migration autonomously"})
         if active_sms_tasks > 3:
             triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>3 threshold)"})
-        if proxy_timeout_rate > 0.10:
-            triggers.append({"reason": "proxy_instability", "detail": f"{proxy_timeout_rate*100:.0f}% timeout rate (>10% threshold)"})
+        if is_cross_cloud:
+            triggers.append({"reason": "cross_cloud", "detail": "Cross-cloud migration requires local image conversion (qemu-img) in target"})
+        if not source_account_accessible:
+            triggers.append({"reason": "source_inaccessible", "detail": "Source account not directly reachable — deploy mig_worker in source for agent install + discovery"})
+            deploy_location = "source"
         if manual_trigger:
             triggers.append({"reason": "manual", "detail": "Manually triggered from Execution panel"})
 
         return {
             "should_deploy": len(triggers) > 0,
             "triggers": triggers,
+            "deploy_location": deploy_location,  # "source", "target", or "both"
             "recommended_flavor": "s6.large.2",
             "recommended_image": "Ubuntu 22.04",
             "tools_included": [
@@ -4196,10 +4208,11 @@ class AgenticExecutionSimulator:
         })
         total_simulated_seconds += 1
 
-        # ── P1: mig_worker deployment check (resilience for cross-region) ──
+        # ── P1: mig_worker deployment check (resilience for cross-cloud/overload) ──
         mig_check = MigWorkerDeployer.should_deploy(
             source_region=project.get("source_region", ""),
             target_region=region,
+            is_cross_cloud=is_cross_cloud,
         )
         if mig_check["should_deploy"]:
             mw_result = MigWorkerDeployer.simulate_deploy(
