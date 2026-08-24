@@ -2234,10 +2234,57 @@ class PostMigrationSimulator:
         sid = step_id
         is_linux = profile["os_family"] == "linux"
 
-        # ── Post-Migration: Smoke Tests only (SMS handles OS config) ──
-        # No VERIFY_BOOT needed — SMS CONFIGURE_LINUX_FILE handles bootloader
-        # No PARTITION_FIX — SMS MIGRATE_FILE copies exact disk layout
-        # No BOOT_FIX — SMS handles initramfs/GRUB
+        # ── Post-Migration ──
+        # BOOT_FIX + PARTITION_FIX: only for image-based migration (SMS handles OS config)
+        # VERIFY_BOOT: only for image-based (SMS CONFIGURE handles bootloader)
+        # HSS/UniAgent/LTS: only if HSS resources in SOW
+
+        if is_image_based:
+            # Boot Fix — regenerate initramfs + GRUB (image-based only)
+            sid += 1
+            boot_fix_cmd = PostMigrationSimulator._boot_fix_command(is_linux, server_name)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
+                "action": "BOOT_FIX",
+                "target": server_name,
+                "message": f"Running boot fix on '{server_name}'. "
+                           f"{'Linux: regenerate initramfs + GRUB reinstall.' if is_linux else 'Windows: BCD repair + virtIO driver injection.'}",
+                "commands": [{"desc": "Boot fix script", "cmd": boot_fix_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "boot_fix_applied",
+            })
+            total_offset += config.STEP_TIMINGS["boot_fix_linux" if is_linux else "boot_fix_windows"]
+
+            # Verify Boot
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
+                "action": "VERIFY_BOOT",
+                "target": server_name,
+                "message": f"Rebooting '{server_name}' and verifying successful boot via serial console.",
+                "commands": [
+                    {"desc": "Reboot instance", "cmd": "hcloud ecs reboot --instance-id <id>"},
+                    {"desc": "Check serial console output", "cmd": "hcloud ecs get-console-output --instance-id <id> --tail 50"},
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "boot_verified",
+            })
+            total_offset += 60
+
+            # Partition Fix — only when target disk differs from source
+            sid += 1
+            part_fix_cmd = PostMigrationSimulator._partition_fix_command(is_linux)
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
+                "action": "PARTITION_FIX",
+                "target": server_name,
+                "message": f"Checking and expanding disk partitions for '{server_name}'. "
+                           f"{'growpart + resize2fs/xfs_growfs' if is_linux else 'Set-Disk + Resize-Partition'}.",
+                "commands": [{"desc": "Partition expansion script", "cmd": part_fix_cmd}],
+                "timestamp_offset_seconds": total_offset,
+                "result": "partitions_expanded",
+            })
+            total_offset += config.STEP_TIMINGS["partition_fix"]
 
         hss_in_sow = server.get("_hss_in_sow", True)
         
