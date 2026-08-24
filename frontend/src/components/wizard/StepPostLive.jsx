@@ -1276,10 +1276,13 @@ function LiveConstellationView({ activeProject }) {
         const rawNoc = activeProject?.nocData?.raw;
         if (rawNoc && Object.keys(rawNoc).length > 0) {
             const nodes = [];
-            (rawNoc.compute || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name, type: 'ECS', ip: n.private_ip_address || n.ip || 'N/A' }));
-            (rawNoc.databases || rawNoc.database || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name, type: 'RDS', ip: n.private_ip_address || n.ip || 'N/A' }));
-            (rawNoc.network || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name, type: 'VPC/NET', ip: n.cidr || n.ip || 'N/A' }));
-            (rawNoc.storage || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name, type: 'OBS', ip: 'N/A' }));
+            (rawNoc.compute || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || 'ECS', type: 'ECS', ip: n.private_ip_address || n.ip || 'N/A' }));
+            (rawNoc.databases || rawNoc.database || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || 'RDS', type: 'RDS', ip: n.private_ip_address || n.ip || 'N/A' }));
+            (rawNoc.network || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || n.type || 'NET', type: (n.type || 'VPC').toUpperCase(), ip: n.cidr || n.ip || 'N/A' }));
+            (rawNoc.storage || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || 'Storage', type: (n.type || 'OBS').toUpperCase(), ip: 'N/A' }));
+            // Include security + other resources (previously missing)
+            (rawNoc.security || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || 'Security', type: (n.type || 'HSS').toUpperCase(), ip: 'N/A' }));
+            (rawNoc.other || []).forEach(n => nodes.push({ id: n.id || Math.random().toString(), name: n.name || 'Other', type: (n.type || 'SVC').toUpperCase(), ip: 'N/A' }));
             return nodes.map((item, index) => ({ ...item, timestamp: Date.now() + (index * 1000) })).sort((a, b) => a.timestamp - b.timestamp);
         }
         const rawMap = activeProject?.mapperNodes || [];
@@ -1320,19 +1323,22 @@ function LiveConstellationView({ activeProject }) {
     const graphData = useMemo(() => {
         const width = 1000; const height = 600; const cx = width / 2; const cy = height / 2;
         const hubs = {
-            compute:  { x: cx - 250, y: cy - 150, color: '#06b6d4', icon: 'fa-server', name: 'Huawei ECS Core' },
-            database: { x: cx + 250, y: cy - 150, color: '#f43f5e', icon: 'fa-database', name: 'Huawei RDS / Gauss' },
-            network:  { x: cx - 250, y: cy + 150, color: '#8b5cf6', icon: 'fa-network-wired', name: 'Huawei VPC & Edge' },
-            storage:  { x: cx + 250, y: cy + 150, color: '#10b981', icon: 'fa-hdd', name: 'Huawei OBS / SFS' },
+            compute:  { x: cx - 280, y: cy - 150, color: '#06b6d4', icon: 'fa-server', name: 'ECS / Compute' },
+            database: { x: cx + 280, y: cy - 150, color: '#f43f5e', icon: 'fa-database', name: 'RDS / Databases' },
+            network:  { x: cx - 280, y: cy + 150, color: '#8b5cf6', icon: 'fa-network-wired', name: 'VPC / Network' },
+            storage:  { x: cx + 280, y: cy + 150, color: '#10b981', icon: 'fa-hdd', name: 'OBS / EVS / Storage' },
+            security: { x: cx, y: cy - 220, color: '#f59e0b', icon: 'fa-shield-alt', name: 'Security / Other' },
         };
         const mappedNodes = [];
         const categorize = (type) => {
-            if (['ECS', 'VM', 'CCE', 'ASG'].includes(type)) return 'compute';
-            if (['RDS', 'GAUSSDB', 'DB'].includes(type)) return 'database';
-            if (['VPC', 'SUBNET', 'VPN', 'NAT', 'EIP', 'ELB', 'CGW', 'VPC/NET'].includes(type)) return 'network';
-            return 'storage';
+            const t = String(type).toUpperCase();
+            if (['ECS', 'VM', 'CCE', 'ASG', 'AS', 'FGS', 'FUNCTIONGRAPH', 'IMS'].includes(t)) return 'compute';
+            if (['RDS', 'GAUSSDB', 'DB', 'DDS', 'DCS', 'DMS'].includes(t)) return 'database';
+            if (['VPC', 'SUBNET', 'VPN', 'NAT', 'EIP', 'ELB', 'CGW', 'VPC/NET', 'SG'].includes(t)) return 'network';
+            if (['OBS', 'EVS', 'SFS', 'CBR', 'VOLUME'].includes(t)) return 'storage';
+            return 'security'; // HSS, WAF, SMN, and anything else
         };
-        const grouped = { compute: [], database: [], network: [], storage: [] };
+        const grouped = { compute: [], database: [], network: [], storage: [], security: [] };
         targetNodes.forEach(n => grouped[categorize(n.type)].push(n));
         let globalSeqIndex = 0;
         targetNodes.forEach((n) => {
