@@ -3564,8 +3564,12 @@ class AgenticExecutionSimulator:
                 for d in _os.listdir(mcp_base):
                     full = _os.path.join(mcp_base, d)
                     if _os.path.isdir(full) and not d.startswith('.') and d != '__pycache__':
-                        # Count .py files as tools
-                        py_count = sum(1 for f in _os.listdir(full) if f.endswith('.py') and not f.startswith('__'))
+                        # Count .py files recursively (MCP server has nested dirs)
+                        py_count = 0
+                        for root_mcp, dirs_mcp, files_mcp in _os.walk(full):
+                            for f in files_mcp:
+                                if f.endswith('.py') and not f.startswith('__'):
+                                    py_count += 1
                         mcp_tools_available.append({"server": d, "tools": py_count})
                         mcp_tool_count += py_count
         except Exception:
