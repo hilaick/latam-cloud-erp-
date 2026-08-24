@@ -403,7 +403,14 @@ def validate_credential():
     # otherwise fall back to DB-stored credentials
     form_ak = data.get('ak')
     form_sk = data.get('sk')
-    if form_ak and form_sk and form_ak != '********' and form_sk != '********':
+    # Reject masked placeholders — they're not real credentials
+    def _is_masked(val):
+        if not val or val == '********':
+            return True
+        if isinstance(val, str) and '***' in val and len(val) <= 15:
+            return True  # Masked reference like 'HPU***LUV'
+        return False
+    if form_ak and form_sk and not _is_masked(form_ak) and not _is_masked(form_sk):
         ak = form_ak
         sk = form_sk
     else:

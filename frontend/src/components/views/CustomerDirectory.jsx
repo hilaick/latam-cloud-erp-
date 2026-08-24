@@ -224,7 +224,10 @@ export default function CustomerDirectory() {
     if (!f) return;
     const ak = typeof editingCustomer[f.ak] === 'string' ? editingCustomer[f.ak] : '';
     const sk = typeof editingCustomer[f.sk] === 'string' ? editingCustomer[f.sk] : '';
+    // Reject masked placeholders — user must type NEW values to sync
+    const isMasked = (v) => !v || v === '********' || (v.includes('***') && v.length <= 15);
     if (!ak || !sk) return alert(`Enter new ${provider} AK/SK first.`);
+    if (isMasked(ak) || isMasked(sk)) return alert(`Masked values detected. Type the FULL new ${provider} AK/SK to sync.`);
     if (ak.length < 10 || sk.length < 10) return alert('AK/SK look too short to be valid.');
     setIsValidating(true);
     try {
