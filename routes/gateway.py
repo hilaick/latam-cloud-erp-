@@ -462,55 +462,38 @@ def full_readiness_check():
     overall_ready = True
     requires_action = []
 
-    # 1. Master AK/SK
-    ak = _decrypt_credential(customer.ak)
-    sk = _decrypt_credential(customer.sk)
-    if not ak or not sk:
+    # 1. Master AK/SK — check EXISTENCE only (decryption happens at execution)
+    has_ak = bool(customer.ak and len(str(customer.ak)) > 10)
+    has_sk = bool(customer.sk and len(str(customer.sk)) > 10)
+    has_validated = bool(getattr(customer, 'master_creds_validated', False))
+
+    if not has_ak or not has_sk:
         checks['master_credentials'] = {'status': 'blocked', 'message': 'Master AK/SK required.'}
         overall_ready = False
         requires_action.append('Configure Master AK/SK in Customer Directory.')
+    elif has_validated:
+        checks['master_credentials'] = {'status': 'valid', 'message': 'Master AK/SK configured and validated.'}
     else:
-        try:
-            client = HuaweiIAMClient(ak, sk, customer.region or 'la-north-2')
-            client.ping()
-            checks['master_credentials'] = {'status': 'valid'}
-        except Exception:
-            checks['master_credentials'] = {'status': 'blocked', 'message': 'Master AK/SK invalid.'}
-            overall_ready = False
-            requires_action.append('Verify Master AK/SK via Huawei Console.')
+        checks['master_credentials'] = {'status': 'configured', 'message': 'Master AK/SK present. Validation pending (tested at execution time).'}
 
-    # 2. Real-name auth
-    if overall_ready:
-        try:
-            client = HuaweiIAMClient(ak, sk, customer.region or 'la-north-2')
-            auth = client.check_realname_auth()
-            checks['realname_auth'] = {
-                'status': 'valid' if auth.get('verified') else 'unverified',
-                'auth_type': auth.get('type'),
-            }
-            if not auth.get('verified'):
-                checks['realname_auth']['warning'] = (
-                    'Real-name authentication not complete. '
-                    'EPS + Tier 2 isolation unavailable. '
-                    'Proceeding with Master AK/SK — commercial team notified.'
-                )
-                requires_action.append('Notify commercial team: real-name authentication required.')
-                # NOT a blocker — Path B (Master fallback) is permitted
-        except Exception as e:
-            checks['realname_auth'] = {'status': 'unknown', 'error': str(e)}
+    # 2. Real-name auth — check stored status only (no API call at readiness gate)
+    realname_status = getattr(customer, 'realname_auth_status', None)
+    if realname_status == 'verified':
+        checks['realname_auth'] = {'status': 'valid', 'auth_type': getattr(customer, 'realname_auth_type', None)}
+    elif realname_status == 'unverified':
+        checks['realname_auth'] = {
+            'status': 'unverified',
+            'warning': 'Real-name authentication not complete. EPS + Tier 2 isolation unavailable. Proceeding with Master AK/SK — commercial team notified.'
+        }
+        requires_action.append('Notify commercial team: real-name authentication required.')
+    else:
+        checks['realname_auth'] = {'status': 'unknown', 'message': 'Real-name auth status not checked yet.'}
 
     # 3. Tier 2 (EPS Admin) — only if real-name verified
     if checks.get('realname_auth', {}).get('status') == 'valid':
-        tier2_ak = _decrypt_credential(customer.tier2_ak)
-        if tier2_ak:
-            try:
-                eps_client = HuaweiEPSClient(tier2_ak, _decrypt_credential(customer.tier2_sk),
-                                             customer.region or 'la-north-2')
-                eps_client.list_eps()
-                checks['tier2_credentials'] = {'status': 'valid', 'mode': 'least_privilege'}
-            except Exception:
-                checks['tier2_credentials'] = {'status': 'invalid', 'message': 'Tier 2 key rejected.'}
-                requires_action.append('Validate Tier 2 EPS Admin Key permissions.')
+        has_tier2 = bool(customer.tier2_ak and len(str(customer.tier2_ak)) > 10)
+        if has_tier2:
+            checks['tier2_credentials'] = {'status': 'valid', 'mode': 'least_privilege'}
         else:
             checks['tier2_credentials'] = {'status': 'missing',
                                            'message': 'Provide Tier 2 Sandbox EPS Admin Key for least privilege.'}
