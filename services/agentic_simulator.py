@@ -1149,6 +1149,54 @@ class SmsMigrationSimulator:
         vm_id = server.get("id", server_name)
         ecs_id = server.get("targetEcsId", "<ecs_id>")
         os_type = server.get("osType", profile.get("os", "linux"))
+
+        # ── Step 0: Verify source ECS ACTIVE (not SHUTOFF) ──
+        # CRITICAL: SHUTOFF source → SMS.0515 disk info mismatch
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "SOURCE_ECS_ACTIVE_CHECK",
+            "target": server_name,
+            "message": f"[PREFLIGHT] Verifying source ECS '{server_name}' is ACTIVE in {sms_region}. SHUTOFF source causes SMS.0515.",
+            "commands": [{"desc": "Check source ECS status", "cmd": f"hcloud ECS ShowServer --server_id=<source_ecs_id> --cli-region={sms_region} | jq '.status' (expect ACTIVE)"}],
+            "preflight_check": True,
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_source_active",
+            "error_prevention": {"code": "SMS.0515", "fix": "BatchStartServers if SHUTOFF"},
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # ── Step 0b: Install SMS Agent (if not already installed) ──
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "SMS_AGENT_INSTALL",
+            "target": server_name,
+            "message": f"[AGENT] Installing SMS agent on '{server_name}'. Download from OBS, start via screen+printf (interactive startup.sh).",
+            "commands": [
+                {"desc": "Download SMS Agent", "cmd": f"wget https://sms-resource-intl-{sms_region}.obs.{sms_region}.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/"},
+                {"desc": "Start agent via screen", "cmd": "screen -dmS sms_agent bash -c 'printf \"y\\n<AK>\\n<SK>\\nsms.<region>.myhuaweicloud.com\\n\\n\\ny\\ny\\nn\\n\" | bash /opt/SMS-Agent/startup.sh'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_agent_installed",
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # ── Step 0c: Update migration project use_public_ip ──
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+            "action": "MIGRATION_PROJECT_CONFIG",
+            "target": server_name,
+            "message": f"[CONFIG] Updating SMS migration project use_public_ip=false. SMS.6602 prevention.",
+            "commands": [{"desc": "Update migration project", "cmd": f"hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=false --cli-region={sms_region}"}],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_project_configured",
+            "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
         flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
         disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
         target_ip = "172.16.1." + str(10 + abs(hash(server_name)) % 240)
@@ -1447,88 +1495,33 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["initial_sync_start"]
 
-        # SMS.0515 recovery simulation
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
-            "action": "SMS_0515_RECOVERY_CHECK",
-            "target": server_name,
-            "message": (
-                f"[SMS.0515 CHECK] Verifying disk configuration and applying API recovery. "
-                f"Using programmed retry path: refresh source server name, retry with "
-                f"use_public_ip=true and migration_ip=<ecs_private_ip>. "
-                f"(API recovery succeeded on task 3a768198.)"
-            ),
-            "commands": [
-                {"desc": "Programmatic recovery: refresh source name to unstick SMS.0515", "cmd": f"hcloud SMS UpdateServerName --source_id={vm_id} --name='{server_name}-REFRESH' --cli-region={sms_region}"},
-                {"desc": "Programmatic retry: re-create task with public IP workaround", "cmd": f"hcloud SMS CreateTask --name='{server_name}-RETRY' --source_server.id={vm_id} --target_server.name='{server_name}-TARGET' --target_server.vm_id=<ecs_id> --type={'MIGRATE_FILE' if is_linux else 'MIGRATE_BLOCK'} --os_type={os_type} --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip={target_ip}"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_0515_clear",
-        })
-        total_offset += config.STEP_TIMINGS["agent_spawn"]
-
-        # Delta syncs
-        num_deltas = max(2, int(initial_sync_hours / 2))
-        for d in range(num_deltas):
+        # ── SMS Subtask Progression (what actually happens live) ──
+        # SMS runs 6 subtasks sequentially. Each shows real progress.
+        sms_subtasks = [
+            ("SSL_CONFIG", "Establishing SSL between source agent and SMS endpoint"),
+            ("ATTACH_AGENT_IMAGE", "Attaching agent image disk to target ECS"),
+            ("FORMAT_DISK_LINUX_FILE" if is_linux else "FORMAT_DISK_WINDOWS", "Formatting target disk partitions"),
+            ("MIGRATE_LINUX_FILE" if is_linux else "MIGRATE_BLOCK", f"Replicating {disk_gb:.0f}GB file-level data from source to target"),
+            ("CONFIGURE_LINUX_FILE" if is_linux else "CONFIGURE_WINDOWS", "Configuring target OS (network, fstab, bootloader)"),
+            ("DETTACH_AGENT_IMAGE", "Detaching agent image disk from target"),
+        ]
+        for subtask_name, subtask_desc in sms_subtasks:
             sid += 1
-            change_rate = 0.03 + random.uniform(-0.01, 0.02)
-            delta_gb = disk_gb * change_rate
-            delta_hours = (delta_gb * 8000) / (effective_mbps * 3600)
-            delta_hours = max(delta_hours, 0.05)
-
             trace.append({
                 "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"Agent-{server_name}",
-                "action": f"DELTA_SYNC_{d+1}",
+                "action": f"SMS_SUBTASK_{subtask_name}",
                 "target": server_name,
-                "message": f"[SYNC] Delta #{d+1}: {delta_gb:.1f}GB ({change_rate*100:.0f}% churn). Time: {delta_hours:.2f}h.",
-                "metrics": {"delta_gb": round(delta_gb, 2), "change_rate_pct": round(change_rate*100, 1)},
+                "message": f"[SMS] {subtask_name}: {subtask_desc}.",
+                "commands": [{"desc": f"Monitor {subtask_name}", "cmd": f"hcloud SMS ShowTask --task_id=<task_id> --cli-region={sms_region} | jq '.sub_tasks[] | select(.name==\"{subtask_name}\") | .progress'"}],
                 "timestamp_offset_seconds": total_offset,
-                "result": "simulated_delta_complete",
+                "result": "simulated_subtask_complete",
+                "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
             })
-            total_offset += config.STEP_TIMINGS["delta_sync_cycle"]
-            sync_hours += delta_hours
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
         sync_hours += initial_sync_hours
 
-        # ═══ PHASE 4.2e: CUTOVER ═══
+        # ── Phase 4 ends here for SMS. Cutover is Phase 5 (separate gate). ──
 
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2e_CUTOVER", "agent": f"Agent-{server_name}",
-            "action": "CUTOVER_STOP_SOURCE",
-            "target": server_name,
-            "message": (
-                f"[CUTOVER] Stopping source services on '{server_name}'. "
-                f"Final sync in progress. DNS cutover prepared."
-            ),
-            "commands": [
-                {"desc": "Stop app services on source", "cmd": "systemctl stop <app-service> || service <app> stop"},
-                {"desc": "Trigger SMS final sync", "cmd": "SMS Console → Final Sync"},
-                {"desc": "Verify source stopped", "cmd": "curl -s -o /dev/null -w '%{http_code}' http://<source-ip>:<health-port> (expect 5xx)"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_source_stopped",
-        })
-        total_offset += config.STEP_TIMINGS["cutover_stop_source"]
-
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2e_CUTOVER", "agent": f"Agent-{server_name}",
-            "action": "CUTOVER_START_TARGET",
-            "target": server_name,
-            "message": (
-                f"[CUTOVER] Starting target ECS '{server_name}-TARGET' on flavor '{flavor}' "
-                f"with IP {target_ip}. Verifying ECS is RUNNING and reachable."
-            ),
-            "commands": [
-                {"desc": "Verify target ECS RUNNING", "cmd": f"hcloud ecs describe --instance-id <ecs_id> | jq '.status'"},
-                {"desc": "Verify target reachable", "cmd": f"ping -c 4 {target_ip} && echo 'TARGET_REACHABLE'"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "simulated_target_launched",
-        })
-        total_offset += config.STEP_TIMINGS["cutover_start_target"]
-        
         # Determine outcome based on agent availability
         availability = SmsMigrationSimulator._agent_availability(profile)
         if availability.get("result") == "blocked_manual_required":
@@ -2241,60 +2234,12 @@ class PostMigrationSimulator:
         sid = step_id
         is_linux = profile["os_family"] == "linux"
 
-        # ── Boot Fix (more critical for image-based migration) ──
-        if is_image_based:
-            sid += 1
-            boot_fix_cmd = PostMigrationSimulator._boot_fix_command(is_linux, server_name)
-            trace.append({
-                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
-                "action": "BOOT_FIX",
-                "target": server_name,
-                "message": f"Running boot fix on '{server_name}'. "
-                           f"{'Linux: regenerate initramfs + GRUB reinstall.' if is_linux else 'Windows: BCD repair + virtIO driver injection.'}",
-                "commands": [{"desc": "Boot fix script", "cmd": boot_fix_cmd}],
-                "timestamp_offset_seconds": total_offset,
-                "result": "boot_fix_applied",
-            })
-            total_offset += config.STEP_TIMINGS["boot_fix_linux" if is_linux else "boot_fix_windows"]
+        # ── Post-Migration: Smoke Tests only (SMS handles OS config) ──
+        # No VERIFY_BOOT needed — SMS CONFIGURE_LINUX_FILE handles bootloader
+        # No PARTITION_FIX — SMS MIGRATE_FILE copies exact disk layout
+        # No BOOT_FIX — SMS handles initramfs/GRUB
 
-        # ── Verify Boot ──
-        sid += 1
-        trace.append({
-            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
-            "action": "VERIFY_BOOT",
-            "target": server_name,
-            "message": f"Rebooting '{server_name}' and verifying successful boot via serial console.",
-            "commands": [
-                {"desc": "Reboot instance", "cmd": "hcloud ecs reboot --instance-id <id>"},
-                {"desc": "Check serial console output", "cmd": "hcloud ecs get-console-output --instance-id <id> --tail 50"},
-            ],
-            "timestamp_offset_seconds": total_offset,
-            "result": "boot_verified",
-        })
-        total_offset += 60
-
-        # ── Partition Fix (only for image-based migration or disk size mismatch) ──
-        # SMS MIGRATE_FILE copies exact disk layout — no partition fix needed
-        # Only needed when target disk is larger than source (image-based migration)
-        if is_image_based:
-            sid += 1
-            part_fix_cmd = PostMigrationSimulator._partition_fix_command(is_linux)
-            trace.append({
-                "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"Agent-{server_name}",
-                "action": "PARTITION_FIX",
-                "target": server_name,
-                "message": f"Checking and expanding disk partitions for '{server_name}'. "
-                           f"{'growpart + resize2fs/xfs_growfs' if is_linux else 'Set-Disk + Resize-Partition'}.",
-                "commands": [{"desc": "Partition expansion script", "cmd": part_fix_cmd}],
-                "timestamp_offset_seconds": total_offset,
-                "result": "partitions_expanded",
-            })
-            total_offset += config.STEP_TIMINGS["partition_fix"]
-
-        # ── HSS Agent Install (only if HSS resources in SOW) ──
-        # Discovered 2026-08-23: HSS/UniAgent/LTS should only appear if the SOW includes them
-        # Don't install agents not in the target architecture
-        hss_in_sow = server.get("_hss_in_sow", True)  # Default True for backward compat
+        hss_in_sow = server.get("_hss_in_sow", True)
         
         if hss_in_sow:
             sid += 1
