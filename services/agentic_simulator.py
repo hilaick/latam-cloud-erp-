@@ -2516,6 +2516,247 @@ class PostMigrationSimulator:
 # Main Orchestration Simulator
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class MigrationScheduler:
+    """P3: Concurrent migration queue + scheduler for multi-project scaling.
+
+    Manages migration task queues across multiple projects with:
+    - Priority-based scheduling (critical path first)
+    - Concurrency limits (max N parallel migrations per region)
+    - mig_worker pool management (auto-scale workers based on queue depth)
+    - Queue depth monitoring and alerts
+    - Cross-project resource contention detection
+    """
+
+    @staticmethod
+    def build_schedule(project: dict, all_projects: list, region: str,
+                       max_concurrent: int = 5, step_id: int = 0, offset: float = 0,
+                       config=None) -> dict:
+        """Build a migration schedule across all active projects."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+
+        # Collect all pending migrations across projects
+        all_migrations = []
+        for proj in all_projects:
+            proj_name = proj.get("name", proj.get("projectName", "unknown"))
+            mapper_nodes = proj.get("mapperNodes", [])
+            server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
+            for s in server_resources:
+                all_migrations.append({
+                    "project": proj_name,
+                    "server": s.get("name", "?"),
+                    "os": s.get("os", "linux"),
+                    "size_gb": float(s.get("diskGB", s.get("disk_gb", 40))),
+                    "priority": "high" if "db" in s.get("name", "").lower() or "database" in s.get("name", "").lower() else "normal",
+                })
+
+        # Sort by priority (high first) then by size (smaller first for quick wins)
+        all_migrations.sort(key=lambda m: (0 if m["priority"] == "high" else 1, m["size_gb"]))
+
+        # Build waves based on concurrency limit
+        waves = []
+        current_wave = []
+        current_size = 0
+        max_wave_size = 500  # GB per wave
+
+        for mig in all_migrations:
+            current_wave.append(mig)
+            current_size += mig["size_gb"]
+            if len(current_wave) >= max_concurrent or current_size >= max_wave_size:
+                waves.append(current_wave)
+                current_wave = []
+                current_size = 0
+        if current_wave:
+            waves.append(current_wave)
+
+        # Generate trace
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_0", "agent": "Scheduler",
+            "action": "MIGRATION_SCHEDULE",
+            "message": (
+                f"[SCHEDULER] Built migration schedule: {len(all_migrations)} servers across "
+                f"{len(all_projects)} projects → {len(waves)} waves. "
+                f"Max concurrent: {max_concurrent} per wave. "
+                f"Priority: database servers first. "
+                f"mig_worker pool: {min(len(waves), 3)} workers recommended."
+            ),
+            "commands": [
+                {"desc": "View queue", "cmd": "hcloud SMS ListTasks --cli-region=" + region + " | jq '.tasks | length'"},
+                {"desc": "Check worker pool", "cmd": "hcloud ECS ListServersDetails --cli-region=" + region + " | jq '.servers[] | select(.name | contains(\"mig-worker\")) | .name'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_schedule_built",
+            "live_data": {
+                "total_migrations": len(all_migrations),
+                "total_waves": len(waves),
+                "max_concurrent": max_concurrent,
+                "waves": [{"wave": i+1, "servers": len(w), "size_gb": sum(m["size_gb"] for m in w)} for i, w in enumerate(waves)],
+            },
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"] if config else 5
+
+        # Check for resource contention
+        sid += 1
+        contention = []
+        for mig in all_migrations:
+            if mig["priority"] == "high":
+                contention.append(f"{mig['server']} ({mig['project']}) — DB priority")
+
+        trace.append({
+            "id": sid, "phase": "PHASE_4_0", "agent": "Scheduler",
+            "action": "CONTENTION_CHECK",
+            "message": (
+                f"[SCHEDULER] Resource contention check: {len(contention)} high-priority migrations. "
+                f"No conflicts detected. mig_worker pool will auto-scale if queue depth > 10."
+            ),
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_no_contention",
+        })
+        total_offset += 2
+
+        return {
+            "trace": trace,
+            "final_step_id": sid,
+            "final_offset": total_offset,
+            "schedule": {
+                "total_migrations": len(all_migrations),
+                "total_waves": len(waves),
+                "waves": waves,
+                "max_concurrent": max_concurrent,
+                "recommended_workers": min(len(waves), 3),
+            },
+        }
+
+
+class ObsMigrationSimulator:
+    """P3: OBS (Object Storage Service) migration pillar.
+
+    Handles storage migration scenarios:
+    - AWS S3 → Huawei OBS
+    - Azure Blob → Huawei OBS
+    - On-prem files → Huawei OBS
+    - OBS cross-region replication
+    """
+
+    @staticmethod
+    def simulate(server: dict, profile: dict, physics: dict, step_id: int,
+                 offset: float, region: str, config) -> dict:
+        """Simulate OBS migration for a storage resource."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+        server_name = server.get("name", "unknown")
+        source_type = server.get("sourceCloud", server.get("sourceType", "AWS S3")).lower()
+        bucket_size_gb = float(server.get("diskGB", server.get("disk_gb", server.get("sizeGB", 500))))
+        bucket_count = int(server.get("bucketCount", 1))
+
+        # Map source to OBS migration tool
+        tool_map = {
+            "aws": "obsutil sync (S3 → OBS)",
+            "s3": "obsutil sync (S3 → OBS)",
+            "azure": "obsutil sync (Blob → OBS)",
+            "blob": "obsutil sync (Blob → OBS)",
+            "on-prem": "obsutil cp (local → OBS)",
+            "huawei": "OBS cross-region replication",
+        }
+        migration_tool = tool_map.get(source_type, "obsutil sync")
+
+        # Step 1: Create target OBS bucket
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"OBS-Agent-{server_name}",
+            "action": "OBS_BUCKET_CREATE",
+            "target": server_name,
+            "message": (
+                f"[OBS] Creating target OBS bucket in {region}. "
+                f"Source: {source_type} ({bucket_count} bucket(s), {bucket_size_gb:.0f}GB total). "
+                f"Tool: {migration_tool}."
+            ),
+            "commands": [
+                {"desc": "Create OBS bucket", "cmd": f"obsutil mb obs://migration-{server_name}-{region.replace('-','')} --location={region}"},
+                {"desc": "Set bucket policy", "cmd": f"obsutil bucketpolicy set obs://migration-{server_name}-{region.replace('-','')} --policy-file=bucket-policy.json"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_obs_bucket_created",
+            "rollback_action": {"cmd": f"obsutil rm obs://migration-{server_name}-{region.replace('-','')} -r -f", "label": "Delete OBS bucket"},
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 2: Configure source access (cross-cloud credentials)
+        if "aws" in source_type or "s3" in source_type:
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"OBS-Agent-{server_name}",
+                "action": "OBS_SOURCE_CREDENTIALS",
+                "target": server_name,
+                "message": (
+                    f"[OBS] Configuring cross-cloud access: {source_type} → OBS. "
+                    f"Using AWS access key + secret key for S3 read access. "
+                    f"OBS bucket configured with lifecycle policy (transition to IA after 30d)."
+                ),
+                "commands": [
+                    {"desc": "Configure S3 credentials", "cmd": "obsutil config --source.aws_access_key_id=<aws_ak> --source.aws_secret_access_key=<aws_sk> --source.endpoint=s3.amazonaws.com"},
+                    {"desc": "Set lifecycle policy", "cmd": f"obsutil lifecycle set obs://migration-{server_name}-{region.replace('-','')} --rule='transition:30d:IA,transition:90d:ARCHIVE'"},
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_source_credentials_configured",
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 3: Sync data
+        sid += 1
+        sync_hours = (bucket_size_gb * 8000) / (200 * 3600)  # ~200Mbps for OBS sync
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"OBS-Agent-{server_name}",
+            "action": "OBS_DATA_SYNC",
+            "target": server_name,
+            "message": (
+                f"[OBS] Syncing {bucket_size_gb:.0f}GB from {source_type} to OBS. "
+                f"Tool: {migration_tool}. Estimated: {sync_hours:.1f}h @ 200Mbps. "
+                f"Mode: incremental sync (checksum-based delta)."
+            ),
+            "commands": [
+                {"desc": "Start sync", "cmd": f"obsutil sync s3://source-bucket obs://migration-{server_name}-{region.replace('-','')} --recursive --jobs=10"},
+                {"desc": "Monitor progress", "cmd": f"obsutil ls obs://migration-{server_name}-{region.replace('-','')} --limit=0 | wc -l"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_obs_syncing",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        # Step 4: Verify sync
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2f_POST", "agent": f"OBS-Agent-{server_name}",
+            "action": "OBS_SYNC_VERIFY",
+            "target": server_name,
+            "message": (
+                f"[OBS] Verifying sync: {bucket_size_gb:.0f}GB synced. "
+                f"Checksum validation: MD5 hash comparison for all objects. "
+                f"Object count: {int(bucket_size_gb * 100)} objects."
+            ),
+            "commands": [
+                {"desc": "Verify object count", "cmd": f"obsutil ls obs://migration-{server_name}-{region.replace('-','')} --limit=0 | wc -l"},
+                {"desc": "Verify checksums", "cmd": f"obsutil cp obs://migration-{server_name}-{region.replace('-','')}/ /tmp/verify/ --recursive --dry-run"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_obs_verified",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        return {
+            "trace": trace,
+            "final_step_id": sid,
+            "final_offset": total_offset,
+            "outcome": "OBS_MIGRATION_SUCCESS",
+            "sync_hours": sync_hours,
+            "server_name": server_name,
+            "path_taken": "obs_migration",
+        }
+
+
 class DrsMigrationSimulator:
     """P2: DRS (Data Replication Service) simulation for database migrations.
 
@@ -4796,6 +5037,17 @@ class AgenticExecutionSimulator:
                 final_outcome = drs_result["outcome"]
                 final_sync_hours = drs_result["sync_hours"]
                 path_taken = "drs_migration"
+            # Check if this is a storage/OBS resource
+            elif any(kw in server.get("name", "").lower() + server.get("resourceType", "").lower() for kw in ["obs", "s3", "bucket", "storage", "blob"]):
+                obs_result = ObsMigrationSimulator.simulate(
+                    server, profile, physics, sid, current_offset, region, config
+                )
+                all_trace.extend(obs_result["trace"])
+                sid = obs_result["final_step_id"]
+                current_offset = obs_result["final_offset"]
+                final_outcome = obs_result["outcome"]
+                final_sync_hours = obs_result["sync_hours"]
+                path_taken = "obs_migration"
             else:
                 # Image-based migration for non-DB servers
                 img_result = ImageMigrationSimulator.simulate(
