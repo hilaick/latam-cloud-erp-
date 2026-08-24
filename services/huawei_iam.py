@@ -38,20 +38,19 @@ class HuaweiIAMClient:
         return headers
 
     def ping(self) -> dict:
-        """Verify credentials by listing account info."""
+        """Verify credentials by calling IAM auth/projects endpoint."""
         try:
-            headers = self._sign_request('GET', '/v3.0/OS-USER/users')
-            resp = requests.get(
-                f'{self.base_url}/v3.0/OS-USER/users',
-                headers=headers,
-                timeout=30,
-                verify=False
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return {'account_id': data.get('users', [{}])[0].get('id', 'unknown') if data.get('users') else 'unknown'}
-            raise Exception(f'IAM ping returned {resp.status_code}: {resp.text}')
-        except requests.RequestException as e:
+            # Use the proven sign_and_request function (HMAC-SHA256 v3 signing)
+            from services.huawei_api_signer import sign_and_request
+            url = f'https://iam.myhuaweicloud.com/v3/auth/projects'
+            resp = sign_and_request('GET', url, self.ak, self.sk, timeout=15)
+            projects = resp.get('projects', [])
+            if projects:
+                # Get the account/domain ID from the first project
+                domain_id = projects[0].get('domain_id', 'unknown')
+                return {'account_id': domain_id}
+            return {'account_id': 'verified'}
+        except Exception as e:
             raise Exception(f'IAM ping failed: {str(e)}')
 
     def check_realname_auth(self) -> dict:
