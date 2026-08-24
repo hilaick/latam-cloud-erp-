@@ -23,12 +23,47 @@ def _get_customer(customer_id: str):
 
 
 def _decrypt_credential(ciphertext: str | None) -> str | None:
-    """Placeholder — real decryption via app encryption service."""
-    if not ciphertext:
-        return None
-    # TODO: integrate with app's Fernet/encryption service
-    # For now, assume plaintext for development
-    return ciphertext
+    """Decrypt a stored credential value (returns AK).
+    
+    Stored values may be:
+    - Encrypted JSON: {"encrypted_ak": "...", "salt": "..."} → decrypt with credential_manager
+    - Plaintext: "HPUAQHWOCSRT..." → return as-is (legacy/test data)
+    - Boolean: True/False → return None (indicator only, no actual value)
+    """
+    return _decrypt_credential_pair(ciphertext)[0]
+
+
+def _decrypt_credential_pair(ak_ciphertext: str | None, sk_ciphertext: str | None = None) -> tuple:
+    """Decrypt stored AK and SK. Returns (ak, sk) tuple.
+    
+    Both fields store the same encrypted JSON blob containing both AK and SK.
+    """
+    if not ak_ciphertext:
+        return (None, None)
+    # Boolean indicators — not actual credentials
+    if isinstance(ak_ciphertext, bool):
+        return (None, None)
+    # If it's a string that's not JSON, return as-is (plaintext/legacy)
+    if isinstance(ak_ciphertext, str) and not ak_ciphertext.startswith('{'):
+        ak_val = ak_ciphertext if len(ak_ciphertext) >= 10 else None
+        sk_val = None
+        if sk_ciphertext and isinstance(sk_ciphertext, str) and not sk_ciphertext.startswith('{'):
+            sk_val = sk_ciphertext if len(sk_ciphertext) >= 10 else None
+        return (ak_val, sk_val)
+    # Encrypted JSON — decrypt using credential_manager
+    try:
+        import json as _json
+        from services.credential_manager import get_credential_manager
+        import os as _os
+        master_pw = _os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+        cm = get_credential_manager(master_pw)
+        enc_dict = _json.loads(ak_ciphertext) if isinstance(ak_ciphertext, str) else ak_ciphertext
+        if isinstance(enc_dict, dict) and 'encrypted_ak' in enc_dict:
+            ak, sk = cm.decrypt_credentials(enc_dict)
+            return (ak, sk)
+    except Exception as e:
+        logger.error(f"Failed to decrypt credential pair: {e}")
+    return (None, None)
 
 
 # ─────────────────────────────────────────────
@@ -43,8 +78,7 @@ def validate_master():
     if err:
         return err
 
-    ak = _decrypt_credential(customer.ak)
-    sk = _decrypt_credential(customer.sk)
+    ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
     if not ak or not sk:
         return jsonify({
             'success': False,
@@ -87,8 +121,7 @@ def check_realname_auth():
     if err:
         return err
 
-    ak = _decrypt_credential(customer.ak)
-    sk = _decrypt_credential(customer.sk)
+    ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
     if not ak or not sk:
         return jsonify({'success': False, 'error': 'Master AK/SK required'}), 400
 
@@ -158,8 +191,7 @@ def provision_eps():
     project = ProjectData.query.get(project_id) if project_id else None
     bracket = _compute_eps_bracket(project) if project else 'medium'
 
-    ak = _decrypt_credential(customer.ak)
-    sk = _decrypt_credential(customer.sk)
+    ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
     if not ak or not sk:
         return jsonify({'success': False, 'error': 'Master AK/SK required'}), 400
 
@@ -200,8 +232,7 @@ def validate_tier2():
     if err:
         return err
 
-    tier2_ak = _decrypt_credential(customer.tier2_ak)
-    tier2_sk = _decrypt_credential(customer.tier2_sk)
+    tier2_ak, tier2_sk = _decrypt_credential_pair(customer.tier2_ak, customer.tier2_sk)
     if not tier2_ak or not tier2_sk:
         return jsonify({
             'success': False,
@@ -272,8 +303,7 @@ def validate_tier3():
             'error': f'Unknown tool: {assigned_tool}. Valid: {list(TOOL_TIER3_SCOPE.keys())}'
         }), 400
 
-    tier3_ak = _decrypt_credential(customer.tier3_ak)
-    tier3_sk = _decrypt_credential(customer.tier3_sk)
+    tier3_ak, tier3_sk = _decrypt_credential_pair(customer.tier3_ak, customer.tier3_sk)
     if not tier3_ak or not tier3_sk:
         return jsonify({
             'success': False,
@@ -414,8 +444,11 @@ def validate_credential():
         ak = form_ak
         sk = form_sk
     else:
-        ak = _decrypt_credential(getattr(customer, ak_field, None))
-        sk = _decrypt_credential(getattr(customer, sk_field, None))
+        # Decrypt both AK and SK from the stored encrypted blob
+        ak, sk = _decrypt_credential_pair(
+            getattr(customer, ak_field, None),
+            getattr(customer, sk_field, None)
+        )
 
     if not ak or not sk:
         return jsonify({
@@ -575,8 +608,7 @@ def create_tier2_credentials():
         return jsonify({'error': 'Customer not found'}), 404
 
     # Get master credentials (decrypt)
-    ak = _decrypt_credential(customer.ak)
-    sk = _decrypt_credential(customer.sk)
+    ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
     if not ak or not sk:
         return jsonify({'error': 'Master AK/SK not configured — cannot create Tier 2'}), 400
 
