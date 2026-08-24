@@ -260,16 +260,104 @@ def hermes_delegate_task():
                 db.session.commit()
                 task_index = len(existing) - 1
                 logger.info(f"Created delegate task #{task_index} for project {project_id}: {goal[:80]}")
-        
+
+        # P0-1: Decrypt customer credentials for the execution agent
+        decrypted_creds = {}
+        if project_id:
+            try:
+                project = ProjectData.query.get(project_id)
+                if project:
+                    pdata = json.loads(project.data) if isinstance(project.data, str) else project.data
+                    customer_id = pdata.get('customerId')
+                    if customer_id:
+                        from models import Customer
+                        customer = Customer.query.get(customer_id)
+                        if customer and customer.ak and customer.sk:
+                            try:
+                                from services.credential_manager import get_credential_manager
+                                import os as _os
+                                master_pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
+                                cm = get_credential_manager(master_pw)
+                                enc_ak = json.loads(customer.ak) if isinstance(customer.ak, str) and customer.ak.startswith('{') else None
+                                if enc_ak and 'encrypted_ak' in enc_ak:
+                                    d_ak, d_sk = cm.decrypt_credentials(enc_ak)
+                                    decrypted_creds['ak'] = d_ak
+                                    decrypted_creds['sk'] = d_sk
+                            except Exception as dec_err:
+                                logger.warning(f"Credential decryption failed: {dec_err}")
+                        if customer and customer.source_huawei_ak:
+                            decrypted_creds['source_ak'] = customer.source_huawei_ak
+                            decrypted_creds['source_sk'] = customer.source_huawei_sk or ''
+            except Exception as cred_ex:
+                logger.warning(f"Failed to load credentials for project {project_id}: {cred_ex}")
+
         # Build a self-contained prompt for the subagent
+        # P0-1: Inject project context, skill content, and tool manifest for real tool access
+        skill_context = ""
+        try:
+            from services.agentic_simulator import SkillRegistry
+            skills = SkillRegistry.list_all()
+            skill_context = "\n".join([
+                f"- {s['name']}: {s.get('description', '')} (commands: {len(s.get('commands', []))})"
+                for s in skills
+            ])
+        except Exception:
+            pass
+
+        tool_manifest = """You have access to the following tools via the terminal:
+- hcloud CLI: Huawei Cloud API calls (ECS, VPC, EIP, SMS, IMS, OBS)
+- SSH: Connect to source/target VMs via ssh/paramiko
+- Python: Run migration scripts from /root/ulearning-migration/skills/
+- MCP: iaas-mcp-server at /home/huawei-cloud/iaas-mcp-server/ (175+ IaaS tools)
+- Skills Knowledge Tree: /root/ulearning-migration/skills/ (13 skills with proven runbooks)
+
+Available Huawei Cloud operations:
+- hcloud ECS CreateServers/DeleteServer/ShowServer/ListServersDetails
+- hcloud VPC CreateSecurityGroupRule/ListSecurityGroups
+- hcloud EIP CreatePublicip/DeletePublicip/UpdatePublicip
+- hcloud SMS CreateTask/DeleteTask/ShowTask/ListServers/StartTask
+- hcloud IMS ListImages/CreateImage
+- hcloud OBS (obsutil) bucket operations
+
+When executing, use the terminal tool to run actual commands. Do NOT just describe what you would do — DO it."""
+
+        system_prompt = f"""You are a Huawei Cloud migration execution agent running on the ERP live server (159.138.148.45).
+You have FULL tool access via Hermes CLI — terminal, file operations, browser, and code execution.
+
+{tool_manifest}
+
+Skills Knowledge Tree ({len(skills) if 'skills' in dir() else 13} skills available):
+{skill_context}
+
+CRITICAL: You are executing REAL cloud operations. Use the terminal to run hcloud commands.
+The hcloud CLI is configured with profile 'agent-test' (AKSK mode, source credentials).
+Target region: la-north-2. Source region: ap-southeast-3.
+
+When done, report what you actually executed and the results."""
+
         full_prompt = goal
         if context:
             full_prompt = f"{goal}\n\nContext:\n{context}"
-            
+
+        # Inject decrypted credentials as environment variables for hcloud CLI
+        env = os.environ.copy()
+        if decrypted_creds and decrypted_creds.get('ak'):
+            env['HW_ACCESS_KEY'] = decrypted_creds['ak']
+            env['HW_SECRET_KEY'] = decrypted_creds['sk']
+        if decrypted_creds and decrypted_creds.get('source_ak'):
+            env['HW_SOURCE_AK'] = decrypted_creds['source_ak']
+            env['HW_SOURCE_SK'] = decrypted_creds['source_sk']
+
         logger.info(f"Spawning Hermes agent via profile '{profile}' for goal: {goal[:100]}...")
-        
-        # ── HTTP / Loadbalancer mode ──
-        if hc.mode == 'http':
+
+        # P0-1: Always prefer CLI mode for execution tasks (full tool access)
+        # HTTP mode is only for simple chat/query, not for tasks that need tool execution
+        is_execution_task = any(kw in goal.lower() for kw in [
+            'execute', 'create', 'delete', 'deploy', 'install', 'start', 'stop',
+            'migrate', 'configure', 'provision', 'phase 4', 'cutover', 'rollback'
+        ])
+
+        if hc.mode == 'http' and not is_execution_task:
             lb_url = hc.lb_url or 'http://localhost:8666/v1/chat/completions'
             lb_auth = hc.lb_auth or ''
             delegation_model = model_override or hc.delegation_model or hc.global_model or 'deepseek-v4-pro'
@@ -318,20 +406,26 @@ def hermes_delegate_task():
                     'error': err_msg
                 }), 500
         
-        # ── CLI mode (default) ──
+        # ── CLI mode (default + execution tasks) — full tool access ──
         binary = hc.hermes_binary_path or 'hermes'
-        cmd = [binary, 'chat', '-q', full_prompt, '--profile', profile, '--quiet']
-        
+        # P0-1: Use system prompt with tool manifest + skill context for execution tasks
+        cmd = [binary, 'chat', '-q', f"{system_prompt}\n\n---\nTask: {full_prompt}", '--profile', profile, '--quiet']
+
         if model_override:
             cmd.extend(['--model', model_override])
         if provider_override:
             cmd.extend(['--provider', provider_override])
-            
+
+        # P0-1: For execution tasks, add --yolo (auto-approve) for autonomous operation
+        if is_execution_task:
+            cmd.append('--yolo')
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=180
+            timeout=300,  # Increased from 180 to 300 for execution tasks
+            env=env,  # Inject Huawei credentials as env vars
         )
         
         if result.returncode == 0:
