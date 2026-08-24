@@ -13,10 +13,13 @@ import logging
 import socket
 import subprocess
 import os
+import re
 import sys
 import requests as http_requests
 from datetime import datetime
 from models import db, Customer, ProjectData, HuaweiAccount, MigrationTask, WBSTask, User, CognitiveLearningLog, QuotationVersion, ExecutionState, ExecutionLog, AdHocMigrationLog, GlobalPlaybooks, HermesConfig
+from services.agentic_simulator import SkillRegistry
+from services.credential_manager import get_credential_manager
 
 logger = logging.getLogger(__name__)
 hermes_cli_bp = Blueprint('hermes_cli_api', __name__)
@@ -243,7 +246,6 @@ def hermes_delegate_task():
             'error': None
         }
         # Infer phase from goal text
-        import re
         phase_match = re.search(r'Phase (\d+(?:\.\d+)?)', goal)
         if phase_match:
             task_record['phase'] = f'PHASE_4_{phase_match.group(1).replace(".", "_")}'
@@ -270,13 +272,10 @@ def hermes_delegate_task():
                     pdata = json.loads(project.data) if isinstance(project.data, str) else project.data
                     customer_id = pdata.get('customerId')
                     if customer_id:
-                        from models import Customer
                         customer = Customer.query.get(customer_id)
                         if customer and customer.ak and customer.sk:
                             try:
-                                from services.credential_manager import get_credential_manager
-                                import os as _os
-                                master_pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
+                                master_pw = os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
                                 cm = get_credential_manager(master_pw)
                                 enc_ak = json.loads(customer.ak) if isinstance(customer.ak, str) and customer.ak.startswith('{') else None
                                 if enc_ak and 'encrypted_ak' in enc_ak:
@@ -294,9 +293,10 @@ def hermes_delegate_task():
         # Build a self-contained prompt for the subagent
         # P0-1: Inject project context, skill content, and tool manifest for real tool access
         skill_context = ""
+        num_skills = 0
         try:
-            from services.agentic_simulator import SkillRegistry
             skills = SkillRegistry.list_all()
+            num_skills = len(skills)
             skill_context = "\n".join([
                 f"- {s['name']}: {s.get('description', '')} (commands: {len(s.get('commands', []))})"
                 for s in skills
@@ -326,7 +326,7 @@ You have FULL tool access via Hermes CLI — terminal, file operations, browser,
 
 {tool_manifest}
 
-Skills Knowledge Tree ({len(skills) if 'skills' in dir() else 13} skills available):
+Skills Knowledge Tree ({num_skills} skills available):
 {skill_context}
 
 CRITICAL: You are executing REAL cloud operations. Use the terminal to run hcloud commands.
