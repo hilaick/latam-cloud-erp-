@@ -1284,9 +1284,37 @@ function LiveConstellationView({ activeProject }) {
         }
         const rawMap = activeProject?.mapperNodes || [];
         const valid = rawMap.filter(n => n.status !== 'Quoted Only' && n.status !== 'Live Only');
-        return valid.map((item, index) => {
+        const mapperNodes = valid.map((item, index) => {
             return { id: item.id || Math.random().toString(), name: item.name || 'Unnamed Resource', type: String(item.type).toUpperCase(), ip: item.ip || item.location || 'N/A', timestamp: Date.now() + (index * 1000) };
-        }).sort((a, b) => a.timestamp - b.timestamp);
+        });
+        // Also include resources from targetArchitecture (Phase 2-3 output)
+        const targetArch = activeProject?.targetArchitecture || {};
+        const archNodes = [];
+        if (targetArch.compute && targetArch.compute.length > 0) {
+            targetArch.compute.forEach(n => archNodes.push({
+                id: n.id || n.source_id || Math.random().toString(),
+                name: n.name || n.source_name || 'ECS',
+                type: 'ECS', ip: n.ip || n.private_ip || 'N/A', timestamp: Date.now(),
+            }));
+        }
+        if (targetArch.network && targetArch.network.length > 0) {
+            targetArch.network.forEach(n => archNodes.push({
+                id: n.id || Math.random().toString(),
+                name: n.name || 'VPC', type: 'VPC', ip: n.cidr || 'N/A', timestamp: Date.now(),
+            }));
+        }
+        if (targetArch.storage && targetArch.storage.length > 0) {
+            targetArch.storage.forEach(n => archNodes.push({
+                id: n.id || n.source_id || Math.random().toString(),
+                name: n.name || n.source_name || 'Volume',
+                type: 'EVS', ip: 'N/A', timestamp: Date.now(),
+            }));
+        }
+        // Dedup by name — prefer mapperNodes, add unique archNodes
+        const existingNames = new Set(mapperNodes.map(n => n.name));
+        const uniqueArchNodes = archNodes.filter(n => !existingNames.has(n.name));
+        const allNodes = [...mapperNodes, ...uniqueArchNodes];
+        return allNodes.sort((a, b) => a.timestamp - b.timestamp);
     }, [activeProject]);
 
     const graphData = useMemo(() => {
@@ -1330,7 +1358,7 @@ function LiveConstellationView({ activeProject }) {
             <div className="bg-slate-900 rounded-2xl border-2 border-dashed border-slate-700 p-16 text-center text-slate-500 animate-fade-in max-w-[1600px] mx-auto shadow-xl">
                 <i className="fas fa-meteor text-6xl mb-4 text-slate-700"></i>
                 <h3 className="font-black text-xl mb-2 text-white">Constellation Offline</h3>
-                <p className="font-medium text-sm">No live API telemetry found. Run the Final NOC Scan in Tab 1 to generate the Twin.</p>
+                <p className="font-medium text-sm">No live API telemetry found. Run the 3-Way Infrastructure Diff in Tab 1 to generate the Twin.</p>
             </div>
         );
     }
