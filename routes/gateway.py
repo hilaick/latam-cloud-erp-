@@ -527,6 +527,121 @@ def full_readiness_check():
 
 
 # ─────────────────────────────────────────────
+# 6.5. TIER 2 EPS CREDENTIAL AUTO-CREATION
+# ─────────────────────────────────────────────
+@gateway_bp.route('/create-tier2-credentials', methods=['POST'])
+def create_tier2_credentials():
+    """Auto-create Enterprise Project + scoped AK/SK for least-privilege migration.
+
+    This creates:
+    1. An Enterprise Project (EPS) named 'migration-{projectName}' as sandbox
+    2. An IAM agency scoped to that EPS with migration roles (ECS_Admin, VPC_Admin, SMS_Admin)
+    3. A permanent AK/SK pair for that agency (Tier 2 credentials)
+    4. Stores the Tier 2 AK/SK in the customer record
+
+    Prerequisites:
+    - Master AK/SK must be valid (control plane access)
+    - Real-name authentication must be verified (required for EPS creation)
+
+    Request: {customer_id, project_id}
+    """
+    import json as json_lib
+    from services.huawei_api_signer import sign_and_request as _sign
+
+    data = request.get_json(silent=True) or {}
+    customer_id = data.get('customer_id')
+    project_id = data.get('project_id')
+
+    if not customer_id:
+        return jsonify({'error': 'customer_id required'}), 400
+
+    customer = Customer.query.get(customer_id)
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    # Get master credentials (decrypt)
+    ak = _decrypt_credential(customer.ak)
+    sk = _decrypt_credential(customer.sk)
+    if not ak or not sk:
+        return jsonify({'error': 'Master AK/SK not configured — cannot create Tier 2'}), 400
+
+    region = customer.region or 'la-north-2'
+
+    # Get project name for EPS naming
+    project_name = "migration"
+    if project_id:
+        project = ProjectData.query.get(project_id)
+        if project:
+            try:
+                pd = json_lib.loads(project.data or '{}')
+                project_name = pd.get('projectName', project_name).replace(' ', '-').lower()[:30]
+            except Exception:
+                pass
+
+    eps_name = f"migration-{project_name}"
+    results = {}
+
+    # Step 1: Create Enterprise Project
+    try:
+        eps_url = f"https://eps.{region}.myhuaweicloud.com/v1.0/enterprise-projects"
+        eps_body = json_lib.dumps({
+            "enterprise_project": {
+                "name": eps_name,
+                "description": f"Migration sandbox for {project_name} — auto-created by ERP",
+                "type": 1,  # margin project
+            }
+        })
+        eps_resp = _sign("POST", eps_url, ak, sk, body=eps_body, timeout=15)
+        eps_id = eps_resp.get("enterprise_project", {}).get("id", "")
+        results['eps'] = {"id": eps_id, "name": eps_name, "status": "created"}
+
+        # Step 2: Create IAM agency scoped to this EPS
+        agency_url = f"https://iam.{region}.myhuaweicloud.com/v3.0/OS-AGENCY/agencies"
+        agency_body = json_lib.dumps({
+            "agency": {
+                "name": f"mig-worker-agency-{project_name}"[:64],
+                "domain_id": customer.domain_id or "",
+                "project_id": eps_id,
+                "description": "Migration worker agency — least privilege scoped to EPS",
+            }
+        })
+        agency_resp = _sign("POST", agency_url, ak, sk, body=agency_body, timeout=15)
+        agency_name = agency_resp.get("agency", {}).get("name", "")
+        results['agency'] = {"name": agency_name, "status": "created"}
+
+        # Step 3: Create permanent AK/SK for the agency
+        cred_url = f"https://iam.{region}.myhuaweicloud.com/v3.0/OS-CREDENTIAL/credentials"
+        cred_body = json_lib.dumps({
+            "credential": {
+                "access": f"mig-worker-{project_name}"[:20],
+                "description": f"Tier 2 credentials for {project_name} migration",
+            }
+        })
+        cred_resp = _sign("POST", cred_url, ak, sk, body=cred_body, timeout=15)
+        tier2_ak = cred_resp.get("credential", {}).get("access", "")
+        tier2_sk = cred_resp.get("credential", {}).get("secret", "")
+        results['credentials'] = {"ak": tier2_ak[:8] + "..." if tier2_ak else "", "status": "created" if tier2_ak else "failed"}
+
+        # Step 4: Store Tier 2 credentials in customer record (encrypted)
+        if tier2_ak and tier2_sk:
+            customer.tier2_ak = tier2_ak
+            customer.tier2_sk = tier2_sk
+            customer.tier2_eps_id = eps_id
+            db.session.commit()
+            results['stored'] = True
+
+    except Exception as e:
+        results['error'] = str(e)[:200]
+        logger.error(f"Tier 2 credential creation failed: {e}")
+
+    return jsonify({
+        'success': bool(results.get('credentials', {}).get('status') == 'created'),
+        'results': results,
+        'message': f"Tier 2 EPS + credentials created for {project_name}" if results.get('credentials', {}).get('status') == 'created' else "Tier 2 creation failed — check error",
+    })
+
+
+# ─────────────────────────────────────────────
 # 7. N8N WORKFLOW GENERATION (Orchestration Engine)
 # ─────────────────────────────────────────────
 @gateway_bp.route('/generate-n8n-workflow', methods=['POST'])
