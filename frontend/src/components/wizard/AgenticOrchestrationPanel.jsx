@@ -675,14 +675,14 @@ function computeConstellationLayout(data) {
     color: '#6b7280', counts,
   });
 
-  return { allNodes, allEdges, counts };
+  return { allNodes, allEdges, counts, sourceLabel, targetLabel };
 }
 
 function SimulationConstellation({ trace, resourceUsage, resources }) {
   const [expanded, setExpanded] = useState(true);
 
   const data = useMemo(() => buildConstellationData(trace, resourceUsage, resources), [trace, resourceUsage, resources]);
-  const { allNodes, allEdges, counts } = useMemo(() => computeConstellationLayout(data), [data]);
+  const { allNodes, allEdges, counts, sourceLabel, targetLabel } = useMemo(() => computeConstellationLayout(data), [data]);
   const hasData = data.servers.length > 0 || data.networkNodes.length > 0;
 
   if (!hasData) return null;

@@ -2911,7 +2911,17 @@ class MigWorkerDeployer:
     def should_deploy(active_sms_tasks: int = 0, flask_health_ok: bool = True,
                       proxy_timeout_rate: float = 0, source_region: str = "",
                       target_region: str = "", manual_trigger: bool = False) -> dict:
-        """Determine if a mig_worker should be deployed."""
+        """Determine if a mig_worker should be deployed.
+
+        mig_worker is deployed ONLY when there's a genuine resilience need:
+        - ERP availability risk (Flask health check fails)
+        - Concurrent migration overload (>3 active SMS tasks)
+        - Proxy instability (>10% timeout rate)
+        - Manual trigger from Execution panel
+
+        Cross-region alone does NOT trigger mig_worker — SMS handles cross-region
+        natively. mig_worker is for resilience, not for basic cross-region.
+        """
         triggers = []
         if not flask_health_ok:
             triggers.append({"reason": "erp_availability_risk", "detail": "Flask health check failed"})
@@ -2919,8 +2929,6 @@ class MigWorkerDeployer:
             triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>3 threshold)"})
         if proxy_timeout_rate > 0.10:
             triggers.append({"reason": "proxy_instability", "detail": f"{proxy_timeout_rate*100:.0f}% timeout rate (>10% threshold)"})
-        if source_region and target_region and source_region != target_region:
-            triggers.append({"reason": "cross_region", "detail": f"Source {source_region} → Target {target_region} (local API calls needed)"})
         if manual_trigger:
             triggers.append({"reason": "manual", "detail": "Manually triggered from Execution panel"})
 
