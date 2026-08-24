@@ -142,13 +142,16 @@ def validate_iam_key(ak: str, sk: str, timeout: int = 15) -> dict:
         msg = str(e)
         if '404' in msg or 'not found' in msg.lower():
             return {'valid': False, 'error': 'Access key not found or invalid in IAM'}
-        # Try fallback — call STS get-caller-identity style endpoint
+        # 401 on credential lookup is common — the AK/SK works but doesn't have
+        # permission to query credential metadata. Fall through to auth/projects test.
+        # Try fallback — call auth/projects (basic IAM access test)
         try:
             url2 = f'https://iam.myhuaweicloud.com/v3/auth/projects'
             resp = sign_and_request('GET', url2, ak, sk, timeout=timeout)
-            # If we get here, the credential works at least partially
-            return {'valid': True, 'login_id': 'verified'}
-        except RuntimeError:
-            return {'valid': False, 'error': str(e)}
+            # If we get here, the credential works
+            projects = resp.get('projects', [])
+            return {'valid': True, 'login_id': f'verified ({len(projects)} projects)'}
+        except RuntimeError as e2:
+            return {'valid': False, 'error': f'{msg}; fallback also failed: {e2}'}
     except Exception as e:
         return {'valid': False, 'error': str(e)}
