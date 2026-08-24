@@ -5632,3 +5632,209 @@ def register_agentic_dry_run_routes(execution_bp):
     execution_bp.route("/api/projects/<project_id>/simulate-orchestration", methods=["POST"])(_handle_dry_run_with_classification)
     execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["POST"])(_handle_dry_run_with_classification)
     execution_bp.route("/api/projects/<project_id>/agentic-dry-run", methods=["DELETE"])(_handle_delete_dry_run)
+
+    # ── 3.5 Wave & Runbook Planning: generate detailed runbook from simulation trace ──
+    def _handle_generate_runbook(project_id):
+        """Generate a detailed WBS-based cutover runbook from the project's simulation trace."""
+        from models import ProjectData
+        import json as json_lib
+
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        pdata = json_lib.loads(project.data) if isinstance(project.data, str) else project.data
+        dry_run = pdata.get("agenticDryRun", {})
+        trace = dry_run.get("trace", [])
+        mapper_nodes = pdata.get("mapperNodes", [])
+        waves = pdata.get("waves", [])
+        project_name = pdata.get("projectName", "UNNAMED")
+
+        runbook = []
+        step_num = 0
+
+        # If no simulation trace, generate from mapper nodes directly
+        if not trace:
+            server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
+            for i, s in enumerate(server_resources):
+                s_name = s.get("name", f"server-{i}")
+                s_os = s.get("os", "linux")
+                is_win = "windows" in s_os.lower()
+                wave_num = 1
+
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.2.{step_num}",
+                    "name": f"Install SMS agent on {s_name}",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 0.5,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "Migration Engineer",
+                    "dependencies": "",
+                })
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.2.{step_num}",
+                    "name": f"Open SG ports for {s_name} ({'8899+8900+22' if is_win else '8900+22'})",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 0.2,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "Network Engineer",
+                    "dependencies": f"rb_{step_num-1}",
+                })
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.2.{step_num}",
+                    "name": f"Create SMS migration task for {s_name}",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 0.3,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "Migration Engineer",
+                    "dependencies": f"rb_{step_num-1}",
+                })
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.2.{step_num}",
+                    "name": f"Monitor SMS migration: {s_name} ({'MIGRATE_BLOCK' if is_win else 'MIGRATE_FILE'})",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 2.0,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "Migration Engineer",
+                    "dependencies": f"rb_{step_num-1}",
+                })
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.2.{step_num}",
+                    "name": f"Verify target {s_name} (smoke tests)",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 0.5,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "QA Engineer",
+                    "dependencies": f"rb_{step_num-1}",
+                })
+                step_num += 1
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"5.1.{step_num}",
+                    "name": f"Cutover {s_name} [HUMAN GATE]",
+                    "wave": f"Wave {wave_num}",
+                    "start": "",
+                    "estHours": 1.0,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": "Project Manager",
+                    "dependencies": f"rb_{step_num-1}",
+                })
+        else:
+            # Generate from simulation trace — map trace steps to runbook entries
+            current_wave = "Wave 1"
+            for entry in trace:
+                action = entry.get("action", "")
+                target = entry.get("target", "")
+                phase = entry.get("phase", "")
+
+                # Skip non-action steps
+                if action in ("INIT", "PRESALES_TRIAGE_ANALYSIS", "MCP_TOOL_DISCOVERY",
+                              "KNOWLEDGE_SKILL_ENRICHMENT", "FLAVOR_CAPACITY_CHECK",
+                              "PREFLIGHT_HCLOUD_CLI", "APP_LANDING_ZONE_COMPLETE",
+                              "CONTINUOUS_SYNC_MONITOR", "COLD_CUTOVER", "GARBAGE_COLLECTION",
+                              "FINALIZE", "WAVE_START", "WAVE_COMPLETE"):
+                    continue
+
+                # Map wave
+                if "WAVE" in action:
+                    continue
+
+                # Map trace action to runbook task
+                step_num += 1
+                owner = "Migration Engineer"
+                est_hours = 0.5
+
+                if "AGENT_INSTALL" in action:
+                    owner = "Migration Engineer"
+                    est_hours = 0.5
+                elif "SG_RULES" in action:
+                    owner = "Network Engineer"
+                    est_hours = 0.2
+                elif "ECS_CREATE" in action or "EIP_CREATE" in action:
+                    owner = "Cloud Engineer"
+                    est_hours = 0.3
+                elif "TASK_CREATE" in action:
+                    owner = "Migration Engineer"
+                    est_hours = 0.3
+                elif "SUBTASK" in action:
+                    owner = "Migration Engineer"
+                    est_hours = 0.5
+                elif "SMOKE" in action:
+                    owner = "QA Engineer"
+                    est_hours = 0.5
+                elif "DISK_MAPPING" in action:
+                    owner = "Migration Engineer"
+                    est_hours = 0.2
+                elif "ACTIVE_CHECK" in action:
+                    owner = "Cloud Engineer"
+                    est_hours = 0.1
+                elif "PROJECT_CONFIG" in action:
+                    owner = "Migration Engineer"
+                    est_hours = 0.1
+                elif "MIG_WORKER" in action:
+                    owner = "DevOps Engineer"
+                    est_hours = 0.5
+                elif "DRS" in action:
+                    owner = "DBA"
+                    est_hours = 1.0
+                elif "OBS" in action:
+                    owner = "Storage Engineer"
+                    est_hours = 0.5
+
+                runbook.append({
+                    "id": f"rb_{step_num}",
+                    "taskId": f"4.{step_num}",
+                    "name": f"{action.replace('_', ' ')}{f' — {target}' if target else ''}",
+                    "wave": current_wave,
+                    "start": "",
+                    "estHours": est_hours,
+                    "actualHours": 0,
+                    "status": "Pending",
+                    "owner": owner,
+                    "dependencies": f"rb_{step_num-1}" if step_num > 1 else "",
+                    "source_label": entry.get("source_label", ""),
+                    "rollback_action": entry.get("rollback_action", {}).get("label", ""),
+                })
+
+        # Save runbook to project
+        pdata["runbook"] = runbook
+        project.data = json_lib.dumps(pdata)
+        db.session.commit()
+
+        total_hours = sum(r.get("estHours", 0) for r in runbook)
+        waves_set = sorted(set(r.get("wave", "Wave 1") for r in runbook))
+
+        return jsonify({
+            "success": True,
+            "runbook": runbook,
+            "summary": {
+                "total_steps": len(runbook),
+                "total_estimated_hours": total_hours,
+                "waves": waves_set,
+                "source": "simulation_trace" if trace else "mapper_nodes",
+                "project_name": project_name,
+            },
+        })
+
+    execution_bp.route("/api/projects/<project_id>/generate-runbook", methods=["POST"])(_handle_generate_runbook)
