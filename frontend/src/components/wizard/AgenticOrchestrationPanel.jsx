@@ -133,6 +133,11 @@ const TraceEntry = ({ step, isLast, isExpanded, onToggle }) => {
             <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
               {step.action?.replace(/_/g, ' ')}
             </Text>
+            {step.source_label && (
+              <Tag color="purple" style={{ fontSize: 8, padding: '0 4px', margin: 0, lineHeight: '16px', borderRadius: 3 }}>
+                {step.source_label}
+              </Tag>
+            )}
             <StatusBadge result={step.result} outcome={step.outcome} isDryRun={true} />
             {step.duration_ms && (
               <Text type="secondary" style={{ fontSize: 10 }}>{step.duration_ms}ms</Text>
