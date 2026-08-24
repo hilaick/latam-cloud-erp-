@@ -147,10 +147,28 @@ export default function CustomerDirectory() {
       const token = sessionStorage.getItem('hermes_access_token');
       // Huawei credential types use the new gateway validate-credential endpoint
       if (['master', 'source', 'tier1', 'tier2', 'tier3'].includes(provider)) {
+        // Map provider to form field names
+        const fieldMap = {
+          master: { ak: 'ak', sk: 'sk' },
+          source: { ak: 'source_huawei_ak', sk: 'source_huawei_sk' },
+          tier1:  { ak: 'tier1AK', sk: 'tier1SK' },
+          tier2:  { ak: 'tier2AK', sk: 'tier2SK' },
+          tier3:  { ak: 'tier3AK', sk: 'tier3SK' },
+        };
+        const f = fieldMap[provider];
+        const formAk = typeof editingCustomer[f.ak] === 'string' ? editingCustomer[f.ak] : '';
+        const formSk = typeof editingCustomer[f.sk] === 'string' ? editingCustomer[f.sk] : '';
+
         const res = await fetch('/api/gateway/validate-credential', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ customer_id: editingCustomer.id, credential_type: provider }),
+          body: JSON.stringify({
+            customer_id: editingCustomer.id,
+            credential_type: provider,
+            // Send form values so backend can validate before saving
+            ak: formAk || undefined,
+            sk: formSk || undefined,
+          }),
         });
         const data = await res.json();
         setValidationStatus(prev => ({ ...prev, [provider]: data }));

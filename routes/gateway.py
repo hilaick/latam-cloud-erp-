@@ -399,8 +399,16 @@ def validate_credential():
         }), 400
 
     ak_field, sk_field = cred_map[credential_type]
-    ak = _decrypt_credential(getattr(customer, ak_field, None))
-    sk = _decrypt_credential(getattr(customer, sk_field, None))
+    # Use form-provided values if available (validate before saving),
+    # otherwise fall back to DB-stored credentials
+    form_ak = data.get('ak')
+    form_sk = data.get('sk')
+    if form_ak and form_sk and form_ak != '********' and form_sk != '********':
+        ak = form_ak
+        sk = form_sk
+    else:
+        ak = _decrypt_credential(getattr(customer, ak_field, None))
+        sk = _decrypt_credential(getattr(customer, sk_field, None))
 
     if not ak or not sk:
         return jsonify({
