@@ -588,7 +588,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
       setReplayIndex(0);
       setIsPlaying(false);
       if (onUpdateProject) {
-        onUpdateProject({ ...project, agenticDryRun: data });
+        onUpdateProject(project.id, { agenticDryRun: data });
       }
     } catch (err) {
       setError(err.message);
@@ -603,7 +603,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     setReplayIndex(0);
     setIsPlaying(false);
     if (onUpdateProject) {
-      onUpdateProject({ ...project, agenticDryRun: null });
+      onUpdateProject(project.id, { agenticDryRun: null });
     }
   };
 
