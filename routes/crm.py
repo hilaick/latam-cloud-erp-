@@ -478,8 +478,20 @@ def update_delete_customer(c_id):
                                 del data[field]
 
             # Generic update for remaining fields
+            # FIX: Don't overwrite credential fields with empty values — they mean "not changed"
+            credential_field_names = {
+                'ak', 'sk', 'tier1_ak', 'tier1_sk', 'tier2_ak', 'tier2_sk',
+                'tier3_ak', 'tier3_sk', 'aws_ak', 'aws_sk',
+                'source_huawei_ak', 'source_huawei_sk',
+                'azure_client_secret', 'os_password',
+                'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK', 'tier3AK', 'tier3SK',
+                'awsAK', 'awsSK',
+            }
             for key in data:
                 if hasattr(customer, key):
+                    # Skip empty credential fields — preserve stored value
+                    if key in credential_field_names and (not data[key] or data[key] == '' or data[key] is False):
+                        continue
                     setattr(customer, key, data[key])
                     
             db.session.commit()

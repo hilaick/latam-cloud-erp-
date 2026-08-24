@@ -274,7 +274,23 @@ export const ERPProvider = ({ children }) => {
 
     const handleUpdateCustomer = (updatedCustomer) => {
         setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
-        fetch(`/api/erp/customers/${updatedCustomer.id}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(updatedCustomer) })
+        // FIX: Don't send empty credential fields — they mean "not changed", not "delete"
+        // The API returns booleans (true/false) for credential fields for security.
+        // When editing, the frontend converts false→'' for the form. If we send '' back,
+        // it wipes the stored credential. Strip empty credential fields before sending.
+        const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
+          'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
+          'azureTenant', 'azureClient', 'azureSecret'];
+        const safeCustomer = { ...updatedCustomer };
+        let hasCredChange = false;
+        credentialFields.forEach(f => {
+            if (safeCustomer[f] === '' || safeCustomer[f] === null) {
+                delete safeCustomer[f];  // Don't send empty — preserves stored value
+            } else if (typeof safeCustomer[f] === 'string' && safeCustomer[f].length > 0) {
+                hasCredChange = true;  // New credential value provided
+            }
+        });
+        fetch(`/api/erp/customers/${updatedCustomer.id}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(safeCustomer) })
             .then(r => { 
                 if(r.status === 401 || r.status === 422) handleAuthError();
                 else if(!r.ok) throw new Error(`Failed to update customer: ${r.status} ${r.statusText}`);
