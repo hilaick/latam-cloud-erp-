@@ -3554,6 +3554,38 @@ class AgenticExecutionSimulator:
         is_cross_cloud = any("cross-cloud" in s.lower() for s in (migration_scope if isinstance(migration_scope, list) else [migration_scope]))
         needs_image_conversion = has_vmware or has_hyperv
 
+        # ── MCP Tool Discovery (P1: integrate MCP with execution engine) ──
+        mcp_tools_available = []
+        mcp_tool_count = 0
+        try:
+            import os as _os
+            mcp_base = "/home/huawei-cloud/iaas-mcp-server"
+            if _os.path.exists(mcp_base):
+                for d in _os.listdir(mcp_base):
+                    full = _os.path.join(mcp_base, d)
+                    if _os.path.isdir(full) and not d.startswith('.') and d != '__pycache__':
+                        # Count .py files as tools
+                        py_count = sum(1 for f in _os.listdir(full) if f.endswith('.py') and not f.startswith('__'))
+                        mcp_tools_available.append({"server": d, "tools": py_count})
+                        mcp_tool_count += py_count
+        except Exception:
+            pass
+
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+            "action": "MCP_TOOL_DISCOVERY",
+            "message": (
+                f"[MCP] Discovered {len(mcp_tools_available)} MCP server(s) with {mcp_tool_count} total tools. "
+                + ("Available: " + ", ".join(f"{s['server']}({s['tools']})" for s in mcp_tools_available[:5]) if mcp_tools_available else "MCP server not found on this host.")
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "mcp_discovered" if mcp_tools_available else "mcp_not_found",
+            "live_data": {"mcp_servers": mcp_tools_available, "total_tools": mcp_tool_count},
+            "source_label": "🔌 MCP (iaas-mcp-server)" if mcp_tools_available else None,
+        })
+        total_simulated_seconds += 1
+
         step_id += 1
         trace.append({
             "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
@@ -4032,6 +4064,8 @@ class AgenticExecutionSimulator:
                 if s["name"] != "image-conversion" or sms_total > 0  # only report relevant skills
             ],
             "primary_tool": "SMS" if sms_ok > 0 else "Image" if image_count > 0 else "None",
+            "mcp_tools_available": mcp_tool_count,
+            "mcp_servers": mcp_tools_available,
         }
 
         # ── Delivery Constellation summary (what would have been delivered) ──
