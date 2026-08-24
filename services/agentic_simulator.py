@@ -1181,6 +1181,7 @@ class SmsMigrationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_agent_installed",
             "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+            "rollback_action": {"cmd": "bash /opt/SMS-Agent/uninstall.sh", "label": "Uninstall SMS agent from source VM"},
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1195,6 +1196,7 @@ class SmsMigrationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_project_configured",
             "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+            "rollback_action": {"cmd": "hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=true --cli-region=ap-southeast-3", "label": "Reset migration project use_public_ip"},
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
         flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
@@ -1286,6 +1288,7 @@ class SmsMigrationSimulator:
             "result": "simulated_sg_rules_configured",
             "error_prevention": {"code": "SMS.3805", "ports": required_ports, "os_type": "Linux" if is_linux else "Windows"},
             "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+            "rollback_action": {"cmd": "hcloud VPC DeleteSecurityGroupRule --security_group_rule_id=<sg_rule_id> (for each rule added)", "label": "Delete SMS SG ingress/egress rules"},
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1356,6 +1359,7 @@ class SmsMigrationSimulator:
                 "commands": [{"desc": "Create EIP", "cmd": f"hcloud EIP CreatePublicip --publicip.type=5_bgp --bandwidth.name='{eip_name}' --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic"}],
                 "timestamp_offset_seconds": total_offset,
                 "result": "simulated_eip_created",
+                "rollback_action": {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Release EIP"},
             })
             total_offset += config.STEP_TIMINGS["agent_spawn"]
             resource_usage_local["eips_consumed"] = resource_usage_local.get("eips_consumed", 0) + 1
@@ -1370,6 +1374,7 @@ class SmsMigrationSimulator:
                 "metrics": {"flavor": flavor, "disk_gb": disk_gb},
                 "timestamp_offset_seconds": total_offset,
                 "result": "simulated_ecs_created",
+                "rollback_action": {"cmd": "hcloud ECS DeleteServer --server_id=<ecs_id>", "label": "Delete target ECS"},
             })
             total_offset += config.STEP_TIMINGS["instance_launch"]
             resource_usage_local["instances_provisioned"] = resource_usage_local.get("instances_provisioned", 0) + 1
@@ -1383,6 +1388,7 @@ class SmsMigrationSimulator:
                 "commands": [{"desc": "Bind EIP", "cmd": f"hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>"}],
                 "timestamp_offset_seconds": total_offset,
                 "result": "simulated_eip_bound",
+                "rollback_action": {"cmd": "hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=''", "label": "Unbind EIP from ECS"},
             })
             total_offset += config.STEP_TIMINGS["agent_spawn"]
 
@@ -1450,6 +1456,7 @@ class SmsMigrationSimulator:
             ],
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_sms_task_created",
+            "rollback_action": {"cmd": "hcloud SMS DeleteTask --task_id=<task_id>", "label": "Delete SMS migration task"},
         })
         total_offset += config.STEP_TIMINGS["initial_sync_start"]
 
@@ -4014,12 +4021,30 @@ class AgenticExecutionSimulator:
         except Exception:
             summary["external_knowledge"] = {"status": "unavailable", "source": EXTERNAL_REPO_URL}
 
+        # ── Rollback plan: extract all rollback_actions from trace ──
+        rollback_steps = []
+        for entry in reversed(trace):  # Reverse order — undo last step first
+            rb = entry.get("rollback_action")
+            if rb:
+                rollback_steps.append({
+                    "step_id": entry.get("id"),
+                    "action": entry.get("action"),
+                    "target": entry.get("target"),
+                    "rollback_cmd": rb.get("cmd"),
+                    "rollback_label": rb.get("label"),
+                })
+
         return {
             "success": True,
             "trace": trace,
             "resource_usage": resource_usage,
             "timeline": wave_timeline,
             "summary": summary,
+            "rollback_plan": {
+                "total_reversible_steps": len(rollback_steps),
+                "steps": rollback_steps,
+                "note": "Rollback plan generated from trace. Execute in order to revert all resource changes.",
+            },
         }
 
     @staticmethod
