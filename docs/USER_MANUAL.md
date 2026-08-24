@@ -37,6 +37,11 @@
 21. [Help & Documentation System](#21-help--documentation-system)
 22. [Glossary of Terms](#22-glossary-of-terms)
 23. [Troubleshooting & FAQ](#23-troubleshooting--faq)
+24. [AI Model Configuration & API Keys](#24-ai-model-configuration--api-keys)
+25. [Skills Knowledge Tree](#25-skills-knowledge-tree)
+26. [MCP Servers](#26-mcp-servers)
+27. [Agentic Orchestration & Execution Mode](#27-agentic-orchestration--execution-mode)
+28. [Readiness Gateway](#28-readiness-gateway)
 
 ---
 
@@ -757,6 +762,215 @@ Quick-action command palette for power users.
 | **SFS** | Scalable File System — Huawei NAS storage |
 | **SMS** | Server Migration Service — Huawei VM migration |
 | **SOW** | Statement of Work — project scope document |
+
+---
+
+## 24. AI Model Configuration & API Keys
+
+**Access:** Sidebar → Users → AI Model Configuration panel
+
+### Overview
+
+The ERP uses AI models for the ERP Agent (migration execution), simulation analysis, and chat assistance. Models are configured in priority order:
+
+### Priority Order
+
+```
+1. LoadBalancer (PRIMARY) — already configured with working API keys
+2. Individual Provider Keys (FALLBACK) — added via ModelConfigPanel
+3. Fallback Chain (LAST RESORT) — ordered provider list
+```
+
+### Configuration Steps
+
+1. **LoadBalancer (Priority 1):** The HuaweiLoadBalancer at `services/huawei_loadbalancer.py` has pre-configured API keys. When the delegate-task endpoint runs in HTTP mode, it POSTs to the loadbalancer URL. No additional configuration needed.
+
+2. **Individual Provider Keys (Priority 2):** In the Model Configuration panel:
+   - Select a provider (Alibaba, OpenAI, DeepSeek, etc.)
+   - Click "+ Add API key" and paste your key
+   - The key is stored encrypted and shown as masked (`****`)
+   - Green dot = key configured, Amber dot = no key
+
+3. **Primary Model:** Select which provider+model to use for main AI tasks
+4. **Delegation Model:** Select which provider+model to use for subagent spawning
+5. **Fallback Chain:** Drag to reorder providers — if primary fails, system tries next in chain
+
+### API Keys Needed
+
+| Key | Purpose | Where to Configure |
+|-----|---------|-------------------|
+| LLM API key (Alibaba/OpenAI/etc.) | ERP Agent AI calls | ModelConfigPanel → API key |
+| Huawei Master AK/SK | Control plane (ECS, VPC, IAM) | Customer Directory |
+| Huawei Source AK/SK | Source VM discovery + SMS agent | Customer Directory → source_huawei_ak/sk |
+| OS SSH credentials | Data plane (agent install, smoke tests) | Customer Directory → os_user/os_password |
+
+### ERP Agent Execution Modes
+
+The ERP Agent (`/api/hermes-cli/delegate-task`) supports two modes:
+
+| Mode | When Used | Tool Access |
+|------|-----------|-------------|
+| **HTTP (LoadBalancer)** | Simple chat, queries, analysis | Text only — no tool execution |
+| **CLI (Hermes)** | Execution tasks (create, deploy, migrate) | Full terminal, file, browser access + `--yolo` auto-approve |
+
+The system auto-detects execution tasks by keywords (create, delete, deploy, install, migrate, configure, etc.) and forces CLI mode for those.
+
+---
+
+## 25. Skills Knowledge Tree
+
+**Access:** Sidebar → Users → Skill Knowledge Tree panel
+
+### Overview
+
+The Skills Knowledge Tree is a hierarchical registry of migration skills from 3 sources:
+
+| Source | Description | Count |
+|--------|-------------|-------|
+| **Skill Registry** | Hardcoded skills in `agentic_simulator.py` | 13 |
+| **External** | Skills synced from GitHub repos | Variable |
+| **History** | Learnings from past project executions | Variable |
+
+### How Skills Are Used
+
+1. **Simulation:** When a project is simulated, the `SkillRegistry.get_skills_for_server()` method matches skills to each server based on OS, cloud, and migration scope. Matched skills appear in the trace with a 🔧 Skilled label.
+
+2. **Execution:** When the ERP Agent runs in CLI mode, the skill list is injected into the system prompt so the agent knows what proven runbooks are available.
+
+3. **Learning:** Each simulation's outcomes are ingested into the `ExecutionHistoryStore`. Future simulations query this data and apply relevant learnings.
+
+### Managing Skills
+
+- **View:** The tree shows all skills with category, confidence, and relevance
+- **Sync:** Click "Sync from GitHub" to pull the latest skills from external repos
+- **Deployed:** Skills with `hermes_skill` field are deployed to the live server at `/root/ulearning-migration/skills/`
+
+### Available Skills (13)
+
+| Skill | Category | Purpose |
+|-------|----------|---------|
+| huawei-cloud-sms-migration | migration | SMS migration patterns with hcloud CLI |
+| huawei-cloud-sms-api-only | migration | SMS API-only migration (no CLI) |
+| huawei-cloud-sms-migration-exact-disk-config | migration | Exact 1:1 disk configuration for SMS |
+| huawei-sms-cross-region-migration | migration | Cross-region SMS (proven live) |
+| sms-handler | migration | SMS agent-based block-level replication |
+| data-plane-sync | migration | File-level sync (rsync/robocopy) |
+| image-conversion | migration | qemu-img conversion (vhd→qcow2→zvhd) |
+| obs-migration | storage | OBS bucket migration |
+| boot-fixes | post_migration | Boot failure fixes (initramfs, GRUB, BCD) |
+| partition-fixes | post_migration | Disk partition expansion |
+| agent-orchestrator | orchestration | HSS, UniAgent, LTS deployment |
+| mig-worker-framework | infrastructure | mig_worker deployment framework |
+| erp-execution-orchestration | orchestration | ERP execution orchestration |
+
+---
+
+## 26. MCP Servers
+
+**Access:** Sidebar → Users → MCP Servers panel (below Skills Knowledge Tree)
+
+### Overview
+
+The Model Context Protocol (MCP) server provides 175+ Huawei Cloud IaaS API tools. The server is at `/home/huawei-cloud/iaas-mcp-server/` on the live server.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Server List** | Shows all MCP server directories (huaweicloud_services_server, dws, marketplace, common) |
+| **Sync from GitHub** | Pulls latest from `huaweicloud-samples/iaas-mcp-server` |
+| **Tool Count** | Shows total Python modules per server |
+| **Status** | Running/Stopped indicator |
+
+### MCP Integration Status
+
+- ✅ MCP server code synced to live server
+- ✅ UI panel with sync button in Profile section
+- ⚠️ MCP not yet integrated with execution engine (coming in future release)
+- Future: MCP tools will appear in simulation traces with 🔌 MCP label
+
+---
+
+## 27. Agentic Orchestration & Execution Mode
+
+**Access:** Project Wizard → Phase 3 → 3.4b Execution Mode
+
+### Execution Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Manual Pipeline** | Step-by-step Kanban execution | Small teams, manual control |
+| **Agentic Orchestration** | Hermes autonomous engine | Full automation, large migrations |
+| **Individual Tasks** | Isolated ad-hoc tasks | Small batches, database true-ups |
+
+### Agentic Orchestration Flow
+
+```
+3.4b: Select "Agentic Orchestration"
+  ↓
+4.0: Readiness Gateway (credential validation)
+  ↓
+4.1-4.7: Autonomous execution pipeline
+  ├── Network verification/provisioning
+  ├── Per-server SMS migration:
+  │   ├── SOURCE_ECS_ACTIVE_CHECK
+  │   ├── SMS_AGENT_INSTALL
+  │   ├── MIGRATION_PROJECT_CONFIG
+  │   ├── PREFLIGHT_SG_RULES (8900+22)
+  │   ├── PREFLIGHT_FLAVOR_IMAGE
+  │   ├── DISK_MAPPING (MGC-style)
+  │   ├── TARGET_SMS_TASK_CREATE
+  │   ├── SMS_SUBTASK_* (6 subtasks)
+  │   └── SMOKE_TESTS
+  ├── Cutover (HUMAN GATE)
+  └── Garbage Collection
+```
+
+### Simulation (Dry-Run)
+
+Before live execution, run a dry-run simulation:
+1. Click "Run Simulation" in the Agentic Orchestration panel
+2. The simulator generates a trace with exact CLI commands, resource specs, and error prevention
+3. Each step shows 🔧 Skilled label if it came from the Skills Knowledge Tree
+4. The simulation includes a **rollback plan** — all reversible steps in reverse order
+
+### Rollback
+
+Every resource-creating step has a `rollback_action` field:
+- TARGET_EIP_CREATE → Delete EIP
+- TARGET_ECS_CREATE → Delete ECS
+- PREFLIGHT_SG_RULES → Delete SG rules
+- TARGET_SMS_TASK_CREATE → Delete SMS task
+- SMS_AGENT_INSTALL → Uninstall agent
+- MIGRATION_PROJECT_CONFIG → Reset use_public_ip
+
+The simulation returns a `rollback_plan` with all reversible steps. In live execution, the same rollback tracking applies.
+
+---
+
+## 28. Readiness Gateway
+
+**Access:** Project Wizard → Phase 4 → 4.0 Readiness Gateway
+
+### Credential Hierarchy
+
+The gateway checks credential existence (not decryption — that happens at execution time):
+
+| Check | Status | Description |
+|-------|--------|-------------|
+| **Master AK/SK** | valid / configured / blocked | Control plane authentication |
+| **Real-Name Auth** | valid / unverified / unknown | Required for EPS + Tier 2 isolation |
+| **Tier 2 EPS Admin** | valid / missing | Enterprise Project-scoped access |
+| **EPS Bracket** | small / medium / large | Size classification |
+| **OS Data Plane** | configured / missing | Agentless migration credentials |
+
+### Unlocking Execution
+
+The execution engine unlocks when:
+1. Master AK/SK is present (configured or valid)
+2. OS Data Plane credentials are configured
+
+Real-name auth and Tier 2 are NOT blockers — the system falls back to Master AK/SK (Path B) with a warning.
 | **TAM** | Technical Account Manager |
 | **TCO** | Total Cost of Ownership |
 | **VPC** | Virtual Private Cloud |
