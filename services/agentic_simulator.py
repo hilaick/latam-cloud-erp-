@@ -1330,6 +1330,32 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
+        # ── P2: Windows mock image import (if Windows and no image in target region) ──
+        if is_windows:
+            sid += 1
+            trace.append({
+                "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Agent-{server_name}",
+                "action": "IMPORT_MOCK_IMAGE",
+                "target": server_name,
+                "message": (
+                    f"[WINDOWS] Importing mock Windows image for target {target_region}. "
+                    f"Source: assets/mock-windows.vmdk (uploaded to OBS). "
+                    f"Used as placeholder target image while SMS MIGRATE_BLOCK replicates the actual disk. "
+                    f"Windows SG ports: 8899(migration)+8900(data)+22(SSH). "
+                    f"Post-migration: BCD repair required."
+                ),
+                "commands": [
+                    {"desc": "Upload mock image to OBS", "cmd": "obsutil cp assets/mock-windows.vmdk obs://erp-assets/mock-windows.vmdk"},
+                    {"desc": "Import as IMS image", "cmd": f"hcloud IMS ImportImage --image_url=obs://erp-assets/mock-windows.vmdk --name=mock-windows-server --os_type=Windows --is_quick_import=false --cli-region={target_region}"},
+                    {"desc": "Wait for image import", "cmd": f"hcloud IMS ShowImage --image_id=<image_id> --cli-region={target_region} | jq '.status' (wait for active)"},
+                ],
+                "timestamp_offset_seconds": total_offset,
+                "result": "simulated_mock_image_imported",
+                "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
+                "rollback_action": {"cmd": "hcloud IMS DeleteImage --image_id=<image_id>", "label": "Delete mock Windows image"},
+            })
+            total_offset += config.STEP_TIMINGS["agent_spawn"]
+
         # ═══ PHASE 4.2c: TARGET ECS — verify existing or create new ═══
         # If Phase 3 already created the target ECS (targetArchitecture has servers), VERIFY it.
         # If not, CREATE it with EIP from start (SMS.6602 prevention).
@@ -2489,6 +2515,135 @@ class PostMigrationSimulator:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main Orchestration Simulator
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class DrsMigrationSimulator:
+    """P2: DRS (Data Replication Service) simulation for database migrations.
+
+    Handles database migration scenarios:
+    - MySQL → Huawei RDS for MySQL
+    - PostgreSQL → Huawei RDS for PostgreSQL
+    - SQL Server → Huawei RDS for SQL Server
+    - MongoDB → Huawei DDS
+    """
+
+    @staticmethod
+    def simulate(server: dict, profile: dict, physics: dict, step_id: int,
+                 offset: float, region: str, config) -> dict:
+        """Simulate DRS migration for a database server."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+        server_name = server.get("name", "unknown")
+        db_type = server.get("dbType", server.get("db_type", "mysql")).lower()
+        db_size_gb = float(server.get("diskGB", server.get("disk_gb", 50)))
+
+        # Map DB type to Huawei service
+        db_service_map = {
+            "mysql": "RDS for MySQL",
+            "postgresql": "RDS for PostgreSQL",
+            "postgres": "RDS for PostgreSQL",
+            "sqlserver": "RDS for SQL Server",
+            "sql_server": "RDS for SQL Server",
+            "mongodb": "DDS (Document Database Service)",
+            "mongo": "DDS (Document Database Service)",
+            "redis": "DCS (Distributed Cache Service)",
+            "kafka": "DMS (Distributed Message Service)",
+        }
+        target_service = db_service_map.get(db_type, "RDS (auto-detected)")
+
+        # Step 1: DRS preflight — source DB connectivity
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"DRS-Agent-{server_name}",
+            "action": "DRS_SOURCE_CONNECTIVITY_CHECK",
+            "target": server_name,
+            "message": (
+                f"[DRS] Verifying source {db_type} database connectivity. "
+                f"Target: Huawei {target_service} in {region}. "
+                f"Database size: {db_size_gb:.0f}GB."
+            ),
+            "commands": [
+                {"desc": "Test source DB connection", "cmd": f"hcloud DRS TestConnection --source_db_type={db_type} --source_ip={server.get('sourceIp','<source_ip>')} --source_port=3306"},
+                {"desc": "Check source DB privileges", "cmd": f"mysql -h <source_ip> -u root -p<password> -e 'SHOW GRANTS FOR CURRENT_USER();'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_drs_source_ok",
+            "source_label": "🔌 MCP (iaas-mcp-server)" if db_type in ["mysql", "postgresql"] else None,
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 2: Create target RDS instance
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"DRS-Agent-{server_name}",
+            "action": "DRS_TARGET_CREATE",
+            "target": server_name,
+            "message": (
+                f"[DRS] Creating target {target_service} in {region}. "
+                f"Flavor: rds.mysql.s3.large.2, Storage: {db_size_gb:.0f}GB SSD."
+            ),
+            "commands": [
+                {"desc": "Create RDS instance", "cmd": f"hcloud RDS CreateInstance --name=target-{server_name} --datastore.type={db_type} --datastore.version=8.0 --flavor_ref=rds.mysql.s3.large.2 --volume_type=ULTRAHIGH --volume_size={int(db_size_gb)} --region={region}"},
+                {"desc": "Wait for RDS ACTIVE", "cmd": f"hcloud RDS ShowInstance --instance_id=<rds_id> --cli-region={region} | jq '.status' (wait for 'ACTIVE')"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_rds_created",
+            "rollback_action": {"cmd": "hcloud RDS DeleteInstance --instance_id=<rds_id>", "label": "Delete target RDS instance"},
+        })
+        total_offset += config.STEP_TIMINGS["instance_launch"]
+
+        # Step 3: Create DRS migration task
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"DRS-Agent-{server_name}",
+            "action": "DRS_TASK_CREATE",
+            "target": server_name,
+            "message": (
+                f"[DRS] Creating DRS migration task: {db_type} → {target_service}. "
+                f"Mode: FULL+INCREMENTAL (minimal downtime). "
+                f"Source: {server.get('sourceIp','<source_ip>')}:3306 → Target: <rds_endpoint>:3306."
+            ),
+            "commands": [
+                {"desc": "Create DRS task", "cmd": f"hcloud DRS CreateJob --name=drs-{server_name} --db_type={db_type} --source.source_ip=<source_ip> --source.db_port=3306 --target.target_ip=<rds_endpoint> --target.db_port=3306 --task_type=FULL_INCR --net_type=VPC"},
+                {"desc": "Start DRS task", "cmd": f"hcloud DRS StartJob --job_id=<drs_job_id>"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_drs_task_created",
+            "rollback_action": {"cmd": "hcloud DRS DeleteJob --job_id=<drs_job_id>", "label": "Delete DRS migration task"},
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 4: Monitor DRS sync
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DRS-Agent-{server_name}",
+            "action": "DRS_SYNC_MONITOR",
+            "target": server_name,
+            "message": (
+                f"[DRS] Monitoring DRS sync: FULL phase ({db_size_gb:.0f}GB) → INCREMENTAL phase (delta sync). "
+                f"Subtasks: STRUCTURE_MIGRATION → FULL_MIGRATION → INCREMENTAL_MIGRATION."
+            ),
+            "commands": [
+                {"desc": "Monitor DRS progress", "cmd": f"hcloud DRS ShowJob --job_id=<drs_job_id> | jq '.status, .progress'"},
+                {"desc": "Check lag (incremental)", "cmd": f"hcloud DRS ShowJob --job_id=<drs_job_id> | jq '.delay'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_drs_syncing",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        sync_hours = (db_size_gb * 8000) / (100 * 3600)  # ~100Mbps for DB sync
+
+        return {
+            "trace": trace,
+            "final_step_id": sid,
+            "final_offset": total_offset,
+            "outcome": "DRS_MIGRATION_SUCCESS",
+            "sync_hours": sync_hours,
+            "server_name": server_name,
+            "path_taken": "drs_migration",
+        }
+
 
 class MigWorkerDeployer:
     """P1: Autonomous mig_worker deployment for resilience.
@@ -3750,29 +3905,80 @@ class AgenticExecutionSimulator:
         })
         total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
 
-        # If advisory-only, skip agent orchestration and generate recommendations
+        # If advisory-only, skip agent orchestration and generate runbook
         if is_advisory_only:
             step_id += 1
             trace.append({
                 "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
-                "action": "ADVISORY_MODE_SKIP",
+                "action": "ADVISORY_MODE_RUNBOOK",
                 "message": (
                     "[ADVISORY] Auth level is Read-Only or No Access. "
-                    "Skipping agent orchestration, task creation, and data sync. "
-                    "Generating advisory recommendations and runbook for customer self-execution."
+                    "Skipping automated execution. Generating detailed runbook "
+                    "for customer self-execution."
                 ),
                 "timestamp_offset_seconds": total_simulated_seconds,
-                "result": "advisory_recommendations_generated",
+                "result": "advisory_runbook_generated",
             })
+
+            # Generate per-server runbook steps
+            server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
+            runbook_steps = []
+            for i, s in enumerate(server_resources):
+                s_name = s.get("name", f"server-{i}")
+                s_os = s.get("os", "linux")
+                is_win = "windows" in s_os.lower()
+                step_id += 1
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": f"Advisor-{s_name}",
+                    "action": "ADVISORY_RUNBOOK_STEP",
+                    "target": s_name,
+                    "message": (
+                        f"[RUNBOOK] {s_name}: "
+                        f"1) Install SMS agent: wget SMS-Agent.tar.gz && screen -dmS sms_agent bash startup.sh. "
+                        f"2) Open SG ports: {'8899+8900+22 (Windows)' if is_win else '8900+22 (Linux)'}. "
+                        f"3) Create target ECS in Huawei Cloud console. "
+                        f"4) Create SMS migration task in SMS console. "
+                        f"5) Start task and monitor: SSL_CONFIG → ATTACH_AGENT_IMAGE → "
+                        f"{'MIGRATE_BLOCK' if is_win else 'MIGRATE_LINUX_FILE'} → CONFIGURE → DETTACH. "
+                        f"6) {'Run BCD repair post-migration.' if is_win else 'Verify boot after migration.'}"
+                    ),
+                    "commands": [
+                        {"desc": "Step 1: Install SMS agent", "cmd": f"ssh root@{s_name} 'wget https://sms-resource-intl-ap-southeast-3.obs.ap-southeast-3.myhuaweicloud.com/SMS-Agent.tar.gz && tar xzf SMS-Agent.tar.gz -C /opt && screen -dmS sms_agent bash -c \"printf \\\"y\\\\n<AK>\\\\n<SK>\\\\nsms.ap-southeast-3.myhuaweicloud.com\\\\n\\\\n\\\\ny\\\\ny\\\\nn\\\\n\\\" | bash /opt/SMS-Agent/startup.sh\"'"},
+                        {"desc": "Step 2: Open SG ports", "cmd": f"Huawei Console → VPC → Security Groups → Add Inbound Rule: TCP {'8899,8900,22' if is_win else '8900,22'} from 0.0.0.0/0"},
+                        {"desc": "Step 3: Create target ECS", "cmd": "Huawei Console → ECS → Create Server → Select flavor, image, VPC, subnet → Create"},
+                        {"desc": "Step 4: Create SMS task", "cmd": "Huawei Console → SMS → Create Migration Task → Select source, target, disk mapping → Create"},
+                        {"desc": "Step 5: Start and monitor", "cmd": "Huawei Console → SMS → Start Task → Monitor subtask progress"},
+                    ] + ([{"desc": "Step 6: BCD repair", "cmd": f"ssh root@<target_ip> 'bcdedit /set {{default}} device partition=c:'"}] if is_win else [{"desc": "Step 6: Verify boot", "cmd": "hcloud ECS RebootServer --server_id=<target_id> && hcloud ECS ShowServer --server_id=<target_id> | jq '.status'"}]),
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "runbook_step_generated",
+                })
+                runbook_steps.append({
+                    "server": s_name,
+                    "os": s_os,
+                    "steps": 6,
+                    "requires_bcd_repair": is_win,
+                })
+
             return {
                 "trace": trace,
                 "resource_usage": resource_usage,
                 "summary": {
                     "mode": "dry_run",
                     "advisory_only": True,
-                    "message": "Advisory mode — no automated migration. Recommendations generated for customer self-execution.",
+                    "message": "Advisory mode — runbook generated for customer self-execution.",
                     "strategy": "advisory",
                     "auth_level": auth_level,
+                    "runbook": {
+                        "total_servers": len(server_resources),
+                        "total_steps": sum(r["steps"] for r in runbook_steps),
+                        "servers": runbook_steps,
+                        "note": "Customer executes these steps manually. Partner provides guidance only.",
+                    },
+                },
+                "rollback_plan": {
+                    "total_reversible_steps": 0,
+                    "steps": [],
+                    "note": "Advisory mode — no resources created, no rollback needed.",
                 },
             }
 
@@ -4579,17 +4785,29 @@ class AgenticExecutionSimulator:
                     resource_usage_local["image_performed"] = 1
 
         elif strategy == "image_primary":
-            # Start with image-based migration (e.g., for critical DBs)
-            img_result = ImageMigrationSimulator.simulate(
-                server, profile, physics, sid, current_offset, region, config,
-                reason="image_primary_strategy_for_database"
-            )
-            all_trace.extend(img_result["trace"])
-            sid = img_result["final_step_id"]
-            current_offset = img_result["final_offset"]
-            final_outcome = img_result["outcome"]
-            final_sync_hours = img_result["sync_hours"]
-            path_taken = "image_primary"
+            # Check if this is a database server — use DRS instead
+            if profile.get("role") == "db" or "db" in server.get("resourceType", "").lower() or "database" in server.get("name", "").lower():
+                drs_result = DrsMigrationSimulator.simulate(
+                    server, profile, physics, sid, current_offset, region, config
+                )
+                all_trace.extend(drs_result["trace"])
+                sid = drs_result["final_step_id"]
+                current_offset = drs_result["final_offset"]
+                final_outcome = drs_result["outcome"]
+                final_sync_hours = drs_result["sync_hours"]
+                path_taken = "drs_migration"
+            else:
+                # Image-based migration for non-DB servers
+                img_result = ImageMigrationSimulator.simulate(
+                    server, profile, physics, sid, current_offset, region, config,
+                    reason="image_primary_strategy_for_database"
+                )
+                all_trace.extend(img_result["trace"])
+                sid = img_result["final_step_id"]
+                current_offset = img_result["final_offset"]
+                final_outcome = img_result["outcome"]
+                final_sync_hours = img_result["sync_hours"]
+                path_taken = "image_primary"
 
         elif strategy == "manual_agent_required":
             # ── BLOCKED: Show why, then continue in dry-run mode ──
