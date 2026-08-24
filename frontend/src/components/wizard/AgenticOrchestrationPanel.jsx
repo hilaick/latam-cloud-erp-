@@ -421,6 +421,472 @@ const LiveStepCard = ({ step }) => {
   );
 };
 
+/* ═══════════════════════════════════════════════
+   SIMULATION CONSTELLATION — Phase 3.4b
+   Visual SVG showing simulation's deployed resources:
+   servers, network, mig_worker, migration arrows.
+   Parses trace + resource_usage from agenticDryRun.
+   ═══════════════════════════════════════════════ */
+
+/* ── Status → color map (green=success, amber=running, red=failed, blue=deployed) ── */
+const STATUS_COLORS = {
+  success:  '#10b981', green: '#10b981', ok: '#10b981',
+  running:  '#f59e0b', amber: '#f59e0b', active: '#f59e0b', in_progress: '#f59e0b',
+  failed:   '#ef4444', red: '#ef4444', error: '#ef4444',
+  deployed: '#3b82f6', blue: '#3b82f6',
+  pending:  '#6b7280', gray: '#6b7280',
+};
+
+function resolveStatusColor(step) {
+  const r = ((step.result || step.outcome || '')).toLowerCase();
+  if (r.includes('success') || r === 'capacity_ok' || r === 'registered' || r.startsWith('simulated')) return STATUS_COLORS.success;
+  if (r === 'running' || r === 'in_progress' || r.includes('active') || r.includes('processing')) return STATUS_COLORS.running;
+  if (r.includes('error') || r.includes('failed') || r.includes('blocked') || r === 'not_resolved') return STATUS_COLORS.failed;
+  if (r.includes('deploy') || r.includes('create') || r.includes('register')) return STATUS_COLORS.deployed;
+  return STATUS_COLORS.pending;
+}
+
+/* ── Build constellation nodes from trace ── */
+function buildConstellationData(trace, resourceUsage, resources) {
+  const servers = [];       // { id, name, status, color, source_label, commands_count }
+  const networkNodes = [];  // { id, name, type, status, color }
+  const seenServerIds = new Set();
+  const seenNetIds = new Set();
+
+  // Track mig_worker
+  let migWorker = null;
+
+  trace.forEach((step) => {
+    const serverId = step.server_id || (step.decision && step.decision.server_id) || '';
+    const serverName = (step.decision && step.decision.server_name) || serverId || '';
+    const action = step.action || '';
+
+    // Detect mig_worker
+    if (action.includes('MIG_WORKER') || action === 'WORKER_REGISTER' || action === 'WORKER_DEPLOY' ||
+        (step.message || '').toLowerCase().includes('mig_worker') ||
+        (step.description || '').toLowerCase().includes('mig_worker')) {
+      if (!migWorker) {
+        migWorker = {
+          id: 'mig_worker',
+          name: 'mig_worker',
+          status: resolveStatusColor(step) === STATUS_COLORS.success ? 'active' : 'deployed',
+          color: resolveStatusColor(step) === STATUS_COLORS.success ? STATUS_COLORS.success : STATUS_COLORS.deployed,
+          source_label: step.source_label || null,
+          commands_count: (step.commands || []).length,
+          stepAction: action,
+        };
+      } else if (resolveStatusColor(step) === STATUS_COLORS.success) {
+        migWorker.status = 'active';
+        migWorker.color = STATUS_COLORS.success;
+      }
+    }
+
+    // Detect servers (migration steps)
+    if (serverId && !seenServerIds.has(serverId)) {
+      seenServerIds.add(serverId);
+      const resource = resources.find(r => r.id === serverId || r.name === serverId || r.name === serverName);
+      const displayName = serverName || (resource ? (resource.name || resource.id) : serverId);
+      servers.push({
+        id: serverId,
+        name: displayName,
+        resourceType: resource ? (resource.type || 'ECS') : 'ECS',
+        status: resolveStatusColor(step),
+        color: resolveStatusColor(step),
+        source_label: step.source_label || null,
+        commands_count: (step.commands || []).length,
+        stepAction: action,
+      });
+    }
+
+    // Detect network resources
+    const netTypes = ['VPC', 'SUBNET', 'SG', 'SECURITY_GROUP', 'EIP', 'NAT', 'VPN', 'VPC_CREATE', 'SUBNET_CREATE', 'SG_CREATE'];
+    if ((action.includes('VPC') || action.includes('SUBNET') || action.includes('SG') ||
+         action.includes('SECURITY') || action.includes('EIP') || action.includes('NAT') ||
+         action.includes('NETWORK')) && !seenNetIds.has(action)) {
+      seenNetIds.add(action);
+      let netType = 'NET';
+      let netName = action.replace(/_/g, ' ');
+      if (action.includes('VPC')) { netType = 'VPC'; netName = action.includes('CREATE') ? 'VPC' : netName; }
+      else if (action.includes('SUBNET')) { netType = 'SUBNET'; netName = action.includes('CREATE') ? 'Subnet' : netName; }
+      else if (action.includes('SG') || action.includes('SECURITY')) { netType = 'SG'; netName = 'Security Group'; }
+      else if (action.includes('EIP')) { netType = 'EIP'; netName = 'EIP'; }
+      else if (action.includes('NAT')) { netType = 'NAT'; netName = 'NAT Gateway'; }
+
+      networkNodes.push({
+        id: action,
+        name: netName,
+        type: netType,
+        status: resolveStatusColor(step),
+        color: resolveStatusColor(step),
+        source_label: step.source_label || null,
+      });
+    }
+
+    // Update server status from later steps in the trace
+    if (serverId && seenServerIds.has(serverId)) {
+      const existing = servers.find(s => s.id === serverId);
+      if (existing) {
+        const newColor = resolveStatusColor(step);
+        if (newColor === STATUS_COLORS.success || newColor === STATUS_COLORS.failed) {
+          existing.status = newColor === STATUS_COLORS.success ? 'success' : 'failed';
+          existing.color = newColor;
+        } else if (newColor === STATUS_COLORS.running && existing.color === STATUS_COLORS.pending) {
+          existing.status = 'running';
+          existing.color = newColor;
+        }
+      }
+    }
+  });
+
+  // Resource counts from resource_usage
+  const counts = {
+    ecs: resourceUsage?.ecs_instances || resourceUsage?.ecs || servers.length,
+    eip: resourceUsage?.eip_addresses || resourceUsage?.eip || 0,
+    sgRules: resourceUsage?.sg_rules || resourceUsage?.security_group_rules || 0,
+    smsTasks: resourceUsage?.sms_tasks || resourceUsage?.sms || servers.length,
+    vpcs: resourceUsage?.vpc || resourceUsage?.vpcs || 1,
+    subnets: resourceUsage?.subnet || resourceUsage?.subnets || 1,
+  };
+
+  return { servers, networkNodes, migWorker, counts };
+}
+
+/* ── SVG layout constants ── */
+const CON_W = 900, CON_H = 600, CON_CX = CON_W / 2, CON_CY = CON_H / 2;
+
+function computeConstellationLayout(data) {
+  const { servers, networkNodes, migWorker, counts } = data;
+  const allNodes = [];
+  const allEdges = [];
+
+  // ── Source cloud (left side) ──
+  const sourceX = 120, sourceY = CON_CY;
+  allNodes.push({
+    id: 'source_cloud', type: 'cloud', label: 'SOURCE\nAzure', x: sourceX, y: sourceY,
+    color: '#6b7280', icon: 'fa-cloud', size: 'lg',
+  });
+
+  // ── Target cloud (right side) ──
+  const targetX = CON_W - 120, targetY = CON_CY;
+  allNodes.push({
+    id: 'target_cloud', type: 'cloud', label: 'TARGET\nHuawei Cloud', x: targetX, y: targetY,
+    color: '#3b82f6', icon: 'fa-cloud', size: 'lg',
+  });
+
+  // ── Servers: arrange in a vertical column between source and target, staggered left→right ──
+  const serverCount = servers.length;
+  const serverCols = Math.min(serverCount, 3);
+  const serverRows = Math.ceil(serverCount / serverCols);
+  const serverStartX = 240;
+  const serverEndX = CON_W - 240;
+  const serverStartY = 100;
+  const serverEndY = CON_H - 100;
+
+  servers.forEach((srv, i) => {
+    const col = i % serverCols;
+    const row = Math.floor(i / serverCols);
+    const xRange = serverEndX - serverStartX;
+    const colStep = serverCols > 1 ? xRange / (serverCols - 1) : xRange / 2;
+    const yRange = serverEndY - serverStartY;
+    const rowStep = serverRows > 1 ? yRange / (serverRows - 1) : 0;
+
+    const x = serverStartX + col * colStep;
+    const y = serverStartY + row * rowStep;
+
+    allNodes.push({
+      id: srv.id, type: 'server', label: srv.name, x, y,
+      color: srv.color, source_label: srv.source_label,
+      resourceType: srv.resourceType, stepAction: srv.stepAction,
+    });
+
+    // Source → server edge
+    allEdges.push({
+      id: `src2${srv.id}`, from: { x: sourceX, y: sourceY }, to: { x, y },
+      color: srv.color, dashed: true,
+    });
+    // Server → target edge
+    allEdges.push({
+      id: `${srv.id}2tgt`, from: { x, y }, to: { x: targetX, y: targetY },
+      color: srv.color, dashed: false,
+    });
+  });
+
+  // ── Network nodes: VPC, Subnet, SG — place above/below the server rows ──
+  const netStartY = serverStartY - 80;
+  const netXStart = 200;
+  const netXEnd = CON_W - 200;
+  networkNodes.forEach((net, i) => {
+    const netCount = networkNodes.length;
+    const xStep = netCount > 1 ? (netXEnd - netXStart) / (netCount - 1) : 0;
+    const x = netXStart + i * xStep;
+    const y = netStartY;
+
+    allNodes.push({
+      id: net.id, type: 'network', label: net.name, x, y,
+      color: net.color, netType: net.type, source_label: net.source_label,
+    });
+    // Connect network nodes to source/target
+    allEdges.push({
+      id: `net_${net.id}_src`, from: { x: sourceX, y: sourceY }, to: { x, y },
+      color: net.color, dashed: true,
+    });
+    allEdges.push({
+      id: `net_${net.id}_tgt`, from: { x, y }, to: { x: targetX, y: targetY },
+      color: net.color, dashed: true,
+    });
+  });
+
+  // ── mig_worker: special node at top right ──
+  if (migWorker) {
+    const workerX = targetX + 60;
+    const workerY = 80;
+    allNodes.push({
+      id: 'mig_worker', type: 'worker', label: 'mig_worker', x: workerX, y: workerY,
+      color: migWorker.color, source_label: migWorker.source_label, stepAction: migWorker.stepAction,
+    });
+    // Edge from target cloud to mig_worker
+    allEdges.push({
+      id: 'tgt2worker', from: { x: targetX, y: targetY }, to: { x: workerX, y: workerY },
+      color: migWorker.color, dashed: false, thick: true,
+    });
+  }
+
+  // ── Resource count label (bottom center) ──
+  allNodes.push({
+    id: 'counts', type: 'counts', label: '', x: CON_CX, y: CON_H - 40,
+    color: '#6b7280', counts,
+  });
+
+  return { allNodes, allEdges, counts };
+}
+
+function SimulationConstellation({ trace, resourceUsage, resources }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const data = useMemo(() => buildConstellationData(trace, resourceUsage, resources), [trace, resourceUsage, resources]);
+  const { allNodes, allEdges, counts } = useMemo(() => computeConstellationLayout(data), [data]);
+  const hasData = data.servers.length > 0 || data.networkNodes.length > 0;
+
+  if (!hasData) return null;
+
+  /* ── Node render helper ── */
+  const renderNode = (node) => {
+    switch (node.type) {
+      case 'cloud': {
+        const r = 42;
+        return (
+          <g key={node.id}>
+            <circle cx={node.x} cy={node.y} r={r} fill={`${node.color}15`} stroke={node.color}
+              strokeWidth="2" strokeDasharray="6 3" />
+            <text x={node.x} y={node.y - 6} textAnchor="middle" fill={node.color}
+              fontFamily="FontAwesome, sans-serif" fontSize="22"></text>
+            {node.label.split('\n').map((line, i) => (
+              <text key={i} x={node.x} y={node.y + 14 + i * 14} textAnchor="middle"
+                fill="#d1d5db" fontSize="9" fontWeight="700" letterSpacing="0.05em">
+                {line}
+              </text>
+            ))}
+          </g>
+        );
+      }
+      case 'server': {
+        const r = 24;
+        const iconText = node.resourceType === 'RDS' || node.resourceType === 'DATABASE' ? '\uf1c0' : '\uf233'; // fa-database or fa-server
+        return (
+          <g key={node.id}>
+            {/* Glow */}
+            <circle cx={node.x} cy={node.y} r={r + 4} fill="none" stroke={node.color}
+              strokeWidth="1" opacity="0.3" style={{ filter: `drop-shadow(0 0 8px ${node.color}60)` }} />
+            {/* Node circle */}
+            <circle cx={node.x} cy={node.y} r={r} fill={`${node.color}20`} stroke={node.color} strokeWidth="2" />
+            {/* Icon */}
+            <text x={node.x} y={node.y + 1} textAnchor="middle" fill={node.color}
+              fontFamily="FontAwesome, sans-serif" fontSize="16">{iconText}</text>
+            {/* Label */}
+            <text x={node.x} y={node.y + r + 16} textAnchor="middle" fill="#d1d5db"
+              fontSize="9" fontWeight="600" letterSpacing="0.03em">
+              {node.label.length > 14 ? node.label.slice(0, 12) + '…' : node.label}
+            </text>
+            {/* Source/skill label */}
+            {node.source_label && (
+              <text x={node.x} y={node.y - r - 8} textAnchor="middle" fill="#a78bfa"
+                fontSize="7" fontWeight="700" letterSpacing="0.04em">
+                {node.source_label}
+              </text>
+            )}
+          </g>
+        );
+      }
+      case 'network': {
+        const r = 18;
+        const iconMap = { VPC: '\uf1b3', SUBNET: '\uf0e8', SG: '\uf132', EIP: '\uf0ac', NAT: '\uf233', NET: '\uf1eb' }; // fa-cubes, fa-sitemap, fa-shield, fa-globe, fa-server, fa-wifi
+        const icon = iconMap[node.netType] || '\uf1eb';
+        return (
+          <g key={node.id}>
+            <rect x={node.x - r - 6} y={node.y - r} width={(r + 6) * 2} height={r * 2} rx={8}
+              fill={`${node.color}15`} stroke={node.color} strokeWidth="1.5" />
+            <text x={node.x} y={node.y - 2} textAnchor="middle" fill={node.color}
+              fontFamily="FontAwesome, sans-serif" fontSize="13">{icon}</text>
+            <text x={node.x} y={node.y + r + 12} textAnchor="middle" fill="#9ca3af"
+              fontSize="8" fontWeight="600">
+              {node.label}
+            </text>
+            {node.source_label && (
+              <text x={node.x} y={node.y - r - 6} textAnchor="middle" fill="#a78bfa"
+                fontSize="6" fontWeight="700">{node.source_label}</text>
+            )}
+          </g>
+        );
+      }
+      case 'worker': {
+        const r = 22;
+        return (
+          <g key={node.id}>
+            {/* Hexagonal feel for worker */}
+            <rect x={node.x - r - 4} y={node.y - r} width={(r + 4) * 2} height={r * 2} rx={10}
+              fill={`${node.color}15`} stroke={node.color} strokeWidth="2" strokeDasharray="4 2" />
+            <text x={node.x} y={node.y - 2} textAnchor="middle" fill={node.color}
+              fontFamily="FontAwesome, sans-serif" fontSize="15"></text>
+            <text x={node.x} y={node.y + r + 14} textAnchor="middle" fill="#fbbf24"
+              fontSize="9" fontWeight="800" letterSpacing="0.04em">
+              ⚙ mig_worker
+            </text>
+            {node.source_label && (
+              <text x={node.x} y={node.y - r - 8} textAnchor="middle" fill="#a78bfa"
+                fontSize="6" fontWeight="700">{node.source_label}</text>
+            )}
+          </g>
+        );
+      }
+      case 'counts': {
+        const countLines = [
+          `${node.counts.ecs} ECS`,
+          `${node.counts.eip} EIP`,
+          `${node.counts.sgRules} SG Rules`,
+          `${node.counts.smsTasks} SMS Tasks`,
+        ];
+        return (
+          <g key={node.id}>
+            {countLines.map((line, i) => (
+              <text key={i} x={node.x + (i - 1.5) * 120} y={node.y}
+                textAnchor="middle" fill="#6b7280" fontSize="9" fontWeight="700" letterSpacing="0.04em">
+                {line}
+              </text>
+            ))}
+          </g>
+        );
+      }
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Card
+      title={
+        <Space>
+          <i className="fas fa-project-diagram" style={{ color: '#818cf8' }} />
+          <Text strong style={{ fontSize: 14 }}>Simulation Constellation</Text>
+          <Tag color="processing">Phase 3.4b</Tag>
+        </Space>
+      }
+      extra={
+        <Button
+          type="link"
+          icon={expanded ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Collapse' : 'Expand'}
+        </Button>
+      }
+      styles={{ body: { padding: 0 } }}
+    >
+      {expanded && (
+        <div
+          style={{
+            width: '100%', height: 480,
+            background: 'radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f1a 100%)',
+            borderRadius: '0 0 8px 8px',
+            overflow: 'hidden', position: 'relative',
+          }}
+        >
+          {/* Legend */}
+          <div style={{
+            position: 'absolute', top: 10, left: 14, zIndex: 10,
+            display: 'flex', gap: 12, flexWrap: 'wrap',
+          }}>
+            {[
+              { label: 'Success', color: STATUS_COLORS.success },
+              { label: 'Running', color: STATUS_COLORS.running },
+              { label: 'Failed', color: STATUS_COLORS.failed },
+              { label: 'Deployed', color: STATUS_COLORS.deployed },
+            ].map((leg) => (
+              <div key={leg.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: leg.color, boxShadow: `0 0 6px ${leg.color}60` }} />
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.04em' }}>{leg.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Migration direction indicator */}
+          <div style={{
+            position: 'absolute', top: 10, right: 14, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: '#111827aa', backdropFilter: 'blur(6px)',
+            borderRadius: 8, padding: '4px 10px', border: '1px solid #374151',
+          }}>
+            <span style={{ color: '#6b7280', fontSize: 9, fontWeight: 700 }}>Azure</span>
+            <ArrowRightOutlined style={{ color: '#818cf8', fontSize: 12 }} />
+            <span style={{ color: '#3b82f6', fontSize: 9, fontWeight: 700 }}>Huawei Cloud</span>
+          </div>
+
+          <svg width="100%" height="100%" viewBox={`0 0 ${CON_W} ${CON_H}`}
+            style={{ display: 'block' }}>
+
+            {/* ── Grid background ── */}
+            <defs>
+              <pattern id="cgrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <circle cx="20" cy="20" r="0.5" fill="#374151" opacity="0.15" />
+              </pattern>
+            </defs>
+            <rect width={CON_W} height={CON_H} fill="url(#cgrid)" />
+
+            {/* ── Edges ── */}
+            {allEdges.map((edge) => (
+              <g key={edge.id}>
+                {/* Arrow marker for non-dashed edges */}
+                {!edge.dashed && (
+                  <line x1={edge.from.x} y1={edge.from.y} x2={edge.to.x} y2={edge.to.y}
+                    stroke={edge.color} strokeWidth={edge.thick ? 3 : 2}
+                    opacity="0.5" strokeLinecap="round"
+                    markerEnd={`url(#arrow_${edge.id})`} />
+                )}
+                {edge.dashed && (
+                  <line x1={edge.from.x} y1={edge.from.y} x2={edge.to.x} y2={edge.to.y}
+                    stroke={edge.color} strokeWidth="1.2" strokeDasharray="5 4"
+                    opacity="0.35" strokeLinecap="round" />
+                )}
+                {/* Arrowhead def */}
+                {!edge.dashed && (
+                  <defs>
+                    <marker id={`arrow_${edge.id}`} markerWidth="8" markerHeight="6"
+                      refX="8" refY="3" orient="auto">
+                      <polygon points="0 0, 8 3, 0 6" fill={edge.color} opacity="0.6" />
+                    </marker>
+                  </defs>
+                )}
+              </g>
+            ))}
+
+            {/* ── Nodes ── */}
+            {allNodes.map(renderNode)}
+          </svg>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ── Main Component ── */
 export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
   const [loading, setLoading] = useState(false);
@@ -1083,6 +1549,9 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               </Row>
             </Card>
           )}
+
+          {/* ── Simulation Constellation (Phase 3.4b) ── */}
+          <SimulationConstellation trace={result?.trace || []} resourceUsage={summary?.resource_usage || {}} resources={resources} />
 
           {/* ── Execution Trace — Grouped by Phase ── */}
           <Card
