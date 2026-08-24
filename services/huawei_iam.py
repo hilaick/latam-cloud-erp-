@@ -38,18 +38,38 @@ class HuaweiIAMClient:
         return headers
 
     def ping(self) -> dict:
-        """Verify credentials by calling IAM auth/projects endpoint."""
+        """Verify credentials by calling hcloud CLI (official Huawei SDK signing).
+
+        Configures a temporary hcloud profile with the provided AK/SK,
+        then calls KeystoneListRegions to verify the credentials work.
+        """
+        import subprocess, json
         try:
-            # Use the proven sign_and_request function (HMAC-SHA256 v3 signing)
-            from services.huawei_api_signer import sign_and_request
-            url = f'https://iam.myhuaweicloud.com/v3/auth/projects'
-            resp = sign_and_request('GET', url, self.ak, self.sk, timeout=15)
-            projects = resp.get('projects', [])
-            if projects:
-                # Get the account/domain ID from the first project
-                domain_id = projects[0].get('domain_id', 'unknown')
-                return {'account_id': domain_id}
-            return {'account_id': 'verified'}
+            # Create a temporary hcloud profile with the provided AK/SK
+            profile_name = f'validate-{self.ak[:6]}'
+            config_cmd = [
+                'hcloud', 'configure', 'set',
+                f'--cli-profile={profile_name}',
+                '--cli-mode=AKSK',
+                f'--cli-access-key={self.ak}',
+                f'--cli-secret-key={self.sk}',
+                f'--cli-region={self.region}',
+            ]
+            subprocess.run(config_cmd, capture_output=True, text=True, timeout=10)
+
+            # Call KeystoneListRegions to verify
+            cmd = [
+                'hcloud', 'IAM', 'KeystoneListRegions',
+                f'--cli-profile={profile_name}',
+                f'--cli-region={self.region}'
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                regions = data.get('regions', [])
+                return {'account_id': f'verified ({len(regions)} regions)'}
+            else:
+                raise Exception(f'hcloud returned {result.returncode}: {result.stderr[:200]}')
         except Exception as e:
             raise Exception(f'IAM ping failed: {str(e)}')
 
