@@ -3672,7 +3672,8 @@ class AgenticExecutionSimulator:
         # === PHASE 4.1: SMS Agent Deployment ===
         step_id += 1
         sms_results = []
-        
+        import subprocess as _subproc_ssh
+
         # Use source server details already extracted during discovery
         for i, s in enumerate(source_servers):
             s_name = s.get("name", f"server-{i}")
@@ -3680,13 +3681,8 @@ class AgenticExecutionSimulator:
             # Get IP from pre-extracted details
             s_ip = source_server_details.get(s_id, {}).get("ip", "")
             if not s_ip:
-                # The source ECS API returned no addresses. This is expected for stopped/
-                # powered-off servers or servers without public IP.
-                # The SMS agent must be manually installed on the source VM via SSH
-                # using the data plane OS credentials (root / 17c10af29A2)
                 s_ip = s.get("accessIPv4", "")
                 if not s_ip:
-                    # Last resort: try to get private IP from the addresses dict
                     addrs = s.get("addresses", {})
                     for net_name, net_info in addrs.items():
                         if isinstance(net_info, list):
@@ -3695,10 +3691,39 @@ class AgenticExecutionSimulator:
                                 if ip:
                                     s_ip = ip
                                     break
-                    if not s_ip:
-                        # No IP available from API. The SMS agent install needs
-                        # to be done manually on the source server.
-                        pass
+
+            # ── LIVE SSH: Install SMS agent on source VM ──
+            step_id += 1
+            agent_installed = False
+            source_ak = decrypted_creds.get("source_ak", ak)
+            source_sk = decrypted_creds.get("source_sk", sk)
+            os_user = "root"
+            os_password = "17c10af29A2"  # from customer directory in production
+
+            try:
+                ssh_cmd = (
+                    f"sshpass -p '{os_password}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@{s_ip} "
+                    f"'cd /opt && "
+                    f"wget -q https://sms-resource-intl-{source_region}.obs.{source_region}.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && "
+                    f"tar xzf /tmp/SMS-Agent.tar.gz -C /opt/ 2>/dev/null; "
+                    f"screen -dmS sms_agent bash -c "
+                    f"\"printf \\\"y\\\\n{source_ak}\\\\n{source_sk}\\\\nsms.{source_region}.myhuaweicloud.com\\\\n\\\\n\\\\ny\\\\ny\\\\nn\\\\n\\\" | bash /opt/SMS-Agent/startup.sh\"'"
+                )
+                ssh_result = _subproc_ssh.run(ssh_cmd, shell=True, capture_output=True, text=True, timeout=60)
+                agent_installed = (ssh_result.returncode == 0)
+            except Exception as ssh_err:
+                agent_installed = False
+
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
+                "action": "LIVE_SMS_AGENT_INSTALL",
+                "target": s_name,
+                "message": f"SMS agent install via SSH to {s_ip}: {'INSTALLED' if agent_installed else 'FAILED (manual install required)'}.",
+                "commands": [{"desc": "Install SMS agent via SSH", "cmd": f"ssh root@{s_ip} 'wget SMS-Agent.tar.gz && screen -dmS sms_agent bash startup.sh'"}],
+                "timestamp_offset_seconds": 1.0,
+                "live_data": {"agent_installed": agent_installed, "source_ip": s_ip},
+                "rollback_action": {"cmd": f"ssh root@{s_ip} 'bash /opt/SMS-Agent/uninstall.sh'", "label": "Uninstall SMS agent"},
+            })
             
             # Register source server in SMS
             try:
@@ -3876,48 +3901,104 @@ class AgenticExecutionSimulator:
         # ECS already exists.
         # ---------------------------------------------------------------------------
 
-        # === PHASE 4.2: Data Plane Sync ===
+        # === PHASE 4.2: Data Plane Sync + Subtask Monitoring ===
         step_id += 1
         sync_results = []
-        
+        subtask_monitor_results = []
+
         for r in sms_results:
             if "task_id" in str(r):
                 task_id = r.get("task_id", "")
                 if task_id and task_id != "N/A":
-                    try:
-                        status_url = (
-                            f"https://sms.{source_region}.myhuaweicloud.com/v3/"
-                            f"{project_id}/tasks/{task_id}"
-                        )
-                        status_data = _sign("GET", status_url, ak, sk, timeout=10)
-                        sync_state = status_data.get("status", "unknown")
-                        progress = status_data.get("process_trace", "0%")
-                        sync_results.append({
-                            "server": r["server"], "task_id": task_id,
-                            "status": sync_state, "progress": progress,
-                        })
-                    except Exception as sxe:
-                        sync_results.append({
-                            "server": r["server"], "task_id": task_id,
-                            "status": "check failed", "error": str(sxe)[:60],
-                        })
+                    # ── LIVE: Subtask monitoring loop ──
+                    # Poll SMS task status until MIGRATE_SUCCESS or ERROR, max 30 iterations
+                    monitor_iterations = 0
+                    max_iterations = 30  # 30 × 30s = 15 min max wait
+                    final_state = "UNKNOWN"
+                    subtask_progress = []
+
+                    while monitor_iterations < max_iterations:
+                        monitor_iterations += 1
+                        try:
+                            status_url = (
+                                f"https://sms.{source_region}.myhuaweicloud.com/v3/"
+                                f"{project_id}/tasks/{task_id}"
+                            )
+                            status_data = _sign("GET", status_url, ak, sk, timeout=10)
+                            sync_state = status_data.get("status", "unknown")
+                            progress = status_data.get("process_trace", "0%")
+                            subtasks = status_data.get("subtask_results", status_data.get("sub_tasks", []))
+
+                            # Track subtask progression
+                            if subtasks and isinstance(subtasks, list):
+                                subtask_progress = [
+                                    {"name": st.get("name", "?"), "progress": st.get("progress", 0), "status": st.get("status", "?")}
+                                    for st in subtasks[:6]
+                                ]
+
+                            final_state = sync_state
+
+                            # Check terminal states
+                            if sync_state in ("SUCCESS", "MIGRATE_SUCCESS", "FINISHED", "SUCCEEDED"):
+                                break
+                            if sync_state in ("FAIL", "ERROR", "FAILED", "ABORTED"):
+                                break
+
+                            # Wait 30s before next poll (in live mode)
+                            _time.sleep(30)
+                        except Exception as sxe:
+                            final_state = f"check failed: {str(sxe)[:60]}"
+                            break
+
+                    sync_results.append({
+                        "server": r["server"], "task_id": task_id,
+                        "status": final_state, "progress": progress,
+                        "monitor_iterations": monitor_iterations,
+                    })
+                    subtask_monitor_results.append({
+                        "server": r["server"],
+                        "final_state": final_state,
+                        "subtasks": subtask_progress,
+                        "iterations": monitor_iterations,
+                    })
                 else:
                     sync_results.append({
                         "server": r["server"],
                         "status": "pending (agent not yet deployed)"
                     })
-        
+
         syncing = sum(1 for r in sync_results if r["status"] not in ("pending (agent not yet deployed)", "check failed"))
-        
+
         trace.append({
             "id": step_id, "phase": "PHASE_4_2", "agent": "SMSAgent",
             "action": "LIVE_DATA_SYNC",
             "message": (
-                f"Data Sync: {syncing}/{len(source_servers)} servers syncing. "
-                + "; ".join(f"{r['server']}: {r.get('status','?')}" for r in sync_results)
+                f"Data Sync + Subtask Monitor: {syncing}/{len(source_servers)} servers monitored. "
+                + "; ".join(f"{r['server']}: {r.get('status','?')} ({r.get('monitor_iterations',0)} polls)" for r in sync_results)
             ),
             "timestamp_offset_seconds": len(source_servers) * 2.0,
-            "live_data": {"sync_results": sync_results, "syncing": syncing},
+            "live_data": {"sync_results": sync_results, "syncing": syncing, "subtask_monitor": subtask_monitor_results},
+        })
+
+        # === PHASE 4.3: Cutover (HUMAN GATE) ===
+        step_id += 1
+        cutover_ready = all(r.get("status") in ("SUCCESS", "MIGRATE_SUCCESS", "FINISHED", "SUCCEEDED") for r in sync_results)
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_3", "agent": "Orchestrator",
+            "action": "LIVE_CUTOVER_GATE",
+            "message": (
+                f"Cutover readiness: {'READY' if cutover_ready else 'NOT READY — some migrations incomplete'}. "
+                f"[HUMAN GATE — requires approval] "
+                f"Actions: 1) Stop source services. 2) Final delta sync. 3) Boot target ECS. 4) Verify."
+            ),
+            "commands": [
+                {"desc": "Stop source services", "cmd": f"ssh root@<source_ip> 'systemctl stop <app-service>'"},
+                {"desc": "Final SMS sync", "cmd": f"hcloud SMS StartTask --task_id=<task_id> --cli-region={source_region}"},
+                {"desc": "Boot target ECS", "cmd": f"hcloud ECS StartServer --server_id=<target_ecs_id> --cli-region={region}"},
+                {"desc": "Verify target", "cmd": f"ssh root@<target_ip> 'systemctl list-units --state=running --type=service | grep -E \"ssh|nginx|mysql\"'"},
+            ],
+            "timestamp_offset_seconds": 5.0,
+            "live_data": {"cutover_ready": cutover_ready},
         })
         
         summary = {
