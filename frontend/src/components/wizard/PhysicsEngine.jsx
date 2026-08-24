@@ -703,39 +703,46 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                             <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                                 <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Total Sync</div>
                                 <div className="text-lg font-black text-white font-mono">
-                                    {physicsResult.timeline?.totalInitialSyncDays || physicsResult.timeline?.totalMinutes ? 
-                                        `${(physicsResult.timeline.totalInitialSyncDays || (physicsResult.timeline.totalMinutes / 1440).toFixed(1))}d` 
-                                        : '\u2014'}
+                                    {physicsResult.executionTimeline?.phase1InitialSyncDays
+                                        ? `${physicsResult.executionTimeline.phase1InitialSyncDays}d`
+                                        : physicsResult.executionTimeline?.totalExecutionHours
+                                            ? `${(physicsResult.executionTimeline.totalExecutionHours / 24).toFixed(1)}d`
+                                            : '—'}
                                 </div>
                             </div>
                             <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                                 <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Cutover Window</div>
                                 <div className="text-lg font-black text-white font-mono">
-                                    {physicsResult.timeline?.cutoverMinutes ? 
-                                        `${(physicsResult.timeline.cutoverMinutes / 60).toFixed(1)}h` 
-                                        : '—'}
+                                    {physicsResult.executionTimeline?.phase2CutoverHours
+                                        ? `${physicsResult.executionTimeline.phase2CutoverHours}h`
+                                        : physicsResult.executionTimeline?.totalExecutionHours
+                                            ? `${physicsResult.executionTimeline.totalExecutionHours}h`
+                                            : '—'}
                                 </div>
                             </div>
                             <div className="bg-white/5 rounded-xl p-3 border border-white/10 col-span-2 lg:col-span-1">
                                 <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Bottleneck</div>
                                 <div className="text-sm font-black text-amber-400 uppercase">
-                                    {physicsResult.bottleneck?.pillar || physicsResult.executionTimeline?.bottleneck || '—'}
+                                    {physicsResult.executionTimeline?.bottleneck || '—'}
                                 </div>
-                                {physicsResult.executionTimeline?.bottleneck && physicsResult.executionTimeline?.slaWindowHours && (() => {
-                                    const bottleneck = physicsResult.executionTimeline.bottleneck;
-                                    const sla = physicsResult.executionTimeline.slaWindowHours;
-                                    const totalHrs = physicsResult.executionTimeline?.totalCutoverHours || physicsResult.executionTimeline?.totalExecutionHours || 0;
-                                    const overrun = Number(totalHrs) - Number(sla);
-                                    const headroom = Number(sla) - Number(totalHrs);
+                                {physicsResult.executionTimeline?.slaWindowHours && (() => {
+                                    const sla = Number(physicsResult.executionTimeline.slaWindowHours);
+                                    // Calculate total hours from whichever mode is active
+                                    const cutoverHrs = Number(physicsResult.executionTimeline?.totalCutoverHours) || 0;
+                                    const execHrs = Number(physicsResult.executionTimeline?.totalExecutionHours) || 0;
+                                    const totalHrs = cutoverHrs || execHrs || 0;
+                                    if (!sla || !totalHrs) return null;
+                                    const overrun = totalHrs - sla;
+                                    const headroom = sla - totalHrs;
                                     return (
                                         <div className="mt-2 pt-2 border-t border-white/10 text-[9px] leading-relaxed">
                                             {overrun > 0 ? (
                                                 <span className="text-rose-400 font-bold">
-                                                    Exceeds SLA by {overrun.toFixed(1)}h — bottleneck consumes {Math.round(Number(totalHrs) / Math.max(Number(sla), 1) * 100)}% of window
+                                                    Exceeds SLA by {overrun.toFixed(1)}h — bottleneck consumes {Math.round(totalHrs / Math.max(sla, 1) * 100)}% of window
                                                 </span>
                                             ) : (
                                                 <span className="text-emerald-400 font-bold">
-                                                    {headroom.toFixed(1)}h headroom ({Math.round(headroom / Math.max(Number(sla), 1) * 100)}% buffer)
+                                                    {headroom.toFixed(1)}h headroom ({Math.round(headroom / Math.max(sla, 1) * 100)}% buffer)
                                                 </span>
                                             )}
                                         </div>
@@ -745,11 +752,13 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                             <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                                 <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Confidence</div>
                                 <div className={`text-sm font-black uppercase ${
-                                    physicsResult.timeline?.confidenceLevel === 'HIGH' ? 'text-emerald-400'
-                                    : physicsResult.timeline?.confidenceLevel === 'MEDIUM' ? 'text-amber-400'
+                                    physicsResult.recommendations?.warnings?.length === 0 ? 'text-emerald-400'
+                                    : physicsResult.recommendations?.warnings?.length <= 2 ? 'text-amber-400'
                                     : 'text-rose-400'
                                 }`}>
-                                    {physicsResult.timeline?.confidenceLevel || '\u2014'}
+                                    {physicsResult.recommendations?.warnings?.length === 0 ? 'HIGH'
+                                     : physicsResult.recommendations?.warnings?.length <= 2 ? 'MEDIUM'
+                                     : 'LOW'}
                                 </div>
                             </div>
                             <div className="bg-white/5 rounded-xl p-3 border border-white/10">

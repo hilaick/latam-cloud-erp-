@@ -175,9 +175,9 @@ export function generateStructuredResult({ engineMode, cogResult, manResult, nod
             syncMethod: classification.syncMethod,
             isFileHeavy: classification.isFileHeavy,
             includedInMath: conf.includedInMath !== false,
-            // Payload estimates
-            payloadGB: conf.storageGB || conf.payloadGB || 0,
-            churnGB: conf.churnGB || 0,
+            // Payload estimates — match actual field names used in nodeConfigs
+            payloadGB: conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0,
+            churnGB: conf.churnGB || ((conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0) * 0.02),
             smallFiles: conf.smallFiles || 0,
             // DB-specific
             rowsM: conf.rowsM || 0,
@@ -331,8 +331,8 @@ export function generateWavePacking({ nodes, nodeConfigs, maxParallel, effective
 
     // Sort nodes by payload descending (largest first)
     const sorted = [...nodes].sort((a, b) => {
-        const aGB = (nodeConfigs[a.id] || {}).storageGB || 0;
-        const bGB = (nodeConfigs[b.id] || {}).storageGB || 0;
+        const aGB = (nodeConfigs[a.id] || {}).customSizeGB || (nodeConfigs[a.id] || {}).storageGB || 0;
+        const bGB = (nodeConfigs[b.id] || {}).customSizeGB || (nodeConfigs[b.id] || {}).storageGB || 0;
         return bGB - aGB;
     });
 
