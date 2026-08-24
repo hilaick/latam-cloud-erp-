@@ -238,30 +238,52 @@ def manage_customers():
             customers = Customer.query.all()
             result = []
             for c in customers:
+                # Helper: mask AK for display (first 3 + last 3)
+                def _mask_ak(ak_val):
+                    """Return masked AK reference like 'HPU***VUV' or False if not set."""
+                    if not ak_val:
+                        return False
+                    try:
+                        # ak_val may be encrypted JSON — try to decrypt
+                        from services.credential_manager import get_credential_manager
+                        import os as _os
+                        master_pw = _os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+                        cm = get_credential_manager(master_pw)
+                        if isinstance(ak_val, str) and ak_val.startswith('{') and 'encrypted_ak' in ak_val:
+                            enc = json.loads(ak_val)
+                            d_ak, _ = cm.decrypt_credentials(enc)
+                            if d_ak and len(d_ak) >= 6:
+                                return f"{d_ak[:3]}***{d_ak[-3:]}"
+                        # If not encrypted (plain text — shouldn't happen but handle it)
+                        if isinstance(ak_val, str) and len(ak_val) >= 6 and not ak_val.startswith('{'):
+                            return f"{ak_val[:3]}***{ak_val[-3:]}"
+                    except Exception:
+                        pass
+                    return True  # Credential exists but can't decrypt — show as set
+
                 result.append({
                     "id": c.id, "name": c.name, "region": c.region,
                     "cio": c.cio, "it_lead": c.it_lead, "architect": c.architect,
-                    
-                    # We are intentionally NOT sending keys to the frontend.
-                    # We only send boolean indicators so the UI knows if a key exists.
-                    "ak": True if c.ak else False,
+
+                    # Masked AK references (first 3 + last 3 chars) or False if not set
+                    "ak": _mask_ak(c.ak),
                     "sk": True if c.sk else False,
-                    "source_ak": True if c.source_huawei_ak else False,
+                    "source_ak": _mask_ak(c.source_huawei_ak),
                     "source_sk": True if c.source_huawei_sk else False,
-                    "tier1_ak": True if c.tier1_ak else False,
+                    "tier1_ak": _mask_ak(c.tier1_ak),
                     "tier1_sk": True if c.tier1_sk else False,
-                    "tier2_ak": True if c.tier2_ak else False,
+                    "tier2_ak": _mask_ak(c.tier2_ak),
                     "tier2_sk": True if c.tier2_sk else False,
-                    "tier3_ak": True if c.tier3_ak else False,
+                    "tier3_ak": _mask_ak(c.tier3_ak),
                     "tier3_sk": True if c.tier3_sk else False,
-                    "aws_ak": True if c.aws_ak else False,
+                    "aws_ak": _mask_ak(c.aws_ak),
                     "aws_sk": True if c.aws_sk else False,
                     "azure_client_id": True if c.azure_client_id else False,
                     "azure_client_secret": True if c.azure_client_secret else False,
                     "azure_tenant_id": True if c.azure_tenant_id else False,
                     "azure_subscription_id": True if c.azure_subscription_id else False,
-                    
-                    "os_domain": c.os_domain, 
+
+                    "os_domain": c.os_domain,
                     "os_user": c.os_user, 
                     # 🚨 MASK THE PASSWORD - NEVER SEND IT TO FRONTEND IN PLAIN TEXT
                     "os_password": "********" if c.os_password else "",

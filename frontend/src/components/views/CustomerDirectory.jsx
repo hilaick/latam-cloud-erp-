@@ -119,12 +119,25 @@ export default function CustomerDirectory() {
   };
 
   const handleEditCustomer = (customer) => {
-    // Normalize boolean credential indicators back to empty strings
-    const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
-      'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
-      'azureTenant', 'azureClient', 'azureSecret'];
+    // Normalize credential indicators for the edit form
+    // AK fields: keep masked reference (e.g. 'HPU***VUV') or True → '********', False → ''
+    // SK fields: True → '********', False → ''
+    const akFields = ['ak', 'source_huawei_ak', 'tier1AK', 'tier2AK', 'tier3AK', 'awsAK'];
+    const skFields = ['sk', 'source_huawei_sk', 'tier1SK', 'tier2SK', 'tier3SK', 'awsSK'];
+    const otherCredFields = ['azureTenant', 'azureClient', 'azureSecret'];
     const normalized = { ...customer };
-    credentialFields.forEach(f => {
+    akFields.forEach(f => {
+      if (typeof normalized[f] === 'boolean') {
+        normalized[f] = normalized[f] ? '********' : '';
+      }
+      // If it's a masked string like 'HPU***VUV', keep it as-is for display
+    });
+    skFields.forEach(f => {
+      if (typeof normalized[f] === 'boolean') {
+        normalized[f] = normalized[f] ? '********' : '';
+      }
+    });
+    otherCredFields.forEach(f => {
       if (typeof normalized[f] === 'boolean') normalized[f] = '';
     });
     setEditingCustomer(normalized);
@@ -678,7 +691,7 @@ export default function CustomerDirectory() {
                       <button onClick={() => syncKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
                       </button>
-                      <button onClick={() => validateKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                      <button onClick={() => validateKeys('master')} disabled={isValidating} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Master Keys</>}
                       </button>
                     </div>

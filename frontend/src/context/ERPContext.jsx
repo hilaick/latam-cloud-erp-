@@ -284,9 +284,14 @@ export const ERPProvider = ({ children }) => {
         const safeCustomer = { ...updatedCustomer };
         let hasCredChange = false;
         credentialFields.forEach(f => {
-            if (safeCustomer[f] === '' || safeCustomer[f] === null) {
+            const val = safeCustomer[f];
+            if (val === '' || val === null) {
                 delete safeCustomer[f];  // Don't send empty — preserves stored value
-            } else if (typeof safeCustomer[f] === 'string' && safeCustomer[f].length > 0) {
+            } else if (val === '********') {
+                delete safeCustomer[f];  // Masked placeholder — not changed
+            } else if (typeof val === 'string' && val.includes('***') && val.length <= 12) {
+                delete safeCustomer[f];  // Masked reference like 'HPU***VUV' — not changed
+            } else if (typeof val === 'string' && val.length > 0) {
                 hasCredChange = true;  // New credential value provided
             }
         });
