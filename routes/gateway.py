@@ -449,6 +449,16 @@ def validate_credential():
             getattr(customer, ak_field, None),
             getattr(customer, sk_field, None)
         )
+        # Debug: log what we got (masked for security)
+        logger.info(f"validate-credential: credential_type={credential_type}, "
+                     f"customer={customer_id}, "
+                     f"ak_raw_type={type(getattr(customer, ak_field, None)).__name__}, "
+                     f"ak_raw_len={len(getattr(customer, ak_field, '')) if getattr(customer, ak_field, '') else 0}, "
+                     f"decrypted_ak={'SET('+str(len(ak))+')' if ak else 'NONE'}, "
+                     f"decrypted_sk={'SET('+str(len(sk))+')' if sk else 'NONE'}")
+        # Extra debug: show first 3 chars of decrypted AK for comparison with masked reference
+        if ak and len(ak) >= 3:
+            logger.info(f"validate-credential: decrypted_ak_prefix={ak[:3]}, decrypted_ak_last3={ak[-3:]}")
 
     if not ak or not sk:
         return jsonify({
