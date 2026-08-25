@@ -1412,6 +1412,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               resources={resources}
               replayMode={replayMode}
               replayIndex={replayIndex}
+              onReplayStart={startReplay}
+              onReplayStop={stopReplay}
+              onReplayPlay={resumeReplay}
+              onReplayPause={pauseReplay}
+              onReplayStep={stepForward}
+              onReplayReset={resetReplay}
+              isPlaying={isPlaying}
+              replaySpeed={replaySpeed}
+              onReplaySpeedChange={setReplaySpeed}
             />
           )}
 
@@ -1440,6 +1449,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 resources={resources}
                 replayMode={replayMode}
                 replayIndex={replayIndex}
+                onReplayStart={startReplay}
+                onReplayStop={stopReplay}
+                onReplayPlay={resumeReplay}
+                onReplayPause={pauseReplay}
+                onReplayStep={stepForward}
+                onReplayReset={resetReplay}
+                isPlaying={isPlaying}
+                replaySpeed={replaySpeed}
+                onReplaySpeedChange={setReplaySpeed}
               />
             </div>
           )}
