@@ -4248,82 +4248,58 @@ class AgenticExecutionSimulator:
         })
         total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
 
-        # If advisory-only, skip agent orchestration and generate runbook
+        # Zero Trust mode: customer handles source-side ops (agent install),
+        # we handle all target-side ops (ECS creation, SG rules, SMS tasks, monitoring)
         if is_advisory_only:
             step_id += 1
             trace.append({
                 "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
-                "action": "ADVISORY_MODE_RUNBOOK",
+                "action": "ZERO_TRUST_MODE",
                 "message": (
-                    "[ADVISORY] Auth level is Read-Only or No Access. "
-                    "Skipping automated execution. Generating detailed runbook "
-                    "for customer self-execution."
+                    "[ZERO TRUST] Auth level is Read-Only/No Access to SOURCE. "
+                    "Customer installs SMS agents on source VMs (Step 1 — customer responsibility). "
+                    "ERP handles ALL target-side operations: SG rules, ECS creation, "
+                    "SMS task creation, monitoring, troubleshooting. "
+                    "Image import available as fallback if SMS agent can't be installed."
                 ),
                 "timestamp_offset_seconds": total_simulated_seconds,
-                "result": "advisory_runbook_generated",
+                "result": "zero_trust_mode_activated",
             })
 
-            # Generate per-server runbook steps
+            # Generate per-server runbook for agent install (customer responsibility)
+            # Then continue with full target-side pipeline
             server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
             runbook_steps = []
             for i, s in enumerate(server_resources):
                 s_name = s.get("name", f"server-{i}")
                 s_os = s.get("os", "linux")
+                s_type = s.get("type", "ECS")
                 is_win = "windows" in s_os.lower()
+
+                # Step 1: Agent install — marked as CUSTOMER RESPONSIBILITY
                 step_id += 1
                 trace.append({
-                    "id": step_id, "phase": "PHASE_4_0", "agent": f"Advisor-{s_name}",
-                    "action": "ADVISORY_RUNBOOK_STEP",
+                    "id": step_id, "phase": "PHASE_4_2b_PREFLIGHT", "agent": f"Advisor-{s_name}",
+                    "action": "ZERO_TRUST_AGENT_INSTALL",
                     "target": s_name,
                     "message": (
-                        f"[RUNBOOK] {s_name}: "
-                        f"1) Install SMS agent: wget SMS-Agent.tar.gz && screen -dmS sms_agent bash startup.sh. "
-                        f"2) Open SG ports: {'8899+8900+22 (Windows)' if is_win else '8900+22 (Linux)'}. "
-                        f"3) Create target ECS in Huawei Cloud console. "
-                        f"4) Create SMS migration task in SMS console. "
-                        f"5) Start task and monitor: SSL_CONFIG → ATTACH_AGENT_IMAGE → "
-                        f"{'MIGRATE_BLOCK' if is_win else 'MIGRATE_LINUX_FILE'} → CONFIGURE → DETTACH. "
-                        f"6) {'Run BCD repair post-migration.' if is_win else 'Verify boot after migration.'}"
+                        f"[CUSTOMER RESPONSIBILITY] Install SMS agent on {s_name} ({s_type}). "
+                        f"Download from OBS, start via screen+printf with customer AK/SK. "
+                        f"ERP will verify agent registration before creating SMS task."
                     ),
                     "commands": [
-                        {"desc": "Step 1: Install SMS agent", "cmd": f"ssh root@{s_name} 'wget https://sms-resource-intl-ap-southeast-3.obs.ap-southeast-3.myhuaweicloud.com/SMS-Agent.tar.gz && tar xzf SMS-Agent.tar.gz -C /opt && screen -dmS sms_agent bash -c \"printf \\\"y\\\\n<AK>\\\\n<SK>\\\\nsms.ap-southeast-3.myhuaweicloud.com\\\\n\\\\n\\\\ny\\\\ny\\\\nn\\\\n\\\" | bash /opt/SMS-Agent/startup.sh\"'"},
-                        {"desc": "Step 2: Open SG ports", "cmd": f"Huawei Console → VPC → Security Groups → Add Inbound Rule: TCP {'8899,8900,22' if is_win else '8900,22'} from 0.0.0.0/0"},
-                        {"desc": "Step 3: Create target ECS", "cmd": "Huawei Console → ECS → Create Server → Select flavor, image, VPC, subnet → Create"},
-                        {"desc": "Step 4: Create SMS task", "cmd": "Huawei Console → SMS → Create Migration Task → Select source, target, disk mapping → Create"},
-                        {"desc": "Step 5: Start and monitor", "cmd": "Huawei Console → SMS → Start Task → Monitor subtask progress"},
-                    ] + ([{"desc": "Step 6: BCD repair", "cmd": f"ssh root@<target_ip> 'bcdedit /set {{default}} device partition=c:'"}] if is_win else [{"desc": "Step 6: Verify boot", "cmd": "hcloud ECS RebootServer --server_id=<target_id> && hcloud ECS ShowServer --server_id=<target_id> | jq '.status'"}]),
+                        {"desc": "Customer: Download SMS agent", "cmd": f"wget https://sms-resource-intl.obs.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/"},
+                        {"desc": "Customer: Start agent", "cmd": f"screen -dmS sms_agent bash -c 'printf \"y\\n<AK>\\n<SK>\\nsms.<region>.myhuaweicloud.com\\n\\ny\\ny\\nn\\n\" | bash /opt/SMS-Agent/startup.sh'"},
+                    ],
                     "timestamp_offset_seconds": total_simulated_seconds,
-                    "result": "runbook_step_generated",
+                    "result": "customer_responsibility",
+                    "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
                 })
-                runbook_steps.append({
-                    "server": s_name,
-                    "os": s_os,
-                    "steps": 6,
-                    "requires_bcd_repair": is_win,
-                })
+                runbook_steps.append({"server": s_name, "os": s_os, "type": s_type, "agent_install": "customer"})
 
-            return {
-                "trace": trace,
-                "resource_usage": resource_usage,
-                "summary": {
-                    "mode": "dry_run",
-                    "advisory_only": True,
-                    "message": "Advisory mode — runbook generated for customer self-execution.",
-                    "strategy": "advisory",
-                    "auth_level": auth_level,
-                    "runbook": {
-                        "total_servers": len(server_resources),
-                        "total_steps": sum(r["steps"] for r in runbook_steps),
-                        "servers": runbook_steps,
-                        "note": "Customer executes these steps manually. Partner provides guidance only.",
-                    },
-                },
-                "rollback_plan": {
-                    "total_reversible_steps": 0,
-                    "steps": [],
-                    "note": "Advisory mode — no resources created, no rollback needed.",
-                },
-            }
+            # Continue with FULL target-side pipeline — don't return early
+            # Fall through to normal execution (network, preflight, ECS, SMS tasks)
+            # The only difference: SMS_AGENT_INSTALL step will show "customer responsibility"
 
         # ═══ PHASE 4.1: Network Fabric — verify or provision ═══
         # If Phase 2-3 already built the network (targetArchitecture exists), VERIFY it.
@@ -5128,8 +5104,15 @@ class AgenticExecutionSimulator:
                     resource_usage_local["image_performed"] = 1
 
         elif strategy == "image_primary":
-            # Check if this is a database server — use DRS instead
-            if profile.get("role") == "db" or "db" in server.get("resourceType", "").lower() or "database" in server.get("name", "").lower():
+            # ECS is ECS first — SMS is the default for ALL ECS resources.
+            # DRS is opt-out (secondary option), NOT auto-detected from name.
+            # Only use DRS if the resource TYPE is explicitly RDS/DDS/DCS (not ECS).
+            s_type = server.get("resourceType", server.get("type", "")).upper()
+            is_explicit_db = s_type in ("RDS", "DDS", "DCS", "GAUSSDB")
+            is_explicit_storage = s_type in ("OBS", "SFS", "EVS") or any(kw in s_type.lower() for kw in ["obs", "s3", "bucket", "blob"])
+
+            if is_explicit_db:
+                # Resource type is explicitly a database service (not ECS) — use DRS
                 drs_result = DrsMigrationSimulator.simulate(
                     server, profile, physics, sid, current_offset, region, config
                 )
@@ -5139,8 +5122,8 @@ class AgenticExecutionSimulator:
                 final_outcome = drs_result["outcome"]
                 final_sync_hours = drs_result["sync_hours"]
                 path_taken = "drs_migration"
-            # Check if this is a storage/OBS resource
-            elif any(kw in server.get("name", "").lower() + server.get("resourceType", "").lower() for kw in ["obs", "s3", "bucket", "storage", "blob"]):
+            elif is_explicit_storage:
+                # Resource type is explicitly storage — use OBS migration
                 obs_result = ObsMigrationSimulator.simulate(
                     server, profile, physics, sid, current_offset, region, config
                 )
