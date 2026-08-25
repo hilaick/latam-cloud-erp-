@@ -734,14 +734,14 @@ def generate_n8n_workflow():
     phases_config = [
         {"id": 1, "name": "ARB Handover", "color": "#3b82f6", "summary": "ARB intake, SOW, and high-level project scoping"},
         {"id": 2, "name": "Architecture", "color": "#8b5cf6", "summary": "Source discovery, risk profiling, and target topology design"},
-        {"id": 3, "name": "Planning", "color": "#f59e0b", "summary": "Delivery physics, FinOps budgeting, and wave planning"},
+        {"id": 3, "name": "Planning", "color": "#f59e0b", "summary": "Technical feasibility, delivery physics, FinOps budgeting, and wave planning"},
         {"id": 4, "name": "Execution", "color": "#10b981", "summary": "Pipeline execution, engineering workbench, and TAM governance"},
         {"id": 5, "name": "Post-Live", "color": "#6366f1", "summary": "Infrastructure reconciliation, sign-off, and procurement handover"},
     ]
     gates_by_phase = [
         ["ARB Intake & SOW signed", "High-Level WBS (Sales) approved"],
         ["Architecture Summary complete", "Source Discovery complete", "ORA Risk Profile assessed", "Target Topology Mapped", "DTRB Governance approved"],
-        ["WBS & RACI Matrix defined", "Physics Engine calibrated", "FinOps Budget & Burn approved", "Strategic Tooling selected", "Wave & Runbook planned"],
+        ["Technical Feasibility assessed", "WBS & RACI Matrix defined", "Physics Engine calibrated", "FinOps Budget & Burn approved", "Strategic Tooling selected", "Execution Mode selected", "Wave & Runbook planned"],
         ["Readiness Gateway passed", "Execution Pipeline active", "Engineering Workbench online", "Delivery Command Center staffed", "TAM Service Governance running"],
         ["3-Way Infrastructure Diff complete", "Target Constellation verified", "WAR Sign-Off obtained", "Procurement & PO Handover executed"],
     ]
@@ -757,9 +757,10 @@ def generate_n8n_workflow():
     gate_gap = 12            # gap between gates
     start_x = 30
     start_y = 30
-    
-    # Total column height: header + 4 gates + 3 gaps
-    col_height = header_height + 4 * gate_height + 3 * gate_gap
+
+    # Dynamic column height based on max gates across all phases
+    max_gates = max(len(g) for g in gates_by_phase)
+    col_height = header_height + max_gates * gate_height + (max_gates - 1) * gate_gap
 
     for pi, phase in enumerate(phases_config):
         col_x = start_x + pi * (col_width + col_gap)
