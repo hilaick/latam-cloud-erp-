@@ -1,3 +1,7 @@
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { Card, Spin } from 'antd';
+import { ArrowRightOutlined } from '@ant-design/icons';
+
 // Three.js 3D Simulation Constellation
 // Loaded dynamically via CDN — no npm dependency
 function SimulationConstellation({ trace, resourceUsage, resources }) {
@@ -320,3 +324,5 @@ function SimulationConstellation({ trace, resourceUsage, resources }) {
     </Card>
   );
 }
+
+export default SimulationConstellation;
