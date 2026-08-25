@@ -215,16 +215,18 @@ const phases = [
   {
     id: 3,
     title: 'Planning',
-    tagline: 'Delivery physics, FinOps budgeting, and wave planning',
+    tagline: 'Technical feasibility, delivery physics, FinOps budgeting, and wave planning',
     icon: 'fa-tasks',
     color: 'amber',
-    gates: ['WBS & RACI Matrix defined', 'Physics Engine calibrated', 'FinOps Budget & Burn approved', 'Strategic Tooling selected', 'Wave & Runbook planned'],
+    gates: ['Technical Feasibility assessed', 'WBS & RACI Matrix defined', 'Physics Engine calibrated', 'FinOps Budget & Burn approved', 'Strategic Tooling selected', 'Execution Mode selected', 'Wave & Runbook planned'],
     steps: [
+      { title: '3.0 Technical Feasibility', description: 'Assess migration compatibility BEFORE choosing execution mode: OS compatibility with SMS agent, source accessibility (Zero Trust), VMware/vSphere export capability, database type detection for native replication, customer image availability.', tools: ['OS Compatibility Matrix', 'SMS API', 'Source Discovery'] },
       { title: '3.1 WBS & RACI Matrix', description: 'Develop detailed Work Breakdown Structure with RACI assignments — clarify who is Responsible, Accountable, Consulted, and Informed for every task.', tools: ['WBS Builder', 'RACI Matrix Tool'] },
       { title: '3.2 Delivery Physics Engine', description: 'Calculate migration timelines, resource requirements, parallelization limits, and effort estimates based on infrastructure complexity and team velocity.', tools: ['Physics Engine', 'Capacity Planner'] },
       { title: '3.3 FinOps Budget & Burn', description: 'Build cloud cost models, budget forecasts, and burn-rate tracking — align financial governance with migration execution cadence.', tools: ['FinOps Dashboard', 'Cost Calculator'] },
-      { title: '3.4 Strategic Tooling', description: 'Select and provision the toolchain: SMS, DRS, UGO, Terraform, monitoring, and orchestration platforms for the migration factory.', tools: ['Tooling Matrix', 'Procurement Workflow'] },
-      { title: '3.5 Wave & Runbook Planning', description: 'Define migration waves, sequencing, dependency mapping, and generate executable runbooks with step-by-step procedures per wave.', tools: ['Wave Planner', 'Runbook Generator'] },
+      { title: '3.4a Strategic Tooling', description: 'Select and provision the toolchain: SMS, DRS, UGO, Terraform, monitoring, and orchestration platforms for the migration factory.', tools: ['Tooling Matrix', 'Procurement Workflow'] },
+      { title: '3.4b Execution Mode', description: 'Choose execution mode based on feasibility assessment: Agentic Orchestration (full automation), Zero Trust (customer installs agents, ERP handles target-side), or Manual Pipeline. Includes simulation dry-run.', tools: ['Agentic Orchestrator', 'Simulation Engine'] },
+      { title: '3.5 Wave & Runbook Planning', description: 'Define migration waves, sequencing, dependency mapping, and generate executable runbooks with step-by-step procedures per wave. Auto-generates from simulation trace.', tools: ['Wave Planner', 'Runbook Generator'] },
     ],
   },
   {

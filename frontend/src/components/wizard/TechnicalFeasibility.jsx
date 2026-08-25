@@ -3,7 +3,11 @@ import { Tag, Progress, Table, Tooltip, Empty, Spin } from 'antd';
 
 const { Text } = { Text: ({ children, style }) => <span style={style}>{children}</span> };
 
-// OS compatibility matrix — matches ServerProfiler._is_sms_os_supported
+// OS compatibility pre-filter — NOT a definitive test.
+// This is a heuristic pre-check against known unsupported OSes.
+// The DEFINITIVE check happens when the SMS agent is actually installed
+// on the source VM (Phase 4 preflight). This pre-filter just flags
+// potential issues early so the execution strategy can account for them.
 const SMS_UNSUPPORTED_OS = ['aix', 'solaris', 'freebsd', 'hp-ux', 'hpux', 'openbsd'];
 const SMS_OLD_VERSIONS = ['centos 5', 'rhel 5', 'ubuntu 12', 'ubuntu 13', 'windows 2003'];
 
@@ -60,7 +64,7 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                 key: 'os_compat',
                 category: 'OS Compatibility',
                 status: 'warning',
-                finding: `${unsupportedServers.length} server(s) have OS not supported by SMS agent`,
+                finding: `${unsupportedServers.length} server(s) have OS that may not be supported by SMS agent (pre-filter heuristic — definitive check during Phase 4 agent install)`,
                 recommendation: unsupportedServers.map(s => `${s.name} (${s.osType})`).join(', '),
                 impact: 'Use data_sync (rsync) or image_import instead of SMS',
             });
