@@ -1410,6 +1410,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               trace={result?.trace || []}
               resourceUsage={summary?.resource_usage || {}}
               resources={resources}
+              replayMode={replayMode}
+              replayIndex={replayIndex}
             />
           )}
 
@@ -1436,6 +1438,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 trace={result?.trace || []}
                 resourceUsage={summary?.resource_usage || {}}
                 resources={resources}
+                replayMode={replayMode}
+                replayIndex={replayIndex}
               />
             </div>
           )}
