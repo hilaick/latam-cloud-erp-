@@ -905,6 +905,9 @@ function SimulationConstellation({ trace, resourceUsage, resources }) {
   );
 }
 
+/* SimulationConstellation is now imported from SimulationConstellation3D.jsx (Three.js 3D) */
+import SimulationConstellation from './SimulationConstellation3D.jsx';
+
 /* ── Main Component ── */
 export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
   const [loading, setLoading] = useState(false);
