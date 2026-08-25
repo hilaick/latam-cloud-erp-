@@ -939,24 +939,60 @@ class ServerProfiler:
     ) -> str:
         """Determine the optimal migration strategy.
         
-        Strategy priority (discovered 2026-08-23):
-        1. Huawei Cloud source → SMS primary (proven cross-region: ap-southeast-3 → la-north-2)
+        Strategy priority (updated 2026-08-25):
+        1. Huawei Cloud source → SMS primary (proven cross-region)
         2. Agent preinstalled → SMS primary
         3. Data plane access → SMS with agent push
-        4. Database role → image primary (consistency)
-        5. No access → manual agent required
+        4. OS supported by SMS but no access → data_sync (rsync/lsyncd)
+        5. OS NOT supported by SMS → image_primary or data_sync
+        6. Database role → image_primary or db_replication
+        7. No access at all → manual_agent_required (BLOCKED)
         """
+        # Check if SMS agent supports this OS
+        sms_supported_os = cls._is_sms_os_supported(os_type)
+        
         # Huawei Cloud ECS → SMS is primary (proven working cross-region)
-        if is_huaweicloud:
+        if is_huaweicloud and sms_supported_os:
             return "sms_primary"
-        if agent_preinstalled:
+        if agent_preinstalled and sms_supported_os:
             return "sms_primary"
         if has_data_plane_admin or has_source_access:
-            return "sms_with_agent_push"
-        # For critical databases, prefer image-based for consistency
+            if sms_supported_os:
+                return "sms_with_agent_push"
+            else:
+                # OS not supported by SMS but we have source access → data sync
+                return "data_sync"
+        # No source access but OS supported → customer installs agent, we do target-side
+        if sms_supported_os:
+            return "sms_with_agent_push"  # Zero Trust mode
+        # OS not supported by SMS, no source access → image or data sync
         if role == "database":
-            return "image_primary"
-        return "manual_agent_required"
+            return "db_replication"
+        # Try data sync (rsync/lsyncd) as fallback before image
+        return "data_sync"
+
+    @staticmethod
+    def _is_sms_os_supported(os_type: str) -> bool:
+        """Check if Huawei SMS agent supports this OS.
+        
+        SMS supports:
+        - Linux: Ubuntu 14.04+, CentOS 6.5+, RHEL 6.5+, Debian 8+, openSUSE 42+, Oracle Linux 7+
+        - Windows: Server 2008 R2+, Windows 7+
+        
+        NOT supported: AIX, Solaris, FreeBSD, HP-UX, very old Linux (<6), very old Windows
+        """
+        os_lower = (os_type or "").lower()
+        # Known unsupported OSes
+        unsupported = ["aix", "solaris", "freebsd", "hp-ux", "hpux", "openbsd"]
+        if any(u in os_lower for u in unsupported):
+            return False
+        # Very old versions
+        if "centos 5" in os_lower or "rhel 5" in os_lower or "ubuntu 12" in os_lower or "ubuntu 13" in os_lower:
+            return False
+        if "windows 2003" in os_lower or "windows 2008 " in os_lower and "r2" not in os_lower:
+            return False
+        # Default: assume supported (Linux/Windows modern)
+        return True
 
     @staticmethod
     def enrich_with_history(profile: dict, mapper_node: dict) -> dict:
@@ -2515,6 +2551,252 @@ class PostMigrationSimulator:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main Orchestration Simulator
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class DataSyncSimulator:
+    """Data-level sync migration: rsync, lsyncd, OS blueprint deployment.
+
+    Used when:
+    - SMS agent can't be installed (unsupported OS)
+    - Source is accessible via SSH but not via SMS
+    - Customer wants continuous file-level sync before cutover
+    - Active workloads that need incremental sync over prolonged period
+
+    Strategies:
+    A. OS Blueprint Deployment + rsync (fresh vanilla ECS + file sync)
+    B. Linux rsync daemon + lsyncd (continuous file-level mirroring)
+    C. Block-level sync (dd/zfs send over SSH)
+    """
+
+    @staticmethod
+    def simulate(server: dict, profile: dict, physics: dict, step_id: int,
+                 offset: float, region: str, config) -> dict:
+        """Simulate data sync migration."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+        server_name = server.get("name", "unknown")
+        disk_gb = float(server.get("diskGB", server.get("storage", 40)))
+        os_type = server.get("osType", profile.get("os", "linux"))
+        is_linux = "windows" not in os_type.lower()
+
+        # Step 1: Provision fresh vanilla target ECS
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"DataSync-{server_name}",
+            "action": "DATASYNC_PROVISION_TARGET",
+            "target": server_name,
+            "message": (
+                f"[DATASYNC] Provisioning fresh vanilla {'Linux' if is_linux else 'Windows'} ECS "
+                f"for {server_name} in {region}. Identical resource allocation to source. "
+                f"Strategy: OS Blueprint Deployment — fresh OS + data sync."
+            ),
+            "commands": [
+                {"desc": "Create target ECS", "cmd": f"hcloud ECS CreateServers --server.name='{server_name}-TARGET' --server.flavorRef='s6.large.2' --server.vpcid='<vpc>' --server.nics.1.subnet_id='<subnet>' --cli-region={region}"},
+                {"desc": "Wait for ECS ACTIVE", "cmd": f"hcloud ECS ShowServer --server_id=<id> --cli-region={region} | jq '.status'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_target_provisioned",
+            "rollback_action": {"cmd": "hcloud ECS DeleteServer --server_id=<ecs_id>", "label": "Delete target ECS"},
+            "source_label": "🔧 Skilled (data-plane-sync)",
+        })
+        total_offset += config.STEP_TIMINGS["instance_launch"]
+
+        # Step 2: Storage prep — match partitions, mount points, filesystems
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"DataSync-{server_name}",
+            "action": "DATASYNC_STORAGE_PREP",
+            "target": server_name,
+            "message": (
+                f"[DATASYNC] Matching partition layouts, mount points, and file systems "
+                f"on target instance for {server_name}."
+            ),
+            "commands": [
+                {"desc": "Create partitions", "cmd": f"ssh root@<target_ip> 'fdisk /dev/vdb && mkfs.ext4 /dev/vdb1 && mkdir -p /data && mount /dev/vdb1 /data'"},
+                {"desc": "Match mount points", "cmd": f"ssh root@<target_ip> 'echo \"/dev/vdb1 /data ext4 defaults 0 0\" >> /etc/fstab'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_storage_prepared",
+            "source_label": "🔧 Skilled (data-plane-sync)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 3: Initial full sync (rsync, excluding system dirs)
+        sid += 1
+        sync_hours = (disk_gb * 1024 * 8) / (100 * 3600)  # ~100Mbps
+        exclude_dirs = "/boot,/dev,/proc,/sys,/run,/tmp" if is_linux else "C:\\Windows,C:\\Program Files"
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DataSync-{server_name}",
+            "action": "DATASYNC_INITIAL_SYNC",
+            "target": server_name,
+            "message": (
+                f"[DATASYNC] Initial full file-level sync for {server_name}: {disk_gb:.0f}GB. "
+                f"Excluding system dirs: {exclude_dirs}. "
+                f"rsync -avz --progress --partial -e ssh. Est: {sync_hours:.1f}h @ 100Mbps."
+            ),
+            "commands": [
+                {"desc": "Initial rsync", "cmd": f"rsync -avz --progress --partial --exclude={{/boot,/dev,/proc,/sys,/run,/tmp}} -e 'ssh -p 22' root@<source_ip>:/ root@<target_ip>:/"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_initial_sync_complete",
+            "source_label": "🔧 Skilled (data-plane-sync)",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        # Step 4: Incremental syncs (rsync --delete, repeated before cutover)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DataSync-{server_name}",
+            "action": "DATASYNC_INCREMENTAL_SYNC",
+            "target": server_name,
+            "message": (
+                f"[DATASYNC] Incremental sync for {server_name}: rsync --delete to catch deltas. "
+                f"Repeat until cutover. For continuous sync: lsyncd with inotify. "
+                f"MySQL: binlog replication. PostgreSQL: WAL streaming."
+            ),
+            "commands": [
+                {"desc": "Incremental rsync", "cmd": f"rsync -avz --delete --exclude={{/boot,/dev,/proc,/sys}} -e ssh root@<source_ip>:/ root@<target_ip>:/"},
+                {"desc": "OR: lsyncd continuous", "cmd": "lsyncd /etc/lsyncd.conf  # inotify + rsync daemon, real-time"},
+                {"desc": "OR: MySQL replication", "cmd": "CHANGE MASTER TO MASTER_HOST='<source>', MASTER_LOG_FILE='mysql-bin.001', MASTER_LOG_POS=12345; START SLAVE;"},
+                {"desc": "OR: PostgreSQL WAL", "cmd": "pg_basebackup -h <source> -D /var/lib/postgresql/data -X stream -P && pg_start_replication()"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_incremental_syncing",
+            "source_label": "🔧 Skilled (data-plane-sync)",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        # Step 5: Cutover (stop source, final sync, start target)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_3", "agent": f"DataSync-{server_name}",
+            "action": "DATASYNC_CUTOVER",
+            "target": server_name,
+            "message": (
+                f"[DATASYNC] Cutover for {server_name}: 1) Stop source services. "
+                f"2) Final rsync --delete. 3) Verify file counts. 4) Start target services. "
+                f"[HUMAN GATE]"
+            ),
+            "commands": [
+                {"desc": "Stop source", "cmd": f"ssh root@<source_ip> 'systemctl stop <app-service>'"},
+                {"desc": "Final sync", "cmd": f"rsync -avz --delete --exclude={{/boot,/dev,/proc,/sys}} -e ssh root@<source_ip>:/ root@<target_ip>:/"},
+                {"desc": "Verify", "cmd": f"ssh root@<target_ip> 'find /data -type f | wc -l' # compare with source"},
+                {"desc": "Start target", "cmd": f"ssh root@<target_ip> 'systemctl start <app-service>'"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_cutover_complete",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        return {
+            "trace": trace, "final_step_id": sid, "final_offset": total_offset,
+            "outcome": "DATA_SYNC_SUCCESS", "sync_hours": sync_hours,
+            "server_name": server_name, "path_taken": "data_sync",
+        }
+
+
+class DbReplicationSimulator:
+    """Database native replication: MySQL binlog, PostgreSQL WAL, MongoDB oplog.
+
+    Used when:
+    - Database running on ECS needs near-zero downtime migration
+    - SMS/image migration would cause database corruption
+    - Customer needs continuous replication until cutover
+    """
+
+    @staticmethod
+    def simulate(server: dict, profile: dict, physics: dict, step_id: int,
+                 offset: float, region: str, config) -> dict:
+        """Simulate database native replication migration."""
+        trace = []
+        sid = step_id
+        total_offset = offset
+        server_name = server.get("name", "unknown")
+        disk_gb = float(server.get("diskGB", server.get("storage", 100)))
+
+        # Detect DB type from server name or profile
+        name_lower = server_name.lower()
+        if "mysql" in name_lower or "mariadb" in name_lower:
+            db_type = "MySQL/MariaDB"
+            replication_method = "binlog streaming (CHANGE MASTER TO)"
+        elif "postgres" in name_lower or "pgsql" in name_lower:
+            db_type = "PostgreSQL"
+            replication_method = "WAL streaming (pg_basebackup + replication slot)"
+        elif "mongo" in name_lower:
+            db_type = "MongoDB"
+            replication_method = "oplog replication (rs.initiate)"
+        elif "redis" in name_lower:
+            db_type = "Redis"
+            replication_method = "replication (SLAVEOF / REPLICAOF)"
+        else:
+            db_type = "MySQL (auto-detected)"
+            replication_method = "binlog streaming"
+
+        # Step 1: Provision target DB instance (RDS or ECS)
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2c_TARGET", "agent": f"DBRepl-{server_name}",
+            "action": "DBREPL_PROVISION_TARGET",
+            "target": server_name,
+            "message": (
+                f"[DBREPL] Provisioning target for {db_type} on {server_name}. "
+                f"RDS instance in {region}. Replication: {replication_method}."
+            ),
+            "commands": [
+                {"desc": "Create RDS", "cmd": f"hcloud RDS CreateInstance --name=target-{server_name} --datastore.type=mysql --datastore.version=8.0 --flavor_ref=rds.mysql.s3.large.2 --volume_size={int(disk_gb)} --cli-region={region}"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_target_provisioned",
+            "rollback_action": {"cmd": "hcloud RDS DeleteInstance --instance_id=<rds_id>", "label": "Delete target RDS"},
+        })
+        total_offset += config.STEP_TIMINGS["instance_launch"]
+
+        # Step 2: Initial backup + restore
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DBRepl-{server_name}",
+            "action": "DBREPL_INITIAL_BACKUP_RESTORE",
+            "target": server_name,
+            "message": (
+                f"[DBREPL] Initial backup from source {db_type} → restore to target. "
+                f"mysqldump or pg_dump for initial seed."
+            ),
+            "commands": [
+                {"desc": "Source backup", "cmd": f"mysqldump --single-transaction --master-data=2 --all-databases -h <source_ip> -u root -p<pass> > /tmp/seed.sql"},
+                {"desc": "Restore to target", "cmd": f"mysql -h <target_rds_endpoint> -u root -p<pass> < /tmp/seed.sql"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_initial_seed_complete",
+        })
+        total_offset += config.STEP_TIMINGS["initial_sync_start"]
+
+        # Step 3: Start continuous replication
+        sid += 1
+        trace.append({
+            "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DBRepl-{server_name}",
+            "action": "DBREPL_START_REPLICATION",
+            "target": server_name,
+            "message": (
+                f"[DBREPL] Starting {replication_method} for {server_name}. "
+                f"Continuous replication until cutover. Near-zero downtime."
+            ),
+            "commands": [
+                {"desc": "Start replication", "cmd": f"CHANGE MASTER TO MASTER_HOST='<source_ip>', MASTER_USER='repl', MASTER_PASSWORD='<pass>', MASTER_LOG_FILE='<binlog>', MASTER_LOG_POS=<pos>; START SLAVE;"},
+                {"desc": "Monitor lag", "cmd": f"SHOW SLAVE STATUS\\G | grep Seconds_Behind_Master"},
+            ],
+            "timestamp_offset_seconds": total_offset,
+            "result": "simulated_replication_active",
+        })
+        total_offset += config.STEP_TIMINGS["agent_spawn"]
+
+        sync_hours = (disk_gb * 1024 * 8) / (100 * 3600)
+
+        return {
+            "trace": trace, "final_step_id": sid, "final_offset": total_offset,
+            "outcome": "DB_REPLICATION_SUCCESS", "sync_hours": sync_hours,
+            "server_name": server_name, "path_taken": "db_replication",
+        }
+
 
 class MigrationScheduler:
     """P3: Concurrent migration queue + scheduler for multi-project scaling.
@@ -5145,6 +5427,31 @@ class AgenticExecutionSimulator:
                 final_outcome = img_result["outcome"]
                 final_sync_hours = img_result["sync_hours"]
                 path_taken = "image_primary"
+
+        elif strategy == "data_sync":
+            # Data-level sync: rsync, lsyncd, OS blueprint deployment
+            # Used when SMS agent can't be installed or for active workloads
+            ds_result = DataSyncSimulator.simulate(
+                server, profile, physics, sid, current_offset, region, config
+            )
+            all_trace.extend(ds_result["trace"])
+            sid = ds_result["final_step_id"]
+            current_offset = ds_result["final_offset"]
+            final_outcome = ds_result["outcome"]
+            final_sync_hours = ds_result["sync_hours"]
+            path_taken = "data_sync"
+
+        elif strategy == "db_replication":
+            # Database native replication: MySQL binlog, PostgreSQL WAL, MongoDB oplog
+            db_result = DbReplicationSimulator.simulate(
+                server, profile, physics, sid, current_offset, region, config
+            )
+            all_trace.extend(db_result["trace"])
+            sid = db_result["final_step_id"]
+            current_offset = db_result["final_offset"]
+            final_outcome = db_result["outcome"]
+            final_sync_hours = db_result["sync_hours"]
+            path_taken = "db_replication"
 
         elif strategy == "manual_agent_required":
             # ── BLOCKED: Show why, then continue in dry-run mode ──
