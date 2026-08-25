@@ -949,7 +949,7 @@ class ServerProfiler:
         7. No access at all → manual_agent_required (BLOCKED)
         """
         # Check if SMS agent supports this OS
-        sms_supported_os = cls._is_sms_os_supported(os_type)
+        sms_supported_os = ServerProfiler._is_sms_os_supported(os_type)
         
         # Huawei Cloud ECS → SMS is primary (proven working cross-region)
         if is_huaweicloud and sms_supported_os:
