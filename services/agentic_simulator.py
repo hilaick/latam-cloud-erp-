@@ -867,6 +867,42 @@ class ExecutionHistoryStore:
         return cls._history
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Data size helpers — actual data to transfer ≠ disk capacity
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_data_size_gb(server: dict, default_used_pct: float = 50.0) -> float:
+    """Get actual data size to transfer (NOT disk capacity).
+    
+    Priority:
+    1. dataSizeGB field (from discovery/presales) — actual measured data
+    2. usedStorageGB field (from discovery) — measured used storage
+    3. disk_capacity * used_pct (heuristic — default 50%)
+    
+    SMS only transfers used data, not the full disk.
+    """
+    # 1. Explicit data size from discovery
+    data_size = server.get("dataSizeGB") or server.get("dataSize") or server.get("usedStorageGB")
+    if data_size and float(data_size) > 0:
+        return float(data_size)
+    
+    # 2. Disk capacity * used percentage
+    disk_capacity = float(
+        server.get("diskGB") or server.get("disk_gb") or 
+        server.get("storage") or server.get("specs", {}).get("disk") or 100
+    )
+    used_pct = float(server.get("usedStoragePct") or default_used_pct)
+    return disk_capacity * (used_pct / 100.0)
+
+
+def get_disk_capacity_gb(server: dict) -> float:
+    """Get disk capacity (for provisioning target ECS/RDS)."""
+    return float(
+        server.get("diskGB") or server.get("disk_gb") or 
+        server.get("storage") or server.get("specs", {}).get("disk") or 100
+    )
+
+
 class ServerProfiler:
     """Classify servers by OS, role, and migration strategy."""
 
@@ -1243,7 +1279,8 @@ class SmsMigrationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
         flavor = server.get("targetFlavor", server.get("flavor", "s6.large.2"))
-        disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
+        disk_gb = get_disk_capacity_gb(server)  # for provisioning
+        data_gb = get_data_size_gb(server)      # for transfer estimates
         target_ip = "172.16.1." + str(10 + abs(hash(server_name)) % 240)
 
         # ═══ PHASE 4.2b: SOURCE PREFLIGHT ═══
@@ -1553,7 +1590,7 @@ class SmsMigrationSimulator:
 
         # Simulate sync progress
         effective_mbps = SmsMigrationSimulator._simulate_throughput(physics)
-        initial_sync_hours = max((disk_gb * 8000) / (effective_mbps * 3600), 0.5)
+        initial_sync_hours = max((data_gb * 8000) / (effective_mbps * 3600), 0.5)
 
         sid += 1
         trace.append({
@@ -1561,7 +1598,7 @@ class SmsMigrationSimulator:
             "action": "SYNC_FULL_REPLICATION",
             "target": server_name,
             "message": (
-                f"[SYNC] Full replication in progress: {disk_gb:.0f}GB @ {effective_mbps:.0f}Mbps. "
+                f"[SYNC] Full replication in progress: {data_gb:.0f}GB data (of {disk_gb:.0f}GB disk) @ {effective_mbps:.0f}Mbps. "
                 f"Estimated: {initial_sync_hours:.1f}h. 4 sub-tasks: SSL_CONFIG, ATTACH_AGENT_IMAGE, "
                 f"FORMAT_DISK_{'LINUX' if is_linux else 'WINDOWS'}, {'MIGRATE_LINUX_FILE' if is_linux else 'MIGRATE_BLOCK'}."
             ),
@@ -1577,7 +1614,7 @@ class SmsMigrationSimulator:
             ("SSL_CONFIG", "Establishing SSL between source agent and SMS endpoint"),
             ("ATTACH_AGENT_IMAGE", "Attaching agent image disk to target ECS"),
             ("FORMAT_DISK_LINUX_FILE" if is_linux else "FORMAT_DISK_WINDOWS", "Formatting target disk partitions"),
-            ("MIGRATE_LINUX_FILE" if is_linux else "MIGRATE_BLOCK", f"Replicating {disk_gb:.0f}GB file-level data from source to target"),
+            ("MIGRATE_LINUX_FILE" if is_linux else "MIGRATE_BLOCK", f"Replicating {data_gb:.0f}GB data (of {disk_gb:.0f}GB disk) from source to target"),
             ("CONFIGURE_LINUX_FILE" if is_linux else "CONFIGURE_WINDOWS", "Configuring target OS (network, fstab, bootloader)"),
             ("DETTACH_AGENT_IMAGE", "Detaching agent image disk from target"),
         ]
@@ -1873,7 +1910,8 @@ class ImageMigrationSimulator:
         sid = step_id
         is_linux = profile["os_family"] == "linux"
         source_cloud = server.get("sourceCloud", "AWS")  # AWS, Azure, VMware
-        disk_gb = float(server.get("diskGB", server.get("disk_gb", server.get("specs", {}).get("disk", 100))))
+        disk_gb = get_disk_capacity_gb(server)  # for provisioning
+        data_gb = get_data_size_gb(server)      # for transfer estimates
 
         # ── Step 1: Export source image ──
         sid += 1
@@ -2577,7 +2615,8 @@ class DataSyncSimulator:
         sid = step_id
         total_offset = offset
         server_name = server.get("name", "unknown")
-        disk_gb = float(server.get("diskGB", server.get("storage", 40)))
+        disk_gb = get_disk_capacity_gb(server)  # for provisioning
+        data_gb = get_data_size_gb(server)      # for transfer estimates
         os_type = server.get("osType", profile.get("os", "linux"))
         is_linux = "windows" not in os_type.lower()
 
@@ -2625,14 +2664,14 @@ class DataSyncSimulator:
 
         # Step 3: Initial full sync (rsync, excluding system dirs)
         sid += 1
-        sync_hours = (disk_gb * 1024 * 8) / (100 * 3600)  # ~100Mbps
+        sync_hours = (data_gb * 1024 * 8) / (100 * 3600)  # ~100Mbps, actual data not disk capacity
         exclude_dirs = "/boot,/dev,/proc,/sys,/run,/tmp" if is_linux else "C:\\Windows,C:\\Program Files"
         trace.append({
             "id": sid, "phase": "PHASE_4_2d_SYNC", "agent": f"DataSync-{server_name}",
             "action": "DATASYNC_INITIAL_SYNC",
             "target": server_name,
             "message": (
-                f"[DATASYNC] Initial full file-level sync for {server_name}: {disk_gb:.0f}GB. "
+                f"[DATASYNC] Initial full file-level sync for {server_name}: {data_gb:.0f}GB data (of {disk_gb:.0f}GB disk). "
                 f"Excluding system dirs: {exclude_dirs}. "
                 f"rsync -avz --progress --partial -e ssh. Est: {sync_hours:.1f}h @ 100Mbps."
             ),
@@ -2714,7 +2753,8 @@ class DbReplicationSimulator:
         sid = step_id
         total_offset = offset
         server_name = server.get("name", "unknown")
-        disk_gb = float(server.get("diskGB", server.get("storage", 100)))
+        disk_gb = get_disk_capacity_gb(server)  # for provisioning
+        data_gb = get_data_size_gb(server)      # for transfer estimates
 
         # Detect DB type from server name or profile
         name_lower = server_name.lower()
@@ -2750,6 +2790,7 @@ class DbReplicationSimulator:
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_target_provisioned",
             "rollback_action": {"cmd": "hcloud RDS DeleteInstance --instance_id=<rds_id>", "label": "Delete target RDS"},
+            "metrics": {"disk_gb": disk_gb, "data_gb": data_gb},
         })
         total_offset += config.STEP_TIMINGS["instance_launch"]
 
@@ -2791,7 +2832,7 @@ class DbReplicationSimulator:
         })
         total_offset += config.STEP_TIMINGS["agent_spawn"]
 
-        sync_hours = (disk_gb * 1024 * 8) / (100 * 3600)
+        sync_hours = (data_gb * 1024 * 8) / (100 * 3600)  # actual data, not disk capacity
 
         return {
             "trace": trace, "final_step_id": sid, "final_offset": total_offset,
