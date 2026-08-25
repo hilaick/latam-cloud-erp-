@@ -29,6 +29,21 @@ function detectDbType(name) {
     return null;
 }
 
+function getDbMethod(type, detected) {
+    const dbType = detected || type;
+    if (dbType === 'RDS' || dbType === 'GAUSSDB') return 'DRS (Huawei Data Replication Service)';
+    if (dbType === 'DDS') return 'DRS or MongoDB oplog replication';
+    if (dbType === 'DCS') return 'DCS replication (SLAVEOF/REPLICAOF)';
+    if (dbType === 'DMS') return 'DMS migration (Kafka/message queue)';
+    if (dbType && dbType.includes('MySQL')) return 'binlog replication (CHANGE MASTER TO)';
+    if (dbType && dbType.includes('PostgreSQL')) return 'WAL streaming (pg_basebackup)';
+    if (dbType && dbType.includes('MongoDB')) return 'oplog replication (rs.initiate)';
+    if (dbType && dbType.includes('Redis')) return 'replication (SLAVEOF/REPLICAOF)';
+    if (dbType && dbType.includes('Oracle')) return 'Oracle Data Pump or GoldenGate';
+    if (dbType && dbType.includes('SQL Server')) return 'Always On availability groups or DRS';
+    return 'DRS or native replication';
+}
+
 export default function TechnicalFeasibility({ activeProject, onUpdateProject }) {
     const [scanning, setScanning] = useState(false);
     const [assessment, setAssessment] = useState(activeProject?.feasibilityAssessment || null);
@@ -45,78 +60,154 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
         let feasibilityScore = 100;
         const strategyRecommendations = [];
 
-        // 1. OS Compatibility Check
-        const unsupportedServers = [];
-        const supportedServers = [];
+        // ── Categorize resources by service type (like physics engine pillars) ──
+        const categorize = (node) => {
+            const t = String(node.type || '').toUpperCase();
+            if (['ECS', 'VM', 'CCE', 'ASG', 'AS'].includes(t)) return 'compute';
+            if (['RDS', 'GAUSSDB', 'DDS', 'DCS', 'DMS'].includes(t)) return 'database';
+            if (['VPC', 'SUBNET', 'SG', 'EIP', 'ELB', 'NAT', 'VPN', 'CGW'].includes(t)) return 'network';
+            if (['OBS', 'SFS', 'EVS', 'CBR'].includes(t)) return 'storage';
+            // Name-based fallback for ECS running databases
+            const dbType = detectDbType(node.name);
+            if (dbType) return 'database';
+            return 'compute'; // default to compute
+        };
+
+        const pillars = { compute: [], database: [], network: [], storage: [] };
         mapperNodes.forEach(node => {
+            const cat = categorize(node);
+            pillars[cat].push(node);
+        });
+
+        // ═══ COMPUTE (ECS) — SMS is the primary tool ═══
+        const computeNodes = pillars.compute;
+        const computeSupported = [];
+        const computeUnsupported = [];
+
+        computeNodes.forEach(node => {
             const osType = node.osType || node.os || 'linux';
             const supported = isSmsSupported(osType);
             if (supported) {
-                supportedServers.push(node);
+                computeSupported.push(node);
             } else {
-                unsupportedServers.push({ ...node, osType });
-                feasibilityScore -= 10;
+                computeUnsupported.push({ ...node, osType });
+                feasibilityScore -= 5;
             }
         });
 
-        if (unsupportedServers.length > 0) {
-            results.push({
-                key: 'os_compat',
-                category: 'OS Compatibility',
-                status: 'warning',
-                finding: `${unsupportedServers.length} server(s) have OS that may not be supported by SMS agent (pre-filter heuristic — definitive check during Phase 4 agent install)`,
-                recommendation: unsupportedServers.map(s => `${s.name} (${s.osType})`).join(', '),
-                impact: 'Use data_sync (rsync) or image_import instead of SMS',
-            });
+        results.push({
+            key: 'compute_sms',
+            category: 'Compute (ECS → SMS)',
+            status: computeUnsupported.length === 0 ? 'pass' : 'warning',
+            finding: `${computeNodes.length} compute server(s): ${computeSupported.length} SMS-compatible, ${computeUnsupported.length} may need fallback (OS pre-filter)`,
+            recommendation: computeUnsupported.length > 0
+                ? `SMS for ${computeSupported.length} server(s). data_sync/image_import for: ${computeUnsupported.map(s => `${s.name} (${s.osType})`).join(', ')}`
+                : `All ${computeSupported.length} compute servers are SMS-compatible (pre-filter heuristic — definitive check during Phase 4 agent install)`,
+            impact: computeUnsupported.length > 0 ? 'Some servers need data_sync or image_import fallback' : 'SMS is primary for all compute',
+        });
+
+        if (computeUnsupported.length > 0) {
             strategyRecommendations.push({
-                servers: unsupportedServers.map(s => s.name),
-                strategy: 'data_sync',
-                reason: 'SMS agent not supported for this OS',
+                servers: computeUnsupported.map(s => s.name),
+                strategy: 'data_sync or image_import',
+                reason: `SMS agent may not support OS: ${computeUnsupported.map(s => s.osType).join(', ')}`,
             });
-        } else {
-            results.push({
-                key: 'os_compat',
-                category: 'OS Compatibility',
-                status: 'pass',
-                finding: `All ${supportedServers.length} servers have SMS-supported OS`,
-                recommendation: 'SMS agent can be installed on all servers',
-                impact: 'SMS migration is viable',
+        }
+        if (computeSupported.length > 0) {
+            strategyRecommendations.push({
+                servers: computeSupported.map(s => s.name),
+                strategy: 'sms_primary',
+                reason: 'ECS compute servers — SMS is the primary migration tool',
             });
         }
 
-        // 2. Source Accessibility (Zero Trust detection)
-        const isZeroTrust = authLevel && (
-            authLevel.includes('Read-Only') ||
-            authLevel.includes('No Access') ||
-            authLevel.includes('Advisory')
-        );
+        // ═══ DATABASE (RDS/DDS/DCS) — DRS or native replication ═══
+        const dbNodes = pillars.database;
+        if (dbNodes.length > 0) {
+            const dbDetails = dbNodes.map(n => {
+                const t = String(n.type || '').toUpperCase();
+                const detected = detectDbType(n.name);
+                return { name: n.name, type: t, detected, method: getDbMethod(t, detected) };
+            });
 
+            results.push({
+                key: 'database_drs',
+                category: 'Database (RDS/DDS/DCS → DRS)',
+                status: 'info',
+                finding: `${dbNodes.length} database resource(s) — SMS does NOT apply. Use DRS or native replication.`,
+                recommendation: dbDetails.map(d => `${d.name}: ${d.method}`).join('; '),
+                impact: 'Database resources use DRS or native replication, not SMS',
+            });
+
+            strategyRecommendations.push({
+                servers: dbNodes.map(s => s.name),
+                strategy: 'drs_migration or db_replication',
+                reason: 'Database resources (RDS/DDS/DCS) — DRS is the primary tool, native replication for near-zero downtime',
+            });
+        }
+
+        // ═══ STORAGE (OBS/SFS/EVS) — OMS or data sync ═══
+        const storageNodes = pillars.storage;
+        if (storageNodes.length > 0) {
+            results.push({
+                key: 'storage_oms',
+                category: 'Storage (OBS/SFS → OMS)',
+                status: 'info',
+                finding: `${storageNodes.length} storage resource(s) — SMS does NOT apply. Use OMS (Object Migration Service) or data sync.`,
+                recommendation: storageNodes.map(s => `${s.name} (${s.type}): obsutil sync or rclone`).join('; '),
+                impact: 'Storage resources use OMS or data sync, not SMS',
+            });
+
+            strategyRecommendations.push({
+                servers: storageNodes.map(s => s.name),
+                strategy: 'obs_migration',
+                reason: 'Storage resources (OBS/SFS/EVS) — OMS is the primary tool',
+            });
+        }
+
+        // ═══ NETWORK (VPC/SG/EIP) — provisioned, not migrated ═══
+        const networkNodes = pillars.network;
+        if (networkNodes.length > 0) {
+            results.push({
+                key: 'network_provision',
+                category: 'Network (VPC/SG/EIP)',
+                status: 'pass',
+                finding: `${networkNodes.length} network resource(s) — provisioned in target, not migrated. SMS/DRS/OMS do not apply.`,
+                recommendation: 'Network resources are provisioned via RFS/Terraform or hcloud CLI in target region',
+                impact: 'Network is infrastructure, not a migration target',
+            });
+        }
+
+        // ═══ SOURCE ACCESSIBILITY (Zero Trust) ═══
+        const isZeroTrust = authLevel && (
+            authLevel.includes('Read-Only') || authLevel.includes('No Access') || authLevel.includes('Advisory')
+        );
         if (isZeroTrust) {
             results.push({
                 key: 'source_access',
                 category: 'Source Accessibility',
                 status: 'warning',
                 finding: 'Zero Trust: No direct access to source (Read-Only/Advisory auth)',
-                recommendation: 'Customer must install SMS agents. ERP handles all target-side operations.',
-                impact: 'Zero Trust mode — customer responsibility for agent install',
+                recommendation: 'Customer installs SMS agents on compute servers. ERP handles ALL target-side operations. Database replication requires customer to configure source-side.',
+                impact: 'Zero Trust mode — customer responsibility for source-side operations',
             });
             strategyRecommendations.push({
-                servers: 'ALL',
+                servers: 'ALL (source-side ops)',
                 strategy: 'zero_trust',
-                reason: 'Read-Only auth level — customer installs agents',
+                reason: 'Read-Only auth — customer handles agent install, source DB replication config',
             });
         } else {
             results.push({
                 key: 'source_access',
                 category: 'Source Accessibility',
                 status: 'pass',
-                finding: 'Full admin access to source — ERP can install agents directly',
-                recommendation: 'SMS with agent push is viable',
+                finding: 'Full admin access to source — ERP can install agents and configure replication directly',
+                recommendation: 'SMS with agent push for compute, DRS for databases, OMS for storage',
                 impact: 'Full automation possible',
             });
         }
 
-        // 3. VMware/vSphere Detection
+        // ═══ VMWARE/VSPHERE DETECTION ═══
         const isVmware = typeof sourceEnv === 'string'
             ? sourceEnv.toLowerCase().includes('vmware') || sourceEnv.toLowerCase().includes('vsphere')
             : Array.isArray(sourceEnv) && sourceEnv.some(s => s.toLowerCase().includes('vmware') || s.toLowerCase().includes('vsphere'));
@@ -126,110 +217,48 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                 key: 'vmware',
                 category: 'Virtualization',
                 status: 'info',
-                finding: 'VMware/vSphere source detected — image export is possible',
-                recommendation: 'Export VMs via ovftool from vCenter → convert to zvhd → import to IMS',
-                impact: 'Image-based migration available as primary or fallback',
+                finding: 'VMware/vSphere source detected — image export is possible for compute servers',
+                recommendation: 'Export VMs via ovftool from vCenter → convert to zvhd → import to IMS. Customer can also provide VMDK/OVA directly.',
+                impact: 'Image-based migration available as primary or fallback for compute',
             });
             strategyRecommendations.push({
-                servers: 'ALL',
-                strategy: 'image_import',
-                reason: 'VMware source — export via ovftool + convert + import to IMS',
+                servers: 'Compute (ECS)',
+                strategy: 'image_import (fallback)',
+                reason: 'VMware source — export via ovftool + convert + import to IMS. Viable when SMS agent cannot be installed.',
             });
         }
 
-        // 4. Database Detection
-        const dbServers = mapperNodes.filter(n => {
-            const t = (n.type || '').toUpperCase();
-            return t === 'RDS' || t === 'DDS' || t === 'DCS' || detectDbType(n.name);
-        });
-
-        if (dbServers.length > 0) {
-            const dbTypes = [...new Set(dbServers.map(n => detectDbType(n.name) || n.type || 'Unknown'))];
-            results.push({
-                key: 'database',
-                category: 'Database',
-                status: 'info',
-                finding: `${dbServers.length} database server(s) detected: ${dbTypes.join(', ')}`,
-                recommendation: dbTypes.map(t => {
-                    if (t.includes('MySQL') || t.includes('MariaDB')) return 'MySQL: binlog replication (CHANGE MASTER TO)';
-                    if (t.includes('PostgreSQL')) return 'PostgreSQL: WAL streaming (pg_basebackup)';
-                    if (t.includes('MongoDB')) return 'MongoDB: oplog replication';
-                    if (t.includes('Redis')) return 'Redis: SLAVEOF/REPLICAOF';
-                    if (t === 'RDS') return 'RDS: DRS migration';
-                    return `${t}: native replication or DRS`;
-                }).join('; '),
-                impact: 'Database native replication available for near-zero downtime',
-            });
-            strategyRecommendations.push({
-                servers: dbServers.map(s => s.name),
-                strategy: 'db_replication',
-                reason: 'Database servers detected — native replication recommended',
-            });
-        }
-
-        // 5. Customer Image Availability
+        // ═══ CUSTOMER IMAGE AVAILABILITY ═══
         results.push({
             key: 'customer_image',
             category: 'Customer Image',
             status: 'info',
-            finding: 'If customer can provide VM image (VMDK/OVA), import to IMS + data sync is possible',
-            recommendation: 'Customer exports VM → uploads to OBS → ERP imports to IMS → creates ECS → rsync data',
-            impact: 'Viable for Zero Trust + unsupported OS scenarios',
+            finding: 'If customer provides VM image (VMDK/OVA), import to IMS + data sync is possible for compute servers',
+            recommendation: 'Customer exports VM → uploads to OBS → ERP imports to IMS → creates ECS → rsync data. Viable for Zero Trust + unsupported OS.',
+            impact: 'Fallback for Zero Trust + unsupported OS scenarios',
         });
 
-        // 6. ECS vs PaaS Detection
-        const ecsServers = mapperNodes.filter(n => (n.type || '').toUpperCase() === 'ECS');
-        const paasServers = mapperNodes.filter(n => {
-            const t = (n.type || '').toUpperCase();
-            return ['RDS', 'DDS', 'DCS', 'OBS', 'SFS'].includes(t);
-        });
-
-        if (ecsServers.length > 0) {
-            results.push({
-                key: 'ecs_detection',
-                category: 'Resource Type',
-                status: 'pass',
-                finding: `${ecsServers.length} ECS server(s) — SMS is primary strategy (ECS is ECS first)`,
-                recommendation: 'SMS MIGRATE_FILE (Linux) or MIGRATE_BLOCK (Windows)',
-                impact: 'SMS is the default for all ECS resources',
-            });
-        }
-
-        if (paasServers.length > 0) {
-            results.push({
-                key: 'paas_detection',
-                category: 'Resource Type',
-                status: 'info',
-                finding: `${paasServers.length} PaaS resource(s) — use DRS (database) or OBS migration (storage)`,
-                recommendation: `DRS for databases, OMS for storage — not SMS`,
-                impact: 'PaaS resources use specialized migration tools',
-            });
-        }
-
-        // 7. Recommended Execution Mode
+        // ═══ EXECUTION MODE RECOMMENDATION ═══
         let recommendedMode = 'agentic';
-        let modeReason = 'Full automation with SMS';
-        if (isZeroTrust && unsupportedServers.length > 0) {
+        let modeReason = 'Full automation: SMS for compute, DRS for databases, OMS for storage';
+        if (isZeroTrust && computeUnsupported.length > 0) {
             recommendedMode = 'agentic_zero_trust';
-            modeReason = 'Zero Trust + unsupported OS → data_sync/image_import fallback';
+            modeReason = 'Zero Trust + some OS unsupported → customer installs agents where possible, data_sync/image_import for unsupported';
         } else if (isZeroTrust) {
             recommendedMode = 'agentic_zero_trust';
-            modeReason = 'Zero Trust — customer installs agents, ERP handles target-side';
-        } else if (unsupportedServers.length > 0) {
+            modeReason = 'Zero Trust — customer installs agents (compute), configures DB replication. ERP handles all target-side.';
+        } else if (computeUnsupported.length > 0) {
             recommendedMode = 'agentic';
-            modeReason = 'Unsupported OS detected → SMS with data_sync fallback';
-        } else if (isVmware) {
-            recommendedMode = 'agentic';
-            modeReason = 'VMware source → SMS with image_import fallback';
+            modeReason = 'Some OS unsupported → SMS with data_sync/image_import fallback';
         }
 
         results.push({
             key: 'exec_mode',
             category: 'Execution Mode',
             status: 'pass',
-            finding: `Recommended execution mode: ${recommendedMode}`,
+            finding: `Recommended: ${recommendedMode}`,
             recommendation: modeReason,
-            impact: 'This recommendation feeds into 3.4b Execution Mode selection',
+            impact: 'Feeds into 3.4b Execution Mode selection',
         });
 
         return {
@@ -238,14 +267,15 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
             strategyRecommendations,
             recommendedMode,
             summary: {
-                totalServers: mapperNodes.length,
-                smsSupported: supportedServers.length,
-                smsUnsupported: unsupportedServers.length,
+                totalResources: mapperNodes.length,
+                compute: computeNodes.length,
+                computeSmsSupported: computeSupported.length,
+                computeSmsUnsupported: computeUnsupported.length,
+                database: dbNodes.length,
+                storage: storageNodes.length,
+                network: networkNodes.length,
                 zeroTrust: isZeroTrust,
                 vmware: isVmware,
-                databases: dbServers.length,
-                ecs: ecsServers.length,
-                paas: paasServers.length,
             },
         };
     }, [mapperNodes, sourceEnv, authLevel]);
@@ -318,13 +348,13 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                 {runAssessment && (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                         {[
-                            { label: 'Total Servers', value: runAssessment.summary.totalServers, color: 'text-slate-700' },
-                            { label: 'SMS Supported', value: runAssessment.summary.smsSupported, color: 'text-emerald-600' },
-                            { label: 'SMS Unsupported', value: runAssessment.summary.smsUnsupported, color: 'text-rose-600' },
-                            { label: 'Zero Trust', value: runAssessment.summary.zeroTrust ? 'Yes' : 'No', color: runAssessment.summary.zeroTrust ? 'text-amber-600' : 'text-emerald-600' },
-                            { label: 'VMware', value: runAssessment.summary.vmware ? 'Yes' : 'No', color: 'text-blue-600' },
-                            { label: 'Databases', value: runAssessment.summary.databases, color: 'text-purple-600' },
-                            { label: 'ECS', value: runAssessment.summary.ecs, color: 'text-cyan-600' },
+                            { label: 'Total Resources', value: runAssessment.summary.totalResources, color: 'text-slate-700' },
+                            { label: 'Compute (ECS)', value: runAssessment.summary.compute, color: 'text-cyan-600' },
+                            { label: 'SMS Compatible', value: runAssessment.summary.computeSmsSupported, color: 'text-emerald-600' },
+                            { label: 'SMS Fallback', value: runAssessment.summary.computeSmsUnsupported, color: 'text-rose-600' },
+                            { label: 'Database (DRS)', value: runAssessment.summary.database, color: 'text-purple-600' },
+                            { label: 'Storage (OMS)', value: runAssessment.summary.storage, color: 'text-amber-600' },
+                            { label: 'Network', value: runAssessment.summary.network, color: 'text-indigo-600' },
                         ].map(item => (
                             <div key={item.label} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                                 <div className="text-[9px] uppercase font-bold text-slate-400 mb-1">{item.label}</div>
