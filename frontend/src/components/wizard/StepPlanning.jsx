@@ -6,9 +6,11 @@ import DedicatedMigrationPlan from './DedicatedMigrationPlan';
 import CutoverRunbookView from './CutoverRunbookView';
 import AgenticOrchestrationPanel from './AgenticOrchestrationPanel';
 
+import TechnicalFeasibility from './TechnicalFeasibility';
+
 export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     // 🚨 REORDERED: Default tab is now 'wbs' (3.1)
-    const [subTab, setSubTab] = useState('wbs');
+    const [subTab, setSubTab] = useState('feasibility');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [executionMode, setExecutionMode] = useState(project?.executionMode || 'manual');
     const [showGateModal, setShowGateModal] = useState(false);
@@ -22,6 +24,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     };
 
     const menuItems = [
+        { id: 'feasibility', num: '3.0', icon: 'fa-clipboard-check', label: 'Technical Feasibility' },
         { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
         { id: 'physics', num: '3.2', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
         { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
@@ -159,6 +162,11 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[700px] overflow-hidden transition-all duration-300">
                     
+                    {subTab === 'feasibility' && (
+                        <div className="p-6 h-full flex flex-col animate-fade-in">
+                            <TechnicalFeasibility activeProject={project} onUpdateProject={onUpdateProject} />
+                        </div>
+                    )}
                     {subTab === 'wbs' && <DedicatedMigrationPlan activeProject={project} onUpdateProject={onUpdateProject} />}
 
                     {subTab === 'tools' && (
