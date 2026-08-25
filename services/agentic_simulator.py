@@ -912,6 +912,7 @@ class ServerProfiler:
             agent_preinstalled, role,
             is_huaweicloud=any(h in str(server.get("cloud", server.get("sourceCloud", ""))).lower() for h in ["huawei", "hwc", "hcs"]) or "ecs" in name,
             source_region=str(server.get("region", server.get("sourceRegion", ""))).lower(),
+            os_type=os_type,
         )
 
         return {
@@ -936,6 +937,7 @@ class ServerProfiler:
         role: str,
         is_huaweicloud: bool = False,
         source_region: str = "",
+        os_type: str = "",
     ) -> str:
         """Determine the optimal migration strategy.
         
