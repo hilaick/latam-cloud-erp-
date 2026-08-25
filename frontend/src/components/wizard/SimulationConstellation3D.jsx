@@ -314,6 +314,7 @@ function SimulationConstellation({
   onReplayStart, onReplayStop, onReplayPlay, onReplayPause,
   onReplayStep, onReplayReset,
   isPlaying, replaySpeed, onReplaySpeedChange,
+  fullscreen,
 }) {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -422,7 +423,7 @@ function SimulationConstellation({
     const THREE = window.THREE;
     const container = containerRef.current;
     const w = container.clientWidth || 900;
-    const h = 600;
+    const h = fullscreen ? (window.innerHeight - 60) : 600;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a14);
@@ -443,7 +444,7 @@ function SimulationConstellation({
     if (THREE.OrbitControls) {
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true; controls.dampingFactor = 0.08;
-      controls.autoRotate = true; controls.autoRotateSpeed = 0.35;
+      controls.autoRotate = true; controls.autoRotateSpeed = 0.15;
       controls.minDistance = 150; controls.maxDistance = 1200;
       controls.maxPolarAngle = Math.PI * 0.88;
       controlsRef.current = controls;
@@ -883,7 +884,7 @@ function SimulationConstellation({
       }
       styles={{ body: { padding: 0, position: 'relative' } }}
     >
-      <div ref={containerRef} style={{ width: '100%', height: 600, borderRadius: '0 0 8px 8px', cursor: 'grab' }} />
+      <div ref={containerRef} style={{ width: '100%', height: fullscreen ? 'calc(100vh - 60px)' : 600, borderRadius: '0 0 8px 8px', cursor: 'grab' }} />
 
       {tooltip.visible && (
         <div style={{
@@ -923,32 +924,44 @@ function SimulationConstellation({
         background: 'rgba(15,15,26,0.9)', borderRadius: 8, border: '1px solid #374151', zIndex: 20,
       }}>
         {!replayMode ? (
-          <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={onReplayStart}
-            style={{ background: '#722ed1', borderColor: '#722ed1' }}>
-            Replay Simulation
-          </Button>
+          <AntTooltip title="Start replaying the simulation step by step">
+            <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={onReplayStart}
+              style={{ background: '#722ed1', borderColor: '#722ed1' }}>
+              Replay Simulation
+            </Button>
+          </AntTooltip>
         ) : (
           <>
-            <Button size="small" icon={<RedoOutlined />} onClick={onReplayReset} title="Reset" style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
-            <Button size="small" type="primary" icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={isPlaying ? onReplayPause : onReplayPlay}
-              style={{ background: isPlaying ? '#ff4d4f' : '#722ed1', borderColor: isPlaying ? '#ff4d4f' : '#722ed1' }}>
-              {isPlaying ? 'Pause' : 'Play'}
-            </Button>
-            <Button size="small" icon={<ArrowRightOutlined />} onClick={onReplayStep} disabled={isPlaying || currentStep >= totalSteps}
-              title="Step Forward" style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
+            <AntTooltip title="Reset to first step">
+              <Button size="small" icon={<RedoOutlined />} onClick={onReplayReset} style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
+            </AntTooltip>
+            <AntTooltip title={isPlaying ? 'Pause replay' : 'Play replay'}>
+              <Button size="small" type="primary" icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={isPlaying ? onReplayPause : onReplayPlay}
+                style={{ background: isPlaying ? '#ff4d4f' : '#722ed1', borderColor: isPlaying ? '#ff4d4f' : '#722ed1' }}>
+                {isPlaying ? 'Pause' : 'Play'}
+              </Button>
+            </AntTooltip>
+            <AntTooltip title="Step forward one step">
+              <Button size="small" icon={<ArrowRightOutlined />} onClick={onReplayStep} disabled={isPlaying || currentStep >= totalSteps}
+                style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
+            </AntTooltip>
             <Text style={{ fontSize: 10, fontFamily: 'monospace', color: '#9ca3af' }}>{currentStep}/{totalSteps}</Text>
             <div style={{ width: 1, height: 16, background: '#374151' }} />
-            <select value={replaySpeed || 1000} onChange={e => onReplaySpeedChange(Number(e.target.value))}
-              style={{ background: 'rgba(31,41,55,0.8)', color: '#d1d5db', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 6px', border: '1px solid #374151' }}>
-              <option value={2000}>0.5x</option>
-              <option value={1000}>1x</option>
-              <option value={500}>2x</option>
-              <option value={150}>5x</option>
-              <option value={50}>10x</option>
-            </select>
-            <Button size="small" icon={<StopOutlined />} onClick={onReplayStop} title="Exit Replay"
-              style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
+            <AntTooltip title="Replay speed">
+              <select value={replaySpeed || 1000} onChange={e => onReplaySpeedChange(Number(e.target.value))}
+                style={{ background: 'rgba(31,41,55,0.8)', color: '#d1d5db', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 6px', border: '1px solid #374151' }}>
+                <option value={2000}>0.5x</option>
+                <option value={1000}>1x</option>
+                <option value={500}>2x</option>
+                <option value={150}>5x</option>
+                <option value={50}>10x</option>
+              </select>
+            </AntTooltip>
+            <AntTooltip title="Exit replay mode">
+              <Button size="small" icon={<StopOutlined />} onClick={onReplayStop}
+                style={{ background: 'rgba(31,41,55,0.8)', borderColor: '#374151', color: '#d1d5db' }} />
+            </AntTooltip>
           </>
         )}
       </div>

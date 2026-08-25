@@ -1458,6 +1458,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 isPlaying={isPlaying}
                 replaySpeed={replaySpeed}
                 onReplaySpeedChange={setReplaySpeed}
+                fullscreen
               />
             </div>
           )}
