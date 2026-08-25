@@ -325,6 +325,19 @@ function SimulationConstellation({
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, text: '' });
   const [autoRotate, setAutoRotate] = useState(true);
 
+  // Layer visibility overrides — null = auto (phase-based), true/false = user override
+  const [layerOverrides, setLayerOverrides] = useState({
+    subnet: null, eip: null, vpn: null, nat: null, elb: null,
+    sg: null, storage: null, vpc: null, worker: null, cdn: null, cbr: null,
+  });
+  const toggleLayer = useCallback((layer) => {
+    setLayerOverrides(prev => ({ ...prev, [layer]: prev[layer] === null ? true : prev[layer] === true ? false : null }));
+  }, []);
+  const layerEffective = (layer, autoVisible) => {
+    const ov = layerOverrides[layer];
+    return ov === null ? autoVisible : ov;
+  };
+
   // Keep refs for scene update without rebuild
   const objectMapRef = useRef({}); // resourceName -> { group, visible, status, phase }
   const flowLinesRef = useRef([]);
@@ -549,7 +562,7 @@ function SimulationConstellation({
       obj.position.set(-360, -80 - i * 30, 30);
       obj.visible = false;
       scene.add(obj);
-      objectMapRef.current[name] = { group: obj, name, isStorage: true, shape: cfg.shape };
+      objectMapRef.current[name] = { group: obj, name, isStorage: true, shape: cfg.shape, layerType: 'storage' };
     });
 
     // ── EIPs (floating near target) ──
@@ -559,7 +572,7 @@ function SimulationConstellation({
       obj.position.set(400 + i * 22, 100 + i * 12, 50);
       obj.visible = false;
       scene.add(obj);
-      objectMapRef.current[name] = { group: obj, name, isEIP: true };
+      objectMapRef.current[name] = { group: obj, name, isEIP: true, layerType: 'eip' };
     });
 
     // ── Security Groups (inside VPC, top) ──
@@ -570,18 +583,22 @@ function SimulationConstellation({
       obj.position.set(300 + i * 30, 80, 60);
       obj.visible = false;
       scene.add(obj);
-      objectMapRef.current[name] = { group: obj, name, isSG: true };
+      objectMapRef.current[name] = { group: obj, name, isSG: true, layerType: 'sg' };
     });
 
-    // ── Network nodes (NAT, ELB, VPN) ──
+    // ── Network nodes (NAT, ELB, VPN, Subnet, CDN) ──
     netNodes.forEach((res, i) => {
       const name = res.name || res.id || `Net-${i}`;
+      const rType = (res.type || '').toUpperCase();
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, name, cfg.color);
       obj.position.set(300 + i * 40, -100, 60);
       obj.visible = false;
       scene.add(obj);
-      objectMapRef.current[name] = { group: obj, name, isNet: true };
+      // Tag with specific layer type
+      const layerType = rType === 'SUBNET' ? 'subnet' : rType === 'VPN' ? 'vpn' :
+        rType === 'NAT' ? 'nat' : rType === 'ELB' ? 'elb' : rType === 'CDN' ? 'cdn' : 'net';
+      objectMapRef.current[name] = { group: obj, name, isNet: true, layerType };
     });
 
     // ── mig_worker ──
@@ -589,7 +606,7 @@ function SimulationConstellation({
     mw.position.set(380, -70, 60);
     mw.visible = false;
     scene.add(mw);
-    objectMapRef.current['mig_worker'] = { group: mw, name: 'mig_worker', isWorker: true };
+    objectMapRef.current['mig_worker'] = { group: mw, name: 'mig_worker', isWorker: true, layerType: 'worker' };
 
     // ── Connection lines (source → target) ──
     const lines = [];
@@ -718,7 +735,7 @@ function SimulationConstellation({
 
     // Show VPC when network is verified or target provisioning starts
     if (om['__VPC__']) {
-      om['__VPC__'].group.visible = showTargetInfrastructure || phaseProgression.includes('PHASE_4_1');
+      om['__VPC__'].group.visible = layerEffective('vpc', showTargetInfrastructure || phaseProgression.includes('PHASE_4_1'));
     }
 
     // Show/hide source servers — appear during agent prep / preflight
@@ -772,12 +789,15 @@ function SimulationConstellation({
     const eipVisible = phaseProgression.includes('PHASE_4_2c_TARGET') || phaseProgression.includes('PHASE_4_2d_SYNC') ||
       phaseProgression.includes('PHASE_4_3') || phaseProgression.includes('PHASE_4_6');
     Object.values(om).forEach(entry => {
-      if (entry.isEIP) entry.group.visible = eipVisible && discoveredResources.has(entry.name);
-      if (entry.isSG) entry.group.visible = showTargetInfrastructure;
-      if (entry.isNet) entry.group.visible = showTargetInfrastructure;
-      if (entry.isStorage) entry.group.visible = sourceVisible || discoveredResources.has(entry.name);
+      if (entry.isEIP) entry.group.visible = layerEffective('eip', eipVisible && discoveredResources.has(entry.name));
+      if (entry.isSG) entry.group.visible = layerEffective('sg', showTargetInfrastructure);
+      if (entry.isNet) {
+        const lt = entry.layerType || 'net';
+        entry.group.visible = layerEffective(lt, showTargetInfrastructure);
+      }
+      if (entry.isStorage) entry.group.visible = layerEffective('storage', sourceVisible || discoveredResources.has(entry.name));
       if (entry.isWorker) {
-        entry.group.visible = phaseProgression.includes('PHASE_4_2b_PREFLIGHT') || phaseProgression.includes('PHASE_4_2c_TARGET');
+        entry.group.visible = layerEffective('worker', phaseProgression.includes('PHASE_4_2b_PREFLIGHT') || phaseProgression.includes('PHASE_4_2c_TARGET'));
       }
     });
 
@@ -833,7 +853,7 @@ function SimulationConstellation({
         phaseLabelRef.current.visible = false;
       }
     }
-  }, [visibleTrace, resourceStates, discoveredResources, phaseProgression, currentPhase, syncActive]);
+  }, [visibleTrace, resourceStates, discoveredResources, phaseProgression, currentPhase, syncActive, layerOverrides]);
 
   /* ── Controls: zoom, reset, auto-rotate ── */
   const zoomIn = useCallback(() => {
@@ -966,24 +986,43 @@ function SimulationConstellation({
         )}
       </div>
 
-      {/* Legend (top-left) */}
-      <div style={{ position: 'absolute', top: 10, left: 14, display: 'flex', gap: 8, flexWrap: 'wrap', zIndex: 10, maxWidth: 400 }}>
+      {/* Layer toggle buttons (top-left) — click to show/hide resource types */}
+      <div style={{ position: 'absolute', top: 10, left: 14, display: 'flex', gap: 4, flexWrap: 'wrap', zIndex: 10, maxWidth: 420 }}>
         {[
-          { label: 'ECS', color: '#3b82f6', icon: 'fa-server' },
-          { label: 'RDS', color: '#10b981', icon: 'fa-database' },
-          { label: 'EVS/OBS', color: '#f59e0b', icon: 'fa-hdd' },
-          { label: 'VPC', color: '#8b5cf6', icon: 'fa-cloud' },
-          { label: 'EIP', color: '#fbbf24', icon: 'fa-globe' },
-          { label: 'SG', color: '#ef4444', icon: 'fa-shield-alt' },
-          { label: 'NAT', color: '#ec4899', icon: 'fa-route' },
-          { label: 'ELB', color: '#06b6d4', icon: 'fa-balance-scale' },
-          { label: 'VPN', color: '#6366f1', icon: 'fa-lock' },
-        ].map(leg => (
-          <div key={leg.label} style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(15,15,26,0.7)', padding: '2px 5px', borderRadius: 3 }}>
-            <i className={`fas ${leg.icon}`} style={{ color: leg.color, fontSize: 9 }} />
-            <span style={{ fontSize: 8, fontWeight: 600, color: '#9ca3af' }}>{leg.label}</span>
-          </div>
-        ))}
+          { key: 'vpc',     label: 'VPC',     color: '#8b5cf6', icon: 'fa-cloud' },
+          { key: 'subnet',  label: 'Subnet',  color: '#a78bfa', icon: 'fa-network-wired' },
+          { key: 'eip',     label: 'EIP',     color: '#fbbf24', icon: 'fa-globe' },
+          { key: 'sg',      label: 'SG',      color: '#ef4444', icon: 'fa-shield-alt' },
+          { key: 'nat',     label: 'NAT',     color: '#ec4899', icon: 'fa-route' },
+          { key: 'elb',     label: 'ELB',     color: '#06b6d4', icon: 'fa-balance-scale' },
+          { key: 'vpn',     label: 'VPN',     color: '#6366f1', icon: 'fa-lock' },
+          { key: 'cdn',     label: 'CDN',     color: '#fbbf24', icon: 'fa-satellite-dish' },
+          { key: 'storage', label: 'EVS/OBS', color: '#f59e0b', icon: 'fa-hdd' },
+          { key: 'cbr',     label: 'CBR',     color: '#f97316', icon: 'fa-archive' },
+          { key: 'worker',  label: 'Worker',  color: '#fbbf24', icon: 'fa-cogs' },
+        ].map(leg => {
+          const ov = layerOverrides[leg.key];
+          const isOn = ov === true;
+          const isOff = ov === false;
+          const isAuto = ov === null;
+          return (
+            <AntTooltip key={leg.key} title={`${leg.label} — ${isAuto ? 'Auto (phase-based)' : isOn ? 'Force shown' : 'Hidden'}`}>
+              <button
+                onClick={() => toggleLayer(leg.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 3,
+                  background: isOff ? 'rgba(15,15,26,0.5)' : isOn ? leg.color + '30' : 'rgba(15,15,26,0.7)',
+                  border: `1px solid ${isOff ? '#374151' : isOn ? leg.color : leg.color + '40'}`,
+                  borderRadius: 3, padding: '2px 5px', cursor: 'pointer',
+                  opacity: isOff ? 0.4 : 1, transition: 'all 0.2s',
+                }}
+              >
+                <i className={`fas ${leg.icon}`} style={{ color: isOff ? '#4b5563' : leg.color, fontSize: 9 }} />
+                <span style={{ fontSize: 8, fontWeight: 600, color: isOff ? '#6b7280' : isOn ? leg.color : '#9ca3af' }}>{leg.label}</span>
+              </button>
+            </AntTooltip>
+          );
+        })}
       </div>
 
       {/* Status legend */}
