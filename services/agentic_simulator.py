@@ -4786,6 +4786,9 @@ class AgenticExecutionSimulator:
                     # Tag server with SOW resource flags for conditional steps
                     server["_hss_in_sow"] = len(hss_resources) > 0
                     server["_has_existing_targets"] = has_existing_targets
+                    # Pass physics usedStoragePct to get_data_size_gb (if no dataSizeGB on server)
+                    if "usedStoragePct" not in server and physics:
+                        server["usedStoragePct"] = physics.get("usedStoragePct", 50)
                     
                     server_result = AgenticExecutionSimulator._process_single_server(
                         server, physics, tool_assignments, step_id,

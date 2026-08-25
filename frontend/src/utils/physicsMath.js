@@ -176,8 +176,8 @@ export function generateStructuredResult({ engineMode, cogResult, manResult, nod
             isFileHeavy: classification.isFileHeavy,
             includedInMath: conf.includedInMath !== false,
             // Payload estimates — match actual field names used in nodeConfigs
-            payloadGB: conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0,
-            churnGB: conf.churnGB || ((conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0) * 0.02),
+            payloadGB: conf.dataSizeGB || conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0,
+            churnGB: conf.churnGB || ((conf.dataSizeGB || conf.customSizeGB || conf.storageGB || conf.payloadGB || Number(n.storage) || 0) * 0.02),
             smallFiles: conf.smallFiles || 0,
             // DB-specific
             rowsM: conf.rowsM || 0,

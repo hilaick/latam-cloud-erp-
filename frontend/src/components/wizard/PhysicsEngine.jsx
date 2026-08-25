@@ -379,7 +379,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
         const storageNodes = useStorage ? activeNodes.filter(n => nodeConfigs[n.id]?.isStorage) : [];
 
         computeNodes.forEach(n => {
-            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.dataSizeGB) 
+                || ((nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100));
             const churnGB = usedGB * (appChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
@@ -389,7 +390,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
         });
 
         dbNodes.forEach(n => {
-            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 500) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.dataSizeGB)
+                || ((nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 500) * (usedStoragePct / 100));
             const churnGB = usedGB * (dbChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
@@ -400,7 +402,8 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
         const omsSpeedMbps = 5 * 120 * 1.5; 
         const stSpeed = Math.min(effectivePipeMbps, omsSpeedMbps);
         storageNodes.forEach(n => {
-            const usedGB = (nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 1000) * (usedStoragePct / 100);
+            const usedGB = (nodeConfigs[n.id]?.dataSizeGB)
+                || ((nodeConfigs[n.id]?.customSizeGB || Number(n.storage) || 1000) * (usedStoragePct / 100));
             const churnGB = usedGB * (appChurnPct / 100);
             totalUsedGB += usedGB; totalChurnGB += churnGB;
 
@@ -1025,7 +1028,7 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                                         <th className="p-3 w-10 text-center" title="Select for Bulk Edit"><input type="checkbox" onChange={toggleAll} checked={selectedNodes.length === nodes.length && nodes.length > 0} className="w-4 h-4 accent-indigo-600"/></th>
                                         <th className="p-3">Resource Name</th>
                                         <th className="p-3">Type & Profile</th>
-                                        <th className="p-3 text-right">Payload Size</th>
+                                        <th className="p-3 text-right">Disk / Data</th>
                                         <th className="p-3 text-center w-16">Conf.</th>
                                         <th className="p-3">Sync Details (Manual Overrides)</th>
                                         <th className="p-3 text-center">Include in Math</th>
@@ -1055,8 +1058,15 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                                                     <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">{conf.profileName || 'Custom'}</div>
                                                 </td>
                                                 <td className="p-3 text-right">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-20 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <span className="text-[8px] font-black uppercase text-slate-400 w-12 text-right">Disk</span>
+                                                            <input type="number" value={conf.customSizeGB || 0} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, customSizeGB: Number(e.target.value)}})} className="w-16 p-1 border border-slate-200 rounded text-right font-mono font-bold focus:border-indigo-500 outline-none" /> <span className="text-[10px] font-black text-slate-400">GB</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <span className="text-[8px] font-black uppercase text-emerald-500 w-12 text-right">Data</span>
+                                                            <input type="number" value={conf.dataSizeGB || ''} placeholder={Math.round((conf.customSizeGB || Number(n.storage) || 200) * (usedStoragePct / 100))} onChange={e => setNodeConfigs({...nodeConfigs, [n.id]: {...conf, dataSizeGB: Number(e.target.value)}})} className="w-16 p-1 border border-emerald-200 rounded text-right font-mono font-bold text-emerald-700 focus:border-emerald-500 outline-none" /> <span className="text-[10px] font-black text-emerald-400">GB</span>
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="p-3 text-center">
