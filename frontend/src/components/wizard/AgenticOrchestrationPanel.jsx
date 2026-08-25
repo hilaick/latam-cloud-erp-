@@ -429,7 +429,7 @@ const LiveStepCard = ({ step }) => {
    ═══════════════════════════════════════════════ */
 
 /* ── Status → color map (green=success, amber=running, red=failed, blue=deployed) ── */
-const STATUS_COLORS = {
+export const STATUS_COLORS = {
   success:  '#10b981', green: '#10b981', ok: '#10b981',
   running:  '#f59e0b', amber: '#f59e0b', active: '#f59e0b', in_progress: '#f59e0b',
   failed:   '#ef4444', red: '#ef4444', error: '#ef4444',
@@ -437,7 +437,7 @@ const STATUS_COLORS = {
   pending:  '#6b7280', gray: '#6b7280',
 };
 
-function resolveStatusColor(step) {
+export function resolveStatusColor(step) {
   const r = ((step.result || step.outcome || '')).toLowerCase();
   if (r.includes('success') || r === 'capacity_ok' || r === 'registered' || r.startsWith('simulated')) return STATUS_COLORS.success;
   if (r === 'running' || r === 'in_progress' || r.includes('active') || r.includes('processing')) return STATUS_COLORS.running;
@@ -447,7 +447,7 @@ function resolveStatusColor(step) {
 }
 
 /* ── Build constellation nodes from trace ── */
-function buildConstellationData(trace, resourceUsage, resources) {
+export function buildConstellationData(trace, resourceUsage, resources) {
   const servers = [];       // { id, name, status, color, source_label, commands_count }
   const networkNodes = [];  // { id, name, type, status, color }
   const seenServerIds = new Set();
@@ -568,7 +568,7 @@ function buildConstellationData(trace, resourceUsage, resources) {
 /* ── SVG layout constants ── */
 const CON_W = 900, CON_H = 600, CON_CX = CON_W / 2, CON_CY = CON_H / 2;
 
-function computeConstellationLayout(data) {
+export function computeConstellationLayout(data) {
   const { servers, networkNodes, migWorker, counts } = data;
   const allNodes = [];
   const allEdges = [];

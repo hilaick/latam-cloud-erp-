@@ -1,6 +1,9 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { Card, Spin } from 'antd';
+import { Card, Spin, Space, Tag, Typography } from 'antd';
 import { ArrowRightOutlined } from '@ant-design/icons';
+import { buildConstellationData, computeConstellationLayout } from './AgenticOrchestrationPanel.jsx';
+
+const { Text } = Typography;
 
 // Three.js 3D Simulation Constellation
 // Loaded dynamically via CDN — no npm dependency
