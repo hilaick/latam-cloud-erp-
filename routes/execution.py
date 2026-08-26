@@ -792,6 +792,8 @@ def build_execution_plan(project_id):
             "region": pd.get("region", pd.get("targetRegion", "la-north-2")),
             "sourceEnvironment": pd.get("sourceEnvironment", pd.get("presales", {}).get("sourceEnvironment", "")),
             "authLevel": pd.get("authLevel", pd.get("presales", {}).get("authLevel", "")),
+            "project_type": pd.get("project_type", project.project_type if hasattr(project, 'project_type') else ""),
+            "manualMigWorker": pd.get("manualMigWorker", False),
         }
 
         customer = None
