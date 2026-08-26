@@ -971,7 +971,11 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [serverStatus, setServerStatus] = useState({});
 
     const targetArch = project?.targetArchitecture || {};
-    const servers = [...(targetArch.compute || []), ...(targetArch.database || []), ...(targetArch.storage || [])].filter(s => s.name);
+    const servers = [
+        ...(targetArch.compute || []).map(r => ({ ...r, name: r.name || r.source_name || r.id || `Server-${Math.random().toString(36).slice(2,7)}` })),
+        ...(targetArch.database || []).map(r => ({ ...r, name: r.name || r.source_name || r.id || `DB-${Math.random().toString(36).slice(2,7)}`, type: r.type || 'RDS' })),
+        ...(targetArch.storage || []).map(r => ({ ...r, name: r.name || r.source_name || r.id || `Storage-${Math.random().toString(36).slice(2,7)}`, type: r.type || 'OBS' })),
+    ];
     const authLevel = project?.authLevel || project?.presales?.authLevel || [];
     const isZeroTrust = Array.isArray(authLevel) ? authLevel.some(a => String(a).includes('Read-Only')) : String(authLevel).includes('Read-Only');
     const sourceEnv = project?.sourceEnvironment || project?.presales?.sourceEnvironment || 'Unknown';
@@ -1342,6 +1346,8 @@ function WorkbenchView({ project }) {
     ]);
     const [selectedProfile, setSelectedProfile] = useState('exec');
     const [selectedModel, setSelectedModel] = useState('');
+    const [showDryRunModal, setShowDryRunModal] = useState(false);
+    const [dryRunResult, setDryRunResult] = useState(null);
 
     const executionMode = project?.executionMode || 'manual';
     const isAgentic = executionMode === 'agentic';
