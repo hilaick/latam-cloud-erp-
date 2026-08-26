@@ -4661,7 +4661,7 @@ class AgenticExecutionSimulator:
                         f"ERP will verify agent registration before creating SMS task."
                     ),
                     "commands": [
-                        {"desc": "Customer: Download SMS agent", "cmd": f"wget https://sms-resource-intl.obs.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/"},
+                        {"desc": "Customer: Download SMS agent", "cmd": f"wget https://sms-resource-intl-{source_region}.obs.{source_region}.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/"},
                         {"desc": "Customer: Start agent", "cmd": f"screen -dmS sms_agent bash -c 'printf \"y\\n<AK>\\n<SK>\\nsms.<region>.myhuaweicloud.com\\n\\ny\\ny\\nn\\n\" | bash /opt/SMS-Agent/startup.sh'"},
                     ],
                     "timestamp_offset_seconds": total_simulated_seconds,
@@ -5958,6 +5958,20 @@ def register_agentic_dry_run_routes(execution_bp):
                 project_record.data = json.dumps(updated_data) if isinstance(project_record.data, str) else updated_data
                 db.session.commit()
                 logger.info(f"Dry-run: saved simulation results ({len(agenticDryRun['trace'])} trace entries) to project {project_id}. Lifecycle advanced to 4_execution.")
+
+                # ── Self-Learning: extract patterns, persist to CognitiveLearningLog, auto-generate playbook & runbook ──
+                try:
+                    from services.playbook_learner import learn_from_simulation
+                    learning_result = learn_from_simulation(
+                        project_id,
+                        result.get("trace", []),
+                        result.get("summary", {}),
+                        result.get("resource_usage", {}),
+                    )
+                    if learning_result:
+                        logger.info(f"🧠 Self-Learning: {learning_result}")
+                except Exception as learn_err:
+                    logger.warning(f"Self-learning failed (non-blocking): {learn_err}")
             except Exception as save_err:
                 logger.error(f"Dry-run: failed to save simulation to project: {save_err}")
                 db.session.rollback()

@@ -106,6 +106,111 @@ def _resolve_step_from_knowledge(action: str, pillar: str, strategy: str,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# hcloud CLI profile management — dynamic per customer (project-agnostic)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _create_hcloud_profile(profile_name: str, ak: str, sk: str, region: str) -> bool:
+    """Create a dynamic hcloud CLI profile for a customer's credentials."""
+    try:
+        cmd = (f"hcloud configure set --cli-profile={profile_name} "
+               f"--access-key={ak} --secret-key={sk} --cli-region={region}")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            logger.info(f"Created hcloud profile: {profile_name} (region: {region})")
+            return True
+        logger.error(f"Failed to create hcloud profile {profile_name}: {result.stderr[:200]}")
+        return False
+    except Exception as e:
+        logger.error(f"hcloud profile creation error: {e}")
+        return False
+
+
+def _delete_hcloud_profile(profile_name: str):
+    """Delete a dynamic hcloud CLI profile (cleanup)."""
+    try:
+        subprocess.run(f"hcloud configure delete --cli-profile={profile_name}",
+                       shell=True, capture_output=True, text=True, timeout=5)
+        logger.info(f"Deleted hcloud profile: {profile_name}")
+    except Exception:
+        pass
+
+
+def _discover_flavors(profile: str, region: str) -> list:
+    """Discover available ECS flavors in a region (project-agnostic)."""
+    try:
+        result = subprocess.run(
+            f"hcloud ECS ListFlavors --cli-profile={profile} --cli-region={region} --availability-zone={region}a",
+            shell=True, capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            import json as _json
+            data = _json.loads(result.stdout)
+            flavors = data.get("flavors", [])
+            # Sort by vCPUs then memory — prefer balanced flavors
+            flavors.sort(key=lambda f: (int(f.get("vcpus", 0)), int(f.get("ram", 0))))
+            return flavors
+    except Exception as e:
+        logger.warning(f"Flavor discovery failed for {region}: {e}")
+    return []
+
+
+def _pick_flavor(profile: str, region: str, source_vcpus: int = None, source_ram_mb: int = None) -> str:
+    """Pick a suitable flavor for the target region (project-agnostic)."""
+    flavors = _discover_flavors(profile, region)
+    if not flavors:
+        # Fallback: try common flavors by region prefix
+        if region.startswith("la-"):
+            return "s6.large.2"  # LATAM fallback
+        elif region.startswith("ap-southeast"):
+            return "s6.medium.2"  # AP fallback
+        return "s6.large.2"  # Generic fallback
+    
+    # Match source specs if available
+    if source_vcpus and source_ram_mb:
+        for f in flavors:
+            if int(f.get("vcpus", 0)) >= source_vcpus and int(f.get("ram", 0)) >= source_ram_mb:
+                return f.get("id", "s6.large.2")
+    
+    # Pick smallest balanced flavor (2 vCPU, 4GB+)
+    for f in flavors:
+        if int(f.get("vcpus", 0)) >= 2 and int(f.get("ram", 0)) >= 4096:
+            return f.get("id", "s6.large.2")
+    
+    return flavors[0].get("id", "s6.large.2") if flavors else "s6.large.2"
+
+
+def _discover_images(profile: str, region: str, os_type: str = "linux") -> dict:
+    """Discover available gold images in a region (project-agnostic)."""
+    try:
+        result = subprocess.run(
+            f"hcloud IMS ListImages --cli-profile={profile} --cli-region={region} --imagetype=gold --__support_kvm=true",
+            shell=True, capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            import json as _json
+            data = _json.loads(result.stdout)
+            images = data.get("images", [])
+            # Filter by OS type
+            os_filter = "Linux" if "windows" not in os_type.lower() else "Windows"
+            matching = [img for img in images if os_filter in str(img.get("os_type", ""))]
+            if matching:
+                # Pick the latest Ubuntu/CentOS for Linux, latest Windows for Windows
+                if os_filter == "Linux":
+                    preferred = [i for i in matching if "ubuntu" in str(i.get("name", "")).lower()]
+                    if preferred:
+                        return {"id": preferred[0].get("id", ""), "name": preferred[0].get("name", "")}
+                return {"id": matching[0].get("id", ""), "name": matching[0].get("name", "")}
+    except Exception as e:
+        logger.warning(f"Image discovery failed for {region}: {e}")
+    return {"id": "", "name": ""}
+
+
+def _sms_agent_url(source_region: str) -> str:
+    """Build SMS agent download URL for the source region (project-agnostic)."""
+    return f"https://sms-resource-intl-{source_region}.obs.{source_region}.myhuaweicloud.com/SMS-Agent.tar.gz"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Resource categorization — mirrors TechnicalFeasibility.jsx + physics engine
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -566,6 +671,9 @@ class ExecutionEngine:
             step_id_counter = sid
             # Step: Target ECS creation — search knowledge tree first
             ecs_resolution = _resolve_step_from_knowledge("CREATE_TARGET_ECS", "compute", "sms", node, server_profile)
+            # Flavor: use source flavor if available, otherwise dynamic discovery at execution time
+            source_flavor = node.get("flavor", node.get("source_flavor", ""))
+            flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
             sid += 1
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
@@ -575,7 +683,7 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": ecs_resolution["tool_source"],
                 "tool_name": ecs_resolution["tool_name"],
-                "commands": ecs_resolution["commands"] or [{"desc": "Create target ECS with EIP", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef='s6.large.2' --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
+                "commands": ecs_resolution["commands"] or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
@@ -907,6 +1015,14 @@ class ExecutionEngine:
         except Exception as e:
             logger.warning(f"MCP server startup failed (will use hcloud CLI): {e}")
 
+        # Create dynamic hcloud profile for this customer (project-agnostic)
+        profile_name = f"erp-exec-{int(time.time())}"
+        profile_created = _create_hcloud_profile(profile_name, ak, sk, plan.get("target_region", "la-north-2"))
+        if not profile_created:
+            # Fallback to default profile
+            profile_name = "agent-test"
+            logger.warning(f"Dynamic profile creation failed — falling back to '{profile_name}'")
+
         ak = credentials.get("ak", "")
         sk = credentials.get("sk", "")
         source_ak = credentials.get("source_ak", ak)
@@ -947,9 +1063,10 @@ class ExecutionEngine:
                 cmd = cmd_info["cmd"]
                 cmd_type = cmd_info.get("type", "hcloud")
 
-                # Substitute credentials in command
+                # Substitute credentials and profile in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)
-                cmd_filled = cmd_filled.replace("<profile>", "agent-test")
+                cmd_filled = cmd_filled.replace("<profile>", profile_name)
+                cmd_filled = cmd_filled.replace("agent-test", profile_name)  # replace hardcoded profile
 
                 if cmd_type == "hcloud":
                     result = _hcloud(cmd_filled, timeout=30)
@@ -986,6 +1103,10 @@ class ExecutionEngine:
             logger.info("MCP servers stopped (on-demand cleanup)")
         except Exception:
             pass
+
+        # Delete dynamic hcloud profile (cleanup)
+        if profile_name != "agent-test":
+            _delete_hcloud_profile(profile_name)
 
         results["summary"] = {
             "total_steps": len(results["steps"]),
