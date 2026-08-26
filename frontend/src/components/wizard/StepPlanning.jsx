@@ -81,10 +81,18 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         
         // Validate prerequisites exist
         const missingPrereqs = [];
-        if (!project?.mapperNodes || project.mapperNodes.length === 0) {
-            missingPrereqs.push('Topology nodes (Architecture & Scope step)');
+        // Check for target architecture OR mapper nodes (either is valid)
+        const hasTargetArch = project?.targetArchitecture && 
+            (project.targetArchitecture.compute?.length > 0 || 
+             project.targetArchitecture.database?.length > 0 ||
+             project.targetArchitecture.storage?.length > 0);
+        if (!hasTargetArch && (!project?.mapperNodes || project.mapperNodes.length === 0)) {
+            missingPrereqs.push('Target architecture or topology nodes (Phase 2)');
         }
-        if (!project?.ora?.riskScore) {
+        // Check ORA — saved as { infraControl, itSkills, ... } (not riskScore)
+        const oraData = project?.ora;
+        const hasOra = oraData && (oraData.riskScore || oraData.infraControl || oraData.infra_control);
+        if (!hasOra) {
             missingPrereqs.push('Risk assessment (ORA)');
         }
         
