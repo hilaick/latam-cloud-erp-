@@ -778,9 +778,10 @@ def build_execution_plan(project_id):
             return jsonify({"success": False, "error": "Project not found"}), 404
 
         pd = json.loads(project.data or '{}') if isinstance(project.data, str) else (project.data or {})
+        mapper_nodes = pd.get("mapperNodes", [])
         project_dict = {
             "projectName": pd.get("projectName", "UNNAMED"),
-            "mapperNodes": pd.get("mapperNodes", project.mapperNodes or []),
+            "mapperNodes": mapper_nodes,
             "targetArchitecture": pd.get("targetArchitecture", {}),
             "physics": pd.get("physics", {}),
             "feasibilityAssessment": pd.get("feasibilityAssessment", {}),
