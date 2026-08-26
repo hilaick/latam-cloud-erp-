@@ -516,6 +516,53 @@ class ExecutionEngine:
             "status": "pending",
         })
 
+        # ═══ PHASE 4.0b: mig_worker deployment check ═══
+        # Determine if mig_worker is needed (resilience, cross-cloud, overload, source inaccessible)
+        is_cross_cloud = is_vmware or any(kw in str(source_env).lower() for kw in ["aws", "azure", "aliyun"])
+        source_account_accessible = not is_zero_trust
+        active_sms_tasks = sum(1 for n in migration_resources if _categorize_resource(n) == "compute")
+        manual_mig_worker = project.get("manualMigWorker", False)
+
+        mig_worker_triggers = []
+        mig_worker_location = None
+        if not True:  # flask_health_ok — ERP is running
+            mig_worker_triggers.append({"reason": "erp_availability_risk", "detail": "ERP health check failed"})
+            mig_worker_location = "target"
+        if active_sms_tasks > 3:
+            mig_worker_triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>3 threshold)"})
+            mig_worker_location = "target"
+        if is_cross_cloud:
+            mig_worker_triggers.append({"reason": "cross_cloud", "detail": "Cross-cloud migration requires local image conversion (qemu-img) in target"})
+            mig_worker_location = "target"
+        if not source_account_accessible:
+            mig_worker_triggers.append({"reason": "source_inaccessible", "detail": "Source account not directly reachable — deploy mig_worker in source for agent install + discovery"})
+            mig_worker_location = "source"
+        if manual_mig_worker:
+            mig_worker_triggers.append({"reason": "manual", "detail": "Manually triggered from Execution panel"})
+            mig_worker_location = mig_worker_location or "target"
+
+        if mig_worker_triggers:
+            step_id += 1
+            mw_region = source_region if mig_worker_location == "source" else target_region
+            steps.append({
+                "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
+                "action": "MIG_WORKER_DEPLOY",
+                "target_resource": f"mig-worker-{mig_worker_location}",
+                "pillar": "compute",
+                "strategy": "provision",
+                "tool_source": "skill",
+                "tool_name": "mig-worker-framework (autonomous deployment)",
+                "commands": [{"desc": f"Create mig_worker ECS in {mig_worker_location} account ({mw_region})", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{mig_worker_location}' --server.flavorRef=<DISCOVERED_FLAVOR> --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone='{mw_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id=<sg_id> --server.count=1 --cli-region={mw_region}", "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": None,
+                "rollback": {"cmd": "hcloud ECS DeleteServer --server_id=<ecs_id>", "label": "Delete mig_worker ECS"},
+                "status": "pending",
+                "source_detail": f"🔧 skill: mig-worker-framework (triggers: {', '.join(t['reason'] for t in mig_worker_triggers)})",
+                "triggers": mig_worker_triggers,
+                "deploy_location": mig_worker_location,
+            })
+
         # ═══ PHASE 4.1: Infrastructure Provisioning (network) ═══
         # Provision network resources from target architecture
         network_nodes = [n for n in migration_resources if _categorize_resource(n) == "network"]

@@ -698,6 +698,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [showSummary, setShowSummary] = useState(true);
   const [showConstellation, setShowConstellation] = useState(false);
   const [constellationFullscreen, setConstellationFullscreen] = useState(false);
+  const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
 
   // ── Replay state ──
   const [replayMode, setReplayMode] = useState(false);
@@ -1066,6 +1067,20 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               >
                 {loading ? 'Simulating...' : result ? 'Re-run Simulation' : 'Run Simulation'}
               </Button>
+              <Tooltip title="Force mig_worker deployment even if auto-triggers don't fire. Useful for cross-cloud, resilience, or manual agent install scenarios.">
+                <Button
+                  type={manualMigWorker ? 'primary' : 'default'}
+                  icon={<i className="fas fa-cog" style={{ fontSize: 12 }} />}
+                  onClick={() => {
+                    const newVal = !manualMigWorker;
+                    setManualMigWorker(newVal);
+                    onUpdateProject(project.id, { manualMigWorker: newVal });
+                  }}
+                  style={manualMigWorker ? { background: '#fbbf24', borderColor: '#fbbf24', color: '#1f2937' } : {}}
+                >
+                  {manualMigWorker ? 'mig_worker: ON' : 'mig_worker: OFF'}
+                </Button>
+              </Tooltip>
               {result && (
                 <Button onClick={clearResults}>Clear Results</Button>
               )}

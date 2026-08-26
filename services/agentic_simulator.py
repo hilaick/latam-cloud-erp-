@@ -4582,10 +4582,20 @@ class AgenticExecutionSimulator:
         total_simulated_seconds += 1
 
         # ── P1: mig_worker deployment check (resilience for cross-cloud/overload) ──
+        # Track real values for mig_worker decision
+        active_sms_tasks = len([s for s in trace if s.get("action") == "SMS_TASK_CREATE"])
+        flask_health_ok = True  # ERP is running (we're in it)
+        source_account_accessible = not is_zero_trust if 'is_zero_trust' in dir() else True
+        manual_mig_worker = project.get("manualMigWorker", False)
+
         mig_check = MigWorkerDeployer.should_deploy(
-            source_region=project.get("source_region", ""),
+            active_sms_tasks=active_sms_tasks,
+            flask_health_ok=flask_health_ok,
+            source_region=project.get("source_region", project.get("sourceRegion", "")),
             target_region=region,
             is_cross_cloud=is_cross_cloud,
+            source_account_accessible=source_account_accessible,
+            manual_trigger=manual_mig_worker,
         )
         if mig_check["should_deploy"]:
             mw_result = MigWorkerDeployer.simulate_deploy(
@@ -5752,6 +5762,7 @@ def register_agentic_dry_run_routes(execution_bp):
                 },
                 "source_region": project_data.get("sourceRegion", customer_for_region.source_huawei_region if customer_for_region else "ap-southeast-3"),
                 "targetArchitecture": project_data.get("targetArchitecture", {}),
+                "manualMigWorker": project_data.get("manualMigWorker", False),
                 "lifecycleState": project_data.get("lifecycleState", ""),
                 "arbResults": project_data.get("arbResults", {}),
                 "sowResources": project_data.get("sowResources", {}),
