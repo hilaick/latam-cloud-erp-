@@ -63,7 +63,6 @@ The **ERP Migration Factory** is an end-to-end cloud migration orchestration pla
 | **Execution Gateway** | 3-tier least-privilege credential provisioning |
 | **Hermes AI Assistant** | Built-in AI agent for queries, troubleshooting, and automation |
 | **Live NOC Monitoring** | Real-time migration dashboards |
-| **n8n Workflow Integration** | Visual workflow automation engine |
 | **DTRB Governance** | Architecture review board compliance and change request tracking |
 
 ### System Architecture
@@ -687,16 +686,6 @@ The CLI provides:
 - Background task delegation
 - Multi-agent parallel processing
 
-### n8n Workflow Automation
-
-**Access:** Generated via Gateway API
-
-The platform can generate n8n workflow JSON for:
-- Automated server provisioning
-- DNS/SSL cutover sequencing
-- Post-migration validation checks
-- Notification and alerting pipelines
-
 ### Agentic Orchestration
 
 **Access:** Execution → Agentic AI tab
@@ -753,7 +742,6 @@ Quick-action command palette for power users.
 | **EVS** | Elastic Volume Service — Huawei block storage |
 | **FinOps** | Financial Operations — cloud cost management |
 | **MgC** | Migration Center — Huawei source discovery tool |
-| **n8n** | Open-source workflow automation platform |
 | **NOC** | Network Operations Center — live monitoring |
 | **OBS** | Object Storage Service — Huawei S3-compatible storage |
 | **ORA** | Operational Risk Assessment |

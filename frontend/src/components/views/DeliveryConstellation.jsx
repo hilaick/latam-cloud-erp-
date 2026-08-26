@@ -5,7 +5,7 @@ import HaltProjectModal from './HaltProjectModal';
 
 /* ═══════════════════════════════════════════════
    DELIVERY CONSTELLATION — 5-phase methodology
-   Dynamic: parses n8n workflow API response.
+   Dynamic: parses workflow API response.
    Falls back to static PHASES if no workflow prop.
    ═══════════════════════════════════════════════ */
 
@@ -22,7 +22,7 @@ const STATIC_PHASES = [
   { id:'phase_5', label:'Post-Live',              summary:'Infrastructure reconciliation, sign-off, and procurement handover', color:PHASE_COLORS[4], icon:PHASE_ICONS[4], gates:['3-Way Infrastructure Diff complete','Target Constellation verified','WAR Sign-Off obtained','Procurement & PO Handover executed'] },
 ];
 
-/* ─── Parse n8n workflow JSON → phase array ─── */
+/* ─── Parse workflow JSON → phase array ─── */
 function parseWorkflow(workflow) {
   if (!workflow || !workflow.nodes) return null;
 

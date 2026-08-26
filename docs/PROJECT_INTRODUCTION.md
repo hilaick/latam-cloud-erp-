@@ -45,15 +45,15 @@ Primarily intended for **internal service delivery teams** and **enterprise priv
 │  │  /api/auth/*    (JWT)      │  │
 │  │  /api/crm/*     (Projects) │  │
 │  │  /api/finops/*  (BSS/COC)  │  │
-│  │  /api/gateway/* (n8n)      │  │
+│  │  /api/gateway/* (Gateway)   │  │
 │  │  /api/deploy/*  (SSH)      │  │
 │  └────────────────────────────┘  │
 ├──────────────────────────────────┤
 │    External Services             │
-│  ┌──────────┬──────────┬───────┐ │
-│  │Huawei    │Huawei    │n8n    │ │
-│  │COC/BSS   │IMS/DRS   │WF     │ │
-│  └──────────┴──────────┴───────┘ │
+│  ┌──────────┬──────────┐         │
+│  │Huawei    │Huawei    │         │
+│  │COC/BSS   │IMS/DRS   │         │
+│  └──────────┴──────────┘         │
 │  ┌──────────┬──────────┐         │
 │  │Hermes    │PostgreSQL│         │
 │  │Agent     │DB        │         │
@@ -67,7 +67,6 @@ Primarily intended for **internal service delivery teams** and **enterprise priv
 | **Backend** | Flask (Python 3.11), SQLAlchemy, Flask-JWT-Extended |
 | **Database** | PostgreSQL (via SQLAlchemy ORM) |
 | **Agent Engine** | Hermes Agent delegation API |
-| **Workflow Engine** | n8n (via public REST API) |
 | **Cloud SDK** | Huawei Cloud Python SDK v3.1+ (COC, BSS, IMS, DRS) |
 | **Authentication** | JWT-based (access + refresh tokens, sessionStorage-persisted) |
 | **Deployment** | Single-pipe SSH deploy (tar.gz → base64 → SSH pipe → extract → restart) |
