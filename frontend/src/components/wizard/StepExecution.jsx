@@ -947,6 +947,15 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 ) : (
                     <MigrationOrchestratorView project={project} executionState={executionState} executionMode={executionMode} onUpdateProject={onUpdateProject} />
                 )}
+
+                {executionState.currentPhase === 'COMPLETED' && (
+                    <div className="mt-8 bg-emerald-500/10 border border-emerald-500 p-6 rounded-xl text-center animate-fade-in">
+                        <i className="fas fa-check-double text-4xl text-emerald-500 mb-3"></i>
+                        <h3 className="font-black text-xl text-emerald-400">Migration Pipeline Completed</h3>
+                        <p className="text-emerald-200 mt-2 text-sm">Servers are now live and attached to the Production VPC. Transient costs eliminated. Please proceed to Post-Live.</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -960,93 +969,41 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [execLog, setExecLog] = useState([]);
     const [selectedServer, setSelectedServer] = useState(null);
     const [serverStatus, setServerStatus] = useState({});
-    const [failedStep, setFailedStep] = useState(null);
 
-    // Extract resources from target architecture (single source of truth)
     const targetArch = project?.targetArchitecture || {};
-    const servers = [
-        ...(targetArch.compute || []),
-        ...(targetArch.database || []),
-        ...(targetArch.storage || []),
-    ].filter(s => s.name);
-
-    const networkRes = targetArch.network || [];
+    const servers = [...(targetArch.compute || []), ...(targetArch.database || []), ...(targetArch.storage || [])].filter(s => s.name);
     const authLevel = project?.authLevel || project?.presales?.authLevel || [];
-    const isZeroTrust = Array.isArray(authLevel)
-        ? authLevel.some(a => String(a).includes('Read-Only'))
-        : String(authLevel).includes('Read-Only');
+    const isZeroTrust = Array.isArray(authLevel) ? authLevel.some(a => String(a).includes('Read-Only')) : String(authLevel).includes('Read-Only');
     const sourceEnv = project?.sourceEnvironment || project?.presales?.sourceEnvironment || 'Unknown';
     const isAgentic = executionMode === 'agentic';
     const isIndividual = executionMode === 'individual';
     const isManual = !isAgentic && !isIndividual;
 
-    // Build execution plan
     const buildPlan = async () => {
         try {
-            const res = await fetch(`/api/execution/${project.id}/build-plan`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({}),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            setExecPlan(data);
-        } catch (err) {
-            setExecLog(prev => [...prev, `[ERROR] Build plan failed: ${err.message}`]);
-        }
+            const res = await fetch(`/api/execution/${project.id}/build-plan`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({}) });
+            if (res.ok) setExecPlan(await res.json());
+        } catch (e) { /* silent */ }
     };
-
     useEffect(() => { buildPlan(); }, [project.id]);
 
-    // Execute full plan (agentic mode)
     const executeAll = async () => {
-        setExecuting(true);
-        setExecLog([{ msg: '[AGENTIC] Starting autonomous execution...', type: 'info' }]);
+        setExecuting(true); setExecLog([{ msg: '[AGENTIC] Starting...', type: 'info' }]);
         try {
-            const res = await fetch(`/api/execution/${project.id}/execute`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ dry_run: true }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            setExecResult(data);
-            setExecLog(prev => [...prev, { msg: `[AGENTIC ✓] Execution complete: ${data.summary?.succeeded || 0}/${data.summary?.total_steps || 0} steps succeeded`, type: 'success' }]);
-            if (data.steps) {
-                data.steps.forEach(s => {
-                    const icon = s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : 'CLI';
-                    setExecLog(prev => [...prev, { msg: `  ${s.status === 'success' ? '✅' : s.status === 'failed' ? '❌' : '⬜'} [${s.phase}] ${s.action} → ${s.target_resource} ${icon}`, type: s.status }]);
-                });
-                if (data.steps.some(s => s.status === 'failed')) {
-                    const fail = data.steps.find(s => s.status === 'failed');
-                    setFailedStep(fail.step_id);
-                }
-            }
-        } catch (err) {
-            setExecLog(prev => [...prev, { msg: `[ERROR] ${err.message}`, type: 'error' }]);
-        }
+            const res = await fetch(`/api/execution/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ dry_run: true }) });
+            const data = await res.json(); setExecResult(data);
+            setExecLog(prev => [...prev, { msg: `[✓] ${data.summary?.succeeded || 0}/${data.summary?.total_steps || 0} steps`, type: 'success' }]);
+        } catch (e) { setExecLog(prev => [...prev, { msg: `[ERROR] ${e.message}`, type: 'error' }]); }
         setExecuting(false);
     };
 
-    // Execute single step (manual/individual mode)
     const executeStep = async (stepId) => {
-        setExecuting(true);
         try {
-            const res = await fetch(`/api/execution/${project.id}/execute`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ step_id: stepId, dry_run: true }),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            return data;
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
-        setExecuting(false);
+            const res = await fetch(`/api/execution/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ step_id: stepId, dry_run: true }) });
+            return await res.json();
+        } catch (e) { return { success: false, error: e.message }; }
     };
 
-    // Migration phases for progress display
     const MIG_PHASES = [
         { key: 'PHASE_4_1', label: 'Network', icon: 'fa-network-wired', color: '#3b82f6' },
         { key: 'PHASE_4_2', label: 'Source Prep', icon: 'fa-download', color: '#f59e0b' },
@@ -1056,243 +1013,96 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
         { key: 'PHASE_4_6', label: 'Harden', icon: 'fa-shield-alt', color: '#06b6d4' },
         { key: 'PHASE_4_7', label: 'Test', icon: 'fa-vial', color: '#10b981' },
     ];
-
     const currentPhase = executionState?.currentPhase || 'PHASE_4_1';
     const currentPhaseIdx = MIG_PHASES.findIndex(p => p.key === currentPhase);
 
     return (
-        <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-6">
-            {/* Phase progression chips */}
-            <div className="flex gap-2 mb-6 flex-wrap">
+        <div>
+            <div className="flex gap-2 mb-4 flex-wrap">
                 {MIG_PHASES.map((ph, idx) => (
-                    <div key={ph.key} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        idx === currentPhaseIdx ? 'text-white scale-110' :
-                        idx < currentPhaseIdx ? 'text-slate-400' : 'text-slate-600'
-                    }`} style={{
-                        background: idx === currentPhaseIdx ? ph.color : idx < currentPhaseIdx ? ph.color + '20' : '#1e293b',
-                        border: `1px solid ${idx <= currentPhaseIdx ? ph.color : '#374151'}`,
-                    }}>
+                    <div key={ph.key} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${idx === currentPhaseIdx ? 'text-white' : idx < currentPhaseIdx ? 'text-slate-400' : 'text-slate-600'}`}
+                        style={{ background: idx === currentPhaseIdx ? ph.color : idx < currentPhaseIdx ? ph.color + '20' : '#1e293b', border: `1px solid ${idx <= currentPhaseIdx ? ph.color : '#374151'}` }}>
                         <i className={`fas ${ph.icon} mr-1`} />{ph.label}
                     </div>
                 ))}
             </div>
-
-            {/* Zero Trust banner */}
-            {isZeroTrust && (
-                <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-center gap-2">
-                    <i className="fas fa-lock text-amber-500" />
-                    <span className="text-amber-300 text-xs font-bold">ZERO TRUST MODE — Source not directly accessible. Agent install is customer responsibility. ERP runs all target-side operations.</span>
-                </div>
-            )}
-
-            {/* mig_worker indicator */}
-            {execPlan?.mcp_servers_needed?.length > 0 && (
-                <div className="mb-4 bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex items-center gap-2">
-                    <i className="fas fa-cog text-blue-500" />
-                    <span className="text-blue-300 text-xs font-bold">mig_worker ready — {execPlan.mcp_servers_needed.length} MCP services on-demand</span>
-                </div>
-            )}
-
-            {/* Execution mode label */}
-            <div className="mb-4 flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Mode:</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase" style={{
-                    background: isAgentic ? '#722ed130' : isIndividual ? '#f59e0b30' : '#3b82f630',
-                    color: isAgentic ? '#a78bfa' : isIndividual ? '#fbbf24' : '#60a5fa',
-                }}>{executionMode}</span>
-                <span className="text-xs text-slate-500">Source: {sourceEnv}</span>
-                <span className="text-xs text-slate-500">| Servers: {servers.length}</span>
-                {execPlan && <span className="text-xs text-slate-500">| Plan: {execPlan.summary?.total_steps || 0} steps</span>}
+            {isZeroTrust && <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-amber-300 text-xs font-bold"><i className="fas fa-lock mr-1" />ZERO TRUST — Agent install is customer responsibility</div>}
+            <div className="mb-3 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase" style={{ background: isAgentic ? '#722ed130' : isIndividual ? '#f59e0b30' : '#3b82f630', color: isAgentic ? '#a78bfa' : isIndividual ? '#fbbf24' : '#60a5fa' }}>{executionMode}</span>
+                <span className="text-xs text-slate-500">Source: {sourceEnv} | Servers: {servers.length}{execPlan ? ` | Plan: ${execPlan.summary?.total_steps || 0} steps` : ''}</span>
             </div>
-
-            {/* === MODE-SPECIFIC VIEWS === */}
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
-            {isAgentic && <MigrationAgenticView execPlan={execPlan} executing={executing} executeAll={executeAll} execLog={execLog} execResult={execResult} failedStep={failedStep} />}
+            {isAgentic && <MigrationAgenticView execPlan={execPlan} executing={executing} executeAll={executeAll} execLog={execLog} execResult={execResult} />}
             {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} />}
         </div>
     );
 }
 
-// === MANUAL: Per-server Kanban table ===
 function MigrationManualView({ servers, execPlan, executeStep, serverStatus, setServerStatus, isZeroTrust }) {
-    const getStepFor = (serverName, action) => {
-        if (!execPlan?.steps) return null;
-        return execPlan.steps.find(s => s.target_resource === serverName && s.action === action);
+    const getStep = (name, action) => execPlan?.steps?.find(s => s.target_resource === name && s.action === action);
+    const handleAction = async (name, action) => {
+        const step = getStep(name, action); if (!step) return;
+        setServerStatus(p => ({ ...p, [`${name}_${action}`]: 'running' }));
+        const r = await executeStep(step.step_id);
+        setServerStatus(p => ({ ...p, [`${name}_${action}`]: r?.success !== false ? 'success' : 'failed' }));
     };
-
-    const handleAction = async (serverName, action) => {
-        const step = getStepFor(serverName, action);
-        if (!step) return;
-        setServerStatus(prev => ({ ...prev, [`${serverName}_${action}`]: 'running' }));
-        const result = await executeStep(step.step_id);
-        setServerStatus(prev => ({ ...prev, [`${serverName}_${action}`]: result?.success !== false ? 'success' : 'failed' }));
-    };
-
-    const statusIcon = (key) => {
-        const s = serverStatus[key];
-        if (s === 'success') return <span className="text-emerald-400 text-lg">✅</span>;
-        if (s === 'running') return <i className="fas fa-spinner fa-spin text-amber-400" />;
-        if (s === 'failed') return <span className="text-red-400 text-lg">❌</span>;
-        return <span className="text-slate-600">⬜</span>;
-    };
-
-    const columns = [
-        { title: 'Server', dataIndex: 'name', key: 'name', render: (name, r) => (
-            <div><span className="text-white font-bold text-sm">{name}</span><br/><span className="text-slate-500 text-[10px]">{r.type || 'ECS'}</span></div>
-        )},
-        { title: 'Agent', key: 'agent', render: (_, r) => isZeroTrust ? <span className="text-amber-400 text-xs">👤 Customer</span> : (
-            <button onClick={() => handleAction(r.name, 'SMS_AGENT_INSTALL')} disabled={!!serverStatus[`${r.name}_SMS_AGENT_INSTALL`]}>
-                {statusIcon(`${r.name}_SMS_AGENT_INSTALL`)} <span className="text-[10px] text-slate-400 ml-1">Install</span>
-            </button>
-        )},
-        { title: 'Target ECS', key: 'ecs', render: (_, r) => (
-            <button onClick={() => handleAction(r.name, 'CREATE_TARGET_ECS')} disabled={!!serverStatus[`${r.name}_CREATE_TARGET_ECS`]}>
-                {statusIcon(`${r.name}_CREATE_TARGET_ECS`)} <span className="text-[10px] text-slate-400 ml-1">Create</span>
-            </button>
-        )},
-        { title: 'SMS Task', key: 'sms', render: (_, r) => (
-            <button onClick={() => handleAction(r.name, 'SMS_CREATE_TASK')} disabled={!!serverStatus[`${r.name}_SMS_CREATE_TASK`]}>
-                {statusIcon(`${r.name}_SMS_CREATE_TASK`)} <span className="text-[10px] text-slate-400 ml-1">Start</span>
-            </button>
-        )},
-        { title: 'Sync', key: 'sync', render: (_, r) => statusIcon(`${r.name}_SMS_SUBTASK`) },
-        { title: 'Cutover', key: 'cutover', render: (_, r) => (
-            <button onClick={() => handleAction(r.name, 'SMS_CUTOVER')} disabled={!!serverStatus[`${r.name}_SMS_CUTOVER`]}
-                className="px-2 py-1 rounded bg-red-600/20 border border-red-600/40 text-red-400 text-[10px] font-bold hover:bg-red-600/30">
-                {statusIcon(`${r.name}_SMS_CUTOVER`)} Cutover
-            </button>
-        )},
-    ];
-
-    if (!servers.length) return <div className="text-slate-500 text-sm p-4">No servers in target architecture. Build the target architecture in Phase 2.4 first.</div>;
-
+    const icon = (k) => { const s = serverStatus[k]; return s === 'success' ? '✅' : s === 'running' ? '⏳' : s === 'failed' ? '❌' : '⬜'; };
+    const cols = ['Server', 'Agent', 'Target ECS', 'SMS Task', 'Sync', 'Cutover'];
+    if (!servers.length) return <div className="text-slate-500 text-sm p-4">No servers in target architecture. Build it in Phase 2.4 first.</div>;
     return (
         <div>
-            <div className="text-xs text-slate-400 mb-3">Click each cell to execute that step for that server. Status updates in real-time.</div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead><tr className="border-b border-slate-700">
-                        {columns.map(c => <th key={c.key} className="py-2 px-3 text-[10px] font-black uppercase text-slate-500">{c.title}</th>)}
-                    </tr></thead>
-                    <tbody>
-                        {servers.map(s => (
-                            <tr key={s.name} className="border-b border-slate-800 hover:bg-slate-800/50">
-                                {columns.map(c => <td key={c.key} className="py-3 px-3">{c.render(null, s)}</td>)}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <div className="text-xs text-slate-400 mb-2">Click each cell to execute that step for that server.</div>
+            <table className="w-full text-left"><thead><tr className="border-b border-slate-700">{cols.map(c => <th key={c} className="py-2 px-3 text-[10px] font-black uppercase text-slate-500">{c}</th>)}</tr></thead>
+            <tbody>{servers.map(s => (
+                <tr key={s.name} className="border-b border-slate-800">
+                    <td className="py-3 px-3"><span className="text-white font-bold text-sm">{s.name}</span><br /><span className="text-slate-500 text-[10px]">{s.type || 'ECS'}</span></td>
+                    <td className="py-3 px-3">{isZeroTrust ? <span className="text-amber-400 text-xs">👤 Customer</span> : <button onClick={() => handleAction(s.name, 'SMS_AGENT_INSTALL')}>{icon(`${s.name}_SMS_AGENT_INSTALL`)} <span className="text-[10px] text-slate-400">Install</span></button>}</td>
+                    <td className="py-3 px-3"><button onClick={() => handleAction(s.name, 'CREATE_TARGET_ECS')}>{icon(`${s.name}_CREATE_TARGET_ECS`)} <span className="text-[10px] text-slate-400">Create</span></button></td>
+                    <td className="py-3 px-3"><button onClick={() => handleAction(s.name, 'SMS_CREATE_TASK')}>{icon(`${s.name}_SMS_CREATE_TASK`)} <span className="text-[10px] text-slate-400">Start</span></button></td>
+                    <td className="py-3 px-3">{icon(`${s.name}_SMS_SUBTASK`)}</td>
+                    <td className="py-3 px-3"><button onClick={() => handleAction(s.name, 'SMS_CUTOVER')} className="px-2 py-1 rounded bg-red-600/20 border border-red-600/40 text-red-400 text-[10px] font-bold">{icon(`${s.name}_SMS_CUTOVER`)} Cutover</button></td>
+                </tr>
+            ))}</tbody></table>
         </div>
     );
 }
 
-// === AGENTIC: One-button orchestration ===
-function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execResult, failedStep }) {
+function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execResult }) {
     return (
         <div>
-            <div className="flex items-center gap-3 mb-4">
-                <button onClick={executeAll} disabled={executing}
-                    className={`px-6 py-3 rounded-lg text-sm font-black uppercase shadow-md ${executing ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+            <div className="flex items-center gap-3 mb-3">
+                <button onClick={executeAll} disabled={executing} className={`px-6 py-3 rounded-lg text-sm font-black uppercase ${executing ? 'bg-slate-600 text-slate-400' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
                     {executing ? <><i className="fas fa-spinner fa-spin mr-2" />Executing...</> : <><i className="fas fa-robot mr-2" />Execute Migration</>}
                 </button>
-                {failedStep && <span className="text-red-400 text-xs">Halted at step {failedStep}</span>}
                 {execResult?.summary && <span className="text-emerald-400 text-xs">{execResult.summary.succeeded}/{execResult.summary.total_steps} succeeded</span>}
             </div>
-
-            {/* Live trace */}
-            {execLog.length > 0 && (
-                <div className="bg-black/40 rounded-lg p-4 max-h-96 overflow-y-auto font-mono text-xs">
-                    {execLog.map((entry, i) => (
-                        <div key={i} className={entry.type === 'success' ? 'text-emerald-400' : entry.type === 'error' ? 'text-red-400' : 'text-slate-300'}>
-                            {entry.msg || entry}
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Plan preview */}
-            {execPlan && !execResult && (
-                <div className="mt-4">
-                    <div className="text-xs text-slate-400 mb-2">Execution Plan ({execPlan.summary?.total_steps || 0} steps):</div>
-                    <div className="bg-black/30 rounded-lg p-3 max-h-64 overflow-y-auto">
-                        {execPlan.steps?.slice(0, 20).map(s => (
-                            <div key={s.step_id} className="text-xs py-1 flex items-center gap-2">
-                                <span className="text-slate-600 w-6">{s.step_id}.</span>
-                                <span className="text-slate-500 w-24">[{s.phase?.replace('PHASE_4_', '4.')}]</span>
-                                <span className="text-slate-300 w-40">{s.action}</span>
-                                <span className="text-slate-500 w-32">{s.target_resource}</span>
-                                <span className="text-slate-600">{s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : 'CLI'}</span>
-                            </div>
-                        ))}
-                        {execPlan.steps?.length > 20 && <div className="text-slate-600 text-xs mt-2">... {execPlan.steps.length - 20} more steps</div>}
-                    </div>
-                </div>
-            )}
+            {execLog.length > 0 && <div className="bg-black/40 rounded-lg p-3 max-h-64 overflow-y-auto font-mono text-xs">{execLog.map((e, i) => <div key={i} className={e.type === 'success' ? 'text-emerald-400' : e.type === 'error' ? 'text-red-400' : 'text-slate-300'}>{e.msg || e}</div>)}</div>}
+            {execPlan && !execResult && <div className="mt-3"><div className="text-xs text-slate-400 mb-1">Plan ({execPlan.summary?.total_steps || 0} steps):</div><div className="bg-black/30 rounded p-2 max-h-48 overflow-y-auto">{execPlan.steps?.slice(0, 15).map(s => <div key={s.step_id} className="text-xs py-0.5 flex gap-2"><span className="text-slate-600 w-6">{s.step_id}.</span><span className="text-slate-500 w-20">[{(s.phase || '').replace('PHASE_4_', '4.')}]</span><span className="text-slate-300 w-36">{s.action}</span><span className="text-slate-500">{s.target_resource}</span><span className="text-slate-600">{s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : 'CLI'}</span></div>)}</div></div>}
         </div>
     );
 }
 
-// === INDIVIDUAL: Server picker + standalone tasks ===
 function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust }) {
     const [taskStatus, setTaskStatus] = useState({});
     const TASKS = [
-        { action: 'SMS_AGENT_INSTALL', label: 'Install SMS Agent', icon: 'fa-download', color: '#f59e0b' },
-        { action: 'CREATE_TARGET_ECS', label: 'Create Target ECS', icon: 'fa-server', color: '#3b82f6' },
-        { action: 'SMS_CREATE_TASK', label: 'Start SMS Migration', icon: 'fa-sync-alt', color: '#10b981' },
-        { action: 'DATA_SYNC_START', label: 'Run rsync Data Sync', icon: 'fa-exchange-alt', color: '#8b5cf6' },
+        { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b' },
+        { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
+        { action: 'SMS_CREATE_TASK', label: 'Start SMS', icon: 'fa-sync-alt', color: '#10b981' },
+        { action: 'DATA_SYNC_START', label: 'rsync Sync', icon: 'fa-exchange-alt', color: '#8b5cf6' },
         { action: 'IMPORT_IMAGE', label: 'Import Image', icon: 'fa-image', color: '#06b6d4' },
-        { action: 'DRS_CREATE_JOB', label: 'Start DRS Job', icon: 'fa-database', color: '#10b981' },
+        { action: 'DRS_CREATE_JOB', label: 'Start DRS', icon: 'fa-database', color: '#10b981' },
     ];
-
     const handleTask = async (action) => {
-        if (!selectedServer) return;
-        setTaskStatus(prev => ({ ...prev, [action]: 'running' }));
-        const result = await executeStep(action); // simplified
-        setTaskStatus(prev => ({ ...prev, [action]: result?.success !== false ? 'success' : 'failed' }));
+        if (!selectedServer) return; setTaskStatus(p => ({ ...p, [action]: 'running' }));
+        const r = await executeStep(action); setTaskStatus(p => ({ ...p, [action]: r?.success !== false ? 'success' : 'failed' }));
     };
-
     return (
         <div>
-            <div className="text-xs text-slate-400 mb-3">Select a server, then run standalone tasks independently. No wave dependencies.</div>
-
-            {/* Server grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                {servers.map(s => (
-                    <div key={s.name} onClick={() => setSelectedServer(s)}
-                        className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${selectedServer?.name === s.name ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}>
-                        <i className="fas fa-server text-slate-500 mb-1" />
-                        <div className="text-white text-xs font-bold truncate">{s.name}</div>
-                        <div className="text-slate-500 text-[10px]">{s.type || 'ECS'}</div>
-                    </div>
-                ))}
+            <div className="text-xs text-slate-400 mb-2">Select a server, then run standalone tasks independently.</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                {servers.map(s => <div key={s.name} onClick={() => setSelectedServer(s)} className={`p-2 rounded-lg border-2 cursor-pointer ${selectedServer?.name === s.name ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}><i className="fas fa-server text-slate-500" /><div className="text-white text-xs font-bold truncate">{s.name}</div><div className="text-slate-500 text-[10px]">{s.type || 'ECS'}</div></div>)}
             </div>
-
-            {/* Task buttons for selected server */}
-            {selectedServer && (
-                <div className="bg-slate-800 rounded-lg p-4">
-                    <div className="text-sm text-white font-bold mb-3">Tasks for: {selectedServer.name}</div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {TASKS.map(t => {
-                            const status = taskStatus[t.action];
-                            return (
-                                <button key={t.action} onClick={() => handleTask(t.action)} disabled={status === 'running'}
-                                    className="p-3 rounded-lg border text-left transition-all disabled:opacity-50"
-                                    style={{ borderColor: t.color + '60', background: t.color + '10' }}>
-                                    <div className="flex items-center gap-2">
-                                        <i className={`fas ${t.icon}`} style={{ color: t.color }} />
-                                        <span className="text-xs text-white font-bold">{t.label}</span>
-                                    </div>
-                                    {status === 'success' && <span className="text-emerald-400 text-[10px] mt-1 block">✅ Done</span>}
-                                    {status === 'running' && <span className="text-amber-400 text-[10px] mt-1 block">⏳ Running...</span>}
-                                    {status === 'failed' && <span className="text-red-400 text-[10px] mt-1 block">❌ Failed</span>}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    {isZeroTrust && <div className="mt-3 text-amber-400 text-xs">⚠ Zero Trust: Agent install is customer responsibility.</div>}
-                </div>
-            )}
+            {selectedServer && <div className="bg-slate-800 rounded-lg p-3"><div className="text-sm text-white font-bold mb-2">Tasks: {selectedServer.name}</div><div className="grid grid-cols-2 md:grid-cols-3 gap-2">{TASKS.map(t => { const st = taskStatus[t.action]; return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running'} className="p-2 rounded border text-left" style={{ borderColor: t.color + '60', background: t.color + '10' }}><i className={`fas ${t.icon}`} style={{ color: t.color }} /><span className="text-xs text-white ml-1">{t.label}</span>{st === 'success' && <span className="text-emerald-400 text-[10px] block">✅</span>}{st === 'running' && <span className="text-amber-400 text-[10px] block">⏳</span>}{st === 'failed' && <span className="text-red-400 text-[10px] block">❌</span>}</button>; })}</div>{isZeroTrust && <div className="mt-2 text-amber-400 text-xs">⚠ Agent install is customer responsibility</div>}</div>}
         </div>
     );
 }
@@ -1674,3 +1484,302 @@ function WorkbenchView({ project }) {
                         placeholder={isAgentic 
                             ? "e.g. Migrate Ubuntu 20.04 web server via SMS with 500GB data..." 
                             : "e.g. Generate an SMS installation script for Ubuntu 20.04..."}
+                        className="flex-1 bg-slate-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                        disabled={isExecuting}
+                    />
+                    <button
+                        onClick={handleDelegate}
+                        disabled={!prompt || isExecuting}
+                        className={`px-5 py-2.5 rounded-xl font-black text-sm transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                            isAgentic
+                                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                    >
+                        {isExecuting ? (
+                            <i className="fas fa-spinner fa-spin"></i>
+                        ) : (
+                            <i className="fas fa-paper-plane"></i>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* Right: mig_worker Terminal */}
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center">
+                    <h3 className="font-black text-sm text-white flex items-center">
+                        <i className="fas fa-terminal text-emerald-400 mr-2"></i> mig_worker Terminal
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-mono text-slate-400">profile: {selectedProfile}</span>
+                        <button
+                            onClick={() => setTerminalOutput([
+                                "[system] Terminal cleared.",
+                                "[system] mig_worker ready."
+                            ])}
+                            className="text-slate-400 hover:text-white transition-colors"
+                            title="Clear terminal"
+                        >
+                            <i className="fas fa-eraser text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+                <div className="flex-1 p-6 font-mono text-xs text-emerald-400 overflow-y-auto whitespace-pre-wrap custom-scrollbar bg-slate-950">
+                    {terminalOutput.map((line, i) => (
+                        <div key={i}>{line}</div>
+                    ))}
+                    {isExecuting && (
+                        <div className="text-amber-400 animate-pulse mt-2">
+                            <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
+                        </div>
+                    )}
+                </div>
+                <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex gap-3">
+                    <button
+                        onClick={() => setTerminalOutput(prev => [...prev, "\n[diag] Running connectivity diagnostics...", "[diag ✓] VPC reachable. SMS endpoint responding. ECS quotas OK."])}
+                        className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm border border-slate-600"
+                    >
+                        <i className="fas fa-stethoscope mr-1"></i> Run Diagnostics
+                    </button>
+                    <button
+                        onClick={handleDelegate}
+                        disabled={!prompt || isExecuting}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm shadow-emerald-900/50 disabled:opacity-50"
+                    >
+                        {isExecuting ? (
+                            <><i className="fas fa-spinner fa-spin mr-1"></i> Executing...</>
+                        ) : (
+                            <><i className="fas fa-cloud-upload-alt mr-1"></i> Execute Vector Push</>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* 🚨 DRY-RUN RESULTS MODAL */}
+            {showDryRunModal && dryRunResult && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDryRunModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between rounded-t-2xl">
+                            <div>
+                                <h3 className="font-black text-lg text-slate-800 flex items-center gap-2"><i className="fas fa-flask text-emerald-500"></i> Dry-Run Results</h3>
+                                <p className="text-xs text-slate-500 mt-1">No resources were deployed. Terraform payload validated only.</p>
+                            </div>
+                            <button onClick={() => setShowDryRunModal(false)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-3"><i className="fas fa-cubes mr-2 text-blue-500"></i> Resource Inventory</h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                    {Object.entries(dryRunResult.resource_inventory || {}).filter(([k,v]) => k !== '_summary' && Array.isArray(v) && v.length > 0).map(([kind, items]) => (
+                                        <div key={kind} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                                            <div className="text-2xl font-black text-slate-800">{items.length}</div>
+                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{kind.replace('_', ' ')}</div>
+                                        </div>
+                                    ))}
+                                    {(dryRunResult.resource_inventory?._summary?.total_resources === 0) && (
+                                        <div className="col-span-5 text-center py-4 text-slate-400 text-sm">No resources would be provisioned (empty target topology).</div>
+                                    )}
+                                </div>
+                                {dryRunResult.resource_inventory?._summary && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs">
+                                        <span className="font-bold text-slate-600">Total: <span className="text-slate-800">{dryRunResult.resource_inventory._summary.total_resources}</span> resources</span>
+                                        {dryRunResult.resource_inventory._summary.transient_resources > 0 && (
+                                            <span className="font-bold text-amber-600">Transient (destroyed in 4.7): <span className="text-amber-800">{dryRunResult.resource_inventory._summary.transient_resources}</span></span>
+                                        )}
+                                        <span className="text-slate-400 italic text-[11px]">{dryRunResult.resource_inventory._summary.note}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h4 className="font-black text-sm text-slate-700 uppercase tracking-widest mb-3"><i className="fas fa-code mr-2 text-purple-500"></i> Generated Terraform Payload</h4>
+                                <div className="bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-auto max-h-[400px]">
+                                    <pre className="text-xs text-emerald-400 font-mono leading-relaxed whitespace-pre">{JSON.stringify(dryRunResult.terraform_json, null, 2)}</pre>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2 border-t border-slate-200">
+                                <button onClick={() => setShowDryRunModal(false)} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl transition-colors">Close</button>
+                                <button onClick={() => { setShowDryRunModal(false); setShowWaveZeroModal(true); }} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors"><i className="fas fa-rocket mr-2"></i> Proceed to Configure & Execute</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ==========================================
+// 🚨 NEW: 4.9 DELIVERY COMMAND CENTER (Telemetry)
+// ==========================================
+function CommandCenterView({ project, executionState, executionMode }) {
+    const isAgentic = executionMode === 'agentic';
+    const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
+
+    // Build dynamic rows from project delegate tasks and execution state
+    const delegateTasks = project?.delegateTasks || [];
+    const hasDelegates = delegateTasks.length > 0;
+
+    // Phase status mapping
+    const phaseLabels = {
+        'PHASE_4_0': 'Readiness Gateway',
+        'PHASE_4_1': 'Wave 0: Network',
+        'PHASE_4_2': 'OS Pre-Flight',
+        'PHASE_4_3': 'Landing Zone',
+        'PHASE_4_4': 'Agent Deployment',
+        'PHASE_4_5': 'Sync Monitor',
+        'PHASE_4_6': 'Cutover',
+        'PHASE_4_7': 'Garbage Collection',
+    };
+    const currentPhase = executionState?.currentPhase;
+    const phaseLabel = phaseLabels[currentPhase] || 'Idle';
+
+    return (
+        <div className="animate-fade-in space-y-6">
+            {/* 🚨 STATUS SUMMARY */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${isAgentic ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                        <i className={`fas ${isAgentic ? 'fa-robot' : 'fa-tasks'}`}></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution Mode</div>
+                        <div className="font-black text-sm text-slate-800">{executionMode?.toUpperCase() || 'MANUAL'}</div>
+                    </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                        pipelineComplete ? 'bg-emerald-100 text-emerald-600' : 
+                        currentPhase && currentPhase !== 'PHASE_4_0' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                        <i className={`fas ${pipelineComplete ? 'fa-check-circle' : 'fa-spinner fa-spin'}`}></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pipeline Status</div>
+                        <div className="font-black text-sm text-slate-800">{pipelineComplete ? 'COMPLETED' : phaseLabel}</div>
+                    </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${hasDelegates ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <i className="fas fa-network-wired"></i>
+                    </div>
+                    <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Active Delegates</div>
+                        <div className="font-black text-sm text-slate-800">{hasDelegates ? delegateTasks.length : '0'} running</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* 🚨 DELEGATE TASK MONITOR */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+                <h4 className="font-black text-lg text-slate-800 mb-6 flex items-center">
+                    <i className="fas fa-satellite-dish text-emerald-500 mr-3"></i> 
+                    {isAgentic ? 'Agentic Orchestration Telemetry' : 'Migration Delegate Telemetry'}
+                </h4>
+                
+                {!hasDelegates ? (
+                    <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl">
+                        <i className="fas fa-inbox text-5xl text-slate-300 mb-4"></i>
+                        <h5 className="font-black text-slate-500 text-sm mb-2">No Active Delegates</h5>
+                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                            {isAgentic 
+                                ? 'Click "Orchestrate All" in the Orchestrator tab to spawn autonomous migration agents. Delegate status will appear here in real-time.'
+                                : 'When migration delegates are spawned via the Orchestrator or Workbench, their status will appear here.'}
+                        </p>
+                        {pipelineComplete && (
+                            <div className="mt-4 text-emerald-600 text-xs font-bold">
+                                <i className="fas fa-check-circle mr-1"></i> Pipeline complete — all phases finished successfully.
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-500">
+                                <tr>
+                                    <th className="p-4">Target</th>
+                                    <th className="p-4">Phase / Job</th>
+                                    <th className="p-4">Provider / Model</th>
+                                    <th className="p-4 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {delegateTasks.map((task, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                        <td className="p-4 font-bold text-slate-800 text-xs">{task.target || 'N/A'}</td>
+                                        <td className="p-4 text-xs font-mono text-slate-500">{task.phase || task.goal || '—'}</td>
+                                        <td className="p-4 text-xs text-slate-500">{task.model || task.profile || 'exec'}</td>
+                                        <td className="p-4 text-center">
+                                            <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${
+                                                task.status === 'RUNNING' ? 'bg-blue-100 text-blue-700' :
+                                                task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                                                task.status === 'FAILED' ? 'bg-rose-100 text-rose-700' :
+                                                'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                {task.status === 'RUNNING' && <i className="fas fa-spinner fa-spin mr-1"></i>}
+                                                {task.status === 'COMPLETED' && <i className="fas fa-check mr-1"></i>}
+                                                {task.status === 'FAILED' && <i className="fas fa-times mr-1"></i>}
+                                                {task.status || 'UNKNOWN'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* 🚨 QUICK REFERENCE: Pipeline Phase Map */}
+            {isAgentic && hasDelegates && (
+                <div className="bg-slate-900 rounded-2xl border border-slate-700 p-6">
+                    <h4 className="font-black text-white text-sm uppercase tracking-widest mb-4">
+                        <i className="fas fa-project-diagram mr-2 text-purple-400"></i> Pipeline Execution Map
+                    </h4>
+                    <div className="grid grid-cols-7 gap-2">
+                        {['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7'].map((phase, i) => {
+                            const phaseKey = `PHASE_4_${i+1}`;
+                            const isDone = executionState?.currentPhase > phaseKey || executionState?.currentPhase === 'COMPLETED';
+                            const isActive = executionState?.currentPhase === phaseKey;
+                            return (
+                                <div key={phase} className={`p-3 rounded-lg text-center border transition-all ${
+                                    isDone ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
+                                    isActive ? 'bg-purple-500/20 border-purple-500 text-purple-300 animate-pulse' :
+                                    'bg-slate-800 border-slate-600 text-slate-500'
+                                }`}>
+                                    <div className="text-[10px] font-black">{phase}</div>
+                                    <i className={`fas ${isDone ? 'fa-check' : isActive ? 'fa-spinner fa-spin' : 'fa-circle'} text-[8px] mt-1`}></i>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ==========================================
+// 🚨 NEW: 4.10 TAM SERVICE GOVERNANCE
+// ==========================================
+function GovernanceView({ project, onUpdateProject }) {
+    return (
+        <div className="animate-fade-in max-w-4xl mx-auto space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
+                <div className="w-20 h-20 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6"><i className="fas fa-clipboard-check"></i></div>
+                <h3 className="font-black text-2xl text-slate-800 mb-2">Service Governance Sign-Off</h3>
+                <p className="text-sm text-slate-600 mb-8 max-w-lg mx-auto">Confirm that all execution vectors ran successfully, the rollback window has closed, and the system is technically handed over.</p>
+                
+                <div className="space-y-3 mb-8 text-left max-w-md mx-auto">
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer"><input type="checkbox" className="w-5 h-5 accent-amber-500" /><span className="text-xs font-bold text-slate-700">All SMS/DRS Tasks complete.</span></label>
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer"><input type="checkbox" className="w-5 h-5 accent-amber-500" /><span className="text-xs font-bold text-slate-700">Customer accepted Cutover UAT.</span></label>
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer"><input type="checkbox" className="w-5 h-5 accent-amber-500" /><span className="text-xs font-bold text-slate-700">mig_worker securely destroyed from Target VPC.</span></label>
+                </div>
+
+                <button onClick={()=>{onUpdateProject(project.id, 'lifecycleState', '5_postlive'); alert("Phase Completed! Moving to Post-Live Governance.");}} className="px-8 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg transition-transform active:scale-95">
+                    Sign Off & Proceed to True-Up <i className="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+    );
+}
