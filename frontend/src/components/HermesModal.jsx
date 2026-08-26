@@ -7,19 +7,26 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     {
       id: 1,
       role: "assistant",
-      content:
-        "👋 **Welcome to ERP Agent!** This is your direct AI-powered interface to the entire ERP Migration Factory system.\n\n**Capabilities:**\n• 💬 Ask anything about your project's topology, SOW, or migration state\n• 🚀 Issue delivery commands: `/status`, `/preflight`, `/deploy-wave 0`, `/simulate`\n• 🔍 Query infrastructure, validate scope alignment, check system health\n• ⚡ All actions execute against live project data through the Control Plane\n\n**How can I assist?**",
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      content: "👋 **Welcome to ERP Agent!**\n\nI'm your AI assistant for the ERP Migration Factory — with **real tool access** to the entire system.\n\n**What I can do:**\n• 📊 Check project topology and resource state\n• 🚀 Run migration simulations (agentic dry-run)\n• 📋 View simulation traces and delivery reports\n• 🔧 List migration skills and knowledge tree\n• 📝 Update project phases and data\n• 🖥️ Execute Hermes CLI commands\n• 📈 Check system health and execution logs\n\n**Try asking:**\n- \"What's the topology of this project?\"\n- \"Run a simulation\"\n- \"What were the simulation results?\"\n- \"List all migration skills\"\n- \"Show me the execution logs\"",
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
-  // Close on Escape key
+  // Detect mobile
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -27,53 +34,41 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     return () => document.removeEventListener('keydown', handleKey);
   }, [isOpen, onClose]);
 
-  // Initialize unified persistent TCP WebSocket session when component mounts
+  // Initialize Socket.IO
   useEffect(() => {
     if (!isOpen) return;
-
-    // Connect to the host running the Flask server instance
     const socketInstance = io(window.location.origin, {
-      transports: ["polling", "websocket"], // Safe fallback flow
+      transports: ["polling", "websocket"],
       autoConnect: true,
       reconnectionAttempts: 5,
     });
-
     setSocket(socketInstance);
-
-    // Clean connection hooks when modal is minimized or destroyed
-    return () => {
-      socketInstance.disconnect();
-    };
+    return () => { socketInstance.disconnect(); };
   }, [isOpen]);
 
-  // Auto-scroll layout layer to bottom when messages stream tokens
+  // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
   }, [messages, loading]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading || !socket) return;
 
     const currentInput = input.trim();
-
     const userMessage = {
       id: messages.length + 1,
       role: "user",
       content: currentInput,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
-    // Extract historical prompt sequences for context maintenance
     const conversationHistory = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role, content: m.content }));
-
     conversationHistory.push({ role: "user", content: currentInput });
 
-    // Instantly commit user message and append placeholder for token streaming buffer
     const assistantMessageId = messages.length + 2;
     setMessages((prev) => [
       ...prev,
@@ -81,23 +76,19 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
       {
         id: assistantMessageId,
         role: "assistant",
-        content: "", // Will fill up chunk by chunk as tokens arrive
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        content: "",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        isStreaming: true,
       },
     ]);
 
     setInput("");
     setLoading(true);
 
-    // Purge historical listeners on this socket cycle to avoid packet duplication leaks
     socket.off("hermes_token");
     socket.off("hermes_done");
     socket.off("hermes_error");
 
-    // Listener 1: Capture asynchronous execution stream fragments
     socket.on("hermes_token", (data) => {
       setMessages((prev) =>
         prev.map((msg) => {
@@ -105,33 +96,29 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
             return { ...msg, content: msg.content + data.text };
           }
           return msg;
-        }),
+        })
       );
     });
 
-    // Listener 2: Clean stream teardown signature
     socket.on("hermes_done", () => {
       setLoading(false);
+      setMessages((prev) =>
+        prev.map((msg) => msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg)
+      );
     });
 
-    // Listener 3: Gracefully map stream exception boundaries
     socket.on("hermes_error", (data) => {
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id === assistantMessageId) {
-            return {
-              ...msg,
-              role: "system",
-              content: `❌ **Engine Interruption:** ${data.error || "Connection to the AI execution worker lost."}`,
-            };
+            return { ...msg, content: `❌ **Error:** ${data.error || "Connection lost."}`, isStreaming: false };
           }
           return msg;
-        }),
+        })
       );
       setLoading(false);
     });
 
-    // Emit event payload to kick off the backend ReAct/Streaming loop
     socket.emit("hermes_query_stream", {
       query: currentInput,
       projectId: projectId || "global",
@@ -140,239 +127,330 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     });
   };
 
-  const clearChat = () => {
-    setMessages([
-      {
-        id: 1,
-        role: "assistant",
-        content: "Chat cleared. Ready for your next question.",
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      },
-    ]);
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  // Advanced inline parser rendering server log text and raw code blocks natively
-  const renderMessageContent = (content) => {
+  // Render markdown (simplified)
+  const renderContent = (content) => {
     if (!content) return null;
+    const lines = content.split('\n');
+    let inCodeBlock = false;
+    let codeLang = '';
+    let codeLines = [];
+    const elements = [];
 
-    const parts = content.split("```");
-    return parts.map((part, index) => {
-      // Every odd index denotes block arrays encapsulated inside backticks
-      if (index % 2 !== 0) {
-        const lines = part.split("\n");
-        // Extract the code language identifier if present (e.g., 'bash', 'json', 'text')
-        const language = lines[0].trim();
-        const codeText = lines.length > 1 ? lines.slice(1).join("\n") : part;
-
-        return (
-          <div key={index} className="my-3 relative group">
-            <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 text-gray-400 text-xxs px-2 py-0.5 rounded font-sans uppercase">
-              {language || "code"}
-            </div>
-            <pre className="bg-gray-950 text-green-400 p-4 rounded-xl font-mono text-xs overflow-x-auto shadow-inner border border-gray-800 custom-scrollbar leading-relaxed">
-              <code>{codeText.trim()}</code>
+    lines.forEach((line, i) => {
+      if (line.startsWith('```')) {
+        if (inCodeBlock) {
+          elements.push(
+            <pre key={`code-${i}`} style={{
+              background: '#0d1117', borderRadius: 6, padding: '12px 14px',
+              overflowX: 'auto', margin: '8px 0', border: '1px solid #30363d',
+              fontSize: isMobile ? 11 : 12, fontFamily: "'SF Mono', 'Fira Code', monospace", color: '#e6edf3',
+            }}>
+              <code>{codeLines.join('\n')}</code>
             </pre>
-          </div>
-        );
+          );
+          codeLines = [];
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+          codeLang = line.slice(3);
+        }
+        return;
       }
+      if (inCodeBlock) { codeLines.push(line); return; }
 
-      // Basic fallback formatting block for standard markdown bold elements
-      return (
-        <span key={index} className="leading-relaxed font-sans text-sm">
-          {part.split("**").map((subPart, subIdx) =>
-            subIdx % 2 !== 0 ? (
-              <strong
-                key={subIdx}
-                className="font-bold text-indigo-900 dark:text-indigo-300"
-              >
-                {subPart}
-              </strong>
-            ) : (
-              subPart
-            ),
-          )}
-        </span>
-      );
+      // Inline formatting
+      let processed = line
+        .replace(/`([^`]+)`/g, '<code style="background:#1f2937;padding:1px 4px;border-radius:3px;font-family:monospace;font-size:0.85em;color:#e6edf3">$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
+        .replace(/^\s*•\s/, '<span style="color:#818cf8">•</span> ');
+
+      // Headings
+      if (line.startsWith('### ')) {
+        elements.push(<div key={`h3-${i}`} style={{ fontSize: 13, fontWeight: 700, color: '#818cf8', marginTop: 8, marginBottom: 4 }}>{line.slice(4)}</div>);
+      } else if (line.startsWith('## ')) {
+        elements.push(<div key={`h2-${i}`} style={{ fontSize: 14, fontWeight: 700, color: '#a5b4fc', marginTop: 10, marginBottom: 4 }}>{line.slice(3)}</div>);
+      } else if (line.startsWith('# ')) {
+        elements.push(<div key={`h1-${i}`} style={{ fontSize: 15, fontWeight: 700, color: '#c7d2fe', marginTop: 12, marginBottom: 6 }}>{line.slice(2)}</div>);
+      } else if (processed.trim()) {
+        elements.push(<div key={`p-${i}`} style={{ margin: '2px 0' }} dangerouslySetInnerHTML={{ __html: processed }} />);
+      } else {
+        elements.push(<div key={`br-${i}`} style={{ height: 6 }} />);
+      }
     });
+
+    if (inCodeBlock && codeLines.length > 0) {
+      elements.push(
+        <pre key="code-final" style={{
+          background: '#0d1117', borderRadius: 6, padding: '12px 14px',
+          overflowX: 'auto', margin: '8px 0', border: '1px solid #30363d',
+          fontSize: isMobile ? 11 : 12, fontFamily: "'SF Mono', 'Fira Code', monospace", color: '#e6edf3',
+        }}>
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      );
+    }
+
+    return elements;
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800" onClick={(e) => e.stopPropagation()}>
-        {/* Modal Branding Header */}
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white shadow-md">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-white bg-opacity-15 rounded-xl flex items-center justify-center border border-white border-opacity-10 animate-pulse">
-              <i className="fas fa-microchip text-lg text-purple-300"></i>
+    <>
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          zIndex: 9998,
+        }}
+      />
+
+      {/* Modal — Hermes Desktop style */}
+      <div style={{
+        position: 'fixed',
+        top: isMobile ? 0 : '50%',
+        left: isMobile ? 0 : '50%',
+        right: isMobile ? 0 : 'auto',
+        bottom: isMobile ? 0 : 'auto',
+        transform: isMobile ? 'none' : 'translate(-50%, -50%)',
+        width: isMobile ? '100%' : 'min(900px, 92vw)',
+        height: isMobile ? '100%' : 'min(700px, 88vh)',
+        background: '#0d1117',
+        borderRadius: isMobile ? 0 : 12,
+        border: '1px solid #30363d',
+        boxShadow: '0 24px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(129,140,248,0.1)',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+
+        {/* Header bar — Hermes style */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: isMobile ? '10px 14px' : '12px 20px',
+          background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
+          borderBottom: '1px solid #30363d',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(99,102,241,0.3)',
+            }}>
+              <i className="fas fa-robot" style={{ color: '#fff', fontSize: 15 }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-wide">ERP Agent</h2>
-              <p className="text-xs text-purple-200 font-medium">
-                Direct AI assistance for Huawei Cloud ERP operations
-              </p>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>
+                ERP Agent
+              </div>
+              <div style={{ fontSize: 10, color: '#8b949e', lineHeight: 1.2 }}>
+                {projectId && projectId !== 'global' ? `Project: ${projectId.substring(0, 12)}...` : 'Global Context'}
+              </div>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={clearChat}
-              className="px-3 py-1.5 text-xs bg-white bg-opacity-10 hover:bg-opacity-20 font-medium rounded-lg transition-colors border border-white border-opacity-10"
-              title="Clear Local Screen Logs"
-            >
-              <i className="fas fa-eraser mr-1"></i> Clear Log
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '3px 8px', borderRadius: 12,
+              background: loading ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.15)',
+              border: `1px solid ${loading ? '#fbbf2440' : '#10b98140'}`,
+            }}>
+              <div style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: loading ? '#fbbf24' : '#10b981',
+                animation: loading ? 'pulse 1.5s infinite' : 'none',
+              }} />
+              <span style={{ fontSize: 10, fontWeight: 600, color: loading ? '#fbbf24' : '#10b981' }}>
+                {loading ? 'Working...' : 'Online'}
+              </span>
+            </div>
             <button
               onClick={onClose}
-              className="text-white hover:text-purple-200 p-1 transition-colors"
-              title="Minimize Assistant"
+              style={{
+                width: 30, height: 30, borderRadius: 6, border: 'none',
+                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'rgba(239,68,68,0.2)'}
+              onMouseLeave={(e) => e.target.style.background = 'rgba(239,68,68,0.1)'}
             >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <i className="fas fa-times" style={{ fontSize: 14 }} />
             </button>
           </div>
         </div>
 
-        {/* ERP Agent Interface */}
-        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
-          {/* Asynchronous Message Streaming Terminal */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[88%] rounded-2xl p-4 shadow-sm border ${
-                    msg.role === "user"
-                      ? "bg-indigo-600 dark:bg-indigo-700 border-transparent text-white rounded-br-none shadow-md"
-                      : msg.role === "assistant"
-                        ? "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-bl-none"
-                        : "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 rounded-bl-none font-mono text-xs"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5 border-b border-gray-100 dark:border-gray-700 pb-1 text-xxs tracking-wider uppercase font-bold">
-                    <div className="flex items-center space-x-1.5">
-                      {msg.role === "user" ? (
-                        <i className="fas fa-user-shield text-indigo-200"></i>
-                      ) : msg.role === "assistant" ? (
-                        <i className="fas fa-robot text-purple-500"></i>
-                      ) : (
-                        <i className="fas fa-exclamation-triangle text-rose-500"></i>
-                      )}
-                      <span
-                        className={
-                          msg.role === "user"
-                            ? "text-indigo-200"
-                            : msg.role === "assistant"
-                              ? "text-purple-600 dark:text-purple-400"
-                              : "text-rose-500"
-                        }
-                      >
-                        {msg.role === "user"
-                          ? "Operator"
-                          : msg.role === "assistant"
-                            ? "ERP Agent"
-                            : "System Error"}
-                      </span>
-                    </div>
-                    <span
-                      className={
-                        msg.role === "user"
-                          ? "text-indigo-200"
-                          : "text-gray-400 dark:text-gray-500"
-                      }
-                    >
-                      {msg.timestamp}
-                    </span>
-                  </div>
-                  <div className="whitespace-pre-wrap">
-                    {renderMessageContent(msg.content)}
-                  </div>
+        {/* Messages area */}
+        <div
+          ref={scrollContainerRef}
+          style={{
+            flex: 1, overflowY: 'auto', overflowX: 'hidden',
+            padding: isMobile ? '12px' : '20px',
+            background: '#0d1117',
+            scrollBehavior: 'smooth',
+          }}
+        >
+          <style>{`
+            @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+            @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+            @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+            ::-webkit-scrollbar { width: 6px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+            ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+          `}</style>
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              style={{
+                display: 'flex',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                marginBottom: 12,
+                animation: 'slideIn 0.3s ease',
+              }}
+            >
+              {msg.role === 'assistant' && (
+                <div style={{
+                  width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: 7,
+                  background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, marginRight: isMobile ? 8 : 10,
+                }}>
+                  <i className="fas fa-robot" style={{ color: '#fff', fontSize: isMobile ? 11 : 13 }} />
+                </div>
+              )}
+              <div style={{
+                maxWidth: isMobile ? '82%' : '75%',
+                padding: isMobile ? '10px 12px' : '12px 16px',
+                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                background: msg.role === 'user'
+                  ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
+                  : '#161b22',
+                border: msg.role === 'user' ? 'none' : '1px solid #30363d',
+                color: msg.role === 'user' ? '#fff' : '#c9d1d9',
+                fontSize: isMobile ? 12 : 13,
+                lineHeight: 1.6,
+                wordBreak: 'break-word',
+                boxShadow: msg.role === 'user' ? '0 2px 8px rgba(99,102,241,0.2)' : 'none',
+              }}>
+                <div style={{ fontSize: isMobile ? 12 : 13, lineHeight: 1.6 }}>
+                  {renderContent(msg.content)}
+                  {msg.isStreaming && (
+                    <span style={{
+                      display: 'inline-block', width: 8, height: 14,
+                      background: '#818cf8', borderRadius: 1, marginLeft: 2,
+                      animation: 'blink 1s infinite', verticalAlign: 'text-bottom',
+                    }} />
+                  )}
+                </div>
+                <div style={{
+                  fontSize: 9, color: msg.role === 'user' ? 'rgba(255,255,255,0.5)' : '#484f58',
+                  marginTop: 4, textAlign: 'right',
+                }}>
+                  {msg.timestamp}
                 </div>
               </div>
-            ))}
-
-            {/* Real-time thinking animation loop */}
-            {loading && !messages[messages.length - 1]?.content && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl rounded-bl-none bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 shadow-sm flex items-center space-x-3">
-                  <i className="fas fa-brain fa-spin text-purple-600 dark:text-purple-400 text-sm"></i>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 font-mono tracking-widest">
-                    PROCESSING QUERY...
-                  </span>
+              {msg.role === 'user' && (
+                <div style={{
+                  width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: 7,
+                  background: '#30363d', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, marginLeft: isMobile ? 8 : 10,
+                }}>
+                  <i className="fas fa-user" style={{ color: '#8b949e', fontSize: isMobile ? 11 : 13 }} />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
 
-            <div ref={messagesEndRef} />
+        {/* Input area */}
+        <div style={{
+          padding: isMobile ? '10px 12px' : '14px 20px',
+          background: '#161b22',
+          borderTop: '1px solid #30363d',
+          flexShrink: 0,
+        }}>
+          <div style={{
+            display: 'flex', gap: isMobile ? 8 : 10,
+            alignItems: 'flex-end',
+          }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                placeholder="Ask the ERP Agent anything..."
+                disabled={loading}
+                rows={1}
+                style={{
+                  width: '100%',
+                  minHeight: isMobile ? 38 : 42,
+                  maxHeight: 120,
+                  padding: isMobile ? '9px 12px' : '10px 14px',
+                  fontSize: isMobile ? 13 : 14,
+                  background: '#0d1117',
+                  border: '1px solid #30363d',
+                  borderRadius: 10,
+                  color: '#e6edf3',
+                  resize: 'none',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  transition: 'border-color 0.2s',
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+                onBlur={(e) => e.target.style.borderColor = '#30363d'}
+              />
+            </div>
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              style={{
+                width: isMobile ? 38 : 42,
+                height: isMobile ? 38 : 42,
+                borderRadius: 10,
+                border: 'none',
+                background: input.trim() && !loading
+                  ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
+                  : '#21262d',
+                color: input.trim() && !loading ? '#fff' : '#484f58',
+                cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+                boxShadow: input.trim() && !loading ? '0 2px 8px rgba(99,102,241,0.3)' : 'none',
+              }}
+            >
+              {loading ? (
+                <i className="fas fa-spinner fa-spin" style={{ fontSize: 15 }} />
+              ) : (
+                <i className="fas fa-paper-plane" style={{ fontSize: 14 }} />
+              )}
+            </button>
           </div>
-
-          {/* Secure Command Line & Textarea Block */}
-          <div className="border-t border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-900 shadow-xl">
-            <div className="flex space-x-2">
-              <div className="flex-1 relative">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Ask ERP Agent about Huawei Cloud operations, migration workflows, or system queries..."
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-800 dark:text-white font-sans text-sm resize-none custom-scrollbar"
-                  rows="2"
-                  disabled={loading || !socket}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!input.trim() || loading || !socket}
-                  className="absolute right-2 bottom-3 p-2.5 bg-gradient-to-tr from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-md"
-                  title="Send Message"
-                >
-                  <i
-                    className={`fas ${loading ? "fa-circle-notch fa-spin" : "fa-paper-plane"}`}
-                  ></i>
-                </button>
-              </div>
-            </div>
-            <div className="mt-2 text-xxs text-gray-400 dark:text-gray-500 flex justify-between font-medium">
-              <span>
-                <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded font-sans border dark:border-gray-700 shadow-xs">
-                  Enter
-                </kbd>{" "}
-                to send,{" "}
-                <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded font-sans border dark:border-gray-700 shadow-xs">
-                  Shift + Enter
-                </kbd>{" "}
-                for newlines.
-              </span>
-              <span className="text-purple-500 dark:text-purple-400 flex items-center">
-                <i className="fas fa-lock mr-1"></i> Secure ERP Session
-              </span>
-            </div>
+          <div style={{
+            fontSize: 9, color: '#484f58', marginTop: 6,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span><kbd style={{ background: '#21262d', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>Enter</kbd> to send</span>
+            <span><kbd style={{ background: '#21262d', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>Shift+Enter</kbd> for new line</span>
+            <span>·</span>
+            <span>Powered by Hermes Agent with real ERP tools</span>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
