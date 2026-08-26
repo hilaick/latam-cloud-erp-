@@ -459,31 +459,38 @@ def build_hermes_context(project_id, user_role="Viewer"):
 # ═══════════════════════════════════════════════
 
 def _try_hermes_cli(user_query, project_id, user_role, context_string):
-    """Primary path: use Hermes CLI binary with ERP tools as system context.
+    """Primary path: use Hermes CLI binary with ERP context.
     Returns the full response text, or None if it fails."""
     try:
-        # Build the ERP-enhanced query for Hermes CLI
-        erp_prompt = f"""You are the ERP Agent for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
+        # Get the configured model — prefer the faster delegation model
+        try:
+            from models import HermesConfig
+            hc = HermesConfig.get_config()
+            cli_model = hc.delegation_model if hc and hc.delegation_model else 'glm-5.2'
+            cli_provider = hc.delegation_provider if hc and hc.delegation_provider else 'zai'
+        except:
+            cli_model = 'glm-5.2'
+            cli_provider = 'zai'
 
-SYSTEM CONTEXT:
-{context_string}
+        # Simplified prompt — context + question, let Hermes be Hermes
+        erp_prompt = f"""ERP Context: {context_string}
 
-You have access to the ERP system through these Python functions (already imported in the environment):
-- get_project_state(project_id) — get full project data
-- get_topology(project_id) — get mapperNodes
-- run_simulation(project_id) — run agentic dry-run
-- list_projects() — list all projects
-- list_skills() — list migration skills
-- get_execution_logs(project_id) — get execution logs
+Question: {user_query}
 
-IMPORTANT: You do NOT have direct terminal or file access for this query. Use the Python functions above by writing and executing a Python script that imports from the ERP app context. If you cannot answer using ERP data, say so.
+Answer concisely. If asked about project data, topology, or simulations, note that you can see the context above. If the data isn't in the context, say so."""
 
-User question: {user_query}
-"""
-        cmd = ['hermes', 'chat', '-q', erp_prompt, '--quiet', '--max-turns', '10', '--no-restore-cwd']
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # Use Hermes CLI's own config (points to local LB) — don't override model/provider
+        # The CLI config.yaml already has base_url→localhost:8666, so it uses the same LB
+        cmd = ['hermes', 'chat', '-q', erp_prompt, '--quiet', '--max-turns', '3', '--no-restore-cwd']
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+            lines = result.stdout.strip().split('\n')
+            filtered = [l for l in lines if not l.startswith('session_id:')]
+            return '\n'.join(filtered).strip()
+        logger.warning(f"Hermes CLI returned rc={result.returncode}: {result.stderr[:200]}")
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning("Hermes CLI timed out after 60s")
         return None
     except Exception as e:
         logger.warning(f"Hermes CLI path failed: {str(e)}")
