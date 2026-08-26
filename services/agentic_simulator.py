@@ -554,6 +554,133 @@ class SkillRegistry:
                 "servers": ["ecs-49be-e903-20d3", "ecs-49be-e903"],
             },
         },
+        # ── SAP Workload Skills ──
+        "sap_hana_migration_sms": {
+            "name": "sap-hana-migration",
+            "category": "sap",
+            "description": "SMS block-level migration for SAP HANA. Stop SAP→SMS sync→Start SAP. Official Huawei Best Practice Ch 8.",
+            "applies_to": ["linux"],
+            "prerequisites": ["source_server_registered", "target_ecs_created", "sap_hana_stopped"],
+            "hermes_skill": "sap/sap-hana-migration",
+            "workload_type": "sap_hana",
+            "migration_approach": "sms",
+            "manual_steps": [
+                "Stop SAP S/4HANA: sapcontrol -nr <inst> -function Stop",
+                "Stop SAP HANA: HDB stop",
+                "Launch target via SMS console",
+                "Modify /etc/hosts on target",
+                "Start SAP HANA: HDB start",
+                "Start SAP S/4HANA: sapcontrol -nr <inst> -function Start",
+                "Verify SAP license",
+            ],
+            "commands": {
+                "stop_sap": "sapcontrol -nr <inst> -function Stop",
+                "stop_hana": "HDB stop",
+                "start_hana": "HDB start",
+                "start_sap": "sapcontrol -nr <inst> -function Start",
+            },
+            "failure_modes": ["hana_not_stopped_before_sync", "license_invalid_after_migration", "hosts_file_not_updated"],
+            "avg_duration_minutes": 120,
+            "skill_file": "sap/sap-hana-migration.md",
+        },
+        "sap_hana_migration_hsr": {
+            "name": "sap-hana-migration",
+            "category": "sap",
+            "description": "HANA System Replication for zero-downtime migration. Configure SR→Takeover. Best Practice Ch 7.",
+            "applies_to": ["linux"],
+            "prerequisites": ["target_hana_installed", "target_hana_same_or_higher_version"],
+            "hermes_skill": "sap/sap-hana-migration",
+            "workload_type": "sap_hana",
+            "migration_approach": "native_hana_replication",
+            "manual_steps": [
+                "Configure HANA System Replication",
+                "Verify replication status: hdbnsutil -sr_state",
+                "Stop source SAP applications",
+                "Execute HANA takeover: hdbnsutil -sr_takeover",
+                "Start SAP on target",
+            ],
+            "commands": {
+                "sr_enable": "hdbnsutil -sr_enable --name=SourceSite",
+                "sr_register": "hdbnsutil -sr_register --remoteHost=<src> --remoteInstance=<NN> --replicationMode=sync --name=TargetSite",
+                "sr_state": "hdbnsutil -sr_state",
+                "sr_takeover": "hdbnsutil -sr_takeover",
+            },
+            "failure_modes": ["replication_not_in_sync", "takeover_failed", "version_mismatch"],
+            "avg_duration_minutes": 60,
+            "skill_file": "sap/sap-hana-migration.md",
+        },
+        "sap_backint_backup": {
+            "name": "sap-backint-agent",
+            "category": "sap",
+            "description": "Back up SAP HANA to OBS via Backint Agent. Full/incremental/differential backups. Ch 12.",
+            "applies_to": ["linux"],
+            "prerequisites": ["hana_installed", "obs_bucket_created", "iam_agency_configured"],
+            "hermes_skill": "sap/sap-backint-agent",
+            "workload_type": "sap_hana",
+            "migration_approach": "backup_restore",
+            "commands": {
+                "install": "cd /tmp && curl -k -O https://obs-sap-<region>.obs.<region>.myhuaweicloud.com/backint/install.sh && sh install.sh",
+                "full_backup": "BACKUP DATA USING BACKINT ('COMPLETE_DATA_BACKUP')",
+                "incremental": "BACKUP DATA INCREMENTAL USING BACKINT ('INCREMENTAL_BACKUP')",
+                "restore": "RECOVER DATABASE USING BACKINT ('') UNTIL SUCCESSFUL",
+            },
+            "failure_modes": ["iam_permission_denied", "obs_bucket_not_found", "hana_config_incorrect"],
+            "avg_duration_minutes": 30,
+            "skill_file": "sap/sap-backint-agent.md",
+        },
+        "sap_dr_sdrs": {
+            "name": "sap-dr-strategy",
+            "category": "sap",
+            "description": "SDRS cross-AZ DR for SAP. Protected groups, failover preserves IP/EIP/MAC. Ch 10.",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": ["ecs_created", "evs_attached", "two_azs_available"],
+            "hermes_skill": "sap/sap-dr-strategy",
+            "workload_type": "sap_hana",
+            "commands": {
+                "create_protection_group": "hcloud SDRS CreateProtectionGroup --name=<name> --source_az=<az1> --target_az=<az2> --domain_id=<domain>",
+                "create_protected_instance": "hcloud SDRS CreateProtectedInstance --server_id=<id> --group_id=<gid> --name=<name>",
+                "enable_protection": "hcloud SDRS StartProtectionGroup --group_id=<gid>",
+                "planned_failover": "hcloud SDRS CreateFailoverJob --group_id=<gid> --priority_server=<id>",
+            },
+            "failure_modes": ["az_not_available", "disk_replication_failed", "server_not_stopped_before_failover"],
+            "avg_duration_minutes": 30,
+            "skill_file": "sap/sap-dr-strategy.md",
+        },
+        "sap_ha_deployment": {
+            "name": "sap-ha-deployment",
+            "category": "sap",
+            "description": "SAP S/4HANA HA with HANA SR + Pacemaker. ASCS/ERS with SBD. Ch 4.",
+            "applies_to": ["linux"],
+            "prerequisites": ["two_ecs_created", "sfs_created", "sbd_disk_created"],
+            "hermes_skill": "sap/sap-ha-deployment",
+            "workload_type": "sap_hana",
+            "commands": {
+                "sr_enable": "hdbnsutil -sr_enable --name=SiteA",
+                "sr_register": "hdbnsutil -sr_register --remoteHost=<primary> --remoteInstance=<NN> --replicationMode=sync --name=SiteB",
+                "crm_init": "crm cluster init -n <node1>",
+                "crm_join": "crm cluster join -c <node1> -n <node2>",
+                "crm_status": "crm status",
+            },
+            "failure_modes": ["sbd_not_accessible", "pacemaker_corosync_timeout", "vip_failover_failed"],
+            "avg_duration_minutes": 240,
+            "skill_file": "sap/sap-ha-deployment.md",
+        },
+        "sap_certified_flavors": {
+            "name": "sap-certified-flavors",
+            "category": "sap",
+            "description": "SAP-certified ECS flavor catalog. HANA: e3/e6/e7. NetWeaver: h1/m6/c6. Ch 13 expansion.",
+            "applies_to": ["linux", "windows"],
+            "prerequisites": [],
+            "hermes_skill": "sap/sap-certified-flavors",
+            "workload_type": "all_sap",
+            "commands": {
+                "modify_spec": "hcloud ECS ResizeServer --server_id=<id> --flavorRef=<new_flavor>",
+                "expand_evs": "hcloud EVS ResizeVolume --volume_id=<id> --new_size=<new_gb>",
+            },
+            "failure_modes": ["flavor_not_sap_certified", "evs_too_small_for_hana"],
+            "avg_duration_minutes": 15,
+            "skill_file": "sap/sap-certified-flavors.md",
+        },
     }
     
     @classmethod
@@ -592,6 +719,20 @@ class SkillRegistry:
         applicable.append(cls.SKILLS["agent_orchestrator"])
         applicable.append(cls.SKILLS["boot_fixes"])
         applicable.append(cls.SKILLS["partition_fixes"])
+        
+        # ── SAP workload skills ──
+        workload_type = (mapper_node or {}).get("workload_type", "")
+        if workload_type == "sap_hana":
+            migration_approach = (mapper_node or {}).get("migration_approach", "sms")
+            if migration_approach == "native_hana_replication":
+                applicable.append(cls.SKILLS.get("sap_hana_migration_hsr", {}))
+            elif migration_approach == "backup_restore":
+                applicable.append(cls.SKILLS.get("sap_backint_backup", {}))
+            else:
+                applicable.append(cls.SKILLS.get("sap_hana_migration_sms", {}))
+            applicable.append(cls.SKILLS.get("sap_certified_flavors", {}))
+        elif workload_type in ("sap_app", "all_sap"):
+            applicable.append(cls.SKILLS.get("sap_certified_flavors", {}))
         
         return applicable
     
