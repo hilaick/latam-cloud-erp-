@@ -33,6 +33,78 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 
+def _resolve_step_from_knowledge(action: str, pillar: str, strategy: str,
+                                  server: dict, profile: dict) -> dict:
+    """Search skills knowledge tree (all 3 sources) + MCP inventory for a step.
+
+    Priority: skill > external > history > MCP > hcloud CLI fallback
+
+    Returns: {tool_source, tool_name, commands, source_detail}
+    """
+    from services.knowledge_provider import KnowledgeProvider, ExternalKnowledgeStore
+    from services.mcp_inventory import MCPInventory
+
+    # 1. Query the knowledge tree (all 3 sources, federated, deduped, ranked)
+    try:
+        ExternalKnowledgeStore.initialize()
+        knowledge = KnowledgeProvider.query(profile or {}, server)
+        entries = knowledge.get("entries", [])
+
+        # Find an entry that matches our action
+        for entry in entries:
+            entry_name = entry.get("name", "")
+            entry_commands = entry.get("commands", [])
+            source = entry.get("source", "skill")
+
+            # Match by migration type or name keyword
+            action_lower = action.lower()
+            entry_str = (entry_name + " " + entry.get("migration_type", "") + " " + entry.get("description", "")).lower()
+
+            # Check if this skill/entry has relevant commands
+            if entry_commands and isinstance(entry_commands, list):
+                # Look for command matching the action
+                for cmd in entry_commands:
+                    cmd_desc = cmd.get("desc", "").lower()
+                    cmd_str = cmd.get("cmd", "")
+                    if any(kw in cmd_desc or kw in entry_str for kw in
+                           ["create", "ecs", "server", "sms", "task", "agent", "rsync",
+                            "image", "import", "rds", "drs", "obs", "bucket", "vpc", "sg"]):
+                        icon = {"skill": "🔧", "external": "🔧", "history": "🔧"}.get(source, "🔧")
+                        return {
+                            "tool_source": source if source in ("skill", "external", "history") else "skill",
+                            "tool_name": f"{entry_name} ({source})",
+                            "commands": entry_commands,
+                            "source_detail": f"{icon} {source}: {entry_name}",
+                            "failure_modes": entry.get("failure_modes", []),
+                            "learnings": entry.get("learnings", entry.get("rules", "")),
+                        }
+    except Exception as e:
+        logger.debug(f"Knowledge tree query failed for {action}: {e}")
+
+    # 2. Query MCP inventory for matching API endpoint
+    try:
+        mcp_tools = MCPInventory.find_tools_for_action(action)
+        if mcp_tools and mcp_tools[0].get("found"):
+            tool = mcp_tools[0]
+            return {
+                "tool_source": "mcp",
+                "tool_name": f"{tool['service']} → {tool['method']} {tool['path']}",
+                "commands": [{"desc": tool.get("summary", action), "cmd": f"MCP {tool['service']} {tool['method']} {tool['path']}", "type": "mcp"}],
+                "source_detail": f"🔌 MCP: {tool['service']}",
+                "mcp_endpoint": tool,
+            }
+    except Exception as e:
+        logger.debug(f"MCP inventory query failed for {action}: {e}")
+
+    # 3. Fallback: hcloud CLI (will be set by caller)
+    return {
+        "tool_source": "hcloud",
+        "tool_name": "hcloud CLI",
+        "commands": [],
+        "source_detail": "CLI: hcloud",
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Resource categorization — mirrors TechnicalFeasibility.jsx + physics engine
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -279,21 +351,25 @@ class ExecutionEngine:
         steps = plan["steps"]
 
         # ═══ PHASE 4.0: Readiness Gateway ═══
+        # Step 1: Credential validation — search knowledge tree first
         step_id += 1
+        cred_resolution = _resolve_step_from_knowledge("VALIDATE_CREDENTIALS", "network", "validate",
+                                                        {"os": "linux", "type": "ECS"}, {"os_family": "linux", "role": "app"})
         steps.append({
             "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
             "action": "CREDENTIAL_VALIDATION",
             "target_resource": "account",
             "pillar": "network",
             "strategy": "validate",
-            "tool_source": "hcloud",
-            "tool_name": "hcloud CLI (KeystoneListRegions)",
-            "commands": [{"desc": "Validate AK/SK", "cmd": "hcloud IAM KeystoneListRegions --cli-profile=<profile>", "type": "hcloud"}],
+            "tool_source": cred_resolution["tool_source"],
+            "tool_name": cred_resolution["tool_name"],
+            "commands": cred_resolution["commands"] or [{"desc": "Validate AK/SK", "cmd": "hcloud IAM KeystoneListRegions --cli-profile=<profile>", "type": "hcloud"}],
             "credentials_needed": ["ak", "sk"],
             "zero_trust": False,
             "fallback_strategy": None,
             "rollback": None,
             "status": "pending",
+            "source_detail": cred_resolution.get("source_detail", ""),
         })
 
         step_id += 1
@@ -432,12 +508,22 @@ class ExecutionEngine:
                 "provision": sum(1 for s in steps if s.get("strategy") == "provision"),
             },
             "tool_sources": {
-                "skill": sum(1 for s in steps if s.get("tool_source") == "skill"),
+                "skill": sum(1 for s in steps if s.get("tool_source") in ("skill", "external", "history")),
                 "mcp": sum(1 for s in steps if s.get("tool_source") == "mcp"),
                 "hcloud": sum(1 for s in steps if s.get("tool_source") == "hcloud"),
             },
             "zero_trust_steps": sum(1 for s in steps if s.get("zero_trust")),
         }
+
+        # Determine which MCP servers to start (on-demand, not all 173)
+        try:
+            from services.mcp_inventory import MCPInventory
+            mcp_needed = MCPInventory.get_services_for_plan(plan)
+            plan["mcp_servers_needed"] = mcp_needed
+            plan["mcp_inventory"] = MCPInventory.get_inventory_summary()
+        except Exception:
+            plan["mcp_servers_needed"] = []
+            plan["mcp_inventory"] = {}
 
         return plan
 
@@ -453,8 +539,11 @@ class ExecutionEngine:
         disk_gb = float(node.get("storage", node.get("diskGB", 100)))
 
         if strategy == "sms":
-            # ── SMS Migration (compute) ──
-            # Step: Target ECS creation
+            # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
+            server_profile = {"os_family": "linux" if "windows" not in os_type.lower() else "windows", "role": "compute", "strategy": "sms_primary"}
+            step_id_counter = sid
+            # Step: Target ECS creation — search knowledge tree first
+            ecs_resolution = _resolve_step_from_knowledge("CREATE_TARGET_ECS", "compute", "sms", node, server_profile)
             sid += 1
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
@@ -462,14 +551,17 @@ class ExecutionEngine:
                 "target_resource": name,
                 "pillar": "compute",
                 "strategy": "sms",
-                "tool_source": "hcloud",
-                "tool_name": "hcloud CLI (ECS CreateServers)",
-                "commands": [{"desc": "Create target ECS with EIP", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef='s6.large.2' --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
+                "tool_source": ecs_resolution["tool_source"],
+                "tool_name": ecs_resolution["tool_name"],
+                "commands": ecs_resolution["commands"] or [{"desc": "Create target ECS with EIP", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef='s6.large.2' --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
                 "rollback": {"cmd": f"hcloud ECS DeleteServer --server_id=<ecs_id>", "label": "Delete target ECS"},
                 "status": "pending",
+                "source_detail": ecs_resolution.get("source_detail", ""),
+                "failure_modes": ecs_resolution.get("failure_modes", []),
+                "learnings": ecs_resolution.get("learnings", ""),
             })
 
             # Step: SG rules (SMS.3805 prevention)
@@ -784,6 +876,15 @@ class ExecutionEngine:
             "pillars_completed": {"compute": 0, "database": 0, "storage": 0, "network": 0},
         }
 
+        # Start MCP servers on-demand (only the ones needed for this plan)
+        mcp_started = {}
+        try:
+            from services.mcp_inventory import MCPInventory
+            mcp_started = MCPInventory.start_servers_for_plan(plan)
+            logger.info(f"MCP servers started on-demand: {mcp_started}")
+        except Exception as e:
+            logger.warning(f"MCP server startup failed (will use hcloud CLI): {e}")
+
         ak = credentials.get("ak", "")
         sk = credentials.get("sk", "")
         source_ak = credentials.get("source_ak", ak)
@@ -855,6 +956,15 @@ class ExecutionEngine:
 
         results["completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
         results["success"] = all(s["status"] in ("success", "customer_responsibility", "dry_run", "skipped") for s in results["steps"])
+
+        # Stop MCP servers (on-demand cleanup)
+        try:
+            from services.mcp_inventory import MCPInventory
+            MCPInventory.stop_all()
+            logger.info("MCP servers stopped (on-demand cleanup)")
+        except Exception:
+            pass
+
         results["summary"] = {
             "total_steps": len(results["steps"]),
             "succeeded": sum(1 for s in results["steps"] if s["status"] == "success"),
