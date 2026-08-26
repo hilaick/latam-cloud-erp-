@@ -65,6 +65,12 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     } catch (e) { /* quota exceeded — silently skip */ }
   }, [messages, storageKey]);
 
+  // Clear stale isStreaming flags on mount (from previous sessions that didn't complete)
+  useEffect(() => {
+    setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false, content: m.content || '*(Response interrupted)*' } : m));
+    setLoading(false);
+  }, [isOpen]);
+
   // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
@@ -131,6 +137,17 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
       });
     }
   }, [visibleCount, messages.length]);
+
+  const stopGeneration = useCallback(() => {
+    const sock = socketRef.current;
+    if (sock) {
+      sock.off("hermes_token");
+      sock.off("hermes_done");
+      sock.off("hermes_error");
+    }
+    setLoading(false);
+    setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false, content: m.content || '*(Stopped)*' } : m));
+  }, []);
 
   const sendMessage = async () => {
     if (!input.trim() || loading || !socketRef.current) return;
@@ -538,20 +555,21 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
               />
             </div>
             <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
+              onClick={loading ? stopGeneration : sendMessage}
+              disabled={!loading && !input.trim()}
               style={{
                 width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: 10,
                 border: 'none',
-                background: input.trim() && !loading ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : '#21262d',
-                color: input.trim() && !loading ? '#fff' : '#484f58',
-                cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                background: loading ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                  : input.trim() ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : '#21262d',
+                color: (input.trim() || loading) ? '#fff' : '#484f58',
+                cursor: (input.trim() || loading) ? 'pointer' : 'not-allowed',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transition: 'all 0.2s',
-                boxShadow: input.trim() && !loading ? '0 2px 8px rgba(99,102,241,0.3)' : 'none',
+                boxShadow: loading ? '0 2px 8px rgba(239,68,68,0.3)' : input.trim() ? '0 2px 8px rgba(99,102,241,0.3)' : 'none',
               }}
             >
-              {loading ? <i className="fas fa-spinner fa-spin" style={{ fontSize: 15 }} /> : <i className="fas fa-paper-plane" style={{ fontSize: 14 }} />}
+              {loading ? <i className="fas fa-stop" style={{ fontSize: 13 }} /> : <i className="fas fa-paper-plane" style={{ fontSize: 14 }} />}
             </button>
           </div>
           <div style={{ fontSize: 9, color: '#484f58', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>

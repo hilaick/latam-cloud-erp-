@@ -498,7 +498,7 @@ Answer concisely. If asked about project data, topology, or simulations, note th
 
 
 def handle_hermes_stream(payload):
-    """WebSocket handler — Hermes CLI primary, LB function-calling fallback."""
+    """WebSocket handler — LB function-calling (fast, with real ERP tools)."""
     try:
         token = payload.get('token', '')
         if not token:
@@ -519,24 +519,6 @@ def handle_hermes_stream(payload):
         # 1. Build context
         context_data = build_hermes_context(project_id, user_role)
         context_string = json.dumps(context_data, indent=2)
-
-        # ── PRIMARY PATH: Hermes CLI ──
-        logger.info(f"ERP Agent: trying Hermes CLI for query: {user_query[:80]}")
-        socketio.emit('hermes_token', {'text': ''})  # clear any buffer
-
-        cli_response = _try_hermes_cli(user_query, project_id, user_role, context_string)
-        if cli_response:
-            # Stream the CLI response in chunks
-            chunk_size = 4
-            for i in range(0, len(cli_response), chunk_size):
-                chunk = cli_response[i:i+chunk_size]
-                socketio.emit('hermes_token', {'text': chunk})
-            socketio.emit('hermes_done', {'status': 'success', 'source': 'hermes-cli'})
-            return
-
-        # ── FALLBACK PATH: LB function-calling ──
-        logger.info("ERP Agent: Hermes CLI failed, falling back to LB function-calling")
-        socketio.emit('hermes_token', {'text': '*(Using fallback engine)*\n\n'})
 
         provider, configured_model = _get_model_config()
         system_instruction = f"""You are the ERP Agent — the AI assistant for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
