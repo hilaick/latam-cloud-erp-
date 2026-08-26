@@ -316,8 +316,30 @@ class ExecutionEngine:
 
         Returns: execution plan with steps per resource, tagged with tool source.
         """
-        mapper_nodes = project.get("mapperNodes", [])
+        # ── Single source of truth: targetArchitecture (built in Phase 2.4, approved by DTRB in 2.5) ──
         target_arch = project.get("targetArchitecture", {})
+        mapper_nodes = project.get("mapperNodes", [])
+
+        # Build migration resources from target architecture (primary)
+        # Fall back to mapperNodes only if target architecture is empty
+        if target_arch and (target_arch.get("compute") or target_arch.get("database") or target_arch.get("storage")):
+            migration_resources = []
+            for r in (target_arch.get("compute") or []):
+                migration_resources.append({**r, "type": r.get("type", "ECS"), "is_target_resource": True})
+            for r in (target_arch.get("database") or []):
+                migration_resources.append({**r, "type": r.get("type", "RDS"), "is_target_resource": True})
+            for r in (target_arch.get("storage") or []):
+                migration_resources.append({**r, "type": r.get("type", "EVS"), "is_target_resource": True})
+            # Merge mapper nodes not in target architecture (scope creep)
+            target_names = {r.get("name") for r in migration_resources}
+            for mn in mapper_nodes:
+                if mn.get("name") not in target_names:
+                    migration_resources.append({**mn, "scope_status": "not_in_target_arch"})
+            logger.info(f"Execution plan from targetArchitecture: {len(migration_resources)} resources")
+        else:
+            migration_resources = mapper_nodes
+            logger.info(f"No targetArchitecture — falling back to mapperNodes: {len(migration_resources)} resources")
+
         physics = project.get("physics", {})
         feasibility = project.get("feasibilityAssessment", {})
         execution_mode = project.get("executionMode", "agentic")
@@ -391,7 +413,7 @@ class ExecutionEngine:
 
         # ═══ PHASE 4.1: Infrastructure Provisioning (network) ═══
         # Provision network resources from target architecture
-        network_nodes = [n for n in mapper_nodes if _categorize_resource(n) == "network"]
+        network_nodes = [n for n in migration_resources if _categorize_resource(n) == "network"]
         for node in network_nodes:
             step_id += 1
             ntype = str(node.get("type", "")).upper()
@@ -439,7 +461,7 @@ class ExecutionEngine:
             })
 
         # ═══ Process each migratable resource ═══
-        migratable = [n for n in mapper_nodes if _categorize_resource(n) in ("compute", "database", "storage")]
+        migratable = [n for n in migration_resources if _categorize_resource(n) in ("compute", "database", "storage")]
         for node in migratable:
             pillar = _categorize_resource(node)
             plan["pillars"][pillar] += 1

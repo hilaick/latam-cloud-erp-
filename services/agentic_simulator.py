@@ -4435,7 +4435,44 @@ class AgenticExecutionSimulator:
             dict with trace, resource_usage, summary
         """
         config = SimulationConfig()
+        # ── Single source of truth: targetArchitecture (built in Phase 2.4, approved by DTRB in 2.5) ──
+        # mapperNodes is the SOW blueprint (secondary — used for True-Up scope validation)
+        target_arch = project.get("targetArchitecture", {})
         mapper_nodes = project.get("mapperNodes", [])
+
+        # Build the migration resource list from target architecture (primary)
+        # Fall back to mapperNodes only if target architecture is empty
+        if target_arch and (target_arch.get("compute") or target_arch.get("database") or target_arch.get("storage")):
+            # Target architecture exists — use it as the source of truth
+            migration_resources = []
+            for r in (target_arch.get("compute") or []):
+                migration_resources.append({
+                    **r, "type": r.get("type", "ECS"),
+                    "source_name": r.get("source_name", r.get("name", "")),
+                    "source_region": r.get("source_region", ""),
+                    "is_target_resource": True,
+                })
+            for r in (target_arch.get("database") or []):
+                migration_resources.append({**r, "type": r.get("type", "RDS"), "is_target_resource": True})
+            for r in (target_arch.get("storage") or []):
+                migration_resources.append({**r, "type": r.get("type", "EVS"), "is_target_resource": True})
+            # Network resources from target architecture
+            network_resources = target_arch.get("network") or []
+            # Merge any mapper nodes not in target architecture (scope creep detection)
+            target_names = {r.get("name") for r in migration_resources}
+            for mn in mapper_nodes:
+                if mn.get("name") not in target_names:
+                    migration_resources.append({**mn, "scope_status": "not_in_target_arch"})
+            logger.info(f"Simulation using targetArchitecture: {len(migration_resources)} resources "
+                        f"(target: {len(target_arch.get('compute', [])) + len(target_arch.get('database', [])) + len(target_arch.get('storage', []))}, "
+                        f"network: {len(network_resources)}, "
+                        f"mapper fallback: {sum(1 for r in migration_resources if r.get('scope_status') == 'not_in_target_arch')})")
+        else:
+            # No target architecture — fall back to mapperNodes (SOW blueprint)
+            migration_resources = mapper_nodes
+            network_resources = []
+            logger.info(f"No targetArchitecture found — falling back to mapperNodes: {len(migration_resources)} resources")
+
         waves = project.get("waves", [])
         physics = project.get("physics", {})
         finops = project.get("finops", {})
@@ -4445,8 +4482,8 @@ class AgenticExecutionSimulator:
         concurrency = int(physics.get("concurrency", 5)) if physics else 5
 
         # Auto-group waves if needed
-        if not waves and mapper_nodes:
-            waves = AgenticExecutionSimulator._auto_group_waves(mapper_nodes, concurrency)
+        if not waves and migration_resources:
+            waves = AgenticExecutionSimulator._auto_group_waves(migration_resources, concurrency)
 
         trace: List[dict] = []
         resource_usage = {
@@ -4643,11 +4680,11 @@ class AgenticExecutionSimulator:
         has_existing_network = bool(project.get("targetArchitecture", {}).get("network"))
         has_existing_targets = bool(project.get("targetArchitecture", {}).get("servers"))
 
-        net_resources = ResourceTypeRouter.get_network_resources(mapper_nodes)
-        server_resources = ResourceTypeRouter.get_server_resources(mapper_nodes)
-        cbr_resources = ResourceTypeRouter.get_cbr_resources(mapper_nodes)
-        hss_resources = ResourceTypeRouter.get_hss_resources(mapper_nodes)
-        paas_db_resources = ResourceTypeRouter.get_paas_db_resources(mapper_nodes)
+        net_resources = ResourceTypeRouter.get_network_resources(migration_resources)
+        server_resources = ResourceTypeRouter.get_server_resources(migration_resources)
+        cbr_resources = ResourceTypeRouter.get_cbr_resources(migration_resources)
+        hss_resources = ResourceTypeRouter.get_hss_resources(migration_resources)
+        paas_db_resources = ResourceTypeRouter.get_paas_db_resources(migration_resources)
 
         step_id += 1
         if has_existing_network:
