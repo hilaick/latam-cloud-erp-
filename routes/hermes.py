@@ -243,7 +243,8 @@ def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
                 }
                 data["agenticDryRun"] = "[use get_simulation_result for full data]"
             result = {
-                "id": project.id, "type": project.project_type,
+                "id": project.id, "name": data.get("name", ""), "customer": data.get("customerName", ""),
+                "type": project.project_type,
                 "updated_at": project.updated_at.isoformat() if project.updated_at else None,
                 "data_keys": list(data.keys()),
                 "mapperNodes": data.get("mapperNodes", []),
@@ -262,13 +263,15 @@ def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
                 data = json.loads(p.data) if p.data else {}
                 result.append({
                     "id": p.id,
+                    "name": data.get("name", "unnamed"),
+                    "customer": data.get("customerName", ""),
                     "type": p.project_type,
                     "phase": data.get("phase", data.get("currentPhase", "unknown")),
                     "resource_count": len(data.get("mapperNodes", [])),
                     "has_simulation": bool(data.get("agenticDryRun")),
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 })
-            return json.dumps(result, default=str)[:6000]
+            return json.dumps(result, default=str)[:8000]
 
         elif tool_name == "run_simulation":
             pid = project_id
@@ -521,7 +524,7 @@ def handle_hermes_stream(payload):
         context_string = json.dumps(context_data, indent=2)
 
         provider, configured_model = _get_model_config()
-        system_instruction = f"""You are the ERP Agent — the AI assistant for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
+        system_instruction = f"""You are the Delivery Agent — the AI assistant for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
 
 You have REAL tools to interact with the ERP system. Always use tools to get actual data — never make up answers.
 

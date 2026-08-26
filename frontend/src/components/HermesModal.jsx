@@ -48,7 +48,7 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
         // First time — show welcome message
         setMessages([{
           id: 1, role: "assistant",
-          content: "👋 **Welcome to ERP Agent!**\n\nI'm your AI assistant for the ERP Migration Factory — with **real tool access** to the system.\n\n**What I can do:**\n• 📊 Check project topology and resource state\n• 🚀 Run migration simulations (agentic dry-run)\n• 📋 View simulation traces and delivery reports\n• 🔧 List migration skills and knowledge tree\n• 📝 Update project phases and data (Engineer+)\n• 📈 Check system health (Admin)\n• 📋 View execution logs\n\n**Try asking:**\n- \"What's the topology of this project?\"\n- \"Run a simulation\"\n- \"List all projects\"",
+          content: "👋 **Welcome to Delivery Agent!**\n\nI'm your AI assistant for the ERP Migration Factory — with **real tool access** to the system.\n\n**What I can do:**\n• 📊 Check project topology and resource state\n• 🚀 Run migration simulations (agentic dry-run)\n• 📋 View simulation traces and delivery reports\n• 🔧 List migration skills and knowledge tree\n• 📝 Update project phases and data (Engineer+)\n• 📈 Check system health (Admin)\n• 📋 View execution logs\n\n**Try asking:**\n- \"What's the topology of this project?\"\n- \"Run a simulation\"\n- \"List all projects\"",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }]);
       }
@@ -65,10 +65,19 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     } catch (e) { /* quota exceeded — silently skip */ }
   }, [messages, storageKey]);
 
-  // Clear stale isStreaming flags on mount (from previous sessions that didn't complete)
+  // Clear stale isStreaming flags on mount + force scroll to bottom
   useEffect(() => {
+    if (!isOpen) return;
     setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false, content: m.content || '*(Response interrupted)*' } : m));
     setLoading(false);
+    // Force scroll to bottom after render completes
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      });
+    });
   }, [isOpen]);
 
   // Close on Escape
@@ -326,7 +335,7 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
           )}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>ERP Agent</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>Delivery Agent</div>
           <div style={{
             fontSize: 10, color: loading ? '#a5b4fc' : '#8b949e', lineHeight: 1.2,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -385,7 +394,7 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
               <i className="fas fa-robot" style={{ color: '#fff', fontSize: 15 }} />
             </div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>ERP Agent</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>Delivery Agent</div>
               <div style={{ fontSize: 10, color: '#8b949e', lineHeight: 1.2 }}>
                 {projectId && projectId !== 'global' ? `Project: ${projectId.substring(0, 12)}...` : 'Global Context'}
                 {messages.length > 0 && ` · ${messages.length} msgs`}
@@ -539,7 +548,7 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                 }}
-                placeholder="Ask the ERP Agent anything..."
+                placeholder="Ask the Delivery Agent anything..."
                 disabled={loading}
                 rows={1}
                 style={{
