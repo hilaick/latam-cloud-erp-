@@ -49,9 +49,18 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
     const [assessmentRun, setAssessmentRun] = useState(false);
     const [runAssessment, setRunAssessment] = useState(activeProject?.feasibilityAssessment || null);
 
-    const mapperNodes = activeProject?.mapperNodes || [];
+    // Read resources from targetArchitecture (primary) or mapperNodes (fallback)
+    const targetArch = activeProject?.targetArchitecture || {};
+    const archResources = [
+        ...(targetArch.compute || []).map(r => ({ ...r, type: r.type || 'ECS' })),
+        ...(targetArch.database || []).map(r => ({ ...r, type: r.type || 'RDS' })),
+        ...(targetArch.storage || []).map(r => ({ ...r, type: r.type || 'OBS' })),
+        ...(targetArch.network || []).map(r => ({ ...r, type: r.type || 'VPC' })),
+    ];
+    const mapperNodes = archResources.length > 0 ? archResources : (activeProject?.mapperNodes || []);
     const sourceEnv = activeProject?.sourceEnvironment || activeProject?.presales?.sourceEnvironment || 'Unknown';
     const authLevel = activeProject?.authLevel || activeProject?.presales?.authLevel || 'Unknown';
+    const isSaved = !!activeProject?.feasibilityAssessment;
 
     // Run feasibility assessment (triggered by button click, NOT automatic)
     const computeAssessment = () => {
@@ -285,6 +294,7 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
     const handleRunAssessment = () => {
         setScanning(true);
         setAssessmentRun(false);
+        setRunAssessment(null);
         // Simulate brief scanning delay for UX feedback
         setTimeout(() => {
             const result = computeAssessment();
@@ -296,6 +306,15 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                 onUpdateProject({ ...activeProject, feasibilityAssessment: result });
             }
         }, 800);
+    };
+
+    // Clear the saved assessment
+    const handleClearAssessment = () => {
+        setRunAssessment(null);
+        setAssessmentRun(false);
+        if (onUpdateProject) {
+            onUpdateProject({ ...activeProject, feasibilityAssessment: null });
+        }
     };
 
     const columns = [
@@ -446,12 +465,25 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                                 <div className="text-[10px] uppercase font-bold text-slate-400">Feasibility Score</div>
                             </div>
                         )}
+                        {isSaved && !scanning && (
+                            <Tag color="green" style={{ fontSize: 10 }}>
+                                <i className="fas fa-save mr-1"></i>Saved
+                            </Tag>
+                        )}
                         <Button
                             icon={<i className="fas fa-redo mr-1"></i>}
                             onClick={handleRunAssessment}
                             className="!rounded-lg"
                         >
                             Re-run
+                        </Button>
+                        <Button
+                            danger
+                            icon={<i className="fas fa-trash mr-1"></i>}
+                            onClick={handleClearAssessment}
+                            className="!rounded-lg"
+                        >
+                            Clear
                         </Button>
                     </div>
                 </div>
