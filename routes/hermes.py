@@ -545,7 +545,9 @@ INSTRUCTIONS:
 """
 
         messages = [{"role": "system", "content": system_instruction}]
-        for msg in historical_messages:
+        # Only send last 6 messages of history to keep context small and fast
+        recent_history = historical_messages[-6:] if len(historical_messages) > 6 else historical_messages
+        for msg in recent_history:
             if msg.get("role") in ["user", "assistant"]:
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
@@ -569,7 +571,7 @@ INSTRUCTIONS:
             logger.info(f"ERP Agent LB round {round_num+1}: model={configured_model}, messages={len(messages)}")
 
             try:
-                response = requests.post(LOAD_BALANCER_URL, headers=headers, json=llm_payload, timeout=180)
+                response = requests.post(LOAD_BALANCER_URL, headers=headers, json=llm_payload, timeout=60)
             except Exception as e:
                 socketio.emit('hermes_error', {'error': f'Model request failed: {str(e)}'})
                 return
