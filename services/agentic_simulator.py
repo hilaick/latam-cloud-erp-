@@ -1054,12 +1054,13 @@ class ServerProfiler:
 
     @staticmethod
     def classify(server: dict) -> dict:
-        """Determine OS type, role, and migration path from server metadata."""
+        """Determine OS type, role, migration path, and workload sensitivity from server metadata."""
         name = str(server.get("name", server.get("hostname", ""))).lower()
         os_type = str(server.get("os", server.get("osType", server.get("os_type", "")))).lower()
         tags = server.get("tags", [])
         tags_lower = [str(t).lower() for t in tags]
         hostname = str(server.get("hostname", "")).lower()
+        all_text = f"{name} {hostname} {' '.join(tags_lower)}"
 
         # OS detection
         if not os_type or os_type == "unknown":
@@ -1070,18 +1071,23 @@ class ServerProfiler:
             else:
                 os_type = "linux"
 
-        # Role detection
-        role = "app"
-        db_hints = ["db", "sql", "mysql", "oracle", "postgres", "mongo", "redis", "cache"]
-        web_hints = ["web", "iis", "nginx", "apache", "frontend", "portal"]
-        infra_hints = ["ad", "dc", "dns", "dhcp", "vpn", "fw", "proxy"]
+        # ── Workload sensitivity detection (runs BEFORE role detection) ──
+        workload = ServerProfiler._detect_workload(name, hostname, os_type, tags_lower, server)
 
-        if any(h in name for h in db_hints) or any(h in " ".join(tags_lower) for h in db_hints):
-            role = "database"
-        elif any(h in name for h in web_hints) or any(h in " ".join(tags_lower) for h in web_hints):
-            role = "web"
-        elif any(h in name for h in infra_hints) or any(h in " ".join(tags_lower) for h in infra_hints):
-            role = "infrastructure"
+        # Role detection
+        role = workload.get("role", "app")
+        if role == "app":
+            # Fall back to existing role detection if workload detection didn't set it
+            db_hints = ["db", "sql", "mysql", "oracle", "postgres", "mongo", "redis", "cache"]
+            web_hints = ["web", "iis", "nginx", "apache", "frontend", "portal"]
+            infra_hints = ["ad", "dc", "dns", "dhcp", "vpn", "fw", "proxy"]
+
+            if any(h in name for h in db_hints) or any(h in " ".join(tags_lower) for h in db_hints):
+                role = "database"
+            elif any(h in name for h in web_hints) or any(h in " ".join(tags_lower) for h in web_hints):
+                role = "web"
+            elif any(h in name for h in infra_hints) or any(h in " ".join(tags_lower) for h in infra_hints):
+                role = "infrastructure"
 
         # Determine migration strategy based on characteristics
         is_windows = os_type == "windows"
@@ -1108,7 +1114,196 @@ class ServerProfiler:
             "agent_preinstalled": agent_preinstalled,
             "strategy": strategy,
             "source_ip": server.get("sourceIp", server.get("source_ip", "unknown")),
+            # ── Workload sensitivity fields ──
+            "workload_type": workload.get("workload_type", "generic"),
+            "sensitivity_level": workload.get("sensitivity_level", "low"),
+            "requires_manual_intervention": workload.get("requires_manual_intervention", False),
+            "manual_steps": workload.get("manual_steps", []),
+            "application_group": workload.get("application_group", ""),
+            "migration_approach": workload.get("migration_approach", ""),
+            "sap_metadata": workload.get("sap_metadata", {}),
         }
+
+    @staticmethod
+    def _detect_workload(name: str, hostname: str, os_type: str, tags_lower: list, server: dict) -> dict:
+        """Detect workload type and sensitivity from server signals.
+        
+        Returns dict with:
+        - workload_type: generic | sap_hana | sap_app | sap_web | database
+        - sensitivity_level: low | medium | high | critical
+        - requires_manual_intervention: bool
+        - manual_steps: list of step descriptions
+        - application_group: SID or app name (groups resources that migrate together)
+        - migration_approach: sms | native_hana_replication | backup_restore | dmo_sum | r3load
+        - role: database | app | web | infrastructure (overrides default if SAP detected)
+        - sap_metadata: dict with SAP-specific fields (sid, instance_number, etc.)
+        """
+        all_text = f"{name} {hostname} {' '.join(tags_lower)}"
+        
+        # ── SAP HANA detection ──
+        sap_hana_hints = ["hana", "s4hana", "s/4hana", "saphana"]
+        sap_app_hints = ["sap", "netweaver", "s4hana", "erp", "ecc", "solution-manager", "solman"]
+        sap_web_hints = ["web-dispatcher", "webdispatcher", "sap-web", "sapweb"]
+        
+        # OS signal: SLES for SAP or RHEL for SAP
+        is_sap_os = any(s in os_type for s in ["sles", "suse"]) and "sap" in os_type
+        is_sap_os = is_sap_os or ("rhel" in os_type and "sap" in os_type)
+        
+        # Tag signal
+        has_sap_tag = any("sap" in t for t in tags_lower)
+        
+        # SID detection from name (SAP SID = 3 uppercase letters, often in hostname)
+        # e.g., sap-prd-hana-01 → SID=PRD; s4hana-qas-01 → SID=QAS
+        import re
+        sid_match = re.search(r'(?:^|[-_])([A-Z]{3})(?:[-_]|\d)', server.get("name", "") + " " + server.get("hostname", ""))
+        sap_sid = sid_match.group(1) if sid_match else ""
+        
+        # Instance number detection (e.g., sap-prd-00 → instance 00)
+        inst_match = re.search(r'(?:^|[-_])(\d{2})(?:[-_]|$)', name)
+        instance_number = inst_match.group(1) if inst_match else ""
+        
+        # Detect HANA
+        is_hana = any(h in all_text for h in sap_hana_hints) or "hana" in os_type
+        is_sap_app = (not is_hana) and (any(h in all_text for h in sap_app_hints) or is_sap_os or has_sap_tag)
+        is_sap_web = (not is_hana and not is_sap_app) and any(h in all_text for h in sap_web_hints)
+        
+        # Check for explicit workload_type from server data (presales labeling)
+        explicit_wt = server.get("workload_type", "").lower()
+        if explicit_wt in ("sap_hana", "sap_app", "sap_web"):
+            if explicit_wt == "sap_hana":
+                is_hana = True
+            elif explicit_wt == "sap_app":
+                is_sap_app = True
+            elif explicit_wt == "sap_web":
+                is_sap_web = True
+        
+        # Check for explicit migration_approach from presales
+        explicit_approach = server.get("migration_approach", "").lower()
+        
+        if is_hana:
+            # SAP HANA database server
+            approach = explicit_approach or server.get("migrationApproach", "sms").lower()
+            if approach not in ("sms", "native_hana_replication", "backup_restore", "dmo_sum", "r3load"):
+                approach = "sms"
+            
+            # HANA always requires manual intervention (stop/start DB)
+            return {
+                "workload_type": "sap_hana",
+                "sensitivity_level": "critical",
+                "requires_manual_intervention": True,
+                "manual_steps": ServerProfiler._sap_hana_manual_steps(approach),
+                "application_group": sap_sid or server.get("sap_sid", ""),
+                "migration_approach": approach,
+                "role": "database",
+                "sap_metadata": {
+                    "sid": sap_sid or server.get("sap_sid", ""),
+                    "instance_number": instance_number or server.get("sap_instance_number", ""),
+                    "is_hana_certified": server.get("isHanaCertified", False),
+                    "target_certified_flavor": server.get("targetCertifiedFlavor", ""),
+                    "sql_to_hana_required": server.get("sqlToHana", False),
+                },
+            }
+        
+        if is_sap_app:
+            return {
+                "workload_type": "sap_app",
+                "sensitivity_level": "high",
+                "requires_manual_intervention": True,
+                "manual_steps": [
+                    "Verify SAP app server is stopped before cutover",
+                    "Reconnect app server to migrated HANA database",
+                    "Start SAP app server and verify connectivity",
+                ],
+                "application_group": sap_sid or server.get("sap_sid", ""),
+                "migration_approach": "sms",
+                "role": "app",
+                "sap_metadata": {
+                    "sid": sap_sid or server.get("sap_sid", ""),
+                    "instance_number": instance_number,
+                },
+            }
+        
+        if is_sap_web:
+            return {
+                "workload_type": "sap_web",
+                "sensitivity_level": "medium",
+                "requires_manual_intervention": False,
+                "manual_steps": [],
+                "application_group": sap_sid or server.get("sap_sid", ""),
+                "migration_approach": "sms",
+                "role": "web",
+                "sap_metadata": {
+                    "sid": sap_sid or server.get("sap_sid", ""),
+                },
+            }
+        
+        # ── Non-SAP database detection (existing behavior, enhanced) ──
+        db_hints = ["db", "sql", "mysql", "oracle", "postgres", "mongo", "redis", "cache", "mariadb"]
+        if any(h in all_text for h in db_hints):
+            return {
+                "workload_type": "database",
+                "sensitivity_level": "high",
+                "requires_manual_intervention": True,
+                "manual_steps": [
+                    "Stop database service before final SMS sync",
+                    "Start database service on target after migration",
+                    "Verify database connectivity and data integrity",
+                ],
+                "application_group": "",
+                "migration_approach": "sms",
+                "role": "database",
+                "sap_metadata": {},
+            }
+        
+        # ── Generic workload (no special handling) ──
+        return {
+            "workload_type": "generic",
+            "sensitivity_level": "low",
+            "requires_manual_intervention": False,
+            "manual_steps": [],
+            "application_group": "",
+            "migration_approach": "",
+            "role": "app",
+            "sap_metadata": {},
+        }
+    
+    @staticmethod
+    def _sap_hana_manual_steps(approach: str) -> list:
+        """Return manual steps for SAP HANA based on migration approach."""
+        if approach == "native_hana_replication":
+            return [
+                "Configure HANA System Replication: hdbnsutil -sr_enable --name=SourceSite",
+                "Register target: hdbnsutil -sr_register --remoteHost=<src> --remoteInstance=<NN> --replicationMode=sync --name=TargetSite",
+                "Verify replication status: hdbnsutil -sr_state",
+                "Stop source SAP applications",
+                "Execute HANA takeover: hdbnsutil -sr_takeover",
+                "Start SAP on target",
+            ]
+        elif approach == "backup_restore":
+            return [
+                "Perform full HANA backup to OBS via Backint",
+                "Restore full backup on target HANA",
+                "Before cutover: incremental backup → restore on target",
+                "Start HANA on target and verify data integrity",
+                "Connect SAP applications to target HANA",
+            ]
+        elif approach == "dmo_sum":
+            return [
+                "Run SAP DMO (Database Migration Option) with SUM",
+                "SUM upgrades SAP system AND migrates database to HANA",
+                "Verify system after DMO completion",
+                "Validate SAP license on target",
+            ]
+        else:  # sms (default)
+            return [
+                "Stop SAP S/4HANA: sapcontrol -nr <inst> -function Stop",
+                "Stop SAP HANA: HDB stop",
+                "Launch target server via SMS console",
+                "Modify /etc/hosts on target server",
+                "Start SAP HANA: HDB start",
+                "Start SAP S/4HANA: sapcontrol -nr <inst> -function Start",
+                "Verify SAP license validity on target",
+            ]
 
     @staticmethod
     def _determine_strategy(
@@ -4947,6 +5142,26 @@ class AgenticExecutionSimulator:
             })
             total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
 
+            # ── MANUAL GATE for sensitive workloads (SAP HANA, databases) ──
+            wave_requires_manual = wave.get("requires_manual_intervention", False)
+            if wave_requires_manual:
+                for server in wave_servers:
+                    server_profile = ServerProfiler.classify(server)
+                    if server_profile.get("requires_manual_intervention"):
+                        for step_desc in server_profile.get("manual_steps", []):
+                            step_id += 1
+                            trace.append({
+                                "id": step_id, "phase": "PHASE_4_2", "agent": "Orchestrator",
+                                "action": "MANUAL_GATE",
+                                "target": server.get("name", "?"),
+                                "message": f"⏸️ MANUAL GATE: {step_desc}",
+                                "timestamp_offset_seconds": total_simulated_seconds,
+                                "workload_type": server_profile.get("workload_type", ""),
+                                "sensitivity_level": server_profile.get("sensitivity_level", ""),
+                                "result": "WAITING_FOR_MANUAL_CONFIRMATION",
+                            })
+                        total_simulated_seconds += 300  # 5 min per manual step
+
             # Process in batches respecting concurrency
             for batch_start in range(0, len(wave_servers), concurrency):
                 batch = wave_servers[batch_start:batch_start + concurrency]
@@ -5782,16 +5997,59 @@ class AgenticExecutionSimulator:
 
     @staticmethod
     def _auto_group_waves(mapper_nodes: list, max_per_wave: int) -> list:
-        """Auto-group servers into waves by role priority."""
-        groups = {"database": [], "web": [], "infrastructure": [], "app": [], "cache": []}
+        """Auto-group servers into waves.
+        
+        Priority:
+        1. Group by application_group (SAP SID) — all components of one SAP system migrate together
+        2. Within each application group, order by role: database first, then web, then app
+        3. Resources without application_group are grouped by role as before
+        """
+        # Classify all nodes first
+        classified = []
         for node in mapper_nodes:
             profile = ServerProfiler.classify(node)
-            role = profile["role"]
-            groups.setdefault(role, []).append(node)
-
+            classified.append((node, profile))
+        
+        # Group by application_group (SID) first
+        app_groups = {}  # SID → [(node, profile)]
+        ungrouped = []   # nodes without application_group
+        
+        for node, profile in classified:
+            app_group = profile.get("application_group", "")
+            if app_group:
+                app_groups.setdefault(app_group, []).append((node, profile))
+            else:
+                ungrouped.append((node, profile))
+        
         waves = []
+        
+        # ── Application-grouped waves (SAP systems migrate together) ──
+        for sid, items in app_groups.items():
+            # Sort within group: database first, then web, then app
+            role_order = {"database": 0, "web": 1, "app": 2, "infrastructure": 3}
+            items.sort(key=lambda x: role_order.get(x[1]["role"], 4))
+            
+            batch = [item[0] for item in items]
+            workload_type = items[0][1].get("workload_type", "generic")
+            label = f"SAP {sid}" if workload_type.startswith("sap") else f"App Group: {sid}"
+            
+            waves.append({
+                "name": label,
+                "servers": batch,
+                "serverNames": [n.get("name", n.get("id", "?")) for n in batch],
+                "application_group": sid,
+                "workload_type": workload_type,
+                "requires_manual_intervention": any(p.get("requires_manual_intervention") for _, p in items),
+            })
+        
+        # ── Ungrouped nodes: group by role as before ──
+        role_groups = {"database": [], "web": [], "infrastructure": [], "app": [], "cache": []}
+        for node, profile in ungrouped:
+            role = profile["role"]
+            role_groups.setdefault(role, []).append(node)
+        
         for group_name in ["database", "web", "app", "infrastructure", "cache"]:
-            group = groups.get(group_name, [])
+            group = role_groups.get(group_name, [])
             if not group:
                 continue
             for i in range(0, len(group), max_per_wave):
@@ -5802,6 +6060,7 @@ class AgenticExecutionSimulator:
                     "servers": batch,
                     "serverNames": [n.get("name", n.get("id", "?")) for n in batch],
                 })
+        
         return waves
 
     @staticmethod
