@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Tag, Progress, Table, Tooltip, Empty, Spin } from 'antd';
+import React, { useState } from 'react';
+import { Tag, Progress, Table, Tooltip, Empty, Spin, Button } from 'antd';
 
 const { Text } = { Text: ({ children, style }) => <span style={style}>{children}</span> };
 
@@ -46,14 +46,15 @@ function getDbMethod(type, detected) {
 
 export default function TechnicalFeasibility({ activeProject, onUpdateProject }) {
     const [scanning, setScanning] = useState(false);
-    const [assessment, setAssessment] = useState(activeProject?.feasibilityAssessment || null);
+    const [assessmentRun, setAssessmentRun] = useState(false);
+    const [runAssessment, setRunAssessment] = useState(activeProject?.feasibilityAssessment || null);
 
     const mapperNodes = activeProject?.mapperNodes || [];
     const sourceEnv = activeProject?.sourceEnvironment || activeProject?.presales?.sourceEnvironment || 'Unknown';
     const authLevel = activeProject?.authLevel || activeProject?.presales?.authLevel || 'Unknown';
 
-    // Run feasibility assessment
-    const runAssessment = useMemo(() => {
+    // Run feasibility assessment (triggered by button click, NOT automatic)
+    const computeAssessment = () => {
         if (!mapperNodes || mapperNodes.length === 0) return null;
 
         const results = [];
@@ -278,7 +279,24 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                 vmware: isVmware,
             },
         };
-    }, [mapperNodes, sourceEnv, authLevel]);
+    };
+
+    // Triggered by button click — shows scanning animation, then computes & saves
+    const handleRunAssessment = () => {
+        setScanning(true);
+        setAssessmentRun(false);
+        // Simulate brief scanning delay for UX feedback
+        setTimeout(() => {
+            const result = computeAssessment();
+            setRunAssessment(result);
+            setScanning(false);
+            setAssessmentRun(true);
+            // Persist to project so it survives navigation
+            if (onUpdateProject && result) {
+                onUpdateProject({ ...activeProject, feasibilityAssessment: result });
+            }
+        }, 800);
+    };
 
     const columns = [
         {
@@ -321,6 +339,90 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
         );
     }
 
+    // ── Scanning in progress ──
+    if (scanning) {
+        return (
+            <div className="space-y-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-black text-lg text-slate-800">
+                                <i className="fas fa-clipboard-check text-indigo-600 mr-2"></i>
+                                Technical Feasibility Assessment
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">
+                                Assess migration compatibility BEFORE choosing execution mode.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-16 text-center">
+                    <Spin size="large" tip="Scanning resources..." >
+                        <div style={{ minHeight: 80 }} />
+                    </Spin>
+                    <div className="mt-4 text-sm text-slate-500 font-medium">
+                        Analyzing {mapperNodes.length} resource(s) for OS compatibility, database types, source accessibility, and VMware export capability…
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ── No assessment yet — show "Run Assessment" button ──
+    if (!runAssessment) {
+        return (
+            <div className="space-y-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-black text-lg text-slate-800">
+                                <i className="fas fa-clipboard-check text-indigo-600 mr-2"></i>
+                                Technical Feasibility Assessment
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">
+                                Assess migration compatibility BEFORE choosing execution mode. Detects OS issues, source accessibility, database types, and VMware export capability.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
+                    <div className="mb-6">
+                        <i className="fas fa-search text-5xl text-slate-300"></i>
+                    </div>
+                    <h4 className="font-bold text-base text-slate-700 mb-2">Ready to Assess</h4>
+                    <p className="text-sm text-slate-500 mb-6 max-w-lg mx-auto">
+                        {mapperNodes.length} resource(s) detected from Phase 2 (Architecture). Click below to run the
+                        Technical Feasibility Assessment — it will analyze OS compatibility, database types, source
+                        accessibility, and VMware export capability, then recommend an execution mode.
+                    </p>
+                    <Button
+                        type="primary"
+                        size="large"
+                        icon={<i className="fas fa-play mr-2"></i>}
+                        onClick={handleRunAssessment}
+                        className="!bg-indigo-600 !border-indigo-600 !rounded-xl !font-bold"
+                        style={{ height: 48, paddingInline: 32 }}
+                    >
+                        Run Technical Feasibility Assessment
+                    </Button>
+                </div>
+                {/* Info Note */}
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                        <i className="fas fa-info-circle text-amber-500 mt-0.5"></i>
+                        <div className="text-xs text-amber-800 leading-relaxed">
+                            <strong>When to run this:</strong> After Phase 2 (Architecture) is complete and mapper nodes are defined.
+                            This assessment runs BEFORE choosing the execution mode in 3.4b. It identifies technical
+                            incompatibilities early so the execution strategy can account for them. The preflight checks
+                            in Phase 4 validate that the chosen strategy CAN execute — this assessment determines WHICH
+                            strategy is viable in the first place.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -335,14 +437,23 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
                             Assess migration compatibility BEFORE choosing execution mode. Detects OS issues, source accessibility, database types, and VMware export capability.
                         </p>
                     </div>
-                    {runAssessment && (
-                        <div className="text-right">
-                            <div className={`text-3xl font-black ${runAssessment.score >= 80 ? 'text-emerald-600' : runAssessment.score >= 60 ? 'text-amber-600' : 'text-rose-600'}`}>
-                                {runAssessment.score}
+                    <div className="flex items-center gap-4">
+                        {runAssessment && (
+                            <div className="text-right">
+                                <div className={`text-3xl font-black ${runAssessment.score >= 80 ? 'text-emerald-600' : runAssessment.score >= 60 ? 'text-amber-600' : 'text-rose-600'}`}>
+                                    {runAssessment.score}
+                                </div>
+                                <div className="text-[10px] uppercase font-bold text-slate-400">Feasibility Score</div>
                             </div>
-                            <div className="text-[10px] uppercase font-bold text-slate-400">Feasibility Score</div>
-                        </div>
-                    )}
+                        )}
+                        <Button
+                            icon={<i className="fas fa-redo mr-1"></i>}
+                            onClick={handleRunAssessment}
+                            className="!rounded-lg"
+                        >
+                            Re-run
+                        </Button>
+                    </div>
                 </div>
 
                 {runAssessment && (
