@@ -1,6 +1,7 @@
 import os
 import time
 import hashlib
+import logging
 from flask import Flask, send_from_directory, request, jsonify, render_template_string
 from flask_cors import CORS
 import json
