@@ -731,10 +731,29 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
 
   const token = sessionStorage.getItem('hermes_access_token');
 
-  // ── Extract resources from project data ──
+  // ── Extract resources from project data — merge mapperNodes + targetArchitecture ──
   const resources = useMemo(() => {
     const topologyFilter = project?.topologyFilter || 'All';
     let nodes = project?.mapperNodes || [];
+
+    // Also include resources from target architecture (VPC, subnet, SG, EIP, etc.)
+    const targetArch = project?.targetArchitecture || {};
+    if (targetArch.network && Array.isArray(targetArch.network)) {
+      targetArch.network.forEach(n => {
+        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+      });
+    }
+    if (targetArch.compute && Array.isArray(targetArch.compute)) {
+      targetArch.compute.forEach(n => {
+        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+      });
+    }
+    if (targetArch.storage && Array.isArray(targetArch.storage)) {
+      targetArch.storage.forEach(n => {
+        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+      });
+    }
+
     if (topologyFilter === 'In SOW') {
       nodes = nodes.filter(n => n.status === 'Matched' || n.status === 'Quoted Only');
     } else if (topologyFilter === 'In Discovery') {
@@ -742,11 +761,9 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     } else if (topologyFilter && topologyFilter !== 'All') {
       nodes = nodes.filter(n => n.status === topologyFilter);
     }
-    return nodes.filter(n => {
-      const type = (n.type || '').toUpperCase();
-      return type === 'ECS' || type === 'COMPUTE' || type === 'RDS' || type === 'DATABASE' || type === 'STORAGE' || type === 'OBS';
-    });
-  }, [project?.mapperNodes, project?.topologyFilter]);
+    // Include ALL resource types (not just ECS/RDS/STORAGE) — VPC, SG, EIP, Subnet needed for constellation
+    return nodes;
+  }, [project?.mapperNodes, project?.topologyFilter, project?.targetArchitecture]);
 
   // ── Compute resource status from trace up to replayIndex ──
   const resourceStatus = useMemo(() => {
