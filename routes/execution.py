@@ -758,3 +758,155 @@ class DeliveryCommandHandler:
         if not issues:
             return "VALIDATION PASSED: All target resources aligned with SOW."
         return "VALIDATION ISSUES:\n" + '\n'.join(issues)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Execution Engine API — generic, skills-and-MCP-driven execution
+# Integrates with Phase 4: 4.0 (build_plan) → 4.1-4.7 (execute) → 4.8 (templates)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@execution_bp.route('/api/execution/<project_id>/build-plan', methods=['POST'])
+def build_execution_plan(project_id):
+    """Build execution plan from ALL previous phases (Phase 4.0 Readiness Gateway)."""
+    try:
+        from services.execution_engine import ExecutionEngine
+        from models import ProjectData, Customer
+        from routes.gateway import _decrypt_credential_pair
+
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        pd = json.loads(project.data or '{}') if isinstance(project.data, str) else (project.data or {})
+        project_dict = {
+            "projectName": pd.get("projectName", "UNNAMED"),
+            "mapperNodes": pd.get("mapperNodes", project.mapperNodes or []),
+            "targetArchitecture": pd.get("targetArchitecture", {}),
+            "physics": pd.get("physics", {}),
+            "feasibilityAssessment": pd.get("feasibilityAssessment", {}),
+            "executionMode": pd.get("executionMode", "agentic"),
+            "sourceRegion": pd.get("sourceRegion", pd.get("source_region", "")),
+            "region": pd.get("region", pd.get("targetRegion", "la-north-2")),
+            "sourceEnvironment": pd.get("sourceEnvironment", pd.get("presales", {}).get("sourceEnvironment", "")),
+            "authLevel": pd.get("authLevel", pd.get("presales", {}).get("authLevel", "")),
+        }
+
+        customer = None
+        customer_id = pd.get("customerId")
+        if customer_id:
+            customer = Customer.query.get(customer_id)
+
+        customer_dict = {}
+        if customer:
+            customer_dict = {
+                "authLevel": getattr(customer, "auth_level", "") or "",
+            }
+
+        plan = ExecutionEngine.build_plan(project_dict, customer_dict)
+
+        # Save plan to project
+        pd["executionPlan"] = plan
+        project.data = json.dumps(pd)
+        from app import db
+        db.session.commit()
+
+        return jsonify({"success": True, "plan": plan})
+    except Exception as e:
+        logging.error(f"build-plan failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/execute', methods=['POST'])
+def execute_plan(project_id):
+    """Execute the plan (Phase 4.1-4.7 Execution Pipeline)."""
+    try:
+        from services.execution_engine import ExecutionEngine
+        from models import ProjectData, Customer
+        from routes.gateway import _decrypt_credential_pair
+
+        data = request.get_json(silent=True) or {}
+        dry_run = data.get("dry_run", False)
+
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        pd = json.loads(project.data or '{}') if isinstance(project.data, str) else (project.data or {})
+        plan = pd.get("executionPlan")
+        if not plan:
+            return jsonify({"success": False, "error": "No execution plan found. Run build-plan first."}), 400
+
+        # Get credentials from customer
+        customer_id = pd.get("customerId")
+        if not customer_id:
+            return jsonify({"success": False, "error": "No customer linked to project"}), 400
+
+        customer = Customer.query.get(customer_id)
+        if not customer:
+            return jsonify({"success": False, "error": "Customer not found"}), 404
+
+        ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
+        source_ak, source_sk = _decrypt_credential_pair(
+            getattr(customer, "source_huawei_ak", None),
+            getattr(customer, "source_huawei_sk", None)
+        )
+
+        credentials = {
+            "ak": ak or "",
+            "sk": sk or "",
+            "source_ak": source_ak or ak or "",
+            "source_sk": source_sk or sk or "",
+            "os_user": getattr(customer, "os_user", "root") or "root",
+            "os_password": getattr(customer, "os_password", "") or "",
+            "source_region": pd.get("sourceRegion", pd.get("source_region", "")),
+            "source_project_id": getattr(customer, "source_huawei_project_id", "") or "",
+        }
+
+        result = ExecutionEngine.execute(plan, credentials, dry_run=dry_run)
+
+        # Save execution result
+        pd["executionResult"] = result
+        project.data = json.dumps(pd)
+        from app import db
+        db.session.commit()
+
+        # Auto-save as template if successful
+        if result.get("success") and not dry_run:
+            ExecutionEngine.save_template(project_id, result)
+
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        logging.error(f"execute failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/templates', methods=['GET'])
+def list_execution_templates():
+    """List saved execution templates (Phase 4.8 Workbench)."""
+    try:
+        from services.execution_engine import ExecutionEngine
+        return jsonify(ExecutionEngine.list_templates())
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/templates/<template_id>', methods=['GET'])
+def get_execution_template(template_id):
+    """Load a saved execution template."""
+    try:
+        from services.execution_engine import ExecutionEngine
+        return jsonify(ExecutionEngine.load_template(template_id))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/templates/<template_id>/adapt', methods=['POST'])
+def adapt_execution_template(template_id):
+    """Adapt a template for a new project."""
+    try:
+        from services.execution_engine import ExecutionEngine
+        data = request.get_json(silent=True) or {}
+        new_project = data.get("project", {})
+        return jsonify(ExecutionEngine.adapt_template(template_id, new_project))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
