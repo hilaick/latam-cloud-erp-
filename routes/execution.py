@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from models import db, ProjectData, Customer
+from models import db, ProjectData, Customer, GlobalPlaybooks
 from services.credential_manager import get_credential_manager
 from services.identity_provisioner import IdentityProvisioner
 from services.orchestrator import ExecutionOrchestrator
@@ -911,5 +911,87 @@ def adapt_execution_template(template_id):
         data = request.get_json(silent=True) or {}
         new_project = data.get("project", {})
         return jsonify(ExecutionEngine.adapt_template(template_id, new_project))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── Playbook Suggestion: query past learnings for similar resource profiles ──
+@execution_bp.route('/api/playbooks/suggest', methods=['POST'])
+@jwt_required()
+def suggest_playbook_route():
+    """Suggest the best-matching playbook based on the project's resource profile.
+    Queries CognitiveLearningLog for past migration patterns and returns
+    the best-matching playbook template with a confidence score."""
+    try:
+        data = request.get_json(silent=True) or {}
+        project_id = data.get('project_id')
+
+        if project_id:
+            project = ProjectData.query.filter_by(id=project_id).first()
+            if not project:
+                return jsonify({"success": False, "error": "Project not found"}), 404
+            pdata = json.loads(project.data) if project.data else {}
+            mapper_nodes = pdata.get('mapperNodes', [])
+        else:
+            mapper_nodes = data.get('mapperNodes', [])
+
+        if not mapper_nodes:
+            return jsonify({"success": False, "error": "No resources found. Complete Step 2 (Architecture & Scope) first."}), 400
+
+        from services.playbook_learner import suggest_playbook
+        suggestion = suggest_playbook(mapper_nodes)
+
+        if not suggestion:
+            return jsonify({"success": False, "error": "No suitable playbook found."}), 404
+
+        return jsonify({"success": True, "suggestion": suggestion})
+    except Exception as e:
+        logger.error(f"Playbook suggestion failed: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── Playbook Learning Stats: show what the system has learned ──
+@execution_bp.route('/api/playbooks/learning-stats', methods=['GET'])
+@jwt_required()
+def playbook_learning_stats():
+    """Get statistics about auto-learned playbooks and cognitive learning logs."""
+    try:
+        from models import CognitiveLearningLog as CLL
+        total_logs = CLL.query.count()
+        success_logs = CLL.query.filter_by(success=True).count()
+        pattern_logs = CLL.query.filter(CLL.error_signature.like("migration_pattern:%")).count()
+
+        # Get strategy distribution
+        from sqlalchemy import func
+        strategy_rows = db.session.query(
+            CLL.error_signature, func.count(CLL.id)
+        ).filter(CLL.error_signature.like("migration_pattern:%")).group_by(CLL.error_signature).all()
+
+        strategies = {}
+        for sig, count in strategy_rows:
+            parts = sig.split(":")
+            if len(parts) >= 2:
+                strategy = parts[1]
+                strategies[strategy] = strategies.get(strategy, 0) + count
+
+        # Count auto-generated playbooks
+        master = GlobalPlaybooks.query.get("master")
+        auto_count = 0
+        total_pb = 0
+        if master:
+            pbs = json.loads(master.data) if isinstance(master.data, str) else master.data
+            total_pb = len(pbs)
+            auto_count = sum(1 for pb in pbs.values() if isinstance(pb, dict) and pb.get("auto_generated"))
+
+        return jsonify({
+            "success": True,
+            "total_learnings": total_logs,
+            "success_rate": round(success_logs / total_logs, 2) if total_logs > 0 else 0,
+            "pattern_records": pattern_logs,
+            "strategy_distribution": strategies,
+            "total_playbooks": total_pb,
+            "auto_learned_playbooks": auto_count,
+            "manual_playbooks": total_pb - auto_count,
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
