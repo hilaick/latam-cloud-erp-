@@ -457,7 +457,7 @@ function SimulationConstellation({
     if (THREE.OrbitControls) {
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true; controls.dampingFactor = 0.08;
-      controls.autoRotate = true; controls.autoRotateSpeed = 0.15;
+      controls.autoRotate = true; controls.autoRotateSpeed = 0.05;  // SLOWER rotation
       controls.minDistance = 150; controls.maxDistance = 1200;
       controls.maxPolarAngle = Math.PI * 0.88;
       controlsRef.current = controls;
@@ -491,26 +491,46 @@ function SimulationConstellation({
     scene.add(tgtCloud);
     objectMapRef.current['__TARGET__'] = { group: tgtCloud, alwaysVisible: true };
 
-    // ── Categorize resources ──
-    const computeNodes = resources.filter(r => {
+    // ── Categorize resources — also extract from trace if not in resources ──
+    // The trace may reference VPC, EIP, SG, Subnet etc. that aren't in mapper nodes
+    const traceResourceNames = new Set();
+    (trace || []).forEach(step => {
+      const action = (step.action || '').toUpperCase();
+      const target = step.target || '';
+      if (action.includes('VPC') && target) traceResourceNames.add({ name: target, type: 'VPC' });
+      if (action.includes('EIP') && target) traceResourceNames.add({ name: target, type: 'EIP' });
+      if ((action.includes('SG') || action.includes('SECURITY')) && target) traceResourceNames.add({ name: target, type: 'SG' });
+      if (action.includes('SUBNET') && target) traceResourceNames.add({ name: target, type: 'SUBNET' });
+      if (action.includes('NAT') && target) traceResourceNames.add({ name: target, type: 'NAT' });
+      if (action.includes('ELB') && target) traceResourceNames.add({ name: target, type: 'ELB' });
+    });
+
+    // Merge trace-discovered resources with mapper nodes (dedup by name)
+    const allResources = [...resources];
+    const existingNames = new Set(resources.map(r => r.name));
+    traceResourceNames.forEach(r => {
+      if (!existingNames.has(r.name)) allResources.push(r);
+    });
+
+    const computeNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
       return t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' || t === 'INFRASTRUCTURE' || t === '';
     });
-    const dbNodes = resources.filter(r => {
+    const dbNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
       return t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS' || t === 'CACHE';
     });
-    const storageNodes = resources.filter(r => {
+    const storageNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
       return t === 'EVS' || t === 'STORAGE' || t === 'OBS' || t === 'CBR';
     });
-    const vpcNodes = resources.filter(r => (r.type || '').toUpperCase() === 'VPC');
-    const eipNodes = resources.filter(r => (r.type || '').toUpperCase() === 'EIP');
-    const sgNodes = resources.filter(r => {
+    const vpcNodes = allResources.filter(r => (r.type || '').toUpperCase() === 'VPC');
+    const eipNodes = allResources.filter(r => (r.type || '').toUpperCase() === 'EIP');
+    const sgNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
       return t === 'SG' || t === 'SECURITY_GROUP' || t === 'WAF' || t === 'HSS';
     });
-    const netNodes = resources.filter(r => {
+    const netNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
       return t === 'NAT' || t === 'ELB' || t === 'VPN' || t === 'CDN' || t === 'SUBNET';
     });
@@ -714,7 +734,7 @@ function SimulationConstellation({
       sceneRef.current = null; cameraRef.current = null; controlsRef.current = null; rendererRef.current = null;
       objectMapRef.current = {}; flowLinesRef.current = []; particlesRef.current = [];
     };
-  }, [threeReady, hasData]); // Build scene ONCE
+  }, [threeReady, hasData, trace, fullscreen]); // Rebuild scene when trace or fullscreen changes
 
   /* ── Update scene when replay state changes (no rebuild!) ── */
   useEffect(() => {
@@ -785,17 +805,27 @@ function SimulationConstellation({
       }
     });
 
-    // Show EIPs during/after target provisioning
+    // Show EIPs during/after target provisioning OR when layer forced on
     const eipVisible = phaseProgression.includes('PHASE_4_2c_TARGET') || phaseProgression.includes('PHASE_4_2d_SYNC') ||
       phaseProgression.includes('PHASE_4_3') || phaseProgression.includes('PHASE_4_6');
     Object.values(om).forEach(entry => {
-      if (entry.isEIP) entry.group.visible = layerEffective('eip', eipVisible && discoveredResources.has(entry.name));
-      if (entry.isSG) entry.group.visible = layerEffective('sg', showTargetInfrastructure);
+      if (entry.isEIP) {
+        const autoVis = eipVisible && (discoveredResources.has(entry.name) || phaseProgression.includes('PHASE_4_2c_TARGET'));
+        entry.group.visible = layerEffective('eip', autoVis);
+      }
+      if (entry.isSG) {
+        const autoVis = showTargetInfrastructure || phaseProgression.includes('PHASE_4_2b_PREFLIGHT');
+        entry.group.visible = layerEffective('sg', autoVis);
+      }
       if (entry.isNet) {
         const lt = entry.layerType || 'net';
-        entry.group.visible = layerEffective(lt, showTargetInfrastructure);
+        const autoVis = showTargetInfrastructure || phaseProgression.includes('PHASE_4_1');
+        entry.group.visible = layerEffective(lt, autoVis);
       }
-      if (entry.isStorage) entry.group.visible = layerEffective('storage', sourceVisible || discoveredResources.has(entry.name));
+      if (entry.isStorage) {
+        const autoVis = sourceVisible || discoveredResources.has(entry.name) || phaseProgression.includes('PHASE_4_2c_TARGET');
+        entry.group.visible = layerEffective('storage', autoVis);
+      }
       if (entry.isWorker) {
         entry.group.visible = layerEffective('worker', phaseProgression.includes('PHASE_4_2b_PREFLIGHT') || phaseProgression.includes('PHASE_4_2c_TARGET'));
       }
