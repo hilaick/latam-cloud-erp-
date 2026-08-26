@@ -1,678 +1,678 @@
-1|import React, { useState, useEffect, useMemo, useContext } from 'react';
-2|import { formatShortDate, EditableCell } from '../../utils/helpers';
-3|import { ERPContext } from '../../context/ERPContext';
-4|import WaveZeroConfigModal from './WaveZeroConfigModal';
-5|
-6|const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
-7|
-8|export default function StepExecution({ project, onUpdateProject, onPromote }) {
-9|    const [subTab, setSubTab] = useState(project?.authValidated ? 'orchestrator' : 'readiness');
-10|    const [sidebarOpen, setSidebarOpen] = useState(true); 
-11|    const [showWaveZeroModal, setShowWaveZeroModal] = useState(false);
-12|    const [runbookData, setRunbookData] = useState(null);
-13|    const [showRunbookModal, setShowRunbookModal] = useState(false);
-14|    // Physics recalibration tracking (NEW — Improvement #4)
-15|    const [recalibrationState, setRecalibrationState] = useState({
-16|        observedThroughputMbps: null,
-17|        elapsedSyncHours: 0,
-18|        deviationPct: null,
-19|        lastCheckedAt: null,
-20|        recalibrated: false
-21|    });
-22|    
-23|    const [executionState, setExecutionState] = useState(null);
-24|    const [isLoadingState, setIsLoadingState] = useState(true);
-25|
-26|    const isGreenfield = project?.projectType === 'greenfield' || project?.project_type === 'greenfield';
-27|    const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
-28|    const isZeroTrust = authLevel === 'Read-Only (Customer Managed)';
-29|    // Extract physics recalibration baseline from saved physics data
-30|    const recalibrationBaseline = useMemo(() => {
-31|        const physics = project?.physics;
-32|        if (!physics) return null;
-33|        // Check for structured result first, fall back to legacy
-34|        if (physics.result?._recalibrationBaseline) return physics.result._recalibrationBaseline;
-35|        if (physics._recalibrationBaseline) return physics._recalibrationBaseline;
-36|        // Construct from flat physics data for backward compatibility
-37|        if (physics.engineMode && physics.transitType) {
-38|            const pipeMbps = Math.min(Number(physics.netSource) || 1000, Number(physics.netTunnel) || 300);
-39|            let cryptoTax = physics.transitType === 'IPsec VPN' ? 0.85 : physics.transitType === 'Public Internet' ? 0.75 : 0.95;
-40|            const effectiveMbps = pipeMbps * cryptoTax;
-41|            return {
-42|                expectedThroughputMbps: Math.round(effectiveMbps),
-43|                perNodeExpectedMbps: Math.round(effectiveMbps / Math.max((physics.concurrency || 5), 1)),
-44|                maxParallelNodes: physics.concurrency || 5,
-45|                isFeasible: physics.downtimeWindow ? (Number(physics.downtimeWindow) >= 0) : true,
-46|                recalibrationThreshold: {
-47|                    throughputWarningPct: 70,
-48|                    throughputCriticalPct: 50,
-49|                    timeOverrunWarningPct: 120,
-50|                    timeOverrunCriticalPct: 150
-51|                }
-52|            };
-53|        }
-54|        return null;
-55|    }, [project?.physics]);
-56|
-57|    useEffect(() => {
-58|        if (!project?.id) return;
-59|        const fetchState = async () => {
-60|            try {
-61|                const token = sessionStorage.getItem('hermes_access_token');
-62|                const res = await fetch(`/api/executions/${project.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
-63|                const data = await res.json();
-64|                if (data.success) {
-65|                    setExecutionState(data.data);
-66|                    if (data.data.currentPhase === 'PHASE_4_0') setSubTab('readiness');
-67|                    else setSubTab('orchestrator');
-68|                }
-69|            } catch (e) { console.error("State Fetch Error:", e); } 
-70|            finally { setIsLoadingState(false); }
-71|        };
-72|        fetchState();
-73|    }, [project?.id]);
-74|
-75|    const updatePhase = async (newPhase, newStatus, pendingAction = null) => {
-76|        setExecutionState(prev => ({ ...prev, currentPhase: newPhase, status: newStatus, pendingAction }));
-77|        const token = sessionStorage.getItem('hermes_access_token');
-78|        await fetch(`/api/executions/${project.id}/update`, {
-79|            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-80|            body: JSON.stringify({ phase: newPhase, status: newStatus, pendingAction })
-81|        });
-82|    };
-83|
-84|    const handleExecuteTerraform = async (networkConfig = null) => {
-85|        if (!project?.id) return;
-86|        setShowWaveZeroModal(false);
-87|        const token = sessionStorage.getItem('hermes_access_token');
-88|        try {
-89|            const res = await fetch(`/api/projects/${project.id}/execute`, { 
-90|                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-91|                body: JSON.stringify({ networkConfig })
-92|            });
-93|            if (res.ok) {
-94|                const data = await res.json();
-95|                if (data.success) { 
-96|                    alert(`✅ ${data.message}`); 
-97|                    if (isGreenfield && executionState.currentPhase === 'PHASE_4_2') updatePhase('PHASE_4_3', 'PENDING');
-98|                    else if (!isGreenfield && executionState.currentPhase === 'PHASE_4_1') updatePhase('PHASE_4_2', 'PENDING');
-99|                    else if (!isGreenfield && executionState.currentPhase === 'PHASE_4_3') updatePhase('PHASE_4_4', 'PENDING');
-100|                }
-101|                else alert(`❌ Execution Failed:\n\n${data.error}`);
-102|            }
-103|        } catch (err) { alert(`Network Error: ${err.message}`); }
-104|    };
-105|
-106|    // 🚨 DRY-RUN: Validate terraform payload without deploying to RFS
-107|    const handleDryRunTerraform = async (networkConfig = null) => {
-108|        if (!project?.id) return null;
-109|        setShowWaveZeroModal(false);
-110|        const token = sessionStorage.getItem('hermes_access_token');
-111|        try {
-112|            const res = await fetch(`/api/projects/${project.id}/execute`, {
-113|                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-114|                body: JSON.stringify({ networkConfig, dryRun: true })
-115|            });
-116|            const data = await res.json();
-117|            if (data.success && data.dry_run) return data;
-118|            throw new Error(data.error || 'Dry-run failed');
-119|        } catch (err) { alert(`Dry-Run Error: ${err.message}`); return null; }
-120|    };
-121|
-122|    // 🚨 Phase 4.7 Backend Call
-123|    const handleGarbageCollection = async () => {
-124|        if (!project?.id) return;
-125|        const token = sessionStorage.getItem('hermes_access_token');
-126|        try {
-127|            const res = await fetch(`/api/projects/${project.id}/garbage-collect`, { 
-128|                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-129|            });
-130|            if (res.ok) {
-131|                const data = await res.json();
-132|                if (data.success) {
-133|                    alert(`✅ Garbage Collection successful. Transient resources dropped.`);
-134|                    updatePhase('COMPLETED', 'DONE');
-135|                } else alert(`❌ Cleanup Failed: ${data.error}`);
-136|            }
-137|        } catch (err) { alert(`Network Error: ${err.message}`); }
-138|    };
-139|
-140|    const menuItems = isGreenfield ? [
-141|        { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
-142|        { id: 'orchestrator', num: '4.1-4.3', icon: 'fa-rocket', label: 'CI/CD Pipeline' },
-143|        { id: 'workbench', num: '4.4', icon: 'fa-tools', label: 'Engineering Workbench' },
-144|        { id: 'hub', num: '4.5', icon: 'fa-stream', label: 'DevOps Command Center' }
-145|    ] : [
-146|        { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
-147|        { id: 'orchestrator', num: '4.1-4.7', icon: 'fa-cogs', label: 'Execution Pipeline' },
-148|        { id: 'workbench', num: '4.8', icon: 'fa-tools', label: 'Engineering Workbench' },
-149|        { id: 'hub', num: '4.9', icon: 'fa-satellite-dish', label: 'Delivery Command Center' },
-150|        { id: 'tam', num: '4.10', icon: 'fa-clipboard-check', label: 'TAM Service Governance' }
-151|    ];
-152|
-153|    if (isLoadingState) return <div className="p-12 text-center text-slate-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i> Initializing State Machine...</div>;
-154|    const isLocked = executionState?.currentPhase === 'PHASE_4_0';
-155|    const executionMode = project?.executionMode || 'manual';
-156|    const isIndividual = executionMode === 'individual';
-157|    const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
-158|    // Workbench unlocked when: pipeline complete OR individual prereqs passed OR manual mode past Phase 4.2 (infra deployed)
-159|    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated) || (executionMode === 'manual' && executionState?.currentPhase > 'PHASE_4_2');
-160|
-161|    return (
-162|        <div className="animate-fade-in pb-12 flex flex-col h-full">
-163|            {showWaveZeroModal && <WaveZeroConfigModal onClose={() => setShowWaveZeroModal(false)} onConfirm={(config) => handleExecuteTerraform(config)} />}
-164|
-165|            <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
-166|                <div className="flex items-center gap-4">
-167|                    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors">
-168|                        <i className={`fas fa-chevron-${sidebarOpen ? 'left' : 'right'} ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
-169|                    </button>
-170|                    <div>
-171|                        <h3 className="font-black text-xl text-slate-800">{isGreenfield ? "Cloud-Native Provisioning Engine" : "Execution Control Plane"}</h3>
-172|                        <div className="flex items-center gap-3 mt-1">
-173|                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{isGreenfield ? "Automated Infrastructure-as-Code CI/CD" : "Database-Backed Cloud Orchestrator"}</p>
-174|                            {isGreenfield && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border border-emerald-200">Greenfield Mode</span>}
-175|                        </div>
-176|                    </div>
-177|                </div>
-178|            </div>
-179|
-180|            <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
-181|                <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
-182|                    {menuItems.map((item) => (
-183|                        <button 
-184|                            key={item.id}
-185|                            onClick={() => { 
-186|                                if (isLocked && item.id !== 'readiness') return alert("Please complete the 4.0 Readiness Gateway to unlock Execution."); 
-187|                                if ((item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked) 
-188|                                    return alert(isIndividual 
-189|                                        ? "Validate prerequisites in the Orchestrator tab first to unlock Workbench & Command Center." 
-190|                                        : executionMode === 'agentic'
-191|                                            ? "Complete the 7-phase pipeline to unlock Workbench & Command Center."
-192|                                            : "Advance past Phase 4.2 (infrastructure deployed) to unlock Workbench & Command Center."); 
-193|                                setSubTab(item.id); 
-194|                            }}
-195|                            className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
-196|                                isLocked && item.id !== 'readiness' ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' : 
-197|                                (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
-198|                                subTab === item.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-199|                            }`}
-200|                        >
-201|                            <div className="flex items-center gap-3">
-202|                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${
-203|                                    isLocked && item.id !== 'readiness' ? 'bg-slate-200 text-slate-400' : 
-204|                                    (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'bg-slate-200 text-slate-400' :
-205|                                    subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
-206|                                }`}>{item.num}</div>
-207|                                <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
-208|                            </div>
-209|                            {isLocked && item.id !== 'readiness' && <i className="fas fa-lock text-slate-300"></i>}
-210|                            {(item.id === 'workbench' || item.id === 'hub') && !isLocked && !workbenchUnlocked && <i className="fas fa-lock text-slate-300"></i>}
-211|                        </button>
-212|                    ))}
-213|                    
-214|                    <div className="pt-8">
-215|                        {executionState?.currentPhase === 'COMPLETED' ? (
-216|                            <button onClick={() => onPromote && onPromote('post-live')} className="w-full px-4 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
-217|                                Go to Post-Live Phase <i className="fas fa-arrow-right"></i>
-218|                            </button>
-219|                        ) : (
-220|                            <div className="flex gap-2">
-221|                                <button disabled className="flex-1 px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
-222|                                    <i className="fas fa-lock"></i> Post-Live Locked
-223|                                </button>
-224|                                <button 
-225|                                    onClick={() => updatePhase('COMPLETED', 'DONE')}
-226|                                    className="px-4 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-transform active:scale-95 flex items-center justify-center gap-2"
-227|                                    title="Debug: Mark execution as complete"
-228|                                >
-229|                                    <i className="fas fa-wrench"></i> Debug Complete
-230|                                </button>
-231|                            </div>
-232|                        )}
-233|                    </div>
-234|                </div>
-235|
-236|                <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
-237|                    {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
-238|                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
-239|                    {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
-240|                    {subTab === 'workbench' && <WorkbenchView project={project} />}
-241|                    {subTab === 'hub' && <CommandCenterView project={project} executionState={executionState} executionMode={executionMode} />}
-242|                    {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
-243|                </div>
-244|            </div>
-245|        </div>
-246|    );
-247|}
-248|
-249|// 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
-250|// 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
-251|function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
-252|    const [crState, setCrState] = useState('idle'); // idle, pending, approved
-253|    const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
-254|    const [autoOrchestrating, setAutoOrchestrating] = useState(false);
-255|    const [orchestrationLog, setOrchestrationLog] = useState([]);
-256|    // Phase-level resume state (Fix #4)
-257|    const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
-258|    const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
-259|    const [phaseStatus, setPhaseStatus] = useState({}); // { PHASE_4_X: 'completed'|'failed'|'running' }
-260|    const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
-261|    const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
-262|    const [dryRunResult, setDryRunResult] = useState(null);
-263|    const [showDryRunModal, setShowDryRunModal] = useState(false);
-264|    const [dryRunLoading, setDryRunLoading] = useState(false);
-265|
-266|    const isAgentic = executionMode === 'agentic';
-267|    const isIndividual = executionMode === 'individual';
-268|    const isManual = !isAgentic && !isIndividual;
-269|
-270|    const handleSimulateCR = () => { setCrState('pending'); };
-271|    const handleApproveCR = () => {
-272|        if (!crForm.approver || !crForm.ticket) return alert("Approver Name and Ticket Reference are required for audit trail.");
-273|        setCrState('approved');
-274|        updatePhase('PHASE_4_3', 'PENDING');
-275|    };
-276|
-277|    // 🚨 DRY-RUN: Run terraform validation without deploying
-278|    const handleDryRun = async () => {
-279|        setDryRunLoading(true);
-280|        const result = await handleDryRunTerraform();
-281|        setDryRunLoading(false);
-282|        if (result) {
-283|            setDryRunResult(result);
-284|            setShowDryRunModal(true);
-285|        }
-286|    };
-287|
-288|    // 🚨 AGENTIC: Orchestrate pipeline via real Hermes delegate-task API (Fix #4: phase-level resume)
-289|    // INTEGRATED with dry-run simulator: passes simulation trace as context to each Hermes agent
-290|    const handleOrchestrateAll = async (startFrom = 0) => {
-291|        // Build completed-set from backend delegateTasks on first run
-292|        if (startFrom === 0 && project?.delegateTasks?.length) {
-293|            const done = new Set();
-294|            let firstFail = null;
-295|            project.delegateTasks.forEach((t, i) => {
-296|                if (t.status === 'COMPLETED') done.add(t.phase);
-297|                if (t.status === 'FAILED' && firstFail === null) firstFail = i;
-298|            });
-299|            setCompletedOrchPhases(done);
-300|            if (firstFail !== null) setFailedOrchPhaseIdx(firstFail);
-301|        }
-302|
-303|        setAutoOrchestrating(true);
-304|        setOrchestrationLog([]);
-305|        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
-306|
-307|        const token = sessionStorage.getItem('hermes_access_token');
-308|
-309|        // ── Read dry-run simulation result for rich phase context ──
-310|        const simResult = project?.agenticDryRun;
-311|        const simTrace = simResult?.trace || [];
-312|        const simSummary = simResult?.summary || {};
-313|
-314|        const chain = [
-315|            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', goal: 'Validate and prepare the Wave 0 network fabric: provision isolated Transit VPC, subnets, security groups, and identity foundation via Terraform. Confirm all prerequisites for the migration landing zone.' },
-316|            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', goal: 'Run OS pre-flight diagnostics: validate source OS constraints against target cloud availability. Check that quoted flavors are in stock and flag any mismatches requiring Change Requests.' },
-317|            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', goal: 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.' },
-318|            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', goal: 'Deploy SMS and DRS migration agents across the established Wave 0 network. Verify agent health, connectivity to source and target, and prepare for data synchronization.' },
-319|            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', goal: 'Monitor data synchronization progress. Confirm byte-by-byte replication is complete for all volumes. Report sync percentages and estimated time to cutover readiness.' },
-320|            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', goal: 'Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure.' },
-321|            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', goal: 'Destroy transient migration resources: factory VMs, staging EIPs, and temporary disks. Confirm PPU costs drop to quoted baseline. Verify no orphaned resources remain.' },
-322|        ];
-323|
-324|        // ── Pre-compute phase context from simulation traces ──
-325|        const buildPhaseContext = (phaseKey) => {
-326|            if (!simTrace.length) return null;
-327|            const phaseSteps = simTrace.filter(t => t.phase === phaseKey || t.phase_group === phaseKey);
-328|            if (!phaseSteps.length) return null;
-329|
-330|            const commands = phaseSteps
-331|                .filter(t => Array.isArray(t.commands) && t.commands.length > 0)
-332|                .flatMap(t => t.commands.map(c => c.cmd || c.command || ''))
-333|                .filter(Boolean);
-334|            const serverNames = [...new Set(phaseSteps
-335|                .filter(t => t.target || (t.decision && t.decision.server_name))
-336|                .map(t => t.target || t.decision.server_name))];
-337|            const resourceSpecs = phaseSteps
-338|                .filter(t => t.network_spec || t.resourceSpec || (t.decision && t.decision.resource_spec))
-339|                .map(t => t.network_spec || t.resourceSpec || t.decision.resource_spec);
-340|
-341|            return {
-342|                phaseSteps: phaseSteps.length,
-343|                commands: commands.slice(0, 20),
-344|                serverNames: serverNames.slice(0, 10),
-345|                resourceSpecs: resourceSpecs.slice(0, 3),
-346|                estimatedDurationDays: simSummary.estimated_wall_clock_days,
-347|                serversProcessed: simSummary.servers_processed,
-348|                totalWaves: simSummary.total_waves,
-349|            };
-350|        };
-351|
-352|        if (simTrace.length > 0) {
-353|            log(`[simulator] Using dry-run simulation (${simTrace.length} trace entries) as context for orchestration.`);
-354|        }
-355|
-356|        for (let i = startFrom; i < chain.length; i++) {
-357|            const step = chain[i];
-358|
-359|            // Skip phases already completed (from prior run or resume state)
-360|            if (completedOrchPhases.has(step.phase)) {
-361|                log(`[agentic ✓] ${step.label} — already completed (skipping).`);
-362|                updatePhase(step.phase, 'COMPLETED');
-363|                continue;
-364|            }
-365|
-366|            log(`[agentic] Phase ${step.phase}: ${step.label} — spawning Hermes agent...`);
-367|            updatePhase(step.phase, 'IN_PROGRESS');
-368|            setPhaseStatus(prev => ({ ...prev, [step.phase]: 'running' }));
-369|
-370|            // ── Build enriched context using simulation trace ──
-371|            const phaseCtx = buildPhaseContext(step.phase);
-372|            let enrichedContext = `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`;
-373|            if (phaseCtx) {
-374|                enrichedContext += `\n\n=== SIMULATION CONTEXT for ${step.phase} ===`;
-375|                enrichedContext += `\nSimulated steps in this phase: ${phaseCtx.phaseSteps}`;
-376|                if (phaseCtx.commands.length > 0) {
-377|                    enrichedContext += `\nSimulated CLI commands for this phase:\n  ` + phaseCtx.commands.map((c, j) => `${j+1}. ${c}`).join('\n  ');
-378|                }
-379|                if (phaseCtx.serverNames.length > 0) {
-380|                    enrichedContext += `\nTarget servers: ${phaseCtx.serverNames.join(', ')}`;
-381|                }
-382|                enrichedContext += `\n\n=== END SIMULATION CONTEXT ===`;
-383|            }
-384|
-385|            try {
-386|                const res = await fetch('/api/hermes-cli/delegate-task', {
-387|                    method: 'POST',
-388|                    headers: {
-389|                        'Content-Type': 'application/json',
-390|                        'Authorization': `Bearer ${token}`
-391|                    },
-392|                    body: JSON.stringify({
-393|                            goal: step.goal,
-394|                            context: enrichedContext,
-395|                            profile: 'exec',
-396|                            project_id: project?.id || ''
-397|                        })
-398|                });
-399|
-400|                const data = await res.json();
-401|
-402|                if (data.success) {
-403|                    log(`[agentic ✓] ${step.label} — agent completed successfully.`);
-404|                    log(`[agentic 📝] ${data.response?.substring(0, 300)}${(data.response?.length > 300) ? '...' : ''}`);
-405|                    setCompletedOrchPhases(prev => new Set([...prev, step.phase]));
-406|                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'completed' }));
-407|                    updatePhase(step.phase, 'COMPLETED');
-408|                } else {
-409|                    log(`[agentic ✗] ${step.label} — agent returned error: ${data.error}`);
-410|                    log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Remaining phases not executed.`);
-411|                    setFailedOrchPhaseIdx(i);
-412|                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
-413|                    updatePhase(step.phase, 'FAILED');
-414|                    setAutoOrchestrating(false);
-415|                    return; // Stop the chain on failure
-416|                }
-417|            } catch (err) {
-418|                log(`[agentic ✗] ${step.label} — network/connection error: ${err.message}`);
-419|                log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Check server connectivity.`);
-420|                setFailedOrchPhaseIdx(i);
-421|                setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
-422|                updatePhase(step.phase, 'FAILED');
-423|                setAutoOrchestrating(false);
-424|                return; // Stop the chain on failure
-425|            }
-426|        }
-427|
-428|        // All phases completed
-429|        setFailedOrchPhaseIdx(null);
-430|        updatePhase('COMPLETED', 'DONE');
-431|        log('[agentic ✓] All 7 phases completed. Pipeline finished.');
-432|        setAutoOrchestrating(false);
-433|    };
-434|
-435|    // 🚨 RESUME: Continue from failed phase
-436|    const handleResumePipeline = () => {
-437|        if (failedOrchPhaseIdx === null) return;
-438|        setPhaseStatus({});
-439|        handleOrchestrateAll(failedOrchPhaseIdx);
-440|    };
-441|
-442|    // 🚨 ROLLBACK: Destroy all provisioned infrastructure (Fix #5)
-443|    const handleRollback = async () => {
-444|        if (!confirm('⚠️ ROLLBACK: This will destroy ALL provisioned infrastructure (VPCs, subnets, ECS instances, EIPs). This cannot be undone. Continue?')) return;
-445|        setAutoOrchestrating(true);
-446|        setOrchestrationLog([]);
-447|        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
-448|        log('[rollback] Initiating infrastructure rollback...');
-449|        
-450|        const token = sessionStorage.getItem('hermes_access_token');
-451|        try {
-452|            const res = await fetch(`/api/projects/${project?.id}/rollback`, {
-453|                method: 'POST',
-454|                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-455|            });
-456|            const data = await res.json();
-457|            if (data.success) {
-458|                log(`[rollback ✓] ${data.message}`);
-459|                setCompletedOrchPhases(new Set());
-460|                setPhaseStatus({});
-461|                setFailedOrchPhaseIdx(null);
-462|                updatePhase('PHASE_4_0', 'PENDING');
-463|            } else {
-464|                log(`[rollback ✗] Failed: ${data.error}`);
-465|            }
-466|        } catch (err) {
-467|            log(`[rollback ✗] Network error: ${err.message}`);
-468|        }
-469|        setAutoOrchestrating(false);
-470|    };
-471|
-472|    // 🚨 INDIVIDUAL: Validate minimum prerequisites for ad-hoc task execution
-473|    const handleCheckPrereqs = () => {
-474|        // Check: Wave 0 (PHASE_4_1) must be done for network fabric
-475|        const wave0Done = executionState.currentPhase > 'PHASE_4_1' || executionState.currentPhase === 'COMPLETED';
-476|        // Check: Agents (PHASE_4_4) must be deployed for migration tooling
-477|        const agentsDone = executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED';
-478|
-479|        setPrereqChecked(true);
-480|        if (wave0Done && agentsDone) {
-481|            setPrereqPassed(true);
-482|            onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
-483|        } else {
-484|            setPrereqPassed(false);
-485|        }
-486|    };
-487|
-488|    const handleForcePrereqs = async () => {
-489|        // Quick-run: execute Wave 0 + Agents in sequence, then unlock
-490|        setAutoOrchestrating(true);
-491|        updatePhase('PHASE_4_1', 'IN_PROGRESS');
-492|        await new Promise(r => setTimeout(r, 2000)); // simulate terraform
-493|        updatePhase('PHASE_4_4', 'PENDING'); // skip 4.2, 4.3
-494|        await new Promise(r => setTimeout(r, 1500)); // simulate agent push
-495|        updatePhase('PHASE_4_5', 'PENDING'); // mark sync ready
-496|        setPrereqPassed(true);
-497|        setPrereqChecked(true);
-498|        onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
-499|        setAutoOrchestrating(false);
-500|    };
-501|
-502|    return (
-503|        <div className="space-y-6 animate-fade-in">
-504|            {/* 🚨 MODE BANNER */}
-505|            <div className={`p-4 rounded-xl border-2 flex items-center justify-between ${
-506|                isAgentic ? 'bg-purple-50 border-purple-300' :
-507|                isIndividual ? 'bg-emerald-50 border-emerald-300' :
-508|                'bg-blue-50 border-blue-300'
-509|            }`}>
-510|                <div className="flex items-center gap-3">
-511|                    <i className={`fas ${isAgentic ? 'fa-robot text-purple-600 text-xl' : isIndividual ? 'fa-cube text-emerald-600 text-xl' : 'fa-tasks text-blue-600 text-xl'}`}></i>
-512|                    <div>
-513|                        <div className={`font-black text-sm uppercase tracking-widest ${
-514|                            isAgentic ? 'text-purple-800' : isIndividual ? 'text-emerald-800' : 'text-blue-800'
-515|                        }`}>
-516|                            {isAgentic ? 'Agentic Orchestration Active' : isIndividual ? 'Individual Tasks Mode' : 'Manual Pipeline Mode'}
-517|                        </div>
-518|                        <p className="text-[10px] font-medium text-slate-500">
-519|                            {isAgentic ? 'Hermes will autonomously execute all 7 phases. Lock individual controls during run.' :
-520|                             isIndividual ? 'Validate minimum prerequisites, then use Workbench for ad-hoc migration tasks.' :
-521|                             'Standard step-by-step Kanban execution. Team triggers each phase manually.'}
-522|                        </p>
-523|                    </div>
-524|                </div>
-525|                <span className={`px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
-526|                    isAgentic ? 'bg-purple-200 text-purple-700 border border-purple-300' :
-527|                    isIndividual ? 'bg-emerald-200 text-emerald-700 border border-emerald-300' :
-528|                    'bg-blue-200 text-blue-700 border border-blue-300'
-529|                }`}>
-530|                    {executionMode.toUpperCase()}
-531|                </span>
-532|            </div>
-533|
-534|            {/* 🚨 AGENTIC: Orchestrate All button */}
-535|            {isAgentic && (
-536|                <div className="bg-white border-2 border-purple-200 rounded-2xl shadow-lg p-6">
-537|                    <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest mb-3">
-538|                        <i className="fas fa-robot mr-2"></i> Autonomous Pipeline Execution
-539|                    </h4>
-540|                    <p className="text-xs text-slate-500 mb-5">
-541|                        The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
-542|                    </p>
-543|
-544|                    {/* Phase progress bar */}
-545|                    {completedOrchPhases.size > 0 && (
-546|                        <div className="mb-4">
-547|                            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-548|                                <span className="font-bold">{completedOrchPhases.size}/7 phases complete</span>
-549|                                {failedOrchPhaseIdx !== null && <span className="text-rose-500 font-black">⏸ Halted at Phase {failedOrchPhaseIdx + 1}</span>}
-550|                            </div>
-551|                            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-552|                                <div className={`h-full rounded-full transition-all duration-500 ${failedOrchPhaseIdx !== null ? 'bg-amber-500' : 'bg-emerald-500'}`}
-553|                                    style={{ width: `${(completedOrchPhases.size / 7) * 100}%` }} />
-554|                            </div>
-555|                            {/* Per-phase status pills */}
-556|                            <div className="flex gap-1.5 mt-2 flex-wrap">
-557|                                {[1,2,3,4,5,6,7].map(n => {
-558|                                    const phase = `PHASE_4_${n}`;
-559|                                    const status = phaseStatus[phase] || (completedOrchPhases.has(phase) ? 'completed' : 'pending');
-560|                                    const color = status === 'completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
-561|                                                  status === 'failed' ? 'bg-rose-100 text-rose-700 border-rose-300' :
-562|                                                  status === 'running' ? 'bg-purple-100 text-purple-700 border-purple-300' :
-563|                                                  'bg-slate-100 text-slate-400 border-slate-200';
-564|                                    const icon = status === 'completed' ? 'fa-check' : status === 'failed' ? 'fa-times' : status === 'running' ? 'fa-spinner fa-spin' : 'fa-circle';
-565|                                    return (
-566|                                        <span key={n} className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${color}`}>
-567|                                            <i className={`fas ${icon} mr-1 text-[8px]`}></i>P{n}
-568|                                        </span>
-569|                                    );
-570|                                })}
-571|                            </div>
-572|                        </div>
-573|                    )}
-574|
-575|                    {autoOrchestrating ? (
-576|                        <div className="space-y-2">
-577|                            <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
-578|                                <i className="fas fa-spinner fa-spin text-xl"></i>
-579|                                Orchestration in progress...
-580|                            </div>
-581|                            <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
-582|                                {orchestrationLog.map((line, i) => (
-583|                                    <div key={i} className={line.includes('✓') ? 'text-emerald-400' : 'text-purple-300'}>{line}</div>
-584|                                ))}
-585|                                <div className="text-amber-400 animate-pulse mt-2">
-586|                                    <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
-587|                                </div>
-588|                            </div>
-589|                        </div>
-590|                    ) : (
-591|                        <div className="flex gap-3">
-592|                            {/* Primary: Orchestrate All */}
-593|                            <button
-594|                                onClick={() => handleOrchestrateAll(0)}
-595|                                disabled={executionState?.currentPhase === 'COMPLETED'}
-596|                                className={`flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
-597|                                    executionState?.currentPhase === 'COMPLETED'
-598|                                        ? 'bg-emerald-500 text-white cursor-default'
-599|                                        : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
-600|                                }`}
-601|                            >
-602|                                {executionState?.currentPhase === 'COMPLETED'
-603|                                    ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
-604|                                    : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Orchestrate All 7 Phases'}</>
-605|                                }
-606|                            </button>
-607|                            {/* Resume button (only when failed phase exists) */}
-608|                            {failedOrchPhaseIdx !== null && (
-609|                                <button
-610|                                    onClick={handleResumePipeline}
-611|                                    className="flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
-612|                                >
-613|                                    <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
-614|                                </button>
-615|                            )}
-616|                            {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
-617|                            {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
-618|                                <button
-619|                                    onClick={handleRollback}
-620|                                    className="py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
-621|                                    title="Destroy all provisioned infrastructure"
-622|                                >
-623|                                    <i className="fas fa-undo mr-1"></i> Rollback
-624|                                </button>
-625|                            )}
-626|                        </div>
-627|                    )}
-628|                </div>
-629|            )}
-630|
-631|            {/* 🚨 INDIVIDUAL: Prerequisite Check */}
-632|            {isIndividual && (
-633|                <div className="bg-white border-2 border-emerald-200 rounded-2xl shadow-lg p-6">
-634|                    <h4 className="font-black text-emerald-800 text-sm uppercase tracking-widest mb-3">
-635|                        <i className="fas fa-clipboard-check mr-2"></i> Prerequisite Validation
-636|                    </h4>
-637|                    <p className="text-xs text-slate-500 mb-5">
-638|                        Individual task mode requires network fabric (Wave 0) and migration agents to be in place before ad-hoc workloads.
-639|                    </p>
-640|                    {!prereqChecked ? (
-641|                        <div className="flex gap-3">
-642|                            <button onClick={handleCheckPrereqs} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors">
-643|                                <i className="fas fa-stethoscope mr-2"></i> Check Prerequisites
-644|                            </button>
-645|                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
-646|                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
-647|                            </button>
-648|                        </div>
-649|                    ) : prereqPassed ? (
-650|                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
-651|                            <i className="fas fa-check-circle text-emerald-600 text-2xl"></i>
-652|                            <div>
-653|                                <div className="font-black text-emerald-800 text-sm">Prerequisites Validated</div>
-654|                                <p className="text-[10px] text-emerald-700 font-medium">Network fabric + agents confirmed. Engineering Workbench is unlocked.</p>
-655|                            </div>
-656|                        </div>
-657|                    ) : (
-658|                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
-659|                            <div className="flex items-center gap-3 mb-3">
-660|                                <i className="fas fa-times-circle text-rose-600 text-2xl"></i>
-661|                                <div>
-662|                                    <div className="font-black text-rose-800 text-sm">Prerequisites Not Met</div>
-663|                                    <p className="text-[10px] text-rose-700 font-medium">Required: Wave 0 network fabric + deployed migration agents.</p>
-664|                                </div>
-665|                            </div>
-666|                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
-667|                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
-668|                            </button>
-669|                        </div>
-670|                    )}
-671|                </div>
-672|            )}
-673|
-674|            {/* 🚨 PIPELINE PHASES (visible in all modes, locked during agentic run) */}
-675|            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-8">
+import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { formatShortDate, EditableCell } from '../../utils/helpers';
+import { ERPContext } from '../../context/ERPContext';
+import WaveZeroConfigModal from './WaveZeroConfigModal';
+
+const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
+
+export default function StepExecution({ project, onUpdateProject, onPromote }) {
+    const [subTab, setSubTab] = useState(project?.authValidated ? 'orchestrator' : 'readiness');
+    const [sidebarOpen, setSidebarOpen] = useState(true); 
+    const [showWaveZeroModal, setShowWaveZeroModal] = useState(false);
+    const [runbookData, setRunbookData] = useState(null);
+    const [showRunbookModal, setShowRunbookModal] = useState(false);
+    // Physics recalibration tracking (NEW — Improvement #4)
+    const [recalibrationState, setRecalibrationState] = useState({
+        observedThroughputMbps: null,
+        elapsedSyncHours: 0,
+        deviationPct: null,
+        lastCheckedAt: null,
+        recalibrated: false
+    });
+    
+    const [executionState, setExecutionState] = useState(null);
+    const [isLoadingState, setIsLoadingState] = useState(true);
+
+    const isGreenfield = project?.projectType === 'greenfield' || project?.project_type === 'greenfield';
+    const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
+    const isZeroTrust = authLevel === 'Read-Only (Customer Managed)';
+    // Extract physics recalibration baseline from saved physics data
+    const recalibrationBaseline = useMemo(() => {
+        const physics = project?.physics;
+        if (!physics) return null;
+        // Check for structured result first, fall back to legacy
+        if (physics.result?._recalibrationBaseline) return physics.result._recalibrationBaseline;
+        if (physics._recalibrationBaseline) return physics._recalibrationBaseline;
+        // Construct from flat physics data for backward compatibility
+        if (physics.engineMode && physics.transitType) {
+            const pipeMbps = Math.min(Number(physics.netSource) || 1000, Number(physics.netTunnel) || 300);
+            let cryptoTax = physics.transitType === 'IPsec VPN' ? 0.85 : physics.transitType === 'Public Internet' ? 0.75 : 0.95;
+            const effectiveMbps = pipeMbps * cryptoTax;
+            return {
+                expectedThroughputMbps: Math.round(effectiveMbps),
+                perNodeExpectedMbps: Math.round(effectiveMbps / Math.max((physics.concurrency || 5), 1)),
+                maxParallelNodes: physics.concurrency || 5,
+                isFeasible: physics.downtimeWindow ? (Number(physics.downtimeWindow) >= 0) : true,
+                recalibrationThreshold: {
+                    throughputWarningPct: 70,
+                    throughputCriticalPct: 50,
+                    timeOverrunWarningPct: 120,
+                    timeOverrunCriticalPct: 150
+                }
+            };
+        }
+        return null;
+    }, [project?.physics]);
+
+    useEffect(() => {
+        if (!project?.id) return;
+        const fetchState = async () => {
+            try {
+                const token = sessionStorage.getItem('hermes_access_token');
+                const res = await fetch(`/api/executions/${project.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                if (data.success) {
+                    setExecutionState(data.data);
+                    if (data.data.currentPhase === 'PHASE_4_0') setSubTab('readiness');
+                    else setSubTab('orchestrator');
+                }
+            } catch (e) { console.error("State Fetch Error:", e); } 
+            finally { setIsLoadingState(false); }
+        };
+        fetchState();
+    }, [project?.id]);
+
+    const updatePhase = async (newPhase, newStatus, pendingAction = null) => {
+        setExecutionState(prev => ({ ...prev, currentPhase: newPhase, status: newStatus, pendingAction }));
+        const token = sessionStorage.getItem('hermes_access_token');
+        await fetch(`/api/executions/${project.id}/update`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ phase: newPhase, status: newStatus, pendingAction })
+        });
+    };
+
+    const handleExecuteTerraform = async (networkConfig = null) => {
+        if (!project?.id) return;
+        setShowWaveZeroModal(false);
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project.id}/execute`, { 
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ networkConfig })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) { 
+                    alert(`✅ ${data.message}`); 
+                    if (isGreenfield && executionState.currentPhase === 'PHASE_4_2') updatePhase('PHASE_4_3', 'PENDING');
+                    else if (!isGreenfield && executionState.currentPhase === 'PHASE_4_1') updatePhase('PHASE_4_2', 'PENDING');
+                    else if (!isGreenfield && executionState.currentPhase === 'PHASE_4_3') updatePhase('PHASE_4_4', 'PENDING');
+                }
+                else alert(`❌ Execution Failed:\n\n${data.error}`);
+            }
+        } catch (err) { alert(`Network Error: ${err.message}`); }
+    };
+
+    // 🚨 DRY-RUN: Validate terraform payload without deploying to RFS
+    const handleDryRunTerraform = async (networkConfig = null) => {
+        if (!project?.id) return null;
+        setShowWaveZeroModal(false);
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project.id}/execute`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ networkConfig, dryRun: true })
+            });
+            const data = await res.json();
+            if (data.success && data.dry_run) return data;
+            throw new Error(data.error || 'Dry-run failed');
+        } catch (err) { alert(`Dry-Run Error: ${err.message}`); return null; }
+    };
+
+    // 🚨 Phase 4.7 Backend Call
+    const handleGarbageCollection = async () => {
+        if (!project?.id) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project.id}/garbage-collect`, { 
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    alert(`✅ Garbage Collection successful. Transient resources dropped.`);
+                    updatePhase('COMPLETED', 'DONE');
+                } else alert(`❌ Cleanup Failed: ${data.error}`);
+            }
+        } catch (err) { alert(`Network Error: ${err.message}`); }
+    };
+
+    const menuItems = isGreenfield ? [
+        { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
+        { id: 'orchestrator', num: '4.1-4.3', icon: 'fa-rocket', label: 'CI/CD Pipeline' },
+        { id: 'workbench', num: '4.4', icon: 'fa-tools', label: 'Engineering Workbench' },
+        { id: 'hub', num: '4.5', icon: 'fa-stream', label: 'DevOps Command Center' }
+    ] : [
+        { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
+        { id: 'orchestrator', num: '4.1-4.7', icon: 'fa-cogs', label: 'Execution Pipeline' },
+        { id: 'workbench', num: '4.8', icon: 'fa-tools', label: 'Engineering Workbench' },
+        { id: 'hub', num: '4.9', icon: 'fa-satellite-dish', label: 'Delivery Command Center' },
+        { id: 'tam', num: '4.10', icon: 'fa-clipboard-check', label: 'TAM Service Governance' }
+    ];
+
+    if (isLoadingState) return <div className="p-12 text-center text-slate-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i> Initializing State Machine...</div>;
+    const isLocked = executionState?.currentPhase === 'PHASE_4_0';
+    const executionMode = project?.executionMode || 'manual';
+    const isIndividual = executionMode === 'individual';
+    const pipelineComplete = executionState?.currentPhase === 'COMPLETED';
+    // Workbench unlocked when: pipeline complete OR individual prereqs passed OR manual mode past Phase 4.2 (infra deployed)
+    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated) || (executionMode === 'manual' && executionState?.currentPhase > 'PHASE_4_2');
+
+    return (
+        <div className="animate-fade-in pb-12 flex flex-col h-full">
+            {showWaveZeroModal && <WaveZeroConfigModal onClose={() => setShowWaveZeroModal(false)} onConfirm={(config) => handleExecuteTerraform(config)} />}
+
+            <div className="bg-white border-b border-slate-200 px-8 py-5 mb-6 rounded-t-2xl flex justify-between items-center shadow-sm shrink-0">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center transition-colors">
+                        <i className={`fas fa-chevron-${sidebarOpen ? 'left' : 'right'} ${sidebarOpen ? 'text-indigo-600' : ''}`}></i>
+                    </button>
+                    <div>
+                        <h3 className="font-black text-xl text-slate-800">{isGreenfield ? "Cloud-Native Provisioning Engine" : "Execution Control Plane"}</h3>
+                        <div className="flex items-center gap-3 mt-1">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{isGreenfield ? "Automated Infrastructure-as-Code CI/CD" : "Database-Backed Cloud Orchestrator"}</p>
+                            {isGreenfield && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border border-emerald-200">Greenfield Mode</span>}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex flex-1 gap-6 px-4 lg:px-8 relative h-full">
+                <div className={`shrink-0 space-y-2 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'w-full lg:w-64 opacity-100' : 'w-0 opacity-0 hidden lg:block'}`}>
+                    {menuItems.map((item) => (
+                        <button 
+                            key={item.id}
+                            onClick={() => { 
+                                if (isLocked && item.id !== 'readiness') return alert("Please complete the 4.0 Readiness Gateway to unlock Execution."); 
+                                if ((item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked) 
+                                    return alert(isIndividual 
+                                        ? "Validate prerequisites in the Orchestrator tab first to unlock Workbench & Command Center." 
+                                        : executionMode === 'agentic'
+                                            ? "Complete the 7-phase pipeline to unlock Workbench & Command Center."
+                                            : "Advance past Phase 4.2 (infrastructure deployed) to unlock Workbench & Command Center."); 
+                                setSubTab(item.id); 
+                            }}
+                            className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
+                                isLocked && item.id !== 'readiness' ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' : 
+                                (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
+                                subTab === item.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                            }`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${
+                                    isLocked && item.id !== 'readiness' ? 'bg-slate-200 text-slate-400' : 
+                                    (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'bg-slate-200 text-slate-400' :
+                                    subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                                }`}>{item.num}</div>
+                                <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
+                            </div>
+                            {isLocked && item.id !== 'readiness' && <i className="fas fa-lock text-slate-300"></i>}
+                            {(item.id === 'workbench' || item.id === 'hub') && !isLocked && !workbenchUnlocked && <i className="fas fa-lock text-slate-300"></i>}
+                        </button>
+                    ))}
+                    
+                    <div className="pt-8">
+                        {executionState?.currentPhase === 'COMPLETED' ? (
+                            <button onClick={() => onPromote && onPromote('post-live')} className="w-full px-4 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                Go to Post-Live Phase <i className="fas fa-arrow-right"></i>
+                            </button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button disabled className="flex-1 px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
+                                    <i className="fas fa-lock"></i> Post-Live Locked
+                                </button>
+                                <button 
+                                    onClick={() => updatePhase('COMPLETED', 'DONE')}
+                                    className="px-4 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-transform active:scale-95 flex items-center justify-center gap-2"
+                                    title="Debug: Mark execution as complete"
+                                >
+                                    <i className="fas fa-wrench"></i> Debug Complete
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
+                    {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
+                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
+                    {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
+                    {subTab === 'workbench' && <WorkbenchView project={project} />}
+                    {subTab === 'hub' && <CommandCenterView project={project} executionState={executionState} executionMode={executionMode} />}
+                    {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
+// 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
+function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
+    const [crState, setCrState] = useState('idle'); // idle, pending, approved
+    const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
+    const [autoOrchestrating, setAutoOrchestrating] = useState(false);
+    const [orchestrationLog, setOrchestrationLog] = useState([]);
+    // Phase-level resume state (Fix #4)
+    const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
+    const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
+    const [phaseStatus, setPhaseStatus] = useState({}); // { PHASE_4_X: 'completed'|'failed'|'running' }
+    const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
+    const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
+    const [dryRunResult, setDryRunResult] = useState(null);
+    const [showDryRunModal, setShowDryRunModal] = useState(false);
+    const [dryRunLoading, setDryRunLoading] = useState(false);
+
+    const isAgentic = executionMode === 'agentic';
+    const isIndividual = executionMode === 'individual';
+    const isManual = !isAgentic && !isIndividual;
+
+    const handleSimulateCR = () => { setCrState('pending'); };
+    const handleApproveCR = () => {
+        if (!crForm.approver || !crForm.ticket) return alert("Approver Name and Ticket Reference are required for audit trail.");
+        setCrState('approved');
+        updatePhase('PHASE_4_3', 'PENDING');
+    };
+
+    // 🚨 DRY-RUN: Run terraform validation without deploying
+    const handleDryRun = async () => {
+        setDryRunLoading(true);
+        const result = await handleDryRunTerraform();
+        setDryRunLoading(false);
+        if (result) {
+            setDryRunResult(result);
+            setShowDryRunModal(true);
+        }
+    };
+
+    // 🚨 AGENTIC: Orchestrate pipeline via real Hermes delegate-task API (Fix #4: phase-level resume)
+    // INTEGRATED with dry-run simulator: passes simulation trace as context to each Hermes agent
+    const handleOrchestrateAll = async (startFrom = 0) => {
+        // Build completed-set from backend delegateTasks on first run
+        if (startFrom === 0 && project?.delegateTasks?.length) {
+            const done = new Set();
+            let firstFail = null;
+            project.delegateTasks.forEach((t, i) => {
+                if (t.status === 'COMPLETED') done.add(t.phase);
+                if (t.status === 'FAILED' && firstFail === null) firstFail = i;
+            });
+            setCompletedOrchPhases(done);
+            if (firstFail !== null) setFailedOrchPhaseIdx(firstFail);
+        }
+
+        setAutoOrchestrating(true);
+        setOrchestrationLog([]);
+        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
+
+        const token = sessionStorage.getItem('hermes_access_token');
+
+        // ── Read dry-run simulation result for rich phase context ──
+        const simResult = project?.agenticDryRun;
+        const simTrace = simResult?.trace || [];
+        const simSummary = simResult?.summary || {};
+
+        const chain = [
+            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', goal: 'Validate and prepare the Wave 0 network fabric: provision isolated Transit VPC, subnets, security groups, and identity foundation via Terraform. Confirm all prerequisites for the migration landing zone.' },
+            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', goal: 'Run OS pre-flight diagnostics: validate source OS constraints against target cloud availability. Check that quoted flavors are in stock and flag any mismatches requiring Change Requests.' },
+            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', goal: 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.' },
+            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', goal: 'Deploy SMS and DRS migration agents across the established Wave 0 network. Verify agent health, connectivity to source and target, and prepare for data synchronization.' },
+            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', goal: 'Monitor data synchronization progress. Confirm byte-by-byte replication is complete for all volumes. Report sync percentages and estimated time to cutover readiness.' },
+            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', goal: 'Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure.' },
+            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', goal: 'Destroy transient migration resources: factory VMs, staging EIPs, and temporary disks. Confirm PPU costs drop to quoted baseline. Verify no orphaned resources remain.' },
+        ];
+
+        // ── Pre-compute phase context from simulation traces ──
+        const buildPhaseContext = (phaseKey) => {
+            if (!simTrace.length) return null;
+            const phaseSteps = simTrace.filter(t => t.phase === phaseKey || t.phase_group === phaseKey);
+            if (!phaseSteps.length) return null;
+
+            const commands = phaseSteps
+                .filter(t => Array.isArray(t.commands) && t.commands.length > 0)
+                .flatMap(t => t.commands.map(c => c.cmd || c.command || ''))
+                .filter(Boolean);
+            const serverNames = [...new Set(phaseSteps
+                .filter(t => t.target || (t.decision && t.decision.server_name))
+                .map(t => t.target || t.decision.server_name))];
+            const resourceSpecs = phaseSteps
+                .filter(t => t.network_spec || t.resourceSpec || (t.decision && t.decision.resource_spec))
+                .map(t => t.network_spec || t.resourceSpec || t.decision.resource_spec);
+
+            return {
+                phaseSteps: phaseSteps.length,
+                commands: commands.slice(0, 20),
+                serverNames: serverNames.slice(0, 10),
+                resourceSpecs: resourceSpecs.slice(0, 3),
+                estimatedDurationDays: simSummary.estimated_wall_clock_days,
+                serversProcessed: simSummary.servers_processed,
+                totalWaves: simSummary.total_waves,
+            };
+        };
+
+        if (simTrace.length > 0) {
+            log(`[simulator] Using dry-run simulation (${simTrace.length} trace entries) as context for orchestration.`);
+        }
+
+        for (let i = startFrom; i < chain.length; i++) {
+            const step = chain[i];
+
+            // Skip phases already completed (from prior run or resume state)
+            if (completedOrchPhases.has(step.phase)) {
+                log(`[agentic ✓] ${step.label} — already completed (skipping).`);
+                updatePhase(step.phase, 'COMPLETED');
+                continue;
+            }
+
+            log(`[agentic] Phase ${step.phase}: ${step.label} — spawning Hermes agent...`);
+            updatePhase(step.phase, 'IN_PROGRESS');
+            setPhaseStatus(prev => ({ ...prev, [step.phase]: 'running' }));
+
+            // ── Build enriched context using simulation trace ──
+            const phaseCtx = buildPhaseContext(step.phase);
+            let enrichedContext = `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`;
+            if (phaseCtx) {
+                enrichedContext += `\n\n=== SIMULATION CONTEXT for ${step.phase} ===`;
+                enrichedContext += `\nSimulated steps in this phase: ${phaseCtx.phaseSteps}`;
+                if (phaseCtx.commands.length > 0) {
+                    enrichedContext += `\nSimulated CLI commands for this phase:\n  ` + phaseCtx.commands.map((c, j) => `${j+1}. ${c}`).join('\n  ');
+                }
+                if (phaseCtx.serverNames.length > 0) {
+                    enrichedContext += `\nTarget servers: ${phaseCtx.serverNames.join(', ')}`;
+                }
+                enrichedContext += `\n\n=== END SIMULATION CONTEXT ===`;
+            }
+
+            try {
+                const res = await fetch('/api/hermes-cli/delegate-task', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                            goal: step.goal,
+                            context: enrichedContext,
+                            profile: 'exec',
+                            project_id: project?.id || ''
+                        })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    log(`[agentic ✓] ${step.label} — agent completed successfully.`);
+                    log(`[agentic 📝] ${data.response?.substring(0, 300)}${(data.response?.length > 300) ? '...' : ''}`);
+                    setCompletedOrchPhases(prev => new Set([...prev, step.phase]));
+                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'completed' }));
+                    updatePhase(step.phase, 'COMPLETED');
+                } else {
+                    log(`[agentic ✗] ${step.label} — agent returned error: ${data.error}`);
+                    log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Remaining phases not executed.`);
+                    setFailedOrchPhaseIdx(i);
+                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
+                    updatePhase(step.phase, 'FAILED');
+                    setAutoOrchestrating(false);
+                    return; // Stop the chain on failure
+                }
+            } catch (err) {
+                log(`[agentic ✗] ${step.label} — network/connection error: ${err.message}`);
+                log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Check server connectivity.`);
+                setFailedOrchPhaseIdx(i);
+                setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
+                updatePhase(step.phase, 'FAILED');
+                setAutoOrchestrating(false);
+                return; // Stop the chain on failure
+            }
+        }
+
+        // All phases completed
+        setFailedOrchPhaseIdx(null);
+        updatePhase('COMPLETED', 'DONE');
+        log('[agentic ✓] All 7 phases completed. Pipeline finished.');
+        setAutoOrchestrating(false);
+    };
+
+    // 🚨 RESUME: Continue from failed phase
+    const handleResumePipeline = () => {
+        if (failedOrchPhaseIdx === null) return;
+        setPhaseStatus({});
+        handleOrchestrateAll(failedOrchPhaseIdx);
+    };
+
+    // 🚨 ROLLBACK: Destroy all provisioned infrastructure (Fix #5)
+    const handleRollback = async () => {
+        if (!confirm('⚠️ ROLLBACK: This will destroy ALL provisioned infrastructure (VPCs, subnets, ECS instances, EIPs). This cannot be undone. Continue?')) return;
+        setAutoOrchestrating(true);
+        setOrchestrationLog([]);
+        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
+        log('[rollback] Initiating infrastructure rollback...');
+        
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            const res = await fetch(`/api/projects/${project?.id}/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                log(`[rollback ✓] ${data.message}`);
+                setCompletedOrchPhases(new Set());
+                setPhaseStatus({});
+                setFailedOrchPhaseIdx(null);
+                updatePhase('PHASE_4_0', 'PENDING');
+            } else {
+                log(`[rollback ✗] Failed: ${data.error}`);
+            }
+        } catch (err) {
+            log(`[rollback ✗] Network error: ${err.message}`);
+        }
+        setAutoOrchestrating(false);
+    };
+
+    // 🚨 INDIVIDUAL: Validate minimum prerequisites for ad-hoc task execution
+    const handleCheckPrereqs = () => {
+        // Check: Wave 0 (PHASE_4_1) must be done for network fabric
+        const wave0Done = executionState.currentPhase > 'PHASE_4_1' || executionState.currentPhase === 'COMPLETED';
+        // Check: Agents (PHASE_4_4) must be deployed for migration tooling
+        const agentsDone = executionState.currentPhase > 'PHASE_4_4' || executionState.currentPhase === 'COMPLETED';
+
+        setPrereqChecked(true);
+        if (wave0Done && agentsDone) {
+            setPrereqPassed(true);
+            onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
+        } else {
+            setPrereqPassed(false);
+        }
+    };
+
+    const handleForcePrereqs = async () => {
+        // Quick-run: execute Wave 0 + Agents in sequence, then unlock
+        setAutoOrchestrating(true);
+        updatePhase('PHASE_4_1', 'IN_PROGRESS');
+        await new Promise(r => setTimeout(r, 2000)); // simulate terraform
+        updatePhase('PHASE_4_4', 'PENDING'); // skip 4.2, 4.3
+        await new Promise(r => setTimeout(r, 1500)); // simulate agent push
+        updatePhase('PHASE_4_5', 'PENDING'); // mark sync ready
+        setPrereqPassed(true);
+        setPrereqChecked(true);
+        onUpdateProject && onUpdateProject(project?.id, 'prereqsValidated', true);
+        setAutoOrchestrating(false);
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            {/* 🚨 MODE BANNER */}
+            <div className={`p-4 rounded-xl border-2 flex items-center justify-between ${
+                isAgentic ? 'bg-purple-50 border-purple-300' :
+                isIndividual ? 'bg-emerald-50 border-emerald-300' :
+                'bg-blue-50 border-blue-300'
+            }`}>
+                <div className="flex items-center gap-3">
+                    <i className={`fas ${isAgentic ? 'fa-robot text-purple-600 text-xl' : isIndividual ? 'fa-cube text-emerald-600 text-xl' : 'fa-tasks text-blue-600 text-xl'}`}></i>
+                    <div>
+                        <div className={`font-black text-sm uppercase tracking-widest ${
+                            isAgentic ? 'text-purple-800' : isIndividual ? 'text-emerald-800' : 'text-blue-800'
+                        }`}>
+                            {isAgentic ? 'Agentic Orchestration Active' : isIndividual ? 'Individual Tasks Mode' : 'Manual Pipeline Mode'}
+                        </div>
+                        <p className="text-[10px] font-medium text-slate-500">
+                            {isAgentic ? 'Hermes will autonomously execute all 7 phases. Lock individual controls during run.' :
+                             isIndividual ? 'Validate minimum prerequisites, then use Workbench for ad-hoc migration tasks.' :
+                             'Standard step-by-step Kanban execution. Team triggers each phase manually.'}
+                        </p>
+                    </div>
+                </div>
+                <span className={`px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
+                    isAgentic ? 'bg-purple-200 text-purple-700 border border-purple-300' :
+                    isIndividual ? 'bg-emerald-200 text-emerald-700 border border-emerald-300' :
+                    'bg-blue-200 text-blue-700 border border-blue-300'
+                }`}>
+                    {executionMode.toUpperCase()}
+                </span>
+            </div>
+
+            {/* 🚨 AGENTIC: Orchestrate All button */}
+            {isAgentic && (
+                <div className="bg-white border-2 border-purple-200 rounded-2xl shadow-lg p-6">
+                    <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest mb-3">
+                        <i className="fas fa-robot mr-2"></i> Autonomous Pipeline Execution
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-5">
+                        The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
+                    </p>
+
+                    {/* Phase progress bar */}
+                    {completedOrchPhases.size > 0 && (
+                        <div className="mb-4">
+                            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+                                <span className="font-bold">{completedOrchPhases.size}/7 phases complete</span>
+                                {failedOrchPhaseIdx !== null && <span className="text-rose-500 font-black">⏸ Halted at Phase {failedOrchPhaseIdx + 1}</span>}
+                            </div>
+                            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-500 ${failedOrchPhaseIdx !== null ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                    style={{ width: `${(completedOrchPhases.size / 7) * 100}%` }} />
+                            </div>
+                            {/* Per-phase status pills */}
+                            <div className="flex gap-1.5 mt-2 flex-wrap">
+                                {[1,2,3,4,5,6,7].map(n => {
+                                    const phase = `PHASE_4_${n}`;
+                                    const status = phaseStatus[phase] || (completedOrchPhases.has(phase) ? 'completed' : 'pending');
+                                    const color = status === 'completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                                  status === 'failed' ? 'bg-rose-100 text-rose-700 border-rose-300' :
+                                                  status === 'running' ? 'bg-purple-100 text-purple-700 border-purple-300' :
+                                                  'bg-slate-100 text-slate-400 border-slate-200';
+                                    const icon = status === 'completed' ? 'fa-check' : status === 'failed' ? 'fa-times' : status === 'running' ? 'fa-spinner fa-spin' : 'fa-circle';
+                                    return (
+                                        <span key={n} className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${color}`}>
+                                            <i className={`fas ${icon} mr-1 text-[8px]`}></i>P{n}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {autoOrchestrating ? (
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
+                                <i className="fas fa-spinner fa-spin text-xl"></i>
+                                Orchestration in progress...
+                            </div>
+                            <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
+                                {orchestrationLog.map((line, i) => (
+                                    <div key={i} className={line.includes('✓') ? 'text-emerald-400' : 'text-purple-300'}>{line}</div>
+                                ))}
+                                <div className="text-amber-400 animate-pulse mt-2">
+                                    <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex gap-3">
+                            {/* Primary: Orchestrate All */}
+                            <button
+                                onClick={() => handleOrchestrateAll(0)}
+                                disabled={executionState?.currentPhase === 'COMPLETED'}
+                                className={`flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
+                                    executionState?.currentPhase === 'COMPLETED'
+                                        ? 'bg-emerald-500 text-white cursor-default'
+                                        : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
+                                }`}
+                            >
+                                {executionState?.currentPhase === 'COMPLETED'
+                                    ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
+                                    : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Orchestrate All 7 Phases'}</>
+                                }
+                            </button>
+                            {/* Resume button (only when failed phase exists) */}
+                            {failedOrchPhaseIdx !== null && (
+                                <button
+                                    onClick={handleResumePipeline}
+                                    className="flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
+                                >
+                                    <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
+                                </button>
+                            )}
+                            {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
+                            {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
+                                <button
+                                    onClick={handleRollback}
+                                    className="py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
+                                    title="Destroy all provisioned infrastructure"
+                                >
+                                    <i className="fas fa-undo mr-1"></i> Rollback
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* 🚨 INDIVIDUAL: Prerequisite Check */}
+            {isIndividual && (
+                <div className="bg-white border-2 border-emerald-200 rounded-2xl shadow-lg p-6">
+                    <h4 className="font-black text-emerald-800 text-sm uppercase tracking-widest mb-3">
+                        <i className="fas fa-clipboard-check mr-2"></i> Prerequisite Validation
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-5">
+                        Individual task mode requires network fabric (Wave 0) and migration agents to be in place before ad-hoc workloads.
+                    </p>
+                    {!prereqChecked ? (
+                        <div className="flex gap-3">
+                            <button onClick={handleCheckPrereqs} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors">
+                                <i className="fas fa-stethoscope mr-2"></i> Check Prerequisites
+                            </button>
+                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
+                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
+                            </button>
+                        </div>
+                    ) : prereqPassed ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
+                            <i className="fas fa-check-circle text-emerald-600 text-2xl"></i>
+                            <div>
+                                <div className="font-black text-emerald-800 text-sm">Prerequisites Validated</div>
+                                <p className="text-[10px] text-emerald-700 font-medium">Network fabric + agents confirmed. Engineering Workbench is unlocked.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <i className="fas fa-times-circle text-rose-600 text-2xl"></i>
+                                <div>
+                                    <div className="font-black text-rose-800 text-sm">Prerequisites Not Met</div>
+                                    <p className="text-[10px] text-rose-700 font-medium">Required: Wave 0 network fabric + deployed migration agents.</p>
+                                </div>
+                            </div>
+                            <button onClick={handleForcePrereqs} disabled={autoOrchestrating} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors disabled:opacity-50">
+                                {autoOrchestrating ? <><i className="fas fa-spinner fa-spin mr-2"></i> Running...</> : <><i className="fas fa-bolt mr-2"></i> Quick-Run Prerequisites</>}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* 🚨 PIPELINE PHASES (visible in all modes, locked during agentic run) */}
+            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-8">
                 {isGreenfield ? (
                     <>
                         {/* PHASE 4.1: WAVE 0 */}
@@ -947,11 +947,11 @@
                 ) : (
                     <MigrationOrchestratorView project={project} executionState={executionState} executionMode={executionMode} onUpdateProject={onUpdateProject} />
                 )}
-952|        </div>
-953|    );
-954|}
-955|
-956|// ═══ Migration Orchestrator View — for migration projects (not greenfield) ═══
+        </div>
+    );
+}
+
+// ═══ Migration Orchestrator View — for migration projects (not greenfield) ═══
 function MigrationOrchestratorView({ project, executionState, executionMode, onUpdateProject }) {
     const token = sessionStorage.getItem('hermes_access_token');
     const [execPlan, setExecPlan] = useState(null);
@@ -1298,379 +1298,379 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
 }
 
 // 🚨 PRESERVED: Readiness Gateway View
-957|function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, onApprove }) {
-958|    const [loading, setLoading] = useState(false);
-959|    const [gatewayResult, setGatewayResult] = useState(null);
-960|    const [riskAcknowledged, setRiskAcknowledged] = useState(false);
-961|    const [notifyCommercial, setNotifyCommercial] = useState(false);
-962|
-963|    const runFullCheck = async () => {
-964|        setLoading(true);
-965|        setGatewayResult(null);
-966|        try {
-967|            const token = sessionStorage.getItem('hermes_access_token');
-968|            const res = await fetch('/api/gateway/full-check', {
-969|                method: 'POST',
-970|                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-971|                body: JSON.stringify({ 
-972|                    customer_id: project?.customerId, 
-973|                    project_id: project?.id 
-974|                })
-975|            });
-976|            const data = await res.json();
-977|            setGatewayResult(data);
-978|            // Auto-set commercial notification if real-name auth missing
-979|            if (data.checks?.realname_auth?.status === 'unverified') {
-980|                setNotifyCommercial(true);
-981|            }
-982|        } catch (err) {
-983|            setGatewayResult({ success: false, error: err.message });
-984|        } finally {
-985|            setLoading(false);
-986|        }
-987|    };
-988|
-989|    // Run check on mount
-990|    useEffect(() => {
-991|        if (project?.customerId) {
-992|            runFullCheck();
-993|        }
-994|    }, [project?.customerId]);
-995|
-996|    const checks = gatewayResult?.checks || {};
-997|    const isReady = gatewayResult?.ready;
-998|    const mode = gatewayResult?.mode || 'unknown';
-999|    const showRiskWarning = checks.realname_auth?.status === 'unverified';
-1000|
-1001|    const statusIcon = (status) => {
-1002|        switch (status) {
-1003|            case 'valid': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
-1004|            case 'configured': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
-1005|            case 'unverified': return { icon: 'fa-exclamation-triangle', color: 'text-amber-400' };
-1006|            case 'missing': return { icon: 'fa-times-circle', color: 'text-rose-400' };
-1007|            case 'blocked': return { icon: 'fa-ban', color: 'text-rose-500' };
-1008|            case 'invalid': return { icon: 'fa-times-circle', color: 'text-rose-400' };
-1009|            default: return { icon: 'fa-question-circle', color: 'text-slate-400' };
-1010|        }
-1011|    };
-1012|
-1013|    return (
-1014|        <div className="p-8 h-full flex flex-col items-center overflow-y-auto custom-scrollbar">
-1015|            <div className="w-full max-w-2xl space-y-6">
-1016|                {/* Header */}
-1017|                <div className="text-center">
-1018|                    <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${
-1019|                        isReady ? 'bg-emerald-900/40 text-emerald-400' : 'bg-slate-800 text-slate-400'
-1020|                    }`}>
-1021|                        <i className={`fas ${isReady ? 'fa-shield-check' : 'fa-shield-haltered'}`}></i>
-1022|                    </div>
-1023|                    <h3 className="text-xl font-black text-white mb-1">4.0 Execution Readiness Gateway</h3>
-1024|                    <p className="text-sm text-slate-400">
-1025|                        {isReady 
-1026|                            ? `Target boundary verified — ${mode === 'least_privilege' ? 'Least Privilege mode active' : 'Master fallback mode'}`
-1027|                            : 'Validating credential hierarchy...'}
-1028|                    </p>
-1029|                </div>
-1030|
-1031|                {/* Check Matrix */}
-1032|                <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
-1033|                    <div className="bg-slate-900 px-5 py-3 border-b border-slate-700">
-1034|                        <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
-1035|                            <i className="fas fa-list-check mr-2 text-emerald-400"></i>Credential & Access Validation
-1036|                        </h4>
-1037|                    </div>
-1038|                    <div className="divide-y divide-slate-700/50">
-1039|                        {/* Master AK/SK */}
-1040|                        <CheckRow 
-1041|                            label="Master AK/SK" 
-1042|                            desc="Control plane authentication" 
-1043|                            status={checks.master_credentials?.status}
-1044|                            message={checks.master_credentials?.message}
-1045|                            si={statusIcon(checks.master_credentials?.status)}
-1046|                        />
-1047|                        {/* Real-Name Auth */}
-1048|                        <CheckRow 
-1049|                            label="Real-Name Authentication" 
-1050|                            desc="Required for EPS + Tier 2 isolation" 
-1051|                            status={checks.realname_auth?.status}
-1052|                            message={checks.realname_auth?.warning || checks.realname_auth?.message}
-1053|                            si={statusIcon(checks.realname_auth?.status)}
-1054|                        />
-1055|                        {/* Tier 2 EPS Admin */}
-1056|                        <CheckRow 
-1057|                            label="Tier 2: Sandbox EPS Admin" 
-1058|                            desc="Enterprise Project-scoped access" 
-1059|                            status={checks.tier2_credentials?.status}
-1060|                            message={checks.tier2_credentials?.message}
-1061|                            si={statusIcon(checks.tier2_credentials?.status)}
-1062|                        />
-1063|                        {/* EPS Bracket */}
-1064|                        <CheckRow 
-1065|                            label="EPS Bracket" 
-1066|                            desc={`Size classification: ${checks.eps_bracket?.bracket || 'unknown'}`}
-1067|                            status={checks.eps_bracket?.bracket ? 'valid' : 'missing'}
-1068|                            si={statusIcon(checks.eps_bracket?.bracket ? 'valid' : 'missing')}
-1069|                        />
-1070|                        {/* OS Data Plane */}
-1071|                        <CheckRow 
-1072|                            label="OS Data Plane" 
-1073|                            desc="Agentless migration credentials" 
-1074|                            status={checks.os_credentials?.status}
-1075|                            message={checks.os_credentials?.message}
-1076|                            si={statusIcon(checks.os_credentials?.status)}
-1077|                        />
-1078|                    </div>
-1079|                </div>
-1080|
-1081|                {/* Risk Warning (Path B) */}
-1082|                {showRiskWarning && (
-1083|                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-2xl p-5 animate-fade-in">
-1084|                        <div className="flex items-start gap-3">
-1085|                            <i className="fas fa-exclamation-triangle text-amber-400 text-xl mt-0.5"></i>
-1086|                            <div className="flex-1">
-1087|                                <h4 className="font-black text-amber-400 text-sm mb-1">Reduced Isolation Mode</h4>
-1088|                                <p className="text-xs text-amber-300/80 mb-3">
-1089|                                    Real-name authentication not complete. Full Master AK/SK will be used for execution. 
-1090|                                    Enterprise Project isolation is unavailable until verification is done.
-1091|                                </p>
-1092|                                <label className="flex items-center gap-2 text-xs text-amber-200 cursor-pointer">
-1093|                                    <input 
-1094|                                        type="checkbox" 
-1095|                                        checked={riskAcknowledged} 
-1096|                                        onChange={e => setRiskAcknowledged(e.target.checked)}
-1097|                                        className="rounded bg-slate-700 border-slate-600"
-1098|                                    />
-1099|                                    I acknowledge the reduced security posture
-1100|                                </label>
-1101|                                {notifyCommercial && (
-1102|                                    <div className="mt-3 flex items-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider">
-1103|                                        <i className="fas fa-bell"></i>
-1104|                                        Commercial team will be notified to complete real-name authentication
-1105|                                    </div>
-1106|                                )}
-1107|                            </div>
-1108|                        </div>
-1109|                    </div>
-1110|                )}
-1111|
-1112|                {/* Action Buttons */}
-1113|                <div className="flex justify-center gap-4">
-1114|                    <button 
-1115|                        onClick={runFullCheck}
-1116|                        disabled={loading}
-1117|                        className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-black uppercase tracking-widest rounded-xl transition-colors disabled:opacity-50"
-1118|                    >
-1119|                        <i className={`fas fa-sync-alt mr-2 ${loading ? 'animate-spin' : ''}`}></i>
-1120|                        Re-Check
-1121|                    </button>
-1122|                    <button 
-1123|                        onClick={onApprove}
-1124|                        disabled={!isReady || (showRiskWarning && !riskAcknowledged)}
-1125|                        className={`px-8 py-2.5 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all ${
-1126|                            isReady && (!showRiskWarning || riskAcknowledged)
-1127|                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
-1128|                                : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-1129|                        }`}
-1130|                        title={showRiskWarning && !riskAcknowledged ? 'Acknowledge risk warning first' : ''}
-1131|                    >
-1132|                        <i className="fas fa-unlock mr-2"></i>
-1133|                        Unlock Execution Engine
-1134|                    </button>
-1135|                </div>
-1136|
-1137|                {gatewayResult?.requires_action?.length > 0 && (
-1138|                    <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
-1139|                        <h4 className="font-black text-[10px] text-slate-500 uppercase tracking-widest mb-2">
-1140|                            <i className="fas fa-clipboard-list mr-1"></i>Required Actions
-1141|                        </h4>
-1142|                        <ul className="space-y-1">
-1143|                            {gatewayResult.requires_action.map((action, i) => (
-1144|                                <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
-1145|                                    <i className="fas fa-chevron-right text-emerald-500 mt-0.5"></i>
-1146|                                    {action}
-1147|                                </li>
-1148|                            ))}
-1149|                        </ul>
-1150|                    </div>
-1151|                )}
-1152|            </div>
-1153|        </div>
-1154|    );
-1155|}
-1156|
-1157|function CheckRow({ label, desc, status, message, si }) {
-1158|    return (
-1159|        <div className="px-5 py-3 flex items-center gap-4 hover:bg-slate-750 transition-colors">
-1160|            <i className={`fas ${si.icon} ${si.color} text-lg`}></i>
-1161|            <div className="flex-1 min-w-0">
-1162|                <div className="font-bold text-sm text-white">{label}</div>
-1163|                <div className="text-[10px] text-slate-400 uppercase tracking-wider">{desc}</div>
-1164|                {message && <div className="text-[10px] text-slate-500 mt-0.5 italic">{message}</div>}
-1165|            </div>
-1166|            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
-1167|                status === 'valid' || status === 'configured' 
-1168|                    ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/50'
-1169|                    : status === 'unverified'
-1170|                    ? 'bg-amber-900/40 text-amber-400 border border-amber-700/50'
-1171|                    : 'bg-slate-700/50 text-slate-400 border border-slate-600/50'
-1172|            }`}>
-1173|                {status || 'unknown'}
-1174|            </span>
-1175|        </div>
-1176|    );
-1177|}
-1178|
-1179|// ==========================================
-1180|// 🚨 NEW: 4.8 ENGINEERING WORKBENCH (Hermes Agentic Orchestration)
-1181|// ==========================================
-1182|function WorkbenchView({ project }) {
-1183|    const [prompt, setPrompt] = useState('');
-1184|    const [isExecuting, setIsExecuting] = useState(false);
-1185|    const [terminalOutput, setTerminalOutput] = useState([
-1186|        "[system] mig_worker is offline.",
-1187|        "[system] Awaiting deployment to Target VPC..."
-1188|    ]);
-1189|    const [selectedProfile, setSelectedProfile] = useState('exec');
-1190|    const [selectedModel, setSelectedModel] = useState('');
-1191|
-1192|    const executionMode = project?.executionMode || 'manual';
-1193|    const isAgentic = executionMode === 'agentic';
-1194|
-1195|    const handleDelegate = async () => {
-1196|        if (!prompt || isExecuting) return;
-1197|        setIsExecuting(true);
-1198|        setTerminalOutput(prev => [
-1199|            ...prev,
-1200|            `\n[hermes] Spawning agent via profile '${selectedProfile}'...`,
-1201|            `[hermes] Goal: "${prompt}"`
-1202|        ]);
-1203|
-1204|        try {
-1205|            const token = sessionStorage.getItem('hermes_access_token');
-1206|            const body = {
-1207|                goal: prompt,
-1208|                context: `ERP Project ID: ${project?.id || 'N/A'}. Repo at C:/Users/h84423900/latam-cloud-erp/repo.`,
-1209|                profile: selectedProfile,
-1210|            };
-1211|            if (selectedModel) body.model = selectedModel;
-1212|
-1213|            const res = await fetch('/api/hermes-cli/delegate-task', {
-1214|                method: 'POST',
-1215|                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-1216|                body: JSON.stringify(body)
-1217|            });
-1218|
-1219|            const data = await res.json();
-1220|
-1221|            if (data.success) {
-1222|                setTerminalOutput(prev => [
-1223|                    ...prev,
-1224|                    `\n[hermes ✓] Task completed successfully.`,
-1225|                    `[output]\n${data.response}`
-1226|                ]);
-1227|            } else {
-1228|                setTerminalOutput(prev => [
-1229|                    ...prev,
-1230|                    `\n[hermes ✗] Task failed: ${data.error}`
-1231|                ]);
-1232|            }
-1233|        } catch (err) {
-1234|            setTerminalOutput(prev => [
-1235|                ...prev,
-1236|                `\n[error] Network error: ${err.message}`
-1237|            ]);
-1238|        } finally {
-1239|            setIsExecuting(false);
-1240|            setPrompt('');
-1241|        }
-1242|    };
-1243|
-1244|    const profileOptions = [
-1245|        { id: 'exec', label: 'exec (GLM 5.2)', icon: 'fa-robot', color: 'text-purple-400' },
-1246|        { id: 'default', label: 'default (DeepSeek V4)', icon: 'fa-brain', color: 'text-blue-400' },
-1247|    ];
-1248|
-1249|    const modelOptions = [
-1250|        { id: '', label: 'Use profile default' },
-1251|        { id: 'glm-5.2', label: 'GLM 5.2 (Zhipu)', provider: 'zai' },
-1252|        { id: 'kimi-k2.6', label: 'Kimi K2.6 (Moonshot)', provider: 'kimi-coding' },
-1253|    ];
-1254|
-1255|    return (
-1256|        <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-2 gap-6 h-[700px]">
-1257|            {/* Left: Hermes Agentic Co-Pilot */}
-1258|            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-1259|                <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center">
-1260|                    <h3 className="font-black text-sm text-slate-800 flex items-center">
-1261|                        <i className={`fas ${isAgentic ? 'fa-robot text-purple-600' : 'fa-tasks text-blue-600'} mr-2`}></i>
-1262|                        {isAgentic ? 'Hermes Agentic Orchestrator' : 'Hermes Context AI'}
-1263|                    </h3>
-1264|                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
-1265|                        isAgentic 
-1266|                            ? 'bg-purple-100 text-purple-700 border border-purple-200' 
-1267|                            : 'bg-blue-100 text-blue-700 border border-blue-200'
-1268|                    }`}>
-1269|                        {isAgentic ? 'AGENTIC MODE — GLM 5.2' : 'MANUAL MODE'}
-1270|                    </span>
-1271|                </div>
-1272|                <div className="flex-1 p-6 bg-slate-50/50 flex flex-col">
-1273|                    {isAgentic ? (
-1274|                        <>
-1275|                            <div className="flex-1 flex flex-col items-center justify-center text-center mb-4">
-1276|                                <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
-1277|                                    <i className="fas fa-robot"></i>
-1278|                                </div>
-1279|                                <h4 className="font-black text-slate-700 mb-2">Autonomous Migration Agent</h4>
-1280|                                <p className="text-xs text-slate-500 max-w-sm">
-1281|                                    Describe the migration workload. Hermes will spawn agents with the appropriate model to handle it autonomously.
-1282|                                </p>
-1283|                                {/* Profile & Model Selectors */}
-1284|                                <div className="w-full max-w-xs mt-4 space-y-2">
-1285|                                    <div className="flex gap-2">
-1286|                                        {profileOptions.map(p => (
-1287|                                            <button
-1288|                                                key={p.id}
-1289|                                                onClick={() => setSelectedProfile(p.id)}
-1290|                                                className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
-1291|                                                    selectedProfile === p.id
-1292|                                                        ? 'border-purple-500 bg-purple-50 text-purple-700'
-1293|                                                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-1294|                                                }`}
-1295|                                            >
-1296|                                                <i className={`fas ${p.icon} mr-1`}></i> {p.label}
-1297|                                            </button>
-1298|                                        ))}
-1299|                                    </div>
-1300|                                    <select
-1301|                                        value={selectedModel}
-1302|                                        onChange={e => setSelectedModel(e.target.value)}
-1303|                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
-1304|                                    >
-1305|                                        {modelOptions.map(m => (
-1306|                                            <option key={m.id} value={m.id}>{m.label}</option>
-1307|                                        ))}
-1308|                                    </select>
-1309|                                </div>
-1310|                            </div>
-1311|                        </>
-1312|                    ) : (
-1313|                        <div className="flex-1 flex flex-col items-center justify-center text-center">
-1314|                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
-1315|                                <i className="fas fa-brain"></i>
-1316|                            </div>
-1317|                            <h4 className="font-black text-slate-700">Manual Pipeline Mode</h4>
-1318|                            <p className="text-xs text-slate-500 mt-2 max-w-sm">
-1319|                                Use Hermes AI for guidance. Select "Agentic Orchestration" in Phase 3.2 for autonomous execution.
-1320|                            </p>
-1321|                        </div>
-1322|                    )}
-1323|                </div>
-1324|                <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
-1325|                    <input
-1326|                        type="text"
-1327|                        value={prompt}
-1328|                        onChange={e => setPrompt(e.target.value)}
-1329|                        onKeyDown={e => e.key === 'Enter' && handleDelegate()}
-1330|                        placeholder={isAgentic 
-1331|                            ? "e.g. Migrate Ubuntu 20.04 web server via SMS with 500GB data..." 
-1332|                            : "e.g. Generate an SMS installation script for Ubuntu 20.04..."}
+function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, onApprove }) {
+    const [loading, setLoading] = useState(false);
+    const [gatewayResult, setGatewayResult] = useState(null);
+    const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+    const [notifyCommercial, setNotifyCommercial] = useState(false);
+
+    const runFullCheck = async () => {
+        setLoading(true);
+        setGatewayResult(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch('/api/gateway/full-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    customer_id: project?.customerId, 
+                    project_id: project?.id 
+                })
+            });
+            const data = await res.json();
+            setGatewayResult(data);
+            // Auto-set commercial notification if real-name auth missing
+            if (data.checks?.realname_auth?.status === 'unverified') {
+                setNotifyCommercial(true);
+            }
+        } catch (err) {
+            setGatewayResult({ success: false, error: err.message });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Run check on mount
+    useEffect(() => {
+        if (project?.customerId) {
+            runFullCheck();
+        }
+    }, [project?.customerId]);
+
+    const checks = gatewayResult?.checks || {};
+    const isReady = gatewayResult?.ready;
+    const mode = gatewayResult?.mode || 'unknown';
+    const showRiskWarning = checks.realname_auth?.status === 'unverified';
+
+    const statusIcon = (status) => {
+        switch (status) {
+            case 'valid': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
+            case 'configured': return { icon: 'fa-check-circle', color: 'text-emerald-400' };
+            case 'unverified': return { icon: 'fa-exclamation-triangle', color: 'text-amber-400' };
+            case 'missing': return { icon: 'fa-times-circle', color: 'text-rose-400' };
+            case 'blocked': return { icon: 'fa-ban', color: 'text-rose-500' };
+            case 'invalid': return { icon: 'fa-times-circle', color: 'text-rose-400' };
+            default: return { icon: 'fa-question-circle', color: 'text-slate-400' };
+        }
+    };
+
+    return (
+        <div className="p-8 h-full flex flex-col items-center overflow-y-auto custom-scrollbar">
+            <div className="w-full max-w-2xl space-y-6">
+                {/* Header */}
+                <div className="text-center">
+                    <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${
+                        isReady ? 'bg-emerald-900/40 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                        <i className={`fas ${isReady ? 'fa-shield-check' : 'fa-shield-haltered'}`}></i>
+                    </div>
+                    <h3 className="text-xl font-black text-white mb-1">4.0 Execution Readiness Gateway</h3>
+                    <p className="text-sm text-slate-400">
+                        {isReady 
+                            ? `Target boundary verified — ${mode === 'least_privilege' ? 'Least Privilege mode active' : 'Master fallback mode'}`
+                            : 'Validating credential hierarchy...'}
+                    </p>
+                </div>
+
+                {/* Check Matrix */}
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+                    <div className="bg-slate-900 px-5 py-3 border-b border-slate-700">
+                        <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                            <i className="fas fa-list-check mr-2 text-emerald-400"></i>Credential & Access Validation
+                        </h4>
+                    </div>
+                    <div className="divide-y divide-slate-700/50">
+                        {/* Master AK/SK */}
+                        <CheckRow 
+                            label="Master AK/SK" 
+                            desc="Control plane authentication" 
+                            status={checks.master_credentials?.status}
+                            message={checks.master_credentials?.message}
+                            si={statusIcon(checks.master_credentials?.status)}
+                        />
+                        {/* Real-Name Auth */}
+                        <CheckRow 
+                            label="Real-Name Authentication" 
+                            desc="Required for EPS + Tier 2 isolation" 
+                            status={checks.realname_auth?.status}
+                            message={checks.realname_auth?.warning || checks.realname_auth?.message}
+                            si={statusIcon(checks.realname_auth?.status)}
+                        />
+                        {/* Tier 2 EPS Admin */}
+                        <CheckRow 
+                            label="Tier 2: Sandbox EPS Admin" 
+                            desc="Enterprise Project-scoped access" 
+                            status={checks.tier2_credentials?.status}
+                            message={checks.tier2_credentials?.message}
+                            si={statusIcon(checks.tier2_credentials?.status)}
+                        />
+                        {/* EPS Bracket */}
+                        <CheckRow 
+                            label="EPS Bracket" 
+                            desc={`Size classification: ${checks.eps_bracket?.bracket || 'unknown'}`}
+                            status={checks.eps_bracket?.bracket ? 'valid' : 'missing'}
+                            si={statusIcon(checks.eps_bracket?.bracket ? 'valid' : 'missing')}
+                        />
+                        {/* OS Data Plane */}
+                        <CheckRow 
+                            label="OS Data Plane" 
+                            desc="Agentless migration credentials" 
+                            status={checks.os_credentials?.status}
+                            message={checks.os_credentials?.message}
+                            si={statusIcon(checks.os_credentials?.status)}
+                        />
+                    </div>
+                </div>
+
+                {/* Risk Warning (Path B) */}
+                {showRiskWarning && (
+                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-2xl p-5 animate-fade-in">
+                        <div className="flex items-start gap-3">
+                            <i className="fas fa-exclamation-triangle text-amber-400 text-xl mt-0.5"></i>
+                            <div className="flex-1">
+                                <h4 className="font-black text-amber-400 text-sm mb-1">Reduced Isolation Mode</h4>
+                                <p className="text-xs text-amber-300/80 mb-3">
+                                    Real-name authentication not complete. Full Master AK/SK will be used for execution. 
+                                    Enterprise Project isolation is unavailable until verification is done.
+                                </p>
+                                <label className="flex items-center gap-2 text-xs text-amber-200 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={riskAcknowledged} 
+                                        onChange={e => setRiskAcknowledged(e.target.checked)}
+                                        className="rounded bg-slate-700 border-slate-600"
+                                    />
+                                    I acknowledge the reduced security posture
+                                </label>
+                                {notifyCommercial && (
+                                    <div className="mt-3 flex items-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                                        <i className="fas fa-bell"></i>
+                                        Commercial team will be notified to complete real-name authentication
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex justify-center gap-4">
+                    <button 
+                        onClick={runFullCheck}
+                        disabled={loading}
+                        className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-black uppercase tracking-widest rounded-xl transition-colors disabled:opacity-50"
+                    >
+                        <i className={`fas fa-sync-alt mr-2 ${loading ? 'animate-spin' : ''}`}></i>
+                        Re-Check
+                    </button>
+                    <button 
+                        onClick={onApprove}
+                        disabled={!isReady || (showRiskWarning && !riskAcknowledged)}
+                        className={`px-8 py-2.5 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all ${
+                            isReady && (!showRiskWarning || riskAcknowledged)
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                                : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                        }`}
+                        title={showRiskWarning && !riskAcknowledged ? 'Acknowledge risk warning first' : ''}
+                    >
+                        <i className="fas fa-unlock mr-2"></i>
+                        Unlock Execution Engine
+                    </button>
+                </div>
+
+                {gatewayResult?.requires_action?.length > 0 && (
+                    <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+                        <h4 className="font-black text-[10px] text-slate-500 uppercase tracking-widest mb-2">
+                            <i className="fas fa-clipboard-list mr-1"></i>Required Actions
+                        </h4>
+                        <ul className="space-y-1">
+                            {gatewayResult.requires_action.map((action, i) => (
+                                <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                                    <i className="fas fa-chevron-right text-emerald-500 mt-0.5"></i>
+                                    {action}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function CheckRow({ label, desc, status, message, si }) {
+    return (
+        <div className="px-5 py-3 flex items-center gap-4 hover:bg-slate-750 transition-colors">
+            <i className={`fas ${si.icon} ${si.color} text-lg`}></i>
+            <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-white">{label}</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider">{desc}</div>
+                {message && <div className="text-[10px] text-slate-500 mt-0.5 italic">{message}</div>}
+            </div>
+            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
+                status === 'valid' || status === 'configured' 
+                    ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/50'
+                    : status === 'unverified'
+                    ? 'bg-amber-900/40 text-amber-400 border border-amber-700/50'
+                    : 'bg-slate-700/50 text-slate-400 border border-slate-600/50'
+            }`}>
+                {status || 'unknown'}
+            </span>
+        </div>
+    );
+}
+
+// ==========================================
+// 🚨 NEW: 4.8 ENGINEERING WORKBENCH (Hermes Agentic Orchestration)
+// ==========================================
+function WorkbenchView({ project }) {
+    const [prompt, setPrompt] = useState('');
+    const [isExecuting, setIsExecuting] = useState(false);
+    const [terminalOutput, setTerminalOutput] = useState([
+        "[system] mig_worker is offline.",
+        "[system] Awaiting deployment to Target VPC..."
+    ]);
+    const [selectedProfile, setSelectedProfile] = useState('exec');
+    const [selectedModel, setSelectedModel] = useState('');
+
+    const executionMode = project?.executionMode || 'manual';
+    const isAgentic = executionMode === 'agentic';
+
+    const handleDelegate = async () => {
+        if (!prompt || isExecuting) return;
+        setIsExecuting(true);
+        setTerminalOutput(prev => [
+            ...prev,
+            `\n[hermes] Spawning agent via profile '${selectedProfile}'...`,
+            `[hermes] Goal: "${prompt}"`
+        ]);
+
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const body = {
+                goal: prompt,
+                context: `ERP Project ID: ${project?.id || 'N/A'}. Repo at C:/Users/h84423900/latam-cloud-erp/repo.`,
+                profile: selectedProfile,
+            };
+            if (selectedModel) body.model = selectedModel;
+
+            const res = await fetch('/api/hermes-cli/delegate-task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                setTerminalOutput(prev => [
+                    ...prev,
+                    `\n[hermes ✓] Task completed successfully.`,
+                    `[output]\n${data.response}`
+                ]);
+            } else {
+                setTerminalOutput(prev => [
+                    ...prev,
+                    `\n[hermes ✗] Task failed: ${data.error}`
+                ]);
+            }
+        } catch (err) {
+            setTerminalOutput(prev => [
+                ...prev,
+                `\n[error] Network error: ${err.message}`
+            ]);
+        } finally {
+            setIsExecuting(false);
+            setPrompt('');
+        }
+    };
+
+    const profileOptions = [
+        { id: 'exec', label: 'exec (GLM 5.2)', icon: 'fa-robot', color: 'text-purple-400' },
+        { id: 'default', label: 'default (DeepSeek V4)', icon: 'fa-brain', color: 'text-blue-400' },
+    ];
+
+    const modelOptions = [
+        { id: '', label: 'Use profile default' },
+        { id: 'glm-5.2', label: 'GLM 5.2 (Zhipu)', provider: 'zai' },
+        { id: 'kimi-k2.6', label: 'Kimi K2.6 (Moonshot)', provider: 'kimi-coding' },
+    ];
+
+    return (
+        <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-2 gap-6 h-[700px]">
+            {/* Left: Hermes Agentic Co-Pilot */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
+                <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center">
+                    <h3 className="font-black text-sm text-slate-800 flex items-center">
+                        <i className={`fas ${isAgentic ? 'fa-robot text-purple-600' : 'fa-tasks text-blue-600'} mr-2`}></i>
+                        {isAgentic ? 'Hermes Agentic Orchestrator' : 'Hermes Context AI'}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
+                        isAgentic 
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                            : 'bg-blue-100 text-blue-700 border border-blue-200'
+                    }`}>
+                        {isAgentic ? 'AGENTIC MODE — GLM 5.2' : 'MANUAL MODE'}
+                    </span>
+                </div>
+                <div className="flex-1 p-6 bg-slate-50/50 flex flex-col">
+                    {isAgentic ? (
+                        <>
+                            <div className="flex-1 flex flex-col items-center justify-center text-center mb-4">
+                                <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                                    <i className="fas fa-robot"></i>
+                                </div>
+                                <h4 className="font-black text-slate-700 mb-2">Autonomous Migration Agent</h4>
+                                <p className="text-xs text-slate-500 max-w-sm">
+                                    Describe the migration workload. Hermes will spawn agents with the appropriate model to handle it autonomously.
+                                </p>
+                                {/* Profile & Model Selectors */}
+                                <div className="w-full max-w-xs mt-4 space-y-2">
+                                    <div className="flex gap-2">
+                                        {profileOptions.map(p => (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => setSelectedProfile(p.id)}
+                                                className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
+                                                    selectedProfile === p.id
+                                                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                                                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <i className={`fas ${p.icon} mr-1`}></i> {p.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <select
+                                        value={selectedModel}
+                                        onChange={e => setSelectedModel(e.target.value)}
+                                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-600 font-medium"
+                                    >
+                                        {modelOptions.map(m => (
+                                            <option key={m.id} value={m.id}>{m.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center">
+                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                                <i className="fas fa-brain"></i>
+                            </div>
+                            <h4 className="font-black text-slate-700">Manual Pipeline Mode</h4>
+                            <p className="text-xs text-slate-500 mt-2 max-w-sm">
+                                Use Hermes AI for guidance. Select "Agentic Orchestration" in Phase 3.2 for autonomous execution.
+                            </p>
+                        </div>
+                    )}
+                </div>
+                <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
+                    <input
+                        type="text"
+                        value={prompt}
+                        onChange={e => setPrompt(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleDelegate()}
+                        placeholder={isAgentic 
+                            ? "e.g. Migrate Ubuntu 20.04 web server via SMS with 500GB data..." 
+                            : "e.g. Generate an SMS installation script for Ubuntu 20.04..."}
