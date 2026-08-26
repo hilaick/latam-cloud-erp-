@@ -1,9 +1,11 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 
 export default function DedicatedMigrationPlan({ activeProject, onUpdateProject }) {
     const { customPlaybooks } = useContext(ERPContext);
+    const [suggesting, setSuggesting] = useState(false);
+    const [suggestion, setSuggestion] = useState(null);
 
     const handlePlanUpdate = (taskId, field, value) => {
         if(!activeProject) return;
@@ -20,6 +22,37 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
             setTimeout(() => {
                 onUpdateProject(activeProject.id, 'progress', '0%');
             }, 50);
+        }
+    };
+
+    const handleSuggest = async () => {
+        if (!activeProject?.id) return;
+        setSuggesting(true);
+        setSuggestion(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const resp = await fetch('/api/playbooks/suggest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ project_id: activeProject.id }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                setSuggestion(data.suggestion);
+            } else {
+                alert(data.error || 'No suggestion available. Run a simulation first to build learnings.');
+            }
+        } catch (e) {
+            alert('Failed to get suggestion: ' + e.message);
+        }
+        setSuggesting(false);
+    };
+
+    const applySuggestion = () => {
+        if (!suggestion?.tasks) return;
+        if (window.confirm(`Apply "${suggestion.playbook_name}" (confidence: ${Math.round(suggestion.confidence * 100)}%)? This will overwrite the current plan.`)) {
+            onUpdateProject(activeProject.id, 'migrationPlan', JSON.parse(JSON.stringify(suggestion.tasks)));
+            setSuggestion(null);
         }
     };
 
@@ -40,17 +73,55 @@ export default function DedicatedMigrationPlan({ activeProject, onUpdateProject 
                         <h3 className="font-black text-lg tracking-wide"><i className="fas fa-tasks text-blue-400 mr-2"></i> Master WBS & RACI Assignment Matrix</h3>
                         <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Enterprise Playbook execution scheduling</p>
                     </div>
-                    <div className="flex gap-3 items-center w-full md:w-auto">
+                    <div className="flex gap-3 items-center w-full md:w-auto flex-wrap">
+                        {/* Suggest from History */}
+                        <button
+                            onClick={handleSuggest}
+                            disabled={suggesting}
+                            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center gap-2"
+                        >
+                            <i className={`fas ${suggesting ? 'fa-spinner fa-spin' : 'fa-brain'}`}></i>
+                            {suggesting ? 'Analyzing...' : 'Suggest from History'}
+                        </button>
+
+                        {/* Playbook loader */}
                         <div className="flex items-center bg-slate-800 rounded-lg p-1.5 border border-slate-600 flex-1 md:flex-none">
                             <select onChange={e=>{injectPlaybook(e.target.value); e.target.value="";}} className="bg-transparent text-xs font-bold text-blue-300 outline-none px-2 cursor-pointer w-full md:w-64 truncate">
                                 <option value="">-- Load Enterprise Playbook --</option>
                                 {Object.entries(customPlaybooks || {}).map(([key, pb]) => (
-                                    <option key={key} value={key}>{pb.name}</option>
+                                    <option key={key} value={key}>{pb.name}{pb.auto_generated ? ' 🧠' : ''}</option>
                                 ))}
                             </select>
                         </div>
                     </div>
                 </div>
+
+                {/* Suggestion Banner */}
+                {suggestion && (
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-200 p-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <i className="fas fa-brain text-purple-500 text-xl"></i>
+                            <div>
+                                <div className="font-black text-sm text-slate-800">
+                                    {suggestion.playbook_name}
+                                    {suggestion.auto_generated && <span className="ml-2 text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">🧠 Auto-Learned</span>}
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">
+                                    Confidence: {Math.round(suggestion.confidence * 100)}% · Matched {suggestion.matched_patterns} patterns · Strategy: {suggestion.strategy}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={applySuggestion} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm">
+                                Apply
+                            </button>
+                            <button onClick={() => setSuggestion(null)} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold">
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex-1 bg-slate-50 overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left min-w-[1000px]">
                         <thead className="bg-slate-200 text-[10px] uppercase text-slate-600 border-b-2 border-slate-300 tracking-wider">

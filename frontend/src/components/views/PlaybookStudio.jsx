@@ -84,10 +84,36 @@ export default function PlaybookStudio() {
 
             <div className="flex flex-col lg:flex-row gap-6">
                 <div className="w-full lg:w-80 space-y-3 shrink-0">
+                    {/* Learning Stats Banner */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 p-4 mb-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <i className="fas fa-brain text-indigo-500"></i>
+                            <span className="text-xs font-black text-indigo-700 uppercase tracking-widest">Self-Learning Engine</span>
+                        </div>
+                        <div className="text-[10px] text-slate-600 leading-relaxed">
+                            Playbooks auto-generate from completed migration simulations. The system learns from every run.
+                        </div>
+                    </div>
+
                     {Object.entries(safePlaybooks).map(([key, pb]) => (
                         <div key={key} onClick={()=>setSelectedKey(key)} className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedKey === key ? 'bg-blue-50 border-blue-500 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                            <div className="font-black text-sm text-slate-800">{pb.name}</div>
-                            <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest">{(pb.tasks||[]).length} Tasks defined</div>
+                            <div className="flex items-center gap-2">
+                                <div className="font-black text-sm text-slate-800 flex-1">{pb.name}</div>
+                                {pb.auto_generated && (
+                                    <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full text-[8px] font-black uppercase tracking-wider whitespace-nowrap">
+                                        🧠 Learned
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                                <div className="text-[10px] text-slate-500 uppercase tracking-widest">{(pb.tasks||[]).length} Tasks</div>
+                                {pb.migration_count > 1 && (
+                                    <div className="text-[10px] text-purple-500 font-bold">From {pb.migration_count} migrations</div>
+                                )}
+                                {pb.auto_generated && pb.source_projects && (
+                                    <div className="text-[9px] text-slate-400 truncate">{pb.source_projects.join(', ')}</div>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
