@@ -230,6 +230,22 @@ class HuaweiDiscovery:
                                 elif isinstance(t, dict):
                                     server_tags[str(t.get('key', ''))] = str(t.get('value', ''))
                         
+                        # ── Workload sensitivity detection at discovery time ──
+                        workload_profile = {}
+                        try:
+                            from services.agentic_simulator import ServerProfiler
+                            workload_profile = ServerProfiler.classify({
+                                "name": s.name,
+                                "os": server_tags.get("os", ""),
+                                "tags": list(server_tags.keys()),
+                                "hostname": s.name,
+                                "workload_type": server_tags.get("workload_type", ""),
+                                "migration_approach": server_tags.get("migration_approach", ""),
+                                "sap_sid": server_tags.get("sap_sid", ""),
+                            })
+                        except Exception:
+                            pass
+                        
                         inventory["compute"].append({ 
                             "id": s.id, 
                             "name": s.name, 
@@ -240,7 +256,15 @@ class HuaweiDiscovery:
                             "charging_mode": charging_mode,
                             "is_reserved_instance": is_reserved,
                             "flavor": flavor_id,
-                            "tags": server_tags
+                            "tags": server_tags,
+                            # ── Workload fields (detected at discovery) ──
+                            "workload_type": workload_profile.get("workload_type", "generic"),
+                            "sensitivity_level": workload_profile.get("sensitivity_level", "low"),
+                            "requires_manual_intervention": workload_profile.get("requires_manual_intervention", False),
+                            "manual_steps": workload_profile.get("manual_steps", []),
+                            "application_group": workload_profile.get("application_group", ""),
+                            "migration_approach": workload_profile.get("migration_approach", ""),
+                            "sap_metadata": workload_profile.get("sap_metadata", {}),
                         })
                 except Exception as e: 
                     inventory["diagnostics"].append(f"[{target_region}] ECS Connect Error: {str(e)}")
