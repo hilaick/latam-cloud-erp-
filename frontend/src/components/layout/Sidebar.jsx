@@ -32,10 +32,8 @@ const navItems = [
     { id: 'finops', icon: DollarOutlined, label: 'FinOps (COC)', mobileLabel: 'FinOps' },
     { id: 'schedule', icon: CalendarOutlined, label: 'Schedule', mobileLabel: 'Schedule' },
     { id: 'process', icon: BranchesOutlined, label: 'Process', mobileLabel: 'Process' },
-    { id: 'resource-discovery', icon: SearchOutlined, label: 'Discovery', mobileLabel: 'Discovery' },
     { id: 'playbooks', icon: BookOutlined, label: 'Playbooks', mobileLabel: 'Playbooks' },
     { id: 'migration_monitor', icon: DesktopOutlined, label: 'Cloud Scanner', mobileLabel: 'Scanner' },
-    { id: 'workflow', icon: ProjectOutlined, label: 'Workflow Graph', mobileLabel: 'Flow' },
     { id: 'halted', icon: PauseCircleOutlined, label: 'Halted Projects', mobileLabel: 'Halted' },
 ];
 

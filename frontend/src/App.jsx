@@ -111,8 +111,6 @@ function App() {
                     
                     {activePhase === 'finops' && <FinOpsDashboard />}
                     {activePhase === 'playbooks' && <PlaybookStudio />}
-                    {activePhase === 'workflow' && <WorkflowGraphView />}
-                    {activePhase === 'resource-discovery' && <ResourceDiscoveryMap />}
                     {activePhase === 'halted' && <HaltedProjects />}
                     {activePhase === 'users' && <UserManagement />}
                     
