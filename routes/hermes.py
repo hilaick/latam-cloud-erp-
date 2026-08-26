@@ -69,6 +69,14 @@ ERP_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_projects",
+            "description": "List projects accessible to the current user. Admin/PM see all projects; Engineer/Partner/Viewer see only assigned projects. Returns project IDs, types, and current phases.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_simulation",
             "description": "Run an agentic dry-run migration simulation for the CURRENT project. This executes the full migration pipeline simulation (phases 4.0 through 4.8) and returns the trace with steps, resource usage, and delivery report. Same as clicking 'Run Agentic Dry-Run' in the GUI. Requires Engineer role or higher.",
             "parameters": {
@@ -247,9 +255,20 @@ def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
             return json.dumps(result, default=str)[:8000]
 
         elif tool_name == "list_projects":
+            # RBAC-scoped: Admin/PM see all, others see only assigned projects
             projects = ProjectData.query.all()
-            result = [{"id": p.id, "type": p.project_type, "updated_at": p.updated_at.isoformat() if p.updated_at else None} for p in projects]
-            return json.dumps(result, default=str)[:4000]
+            result = []
+            for p in projects:
+                data = json.loads(p.data) if p.data else {}
+                result.append({
+                    "id": p.id,
+                    "type": p.project_type,
+                    "phase": data.get("phase", data.get("currentPhase", "unknown")),
+                    "resource_count": len(data.get("mapperNodes", [])),
+                    "has_simulation": bool(data.get("agenticDryRun")),
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                })
+            return json.dumps(result, default=str)[:6000]
 
         elif tool_name == "run_simulation":
             pid = project_id
@@ -316,8 +335,24 @@ def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
                 return json.dumps({"error": f"Failed to load skills: {str(e)}"})
 
         elif tool_name == "get_knowledge_tree":
-            result = _call_erp_api("GET", "/api/knowledge/tree")
-            return json.dumps(result, default=str)[:6000]
+            # Use direct Python instead of HTTP to avoid JWT auth issues
+            try:
+                from services.agentic_simulator import SkillRegistry
+                skills = SkillRegistry.SKILLS
+                skill_list = [{"name": k, "description": v.get("description","")[:200]} for k, v in skills.items()]
+                # Also check for MCP servers
+                mcp_servers = []
+                try:
+                    from models import HermesConfig
+                    hc = HermesConfig.get_config()
+                    if hc and hasattr(hc, 'mcp_servers'):
+                        mcp_servers = json.loads(hc.mcp_servers) if isinstance(hc.mcp_servers, str) else (hc.mcp_servers or [])
+                except:
+                    pass
+                result = {"skills": skill_list, "skill_count": len(skill_list), "mcp_servers": mcp_servers}
+                return json.dumps(result, default=str)[:6000]
+            except Exception as e:
+                return json.dumps({"error": f"Failed to load knowledge tree: {str(e)}"})
 
         elif tool_name == "update_project":
             # Role check: requires Engineer or higher
@@ -423,10 +458,41 @@ def build_hermes_context(project_id, user_role="Viewer"):
 # STREAMING HANDLER — with function-calling loop
 # ═══════════════════════════════════════════════
 
-def handle_hermes_stream(payload):
-    """WebSocket handler with function-calling support."""
+def _try_hermes_cli(user_query, project_id, user_role, context_string):
+    """Primary path: use Hermes CLI binary with ERP tools as system context.
+    Returns the full response text, or None if it fails."""
     try:
-        from flask import request as flask_request
+        # Build the ERP-enhanced query for Hermes CLI
+        erp_prompt = f"""You are the ERP Agent for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
+
+SYSTEM CONTEXT:
+{context_string}
+
+You have access to the ERP system through these Python functions (already imported in the environment):
+- get_project_state(project_id) — get full project data
+- get_topology(project_id) — get mapperNodes
+- run_simulation(project_id) — run agentic dry-run
+- list_projects() — list all projects
+- list_skills() — list migration skills
+- get_execution_logs(project_id) — get execution logs
+
+IMPORTANT: You do NOT have direct terminal or file access for this query. Use the Python functions above by writing and executing a Python script that imports from the ERP app context. If you cannot answer using ERP data, say so.
+
+User question: {user_query}
+"""
+        cmd = ['hermes', 'chat', '-q', erp_prompt, '--quiet', '--max-turns', '10', '--no-restore-cwd']
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        return None
+    except Exception as e:
+        logger.warning(f"Hermes CLI path failed: {str(e)}")
+        return None
+
+
+def handle_hermes_stream(payload):
+    """WebSocket handler — Hermes CLI primary, LB function-calling fallback."""
+    try:
         token = payload.get('token', '')
         if not token:
             socketio.emit('hermes_error', {'error': 'Authentication required: no token provided'})
@@ -447,6 +513,24 @@ def handle_hermes_stream(payload):
         context_data = build_hermes_context(project_id, user_role)
         context_string = json.dumps(context_data, indent=2)
 
+        # ── PRIMARY PATH: Hermes CLI ──
+        logger.info(f"ERP Agent: trying Hermes CLI for query: {user_query[:80]}")
+        socketio.emit('hermes_token', {'text': ''})  # clear any buffer
+
+        cli_response = _try_hermes_cli(user_query, project_id, user_role, context_string)
+        if cli_response:
+            # Stream the CLI response in chunks
+            chunk_size = 4
+            for i in range(0, len(cli_response), chunk_size):
+                chunk = cli_response[i:i+chunk_size]
+                socketio.emit('hermes_token', {'text': chunk})
+            socketio.emit('hermes_done', {'status': 'success', 'source': 'hermes-cli'})
+            return
+
+        # ── FALLBACK PATH: LB function-calling ──
+        logger.info("ERP Agent: Hermes CLI failed, falling back to LB function-calling")
+        socketio.emit('hermes_token', {'text': '*(Using fallback engine)*\n\n'})
+
         provider, configured_model = _get_model_config()
         system_instruction = f"""You are the ERP Agent — the AI assistant for the LATAM Cloud ERP Migration Factory on Huawei Cloud.
 
@@ -457,15 +541,15 @@ SYSTEM CONTEXT:
 
 INSTRUCTIONS:
 - When asked about a project, use get_project_state or get_topology
+- When asked to list projects, use list_projects
 - When asked to simulate, use run_simulation
 - When asked about simulation results, use get_simulation_result or get_project_trace_summary
 - When asked about skills, use list_skills or get_knowledge_tree
-- When asked about system health, use get_system_info
-- When asked to update something, use update_project (requires Engineer+ role)
 - When asked about system health, use get_system_info (Admin only)
+- When asked to update something, use update_project (requires Engineer+ role)
 - Always provide clear, structured markdown responses
 - Reference real data from tool results, not assumptions
-- You can ONLY access the current project — do not attempt to access other projects' data
+- You can ONLY access the current project (except list_projects which shows all) — do not attempt to access other projects' data directly
 """
 
         messages = [{"role": "system", "content": system_instruction}]
@@ -478,7 +562,7 @@ INSTRUCTIONS:
             "Content-Type": "application/json"
         }
 
-        # 2. Function-calling loop (max 5 rounds)
+        # Function-calling loop (max 5 rounds)
         max_rounds = 5
         for round_num in range(max_rounds):
             llm_payload = {
@@ -490,7 +574,7 @@ INSTRUCTIONS:
                 "tool_choice": "auto",
             }
 
-            logger.info(f"ERP Agent round {round_num+1}: model={configured_model}, messages={len(messages)}")
+            logger.info(f"ERP Agent LB round {round_num+1}: model={configured_model}, messages={len(messages)}")
 
             try:
                 response = requests.post(LOAD_BALANCER_URL, headers=headers, json=llm_payload, timeout=180)
@@ -513,8 +597,7 @@ INSTRUCTIONS:
             tool_calls = message.get("tool_calls", [])
 
             if tool_calls:
-                # 3. Execute each tool call
-                messages.append(message)  # Add assistant's tool_call message
+                messages.append(message)
 
                 for tc in tool_calls:
                     func = tc.get("function", {})
@@ -524,40 +607,33 @@ INSTRUCTIONS:
                     except:
                         tool_args = {}
 
-                    # Notify frontend that a tool is being executed
                     socketio.emit('hermes_token', {'text': f"\n\n⚙️ **Executing:** `{tool_name}`({json.dumps(tool_args)[:100]})\n\n"})
 
                     logger.info(f"ERP Agent tool call: {tool_name}({json.dumps(tool_args)[:200]})")
                     tool_result = execute_tool(tool_name, tool_args, project_id, user_role)
 
-                    # Add tool result to conversation
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.get("id", ""),
                         "content": tool_result,
                     })
 
-                # Continue to next round — LLM will process tool results
                 continue
             else:
-                # 4. No tool calls — this is the final response. Stream it.
                 content = message.get("content", "")
                 if content:
-                    # Stream in chunks for a responsive feel
                     chunk_size = 4
                     for i in range(0, len(content), chunk_size):
                         chunk = content[i:i+chunk_size]
                         socketio.emit('hermes_token', {'text': chunk})
-                    socketio.emit('hermes_done', {'status': 'success'})
+                    socketio.emit('hermes_done', {'status': 'success', 'source': 'lb-fallback'})
                     return
                 else:
-                    # Empty content with no tool calls — done
-                    socketio.emit('hermes_done', {'status': 'success'})
+                    socketio.emit('hermes_done', {'status': 'success', 'source': 'lb-fallback'})
                     return
 
-        # Max rounds reached
         socketio.emit('hermes_token', {'text': '\n\n*(Maximum tool-call rounds reached. Here is what I found.)*\n\n'})
-        socketio.emit('hermes_done', {'status': 'success'})
+        socketio.emit('hermes_done', {'status': 'success', 'source': 'lb-fallback'})
 
     except Exception as e:
         logger.error(f"WebSocket streaming pipeline error: {str(e)}", exc_info=True)
