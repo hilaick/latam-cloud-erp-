@@ -37,7 +37,7 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
             // FIX: Uses correct endpoint and securely attaches standard JWT token
             const token = sessionStorage.getItem('hermes_access_token');
             
-            // 🎯 AUTHORITATIVE: Read from saved Target Architecture first
+            // 🎯 AUTHORITATIVE: Read from targetArchitecture (single source of truth, built in Phase 2.4)
             let targetArchitecture = [];
             const topologyFilter = currentProject?.topologyFilter || 'All';
             
@@ -49,8 +49,17 @@ export default function ToolRecommendationView({ project, activeProject, onUpdat
                     return n.status === topologyFilter;
                 });
             };
-            
-            if (currentProject?.targetTopology?.mapperNodes && currentProject.targetTopology.mapperNodes.length > 0) {
+
+            // PRIMARY: targetArchitecture (built in Phase 2.4, approved by DTRB in 2.5)
+            const targetArch = currentProject?.targetArchitecture || {};
+            if (targetArch.compute || targetArch.database || targetArch.storage || targetArch.network) {
+                targetArchitecture = [
+                    ...(targetArch.compute || []).map(item => ({ type: 'ECS', name: item.name || item.source_name || `Compute-${item.id||'?'}`, ...item })),
+                    ...(targetArch.database || []).map(item => ({ type: 'RDS', name: item.name || `Database-${item.id||'?'}`, ...item })),
+                    ...(targetArch.storage || []).map(item => ({ type: 'OBS', name: item.name || `Storage-${item.id||'?'}`, ...item })),
+                    ...(targetArch.network || []).map(item => ({ type: 'VPC', name: item.name || `Network-${item.id||'?'}`, ...item })),
+                ];
+            } else if (currentProject?.targetTopology?.mapperNodes && currentProject.targetTopology.mapperNodes.length > 0) {
                 targetArchitecture = currentProject.targetTopology.mapperNodes;
             } else if (currentProject?.blueprintData) {
                 try {
