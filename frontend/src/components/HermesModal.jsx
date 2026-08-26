@@ -7,12 +7,13 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
     {
       id: 1,
       role: "assistant",
-      content: "👋 **Welcome to ERP Agent!**\n\nI'm your AI assistant for the ERP Migration Factory — with **real tool access** to the entire system.\n\n**What I can do:**\n• 📊 Check project topology and resource state\n• 🚀 Run migration simulations (agentic dry-run)\n• 📋 View simulation traces and delivery reports\n• 🔧 List migration skills and knowledge tree\n• 📝 Update project phases and data\n• 🖥️ Execute Hermes CLI commands\n• 📈 Check system health and execution logs\n\n**Try asking:**\n- \"What's the topology of this project?\"\n- \"Run a simulation\"\n- \"What were the simulation results?\"\n- \"List all migration skills\"\n- \"Show me the execution logs\"",
+      content: "👋 **Welcome to ERP Agent!**\n\nI'm your AI assistant for the ERP Migration Factory — with **real tool access** to the system.\n\n**What I can do:**\n• 📊 Check project topology and resource state\n• 🚀 Run migration simulations (agentic dry-run)\n• 📋 View simulation traces and delivery reports\n• 🔧 List migration skills and knowledge tree\n• 📝 Update project phases and data (Engineer+)\n• 📈 Check system health (Admin)\n• 📋 View execution logs\n\n**Try asking:**\n- \"What's the topology of this project?\"\n- \"Run a simulation\"\n- \"What were the simulation results?\"\n- \"List all migration skills\"",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -195,6 +196,66 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
 
   if (!isOpen) return null;
 
+  // Floating minimized badge — agent keeps working in background
+  if (isMinimized) {
+    // Extract last tool being executed from the latest assistant message
+    const lastMsg = messages[messages.length - 1];
+    let statusText = loading ? 'Working...' : 'Idle';
+    let statusIcon = 'fa-robot';
+    if (loading && lastMsg && lastMsg.content) {
+      const toolMatch = lastMsg.content.match(/⚙️ \*\*Executing:\*\* `([^`]+)`/);
+      if (toolMatch) {
+        statusText = toolMatch[1];
+        statusIcon = 'fa-cog fa-spin';
+      } else if (lastMsg.content.length > 0) {
+        statusText = 'Typing...';
+        statusIcon = 'fa-keyboard';
+      }
+    }
+
+    return (
+      <div
+        onClick={() => setIsMinimized(false)}
+        style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 16px', borderRadius: 30,
+          background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
+          border: `1px solid ${loading ? '#818cf8' : '#30363d'}`,
+          boxShadow: loading ? '0 4px 20px rgba(99,102,241,0.3)' : '0 4px 12px rgba(0,0,0,0.4)',
+          cursor: 'pointer', animation: 'slideUp 0.3s ease',
+          maxWidth: isMobile ? 'calc(100vw - 40px)' : 320,
+        }}
+      >
+        <div style={{
+          width: 34, height: 34, borderRadius: 10,
+          background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, position: 'relative',
+        }}>
+          <i className={`fas ${statusIcon}`} style={{ color: '#fff', fontSize: 14 }} />
+          {loading && (
+            <div style={{
+              position: 'absolute', top: -2, right: -2, width: 10, height: 10,
+              borderRadius: '50%', background: '#fbbf24', border: '2px solid #161b22',
+              animation: 'pulse 1.5s infinite',
+            }} />
+          )}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', lineHeight: 1.2 }}>ERP Agent</div>
+          <div style={{
+            fontSize: 10, color: loading ? '#a5b4fc' : '#8b949e', lineHeight: 1.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{statusText}</div>
+        </div>
+        {!loading && (
+          <i className="fas fa-chevron-up" style={{ color: '#484f58', fontSize: 11, flexShrink: 0 }} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Overlay */}
@@ -269,19 +330,35 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
                 {loading ? 'Working...' : 'Online'}
               </span>
             </div>
-            <button
-              onClick={onClose}
-              style={{
-                width: 30, height: 30, borderRadius: 6, border: 'none',
-                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => e.target.style.background = 'rgba(239,68,68,0.2)'}
-              onMouseLeave={(e) => e.target.style.background = 'rgba(239,68,68,0.1)'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => setIsMinimized(true)}
+                title="Minimize"
+                style={{
+                  width: 30, height: 30, borderRadius: 6, border: 'none',
+                  background: 'rgba(129,140,248,0.1)', color: '#818cf8',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'rgba(129,140,248,0.2)'}
+                onMouseLeave={(e) => e.target.style.background = 'rgba(129,140,248,0.1)'}
+              >
+                <i className="fas fa-window-minimize" style={{ fontSize: 11 }} />
+              </button>
+              <button
+                onClick={onClose}
+                style={{
+                  width: 30, height: 30, borderRadius: 6, border: 'none',
+                  background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'rgba(239,68,68,0.2)'}
+                onMouseLeave={(e) => e.target.style.background = 'rgba(239,68,68,0.1)'}
             >
               <i className="fas fa-times" style={{ fontSize: 14 }} />
             </button>
+            </div>
           </div>
         </div>
 
@@ -298,7 +375,9 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
           <style>{`
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
             @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+            @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
             @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
             ::-webkit-scrollbar { width: 6px; }
             ::-webkit-scrollbar-track { background: transparent; }
             ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
@@ -340,6 +419,24 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
                 boxShadow: msg.role === 'user' ? '0 2px 8px rgba(99,102,241,0.2)' : 'none',
               }}>
                 <div style={{ fontSize: isMobile ? 12 : 13, lineHeight: 1.6 }}>
+                  {msg.isStreaming && !msg.content && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#818cf8', animation: 'bounce 1.4s infinite' }} />
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#818cf8', animation: 'bounce 1.4s infinite 0.2s' }} />
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#818cf8', animation: 'bounce 1.4s infinite 0.4s' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: '#8b949e', fontStyle: 'italic' }}>Processing your request...</span>
+                    </div>
+                  )}
+                  {msg.isStreaming && msg.content && msg.content.includes('⚙️') && !msg.content.includes('\n\n', msg.content.indexOf('⚙️') + 3) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                      <i className="fas fa-cog fa-spin" style={{ color: '#818cf8', fontSize: 12 }} />
+                      <span style={{ fontSize: 11, color: '#a5b4fc' }}>
+                        {msg.content.match(/⚙️ \*\*Executing:\*\* `([^`]+)`/)?.[1] || 'Calling ERP API...'}
+                      </span>
+                    </div>
+                  )}
                   {renderContent(msg.content)}
                   {msg.isStreaming && (
                     <span style={{

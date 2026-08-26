@@ -56,11 +56,11 @@ ERP_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_project_state",
-            "description": "Get the full state of a project including mapperNodes (topology), SOW data, phase, and any existing simulation results. This is the same data the GUI shows.",
+            "description": "Get the full state of the CURRENT project including mapperNodes (topology), SOW data, phase, and any existing simulation results. This is the same data the GUI shows. Scoped to the project you're viewing — cannot access other projects.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "string", "description": "The project ID"}
+                    "project_id": {"type": "string", "description": "The project ID (must match the project you're viewing)"}
                 },
                 "required": ["project_id"]
             }
@@ -69,16 +69,8 @@ ERP_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "list_projects",
-            "description": "List all projects in the ERP system with their IDs, types, and current phases.",
-            "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "run_simulation",
-            "description": "Run an agentic dry-run migration simulation for a project. This executes the full migration pipeline simulation (phases 4.0 through 4.8) and returns the trace with steps, resource usage, and delivery report. Same as clicking 'Run Agentic Dry-Run' in the GUI.",
+            "description": "Run an agentic dry-run migration simulation for the CURRENT project. This executes the full migration pipeline simulation (phases 4.0 through 4.8) and returns the trace with steps, resource usage, and delivery report. Same as clicking 'Run Agentic Dry-Run' in the GUI. Requires Engineer role or higher.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -166,22 +158,8 @@ ERP_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_system_info",
-            "description": "Get ERP system info — database counts, running processes, Hermes config, and system health.",
+            "description": "Get ERP system info — database counts, running processes, and system health. ADMIN ONLY — requires Admin role.",
             "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_hermes_cli",
-            "description": "Execute a command via the Hermes CLI binary (hermes chat) for OS-level operations — terminal commands, file operations, or asking Hermes to perform complex tasks. Use sparingly for things outside the ERP API.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The natural-language command for Hermes CLI"}
-                },
-                "required": ["query"]
-            }
         }
     },
     {
@@ -226,11 +204,23 @@ def _call_erp_api(method, path, json_data=None, project_id=None):
         return {"error": f"ERP API call failed: {str(e)}"}
 
 
-def execute_tool(tool_name, args, project_id="global"):
-    """Execute an ERP tool and return the result as a string for the LLM."""
+def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
+    """Execute an ERP tool and return the result as a string for the LLM.
+    
+    Security:
+    - All project-scoped tools are restricted to the project_id passed from the frontend
+    - update_project requires Engineer+ role
+    - get_system_info requires Admin role
+    - No root/terminal access — run_hermes_cli removed entirely
+    """
     try:
+        # Enforce project scoping — tools can only access the current project
+        requested_pid = args.get("project_id", project_id)
+        if requested_pid and requested_pid != project_id and project_id != "global":
+            return json.dumps({"error": f"Access denied: you can only access project {project_id}"})
+
         if tool_name == "get_project_state":
-            pid = args.get("project_id", project_id)
+            pid = project_id  # Always use the scoped project_id
             project = ProjectData.query.filter_by(id=pid).first()
             if not project:
                 return json.dumps({"error": f"Project {pid} not found"})
@@ -262,7 +252,7 @@ def execute_tool(tool_name, args, project_id="global"):
             return json.dumps(result, default=str)[:4000]
 
         elif tool_name == "run_simulation":
-            pid = args.get("project_id", project_id)
+            pid = project_id
             mode = args.get("mode", "dry-run")
             result = _call_erp_api("POST", f"/api/projects/{pid}/simulate-orchestration", {"mode": mode}, pid)
             # Truncate trace if too large
@@ -274,7 +264,7 @@ def execute_tool(tool_name, args, project_id="global"):
             return json.dumps(result, default=str)[:12000]
 
         elif tool_name == "get_simulation_result":
-            pid = args.get("project_id", project_id)
+            pid = project_id
             project = ProjectData.query.filter_by(id=pid).first()
             if not project:
                 return json.dumps({"error": f"Project {pid} not found"})
@@ -301,7 +291,7 @@ def execute_tool(tool_name, args, project_id="global"):
             return json.dumps(result, default=str)[:8000]
 
         elif tool_name == "get_topology":
-            pid = args.get("project_id", project_id)
+            pid = project_id
             project = ProjectData.query.filter_by(id=pid).first()
             if not project:
                 return json.dumps({"error": f"Project {pid} not found"})
@@ -330,22 +320,28 @@ def execute_tool(tool_name, args, project_id="global"):
             return json.dumps(result, default=str)[:6000]
 
         elif tool_name == "update_project":
-            pid = args.get("project_id", project_id)
+            # Role check: requires Engineer or higher
+            if user_role not in ('Admin', 'PM', 'Engineer'):
+                return json.dumps({"error": "Access denied: update_project requires Engineer role or higher"})
+            pid = project_id
             patch = args.get("patch", {})
             result = _call_erp_api("PATCH", f"/api/erp/projects/{pid}/partial", patch, pid)
             return json.dumps(result, default=str)[:4000]
 
         elif tool_name == "get_execution_logs":
-            pid = args.get("project_id", project_id)
+            pid = project_id
             result = _call_erp_api("GET", f"/api/executions/{pid}/logs")
             return json.dumps(result, default=str)[:6000]
 
         elif tool_name == "get_system_info":
+            # Admin only
+            if user_role != 'Admin':
+                return json.dumps({"error": "Access denied: get_system_info requires Admin role"})
             result = _call_erp_api("GET", "/api/hermes-cli/system-info")
             return json.dumps(result, default=str)[:4000]
 
         elif tool_name == "get_project_trace_summary":
-            pid = args.get("project_id", project_id)
+            pid = project_id
             project = ProjectData.query.filter_by(id=pid).first()
             if not project:
                 return json.dumps({"error": f"Project {pid} not found"})
@@ -375,31 +371,6 @@ def execute_tool(tool_name, args, project_id="global"):
             }
             return json.dumps(summary, default=str)[:6000]
 
-        elif tool_name == "run_hermes_cli":
-            query = args.get("query", "")
-            if not query:
-                return json.dumps({"error": "Query required"})
-            try:
-                hc = None
-                try:
-                    from models import HermesConfig
-                    hc = HermesConfig.get_config()
-                except:
-                    pass
-                binary = hc.hermes_binary_path if hc and hc.hermes_binary_path else 'hermes'
-                model = hc.global_model if hc else 'deepseek-v4-pro'
-                provider = hc.global_provider if hc else 'deepseek'
-                cmd = [binary, 'chat', '-q', query, '--model', model, '--provider', provider, '--quiet']
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-                if result.returncode == 0:
-                    return result.stdout.strip()[:6000]
-                else:
-                    return json.dumps({"error": result.stderr.strip()[:2000]})
-            except subprocess.TimeoutExpired:
-                return json.dumps({"error": "Hermes CLI timed out after 90 seconds"})
-            except Exception as e:
-                return json.dumps({"error": f"Hermes CLI failed: {str(e)}"})
-
         else:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -412,22 +383,25 @@ def execute_tool(tool_name, args, project_id="global"):
 # CONTEXT BUILDER
 # ═══════════════════════════════════════════════
 
-def build_hermes_context(project_id):
+def build_hermes_context(project_id, user_role="Viewer"):
     """Build context about the ERP system for the AI."""
     context = {
         "system": "LATAM Cloud ERP Migration Factory on Huawei Cloud",
+        "your_role": user_role,
         "capabilities": [
             "View project topology (mapperNodes: ECS, RDS, VPC, EIP, SG, EVS, etc.)",
             "Run agentic migration simulations (dry-run, 15 phases, 65+ steps)",
             "View simulation traces and delivery reports",
             "List registered migration skills",
             "View knowledge tree and MCP servers",
-            "Update project data and phases",
             "View execution logs",
-            "Execute Hermes CLI commands for OS-level operations",
         ],
-        "note": "You have real tools. Call them to get real data. Do NOT make up answers.",
+        "note": "You have real tools. Call them to get real data. Do NOT make up answers. You can only access the current project.",
     }
+    if user_role in ('Admin', 'PM', 'Engineer'):
+        context["capabilities"].append("Update project data and phases (requires Engineer+)")
+    if user_role == 'Admin':
+        context["capabilities"].append("View system info and health (Admin only)")
     if project_id and project_id != 'global':
         try:
             project = ProjectData.query.filter_by(id=project_id).first()
@@ -459,7 +433,8 @@ def handle_hermes_stream(payload):
             return
         try:
             from flask_jwt_extended import decode_token
-            decode_token(token)
+            decoded = decode_token(token)
+            user_role = decoded.get('role', 'Viewer')
         except Exception:
             socketio.emit('hermes_error', {'error': 'Authentication failed: invalid or expired token'})
             return
@@ -469,7 +444,7 @@ def handle_hermes_stream(payload):
         historical_messages = payload.get('messages', [])
 
         # 1. Build context
-        context_data = build_hermes_context(project_id)
+        context_data = build_hermes_context(project_id, user_role)
         context_string = json.dumps(context_data, indent=2)
 
         provider, configured_model = _get_model_config()
@@ -486,10 +461,11 @@ INSTRUCTIONS:
 - When asked about simulation results, use get_simulation_result or get_project_trace_summary
 - When asked about skills, use list_skills or get_knowledge_tree
 - When asked about system health, use get_system_info
-- When asked to update something, use update_project
-- For OS-level tasks outside the ERP, use run_hermes_cli
+- When asked to update something, use update_project (requires Engineer+ role)
+- When asked about system health, use get_system_info (Admin only)
 - Always provide clear, structured markdown responses
 - Reference real data from tool results, not assumptions
+- You can ONLY access the current project — do not attempt to access other projects' data
 """
 
         messages = [{"role": "system", "content": system_instruction}]
@@ -552,7 +528,7 @@ INSTRUCTIONS:
                     socketio.emit('hermes_token', {'text': f"\n\n⚙️ **Executing:** `{tool_name}`({json.dumps(tool_args)[:100]})\n\n"})
 
                     logger.info(f"ERP Agent tool call: {tool_name}({json.dumps(tool_args)[:200]})")
-                    tool_result = execute_tool(tool_name, tool_args, project_id)
+                    tool_result = execute_tool(tool_name, tool_args, project_id, user_role)
 
                     # Add tool result to conversation
                     messages.append({
