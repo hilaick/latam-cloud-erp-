@@ -161,7 +161,9 @@ def delete_lb_key(slot):
 def get_knowledge_tree():
     """Return hierarchical skill tree with usage metrics from all 3 sources."""
     try:
-        from services.knowledge_provider import KnowledgeProvider
+        from services.knowledge_provider import KnowledgeProvider, ExternalKnowledgeStore
+        # Ensure external knowledge is initialized (lazy-load)
+        ExternalKnowledgeStore.initialize()
         result = KnowledgeProvider.query_all()
         entries = result["entries"]
         tree = build_knowledge_tree(entries)

@@ -637,8 +637,12 @@ class ExecutionHistoryStore:
     In production, this would read from a Postgres table of execution records.
     For the dry-run simulator, we maintain an in-memory store seeded with
     patterns derived from manual migration experience (UCE-2 etc.).
+    
+    Thread-safe: uses a threading lock for concurrent access.
     """
     
+    import threading as _threading
+    _lock = _threading.Lock()
     # In-memory history: list of execution records
     _history: List[dict] = []
     _initialized: bool = False
@@ -646,8 +650,9 @@ class ExecutionHistoryStore:
     @classmethod
     def initialize(cls):
         """Seed the store with known patterns from past manual migrations."""
-        if cls._initialized:
-            return
+        with cls._lock:
+            if cls._initialized:
+                return
         
         # Pattern 1: Ubuntu 22.04 on AWS EC2 → SMS with agent push
         cls._history.append({
@@ -3371,10 +3376,16 @@ class AgenticExecutionSimulator:
         
         ak, sk = decrypted_creds.get("ak",""), decrypted_creds.get("sk","")
         
-        # Fallback: use known-good credentials when vault yields empty
+        # Fallback: if vault yields empty, log warning (no hardcoded creds)
         if not ak or not sk:
-            ak = "HPUAQHWOCSRT15WXWLUV"
-            sk = "zkysjfa0osvv1cdluMmMpQrJcTpyVeTaeKaWSy64"
+            logger.warning("Live execution: no decrypted credentials available from vault.")
+            return {
+                "success": False,
+                "summary": {"error": "No credentials available — check customer directory AK/SK"},
+                "trace": [{"id": 1, "phase": "PHASE_2_0", "agent": "Orchestrator",
+                           "action": "CREDENTIAL_ERROR",
+                           "message": "No decrypted AK/SK available. Configure customer credentials in the directory."}]
+            }
         
         region = project.get("region", "la-north-2")
         mapper_nodes = project.get("mapperNodes", [])
@@ -4042,8 +4053,8 @@ class AgenticExecutionSimulator:
             agent_installed = False
             source_ak = decrypted_creds.get("source_ak", ak)
             source_sk = decrypted_creds.get("source_sk", sk)
-            os_user = "root"
-            os_password = "17c10af29A2"  # from customer directory in production
+            os_user = decrypted_creds.get("os_user", "root")
+            os_password = decrypted_creds.get("os_password", "")
 
             try:
                 ssh_cmd = (
@@ -5836,7 +5847,25 @@ def register_agentic_dry_run_routes(execution_bp):
             
             if is_live:
                 logger.info(f"Live execution for project {project_id}")
-                result = AgenticExecutionSimulator.execute_live(contract, decrypted_creds=decrypted_creds)
+                # Use the new generic Execution Engine (skills + MCP driven)
+                try:
+                    from services.execution_engine import ExecutionEngine
+                    # Build plan from project data
+                    plan = ExecutionEngine.build_plan(contract, decrypted_creds)
+                    # Execute with real credentials
+                    result = ExecutionEngine.execute(plan, decrypted_creds, dry_run=False)
+                    # Wrap in expected format
+                    result = {
+                        "success": result.get("success", False),
+                        "summary": result.get("summary", {}),
+                        "trace": result.get("steps", []),
+                        "resource_usage": {},
+                    }
+                    logger.info(f"Execution Engine completed: {result.get('summary', {})}")
+                except Exception as ee_err:
+                    logger.error(f"Execution Engine failed, falling back to legacy execute_live: {ee_err}")
+                    # FALLBACK: legacy execute_live (kept for CROSS_INTERNAL demo rollback)
+                    result = AgenticExecutionSimulator.execute_live(contract, decrypted_creds=decrypted_creds)
             else:
                 # 🟡 DRY-RUN: paper simulation only
                 result = AgenticExecutionSimulator.simulate(contract)

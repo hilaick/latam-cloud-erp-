@@ -36,8 +36,12 @@ class ExternalKnowledgeStore:
       - Object-Migration/            (OBS, S3 → OBS)
       - Cloud-Foundation/            (Landing Zone, IaC, IAM)
       - Workspace-Migration/         (VDI, Workspace)
+
+    Thread-safe: uses a threading lock for concurrent access.
     """
 
+    import threading as _threading
+    _lock = _threading.Lock()
     _entries: list = []
     _initialized: bool = False
     _last_sync: Optional[str] = None
@@ -48,8 +52,9 @@ class ExternalKnowledgeStore:
     @classmethod
     def initialize(cls, force_sync: bool = False):
         """Load cached entries. Sync from GitHub if cache is stale or missing."""
-        if cls._initialized and not force_sync:
-            return
+        with cls._lock:
+            if cls._initialized and not force_sync:
+                return
 
         cache_file = os.path.join(EXTERNAL_CACHE_DIR, ".entries.json")
         need_sync = True

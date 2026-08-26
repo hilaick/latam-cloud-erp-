@@ -1152,5 +1152,13 @@ def link_quotation_to_cr():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # Initialize knowledge store on startup (lazy-load external skills)
+    try:
+        from services.knowledge_provider import ExternalKnowledgeStore
+        ExternalKnowledgeStore.initialize()
+        logging.info(f"Knowledge store initialized: {ExternalKnowledgeStore.get_stats()}")
+    except Exception as e:
+        logging.warning(f"Knowledge store init failed (will lazy-load): {e}")
+
     # Run with SocketIO support
     socketio.run(app, host='0.0.0.0', port=9119, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
