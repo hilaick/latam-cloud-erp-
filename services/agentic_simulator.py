@@ -4866,6 +4866,34 @@ class AgenticExecutionSimulator:
         target_arch = project.get("targetArchitecture", {})
         mapper_nodes = project.get("mapperNodes", [])
 
+        # ── Inject project-level SAP SID into all mapper nodes (from presales intake) ──
+        # If the project has a sapSid but individual nodes don't, inject it so wave grouping works
+        presales = project.get("presales", {})
+        project_sap_sid = presales.get("sapSid", "") or project.get("sapSid", "")
+        if project_sap_sid:
+            for node in mapper_nodes:
+                if not node.get("sap_sid"):
+                    node["sap_sid"] = project_sap_sid
+            logger.info(f"Injected project-level SAP SID '{project_sap_sid}' into {len(mapper_nodes)} mapper nodes")
+
+        # ── Inject SAP-specific metadata into presales context for simulation ──
+        if presales.get("sapDbSize") or presales.get("sapTransactionalVolume"):
+            config.SAP_METADATA = {
+                "sid": project_sap_sid,
+                "db_size_gb": presales.get("sapDbSize", ""),
+                "transactional_volume": presales.get("sapTransactionalVolume", ""),
+                "addon_complexity": presales.get("sapAddonComplexity", ""),
+                "sql_to_hana": presales.get("sapSqlToHana", ""),
+                "integrations": presales.get("sapIntegrations", ""),
+                "operational_constraints": presales.get("sapOperationalConstraints", ""),
+                "customer_prioritization": presales.get("sapCustomerPrioritization", ""),
+                "migration_phases": presales.get("sapMigrationPhases", ""),
+                "db_consolidation": presales.get("sapDbConsolidation", ""),
+                "tenancy": presales.get("sapTenancy", ""),
+                "migration_windows": presales.get("sapMigrationWindows", ""),
+                "timelines": presales.get("sapTimelines", ""),
+            }
+
         # Build the migration resource list from target architecture (primary)
         # Fall back to mapperNodes only if target architecture is empty
         if target_arch and (target_arch.get("compute") or target_arch.get("database") or target_arch.get("storage")):
@@ -5033,6 +5061,17 @@ class AgenticExecutionSimulator:
             resource_usage["mig_workers_deployed"] = resource_usage.get("mig_workers_deployed", 0) + 1
 
         step_id += 1
+        # Build presales triage message including SAP-specific data if available
+        sap_info = ""
+        if hasattr(config, 'SAP_METADATA') and config.SAP_METADATA:
+            sm = config.SAP_METADATA
+            sap_info = (
+                f" SAP SID: {sm.get('sid', 'N/A')}. DB Size: {sm.get('db_size_gb', 'N/A')} GB. "
+                f"Transactional Volume: {sm.get('transactional_volume', 'N/A')}/day. "
+                f"Add-on Complexity: {sm.get('addon_complexity', 'N/A')}. "
+                f"SQL-to-HANA: {sm.get('sql_to_hana', 'N/A')}. "
+                f"Tenancy: {sm.get('tenancy', 'N/A')}."
+            )
         trace.append({
             "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
             "action": "PRESALES_TRIAGE_ANALYSIS",
@@ -5043,6 +5082,7 @@ class AgenticExecutionSimulator:
                 f"Image Conversion: {'YES (VMware/Hyper-V source)' if needs_image_conversion else 'NO'}. "
                 f"Cross-Region: {'YES (pre-created ECS approach)' if is_cross_region else 'NO'}. "
                 f"Cross-Cloud: {'YES (cross-account credentials needed)' if is_cross_cloud else 'NO'}."
+                f"{sap_info}"
             ),
             "timestamp_offset_seconds": total_simulated_seconds,
             "decision": {
@@ -5053,6 +5093,7 @@ class AgenticExecutionSimulator:
                 "auth_level": auth_level,
                 "source_env": source_env,
                 "migration_scope": migration_scope,
+                "sap_metadata": getattr(config, 'SAP_METADATA', None),
             },
         })
         total_simulated_seconds += config.STEP_TIMINGS["agent_spawn"]
@@ -6249,6 +6290,30 @@ def register_agentic_dry_run_routes(execution_bp):
                     "migrationScope": project_data.get("migrationScope", []),
                     "deliveryScope": project_data.get("deliveryScope", []),
                     "project_type": project_data.get("project_type", ""),
+                    # Account identity (from BD/SA Intake Form Section A)
+                    "accountId": project_data.get("accountId", ""),
+                    "huaweiAccountName": project_data.get("huaweiAccountName", ""),
+                    "realNameVerification": project_data.get("realNameVerification", ""),
+                    "isPartner": project_data.get("isPartner", ""),
+                    "enterpriseProject": project_data.get("enterpriseProject", ""),
+                    # Disk sizing (from Section D — feeds physics & execution storage)
+                    "totalDiskCount": project_data.get("totalDiskCount", ""),
+                    "totalDiskCapacity": project_data.get("totalDiskCapacity", ""),
+                    "diskTypes": project_data.get("diskTypes", ""),
+                    # SAP-specific (from presales intake — feeds wave grouping & manual gates)
+                    "sapSid": project_data.get("sapSid", ""),
+                    "sapDbSize": project_data.get("sapDbSize", ""),
+                    "sapTransactionalVolume": project_data.get("sapTransactionalVolume", ""),
+                    "sapAddonComplexity": project_data.get("sapAddonComplexity", ""),
+                    "sapSqlToHana": project_data.get("sapSqlToHana", ""),
+                    "sapIntegrations": project_data.get("sapIntegrations", ""),
+                    "sapOperationalConstraints": project_data.get("sapOperationalConstraints", ""),
+                    "sapCustomerPrioritization": project_data.get("sapCustomerPrioritization", ""),
+                    "sapMigrationPhases": project_data.get("sapMigrationPhases", ""),
+                    "sapDbConsolidation": project_data.get("sapDbConsolidation", ""),
+                    "sapTenancy": project_data.get("sapTenancy", ""),
+                    "sapMigrationWindows": project_data.get("sapMigrationWindows", ""),
+                    "sapTimelines": project_data.get("sapTimelines", ""),
                 },
                 "source_region": project_data.get("sourceRegion", customer_for_region.source_huawei_region if customer_for_region else "ap-southeast-3"),
                 "targetArchitecture": project_data.get("targetArchitecture", {}),

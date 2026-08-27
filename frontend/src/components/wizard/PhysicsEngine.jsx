@@ -281,6 +281,16 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
             setUseCompute(true); setUseDatabase(true); setUseStorage(false);
         }
 
+        // ── Inject presales disk sizing data (from BD/SA Intake Form) ──
+        // totalDiskCount, totalDiskCapacity (TB), diskTypes from presales intake
+        const presalesDiskCount = Number(activeProject.totalDiskCount) || 0;
+        const presalesDiskCapacityTB = Number(activeProject.totalDiskCapacity) || 0;
+        const presalesDiskTypes = activeProject.diskTypes || '';
+        // Convert TB to GB for physics calculations
+        const presalesDiskCapacityGB = presalesDiskCapacityTB * 1024;
+        // If we have presales disk data and no per-node storage sizes, distribute evenly
+        const hasPresalesDiskData = presalesDiskCount > 0 && presalesDiskCapacityGB > 0;
+
         let pConfigs = activeProject.physics?.nodeConfigs || {};
         let mergedConfigs = { ...pConfigs };
         let needsUpdate = false;
@@ -300,10 +310,14 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
                 mergedConfigs[n.id] = {
                     ...profileBase,
                     profileName: profileBase.name || 'Custom',
-                    customSizeGB: Number(n.storage) || 200,
+                    customSizeGB: Number(n.storage) || (hasPresalesDiskData ? Math.round(presalesDiskCapacityGB / Math.max(nodes.length, 1)) : 200),
                     includedInMath: true,
                     isDb: classification.pillar === 'database',
                     isStorage: classification.pillar === 'storage',
+                    // Presales disk sizing (from BD/SA Intake Form)
+                    _presalesDiskCount: presalesDiskCount,
+                    _presalesDiskCapacityGB: presalesDiskCapacityGB,
+                    _presalesDiskTypes: presalesDiskTypes,
                     // Confidence-scored metadata (NEW)
                     _classifiedPillar: classification.pillar,
                     _classificationConfidence: classification.confidence,
@@ -320,14 +334,18 @@ export default function PhysicsEngine({ activeProject, onUpdateProject, onRefres
 
     }, [activeProject?.physics, nodes]);
 
-    const saveContext = () => { 
-        onUpdateProject(activeProject.id, 'physics', { 
-            engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency, 
+    const saveContext = () => {
+        onUpdateProject(activeProject.id, 'physics', {
+            engineMode, netSource, transitType, netTunnel, downtimeWindow, concurrency,
             usedStoragePct, appChurnPct, dbChurnPct,
             useCompute, useDatabase, useStorage, nodeConfigs, omsTasks, omsObjPerSec,
+            // Presales disk sizing (from BD/SA Intake Form — feeds execution plan storage)
+            presalesDiskCount: Number(activeProject.totalDiskCount) || 0,
+            presalesDiskCapacityGB: (Number(activeProject.totalDiskCapacity) || 0) * 1024,
+            presalesDiskTypes: activeProject.diskTypes || '',
             // Structured machine-readable result (NEW — consumed by ExecutionPlan)
             result: physicsResult
-        }); 
+        });
         alert("Physics parameters saved — including structured execution plan data.");
     };
 

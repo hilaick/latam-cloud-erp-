@@ -425,6 +425,19 @@ class ExecutionEngine:
         target_arch = project.get("targetArchitecture", {})
         mapper_nodes = project.get("mapperNodes", [])
 
+        # ── Account identity & EPS provisioning context (from presales intake) ──
+        account_id = project.get("accountId", "")
+        huawei_account_name = project.get("huaweiAccountName", "")
+        real_name_verification = project.get("realNameVerification", "")
+        is_partner = project.get("isPartner", "")
+        enterprise_project = project.get("enterpriseProject", "")
+
+        # EPS provisioning path:
+        #   Path A: real_name_verified=Verified + enterprise_project provided → direct EPS provisioning
+        #   Path B: real_name_verified != Verified OR no enterprise_project → requires manual verification first
+        eps_path_a = (real_name_verification.lower() == "verified" and bool(enterprise_project))
+        eps_requires_verification = not eps_path_a and is_partner == "Yes"
+
         # Build migration resources from target architecture (primary)
         # Fall back to mapperNodes only if target architecture is empty
         if target_arch and (target_arch.get("compute") or target_arch.get("database") or target_arch.get("storage")):
@@ -468,6 +481,11 @@ class ExecutionEngine:
             "is_zero_trust": is_zero_trust,
             "is_vmware": is_vmware,
             "used_storage_pct": used_storage_pct,
+            "account_id": account_id,
+            "huawei_account_name": huawei_account_name,
+            "enterprise_project": enterprise_project,
+            "eps_path_a": eps_path_a,
+            "eps_requires_verification": eps_requires_verification,
             "built_at": datetime.datetime.utcnow().isoformat() + "Z",
             "pillars": {"compute": 0, "database": 0, "storage": 0, "network": 0},
             "steps": [],
@@ -516,7 +534,53 @@ class ExecutionEngine:
             "status": "pending",
         })
 
-        # ═══ PHASE 4.0b: mig_worker deployment check ═══
+        # ═══ PHASE 4.0b: EPS Provisioning (if partner account with enterprise project) ═══
+        if is_partner == "Yes" and enterprise_project:
+            if eps_path_a:
+                # Path A: Real-name verified + EPS provided → direct provisioning
+                step_id += 1
+                steps.append({
+                    "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
+                    "action": "EPS_PROVISIONING",
+                    "target_resource": f"enterprise-project:{enterprise_project}",
+                    "pillar": "security",
+                    "strategy": "provision",
+                    "tool_source": "mcp",
+                    "tool_name": "MCP: eps → POST /enterprises",
+                    "mcp_endpoint": {"service": "eps", "method": "POST", "path": "/v1.0/enterprise-projects"},
+                    "commands": [{"desc": f"Create/verify EPS '{enterprise_project}' for account {account_id or huawei_account_name}",
+                                  "cmd": f"hcloud EPS CreateEnterpriseProject --name='{enterprise_project}' --description='Migration project for {project.get('customerName', '')}' --cli-profile=<profile> --cli-region={target_region}",
+                                  "type": "hcloud", "params": {"name": enterprise_project, "description": f"Migration project for {project.get('customerName', '')}"}}],
+                    "credentials_needed": ["ak", "sk"],
+                    "zero_trust": False,
+                    "fallback_strategy": "Manual EPS creation via console",
+                    "rollback": None,
+                    "status": "pending",
+                    "source_detail": f"🔌 EPS Path A: verified={real_name_verification}, eps={enterprise_project}",
+                })
+            elif eps_requires_verification:
+                # Path B: Not verified or no EPS → requires manual verification first
+                step_id += 1
+                steps.append({
+                    "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
+                    "action": "EPS_VERIFICATION_REQUIRED",
+                    "target_resource": f"account:{account_id or huawei_account_name}",
+                    "pillar": "security",
+                    "strategy": "verify",
+                    "tool_source": "hcloud",
+                    "tool_name": "Manual verification required",
+                    "commands": [{"desc": f"Real-name verification status: {real_name_verification or 'Not Started'}. Customer must complete real-name verification before EPS provisioning.",
+                                  "cmd": f"# MANUAL: Complete real-name verification for account {account_id or huawei_account_name}, then create EPS '{enterprise_project or 'TBD'}'",
+                                  "type": "manual"}],
+                    "credentials_needed": [],
+                    "zero_trust": False,
+                    "fallback_strategy": None,
+                    "rollback": None,
+                    "status": "blocked",
+                    "source_detail": f"⚠️ EPS Path B: verification={real_name_verification or 'Not Started'}, eps={enterprise_project or 'not provided'}",
+                })
+
+        # ═══ PHASE 4.0c: mig_worker deployment check ═══
         # Determine if mig_worker is needed (resilience, cross-cloud, overload, source inaccessible)
         is_cross_cloud = is_vmware or any(kw in str(source_env).lower() for kw in ["aws", "azure", "aliyun"])
         source_account_accessible = not is_zero_trust
