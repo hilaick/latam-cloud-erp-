@@ -27,15 +27,32 @@ logger = logging.getLogger(__name__)
 
 
 # ── Skill loader from Hermes skills directory ──
-HERMES_SKILLS_DIR = None
-# Try to find the Hermes skills directory
+HERMES_SKILLS_DIRS = []
+# Try to find the Hermes skills directories (devops + sap + erp-migration)
 for candidate in [
     os.path.expanduser("~/.hermes/skills/devops"),
     "/root/.hermes/skills/devops",
 ]:
     if os.path.isdir(candidate):
-        HERMES_SKILLS_DIR = candidate
+        HERMES_SKILLS_DIRS.append(candidate)
         break
+for candidate in [
+    os.path.expanduser("~/.hermes/skills/sap"),
+    "/root/.hermes/skills/sap",
+]:
+    if os.path.isdir(candidate):
+        HERMES_SKILLS_DIRS.append(candidate)
+        break
+for candidate in [
+    os.path.expanduser("~/.hermes/skills/erp-migration"),
+    "/root/.hermes/skills/erp-migration",
+]:
+    if os.path.isdir(candidate):
+        HERMES_SKILLS_DIRS.append(candidate)
+        break
+
+# Keep backward compat: HERMES_SKILLS_DIR = first found dir (devops)
+HERMES_SKILLS_DIR = HERMES_SKILLS_DIRS[0] if HERMES_SKILLS_DIRS else None
 
 
 def _load_hermes_skill_commands(name: str) -> dict:
@@ -720,10 +737,10 @@ class SkillRegistry:
         applicable.append(cls.SKILLS["boot_fixes"])
         applicable.append(cls.SKILLS["partition_fixes"])
         
-        # ── SAP workload skills ──
-        workload_type = (mapper_node or {}).get("workload_type", "")
+        # ── SAP workload skills — read from PROFILE (classified), not raw mapper_node ──
+        workload_type = profile.get("workload_type", "") or (mapper_node or {}).get("workload_type", "")
         if workload_type == "sap_hana":
-            migration_approach = (mapper_node or {}).get("migration_approach", "sms")
+            migration_approach = profile.get("migration_approach", "") or (mapper_node or {}).get("migration_approach", "sms")
             if migration_approach == "native_hana_replication":
                 applicable.append(cls.SKILLS.get("sap_hana_migration_hsr", {}))
             elif migration_approach == "backup_restore":
@@ -731,8 +748,14 @@ class SkillRegistry:
             else:
                 applicable.append(cls.SKILLS.get("sap_hana_migration_sms", {}))
             applicable.append(cls.SKILLS.get("sap_certified_flavors", {}))
+            # DR and HA skills for SAP HANA
+            applicable.append(cls.SKILLS.get("sap_dr_sdrs", {}))
+            applicable.append(cls.SKILLS.get("sap_ha_deployment", {}))
         elif workload_type in ("sap_app", "all_sap"):
             applicable.append(cls.SKILLS.get("sap_certified_flavors", {}))
+        elif workload_type == "database":
+            # Non-SAP database — still needs manual intervention skills
+            pass  # manual_steps already in profile
         
         return applicable
     
@@ -746,8 +769,47 @@ class SkillRegistry:
     
     @classmethod
     def list_all(cls) -> List[dict]:
-        """Return all registered skills."""
-        return list(cls.SKILLS.values())
+        """Return all registered skills, including dynamically discovered SAP skills."""
+        all_skills = list(cls.SKILLS.values())
+        
+        # Dynamically discover SAP skills from filesystem if not already registered
+        import os
+        sap_dirs = [
+            os.path.expanduser("~/.hermes/skills/sap"),
+            "/root/.hermes/skills/sap",
+        ]
+        sap_dir = next((d for d in sap_dirs if os.path.isdir(d)), None)
+        if sap_dir:
+            existing_names = {s.get("name", "") for s in all_skills}
+            for fname in sorted(os.listdir(sap_dir)):
+                if not fname.endswith(".md"):
+                    continue
+                skill_name = fname[:-3]  # strip .md
+                if skill_name in existing_names:
+                    continue  # already in registry
+                # Load from file
+                fpath = os.path.join(sap_dir, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # Extract description from frontmatter
+                    desc = ""
+                    if "description:" in content:
+                        for line in content.split("\n"):
+                            if line.strip().startswith("description:"):
+                                desc = line.split("description:", 1)[1].strip().strip('"').strip("'")
+                                break
+                    all_skills.append({
+                        "name": skill_name,
+                        "category": "sap",
+                        "description": desc,
+                        "source": "filesystem",
+                        "skill_file": f"sap/{fname}",
+                    })
+                except Exception:
+                    pass
+        
+        return all_skills
     
     @classmethod
     def enrich_from_history(cls, learning: dict):
@@ -1162,10 +1224,29 @@ class ServerProfiler:
         inst_match = re.search(r'(?:^|[-_])(\d{2})(?:[-_]|$)', name)
         instance_number = inst_match.group(1) if inst_match else ""
         
-        # Detect HANA
-        is_hana = any(h in all_text for h in sap_hana_hints) or "hana" in os_type
-        is_sap_app = (not is_hana) and (any(h in all_text for h in sap_app_hints) or is_sap_os or has_sap_tag)
-        is_sap_web = (not is_hana and not is_sap_app) and any(h in all_text for h in sap_web_hints)
+        # Detect HANA — hostname hints OR OS signals OR explicit label
+        hana_hostname_hints = ["hana", "s4hana", "s/4hana", "saphana"]
+        # OS-based SAP HANA detection: SLES/RHEL for SAP + HANA-related indicators
+        # On Huawei Cloud, HANA servers often run SLES for SAP with hana in the OS image name
+        is_sap_os = any(s in os_type for s in ["sles", "suse", "rhel"]) and "sap" in os_type
+        hana_os_hints = ["hana"]  # OS explicitly mentions HANA (e.g., "SUSE Linux Enterprise Server for SAP HANA")
+        is_hana = (
+            any(h in all_text for h in hana_hostname_hints)
+            or any(h in os_type for h in hana_os_hints)
+        )
+        
+        # If OS is SLES/RHEL for SAP and the server name contains "sap", 
+        # check if it's more likely HANA (DB) vs app server:
+        # - If name contains "db", "database", "hdb" → HANA
+        # - If OS explicitly says "hana" → HANA
+        # - If it's the primary SAP server (sap-01, sap-02) and OS is SAP-specific → likely HANA DB
+        db_name_hints = ["db", "database", "hdb", "hdb", "systemdb"]
+        if is_sap_os and not is_hana:
+            if any(h in name for h in db_name_hints):
+                is_hana = True
+        
+        sap_app_hints = ["sap", "netweaver", "s4hana", "erp", "ecc", "solution-manager", "solman"]
+        sap_web_hints = ["web-dispatcher", "webdispatcher", "sap-web", "sapweb"]
         
         # Check for explicit workload_type from server data (presales labeling)
         explicit_wt = server.get("workload_type", "").lower()
@@ -1179,6 +1260,10 @@ class ServerProfiler:
         
         # Check for explicit migration_approach from presales
         explicit_approach = server.get("migration_approach", "").lower()
+        
+        # Determine SAP app/web (after HANA check and explicit label override)
+        is_sap_app = (not is_hana) and (any(h in all_text for h in sap_app_hints) or is_sap_os or has_sap_tag)
+        is_sap_web = (not is_hana and not is_sap_app) and any(h in all_text for h in sap_web_hints)
         
         if is_hana:
             # SAP HANA database server
@@ -1237,9 +1322,14 @@ class ServerProfiler:
                 },
             }
         
-        # ── Non-SAP database detection (existing behavior, enhanced) ──
+        # ── Non-SAP database detection (hostname + OS signals) ──
         db_hints = ["db", "sql", "mysql", "oracle", "postgres", "mongo", "redis", "cache", "mariadb"]
-        if any(h in all_text for h in db_hints):
+        # OS-based DB detection: some DBs have specific OS images
+        db_os_hints = ["windows"]  # Windows servers with "sql" in name → SQL Server
+        is_db_by_name = any(h in all_text for h in db_hints)
+        is_db_by_os = False  # Could be extended: check for DB-specific OS images
+        
+        if is_db_by_name or is_db_by_os:
             return {
                 "workload_type": "database",
                 "sensitivity_level": "high",
