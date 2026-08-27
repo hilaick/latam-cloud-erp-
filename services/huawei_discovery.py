@@ -202,6 +202,35 @@ class HuaweiDiscovery:
                             except Exception:
                                 pass
                         
+                        # Extract OS version from ECS metadata (image OS, not guest OS)
+                        ecs_os_version = 'Unknown'
+                        if hasattr(s, 'metadata') and s.metadata:
+                            try:
+                                m = s.metadata if isinstance(s.metadata, dict) else s.metadata.__dict__
+                                ecs_os_version = m.get('os_version', m.get('metering.os_version', 'Unknown'))
+                            except Exception:
+                                pass
+                        # Also try image_id → resolve OS from image name pattern
+                        if ecs_os_version == 'Unknown' and hasattr(s, 'image') and s.image:
+                            img_name = str(getattr(s.image, 'name', '') or (s.image if isinstance(s.image, str) else ''))
+                            if 'suse' in img_name.lower() or 'sles' in img_name.lower():
+                                ecs_os_version = 'SUSE Linux Enterprise Server'
+                            elif 'rhel' in img_name.lower() or 'redhat' in img_name.lower():
+                                ecs_os_version = 'Red Hat Enterprise Linux'
+                            elif 'centos' in img_name.lower():
+                                ecs_os_version = 'CentOS'
+                            elif 'ubuntu' in img_name.lower():
+                                ecs_os_version = 'Ubuntu'
+                            elif 'alma' in img_name.lower():
+                                ecs_os_version = 'AlmaLinux'
+                            elif 'windows' in img_name.lower():
+                                ecs_os_version = 'Windows'
+                        
+                        # Use tag override > ECS metadata > Unknown
+                        # Note: for migrated servers, the real guest OS may differ from image OS
+                        # Presales can set "os" tag with the actual OS (e.g., "SUSE Linux Enterprise Server for SAP")
+                        effective_os = server_tags.get("os", ecs_os_version)
+                        
                         is_reserved = False
                         if str(billing_mode) == '1' or str(charging_mode) == '1' or 'prepaid' in str(charging_mode).lower() or 'reserved' in str(billing_mode).lower() or 'reserved' in str(charging_mode).lower():
                             is_reserved = True
@@ -236,7 +265,7 @@ class HuaweiDiscovery:
                             from services.agentic_simulator import ServerProfiler
                             workload_profile = ServerProfiler.classify({
                                 "name": s.name,
-                                "os": server_tags.get("os", ""),
+                                "os": effective_os,
                                 "tags": list(server_tags.keys()),
                                 "hostname": s.name,
                                 "workload_type": server_tags.get("workload_type", ""),
