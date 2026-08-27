@@ -24,7 +24,6 @@ import HermesModal from './components/HermesModal';
 import LoginPage from './components/auth/LoginPage';
 import ResourceDiscoveryMap from './components/views/ResourceDiscoveryMap';
 import HaltedProjects from './components/views/HaltedProjects';
-import HelpDrawer from './components/utils/HelpDrawer';
 import DocumentationCenter from './components/views/DocumentationCenter';
 
 // Direct imports (not lazy) — avoids React 19 chunk-boundary hook errors
@@ -61,7 +60,6 @@ function App() {
     const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
     const [isCommandDrawerOpen, setIsCommandDrawerOpen] = useState(false);
     const [isHermesOpen, setIsHermesOpen] = useState(false);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [guidedScenario, setGuidedScenario] = useState(null);
     const [guidedStep, setGuidedStep] = useState(0);
     const [guidedData, setGuidedData] = useState({});
@@ -117,7 +115,7 @@ function App() {
                     onOpenGlossary={() => setIsGlossaryOpen(true)} 
                     onOpenCommandDrawer={() => setIsCommandDrawerOpen(true)} // 🚨 PASSED PROP
                     onOpenHermes={() => setIsHermesOpen(true)} // 🚨 HERMES AI BUTTON
-                    onOpenHelp={() => setIsHelpOpen(true)} // 📖 HELP DOCUMENTATION
+                    onOpenHelp={() => setActivePhase('docs')} // 📖 Opens DocumentationCenter directly
                 />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
@@ -209,17 +207,9 @@ function App() {
                                                 complexityLevel: guidedData.complexityLevel || 'Medium',
                                                 blocker: guidedData.blocker || '',
                                                 // Section E: Gate Artefacts
-                                                artefacts: guidedData.artefacts || { hld: false, targetArch: false, sow: false, wbs: false },
-                                                // Section F: Credentials
-                                                masterAk: guidedData.masterAk || '',
-                                                masterSk: guidedData.masterSk || '',
-                                                sourceHuaweiAk: guidedData.sourceHuaweiAk || '',
-                                                sourceHuaweiSk: guidedData.sourceHuaweiSk || '',
-                                                sourceHuaweiRegion: guidedData.sourceHuaweiRegion || '',
-                                                multiCloudCreds: guidedData.multiCloudCreds || '',
-                                                osDomain: guidedData.osDomain || '',
-                                                osUser: guidedData.osUser || '',
-                                                osPassword: guidedData.osPassword || '',
+                                                artefacts: guidedData.artefacts || { hld: false, targetArch: false, wbs: false },
+                                                // Section F: Credential availability (yes/no — actual creds via secure channel)
+                                                credStatus: guidedData.credStatus || {},
                                                 // BoM
                                                 quotationFile: guidedData.quotationFile || '',
                                                 blueprintData: guidedData.blueprintData || null,
@@ -305,13 +295,9 @@ function App() {
                     onClose={() => setIsHermesOpen(false)}
                 />
 
-                {/* 📖 GLOBAL HELP — now uses DocumentationCenter */}
-                <HelpDrawer
-                    isOpen={isHelpOpen}
-                    onClose={() => { setIsHelpOpen(false); setActivePhase('docs'); }}
-                    title="ERP Migration Factory — Documentation"
-                    docName="USER_MANUAL"
-                />
+                {/* 📖 GLOBAL HELP — redirects directly to DocumentationCenter */}
+                {/* HelpDrawer removed: TopBar ? button now opens DocumentationCenter directly
+                     via onOpenHelp -> setActivePhase('docs'). All content merged into helpContent.js. */}
             </main>
         </div>
     );
