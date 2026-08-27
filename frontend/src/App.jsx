@@ -171,38 +171,38 @@ function App() {
                                     {guidedStep === 3 && <StepTargetArchitecture data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
                                     {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => {
                                         // Wizard completed — save all gathered data to the project and navigate
+                                        // Wizard covers Phase 1 (ARB) + Phase 2 (Architecture) data + simulation preview
+                                        // Land at Phase 3 (Planning) — user still needs wave planning, runbooks, FinOps before execution
                                         if (guidedData.projectId) {
-                                            // Update the project with all wizard data
                                             const projectPatch = {
-                                                // Phase 1 data (from Step 1)
+                                                // Phase 1 data (from Step 1 + 3)
                                                 customerName: guidedData.customerName || '',
                                                 country: guidedData.country || '',
                                                 region: guidedData.region || 'la-south-2',
                                                 mrr: Number(guidedData.mrr) || 0,
                                                 sa: guidedData.sa || '',
                                                 partner: guidedData.partner || '',
+                                                quotationFile: guidedData.quotationFile || '',
                                                 // Phase 2 data (from Step 2 + 4)
                                                 sourceCloud: guidedData.source || '',
                                                 sapSid: guidedData.sapSid || '',
                                                 dbType: guidedData.dbType || '',
-                                                // Phase 3 data (from Step 3)
-                                                quotationFile: guidedData.quotationFile || '',
-                                                // Advance lifecycle to Phase 4 (Execution) since wizard covered 1-3
-                                                lifecycleState: '4_execution',
-                                                phase: '4_execution',
-                                                currentPhase: 'Execution',
+                                                // Advance to Phase 3 (Planning) — wizard covered Phases 1-2
+                                                lifecycleState: '3_planning',
+                                                phase: '3_planning',
+                                                currentPhase: 'Planning',
                                                 migrationScenario: guidedScenario || '',
                                             };
                                             handleUpdateProject(guidedData.projectId, projectPatch);
                                             setActiveProjectId(guidedData.projectId);
                                             setActivePhase('wizard');
                                         } else {
-                                            // No project created — go to standard wizard
                                             setActivePhase('wizard');
                                         }
                                         setGuidedScenario(null);
                                     }} onSkip={() => {
-                                        // Skip at simulation — go to project wizard at Phase 3 (Planning) since we have discovery + quotation
+                                        // Skip at simulation — go to project wizard at Phase 2 (Architecture)
+                                        // User has project setup + discovery but hasn't completed architecture/DTRB
                                         if (guidedData.projectId) {
                                             const projectPatch = {
                                                 customerName: guidedData.customerName || '',
@@ -210,9 +210,9 @@ function App() {
                                                 region: guidedData.region || 'la-south-2',
                                                 mrr: Number(guidedData.mrr) || 0,
                                                 sourceCloud: guidedData.source || '',
-                                                lifecycleState: '3_planning',
-                                                phase: '3_planning',
-                                                currentPhase: 'Planning',
+                                                lifecycleState: '2_architecture',
+                                                phase: '2_architecture',
+                                                currentPhase: 'Architecture',
                                                 migrationScenario: guidedScenario || '',
                                             };
                                             handleUpdateProject(guidedData.projectId, projectPatch);
