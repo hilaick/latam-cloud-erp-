@@ -170,16 +170,52 @@ function App() {
                                     {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
                                     {guidedStep === 3 && <StepTargetArchitecture data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
                                     {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => {
-                                        // Navigate to the project wizard at Phase 4 (Execution) if project was created
+                                        // Wizard completed — save all gathered data to the project and navigate
                                         if (guidedData.projectId) {
+                                            // Update the project with all wizard data
+                                            const projectPatch = {
+                                                // Phase 1 data (from Step 1)
+                                                customerName: guidedData.customerName || '',
+                                                country: guidedData.country || '',
+                                                region: guidedData.region || 'la-south-2',
+                                                mrr: Number(guidedData.mrr) || 0,
+                                                sa: guidedData.sa || '',
+                                                partner: guidedData.partner || '',
+                                                // Phase 2 data (from Step 2 + 4)
+                                                sourceCloud: guidedData.source || '',
+                                                sapSid: guidedData.sapSid || '',
+                                                dbType: guidedData.dbType || '',
+                                                // Phase 3 data (from Step 3)
+                                                quotationFile: guidedData.quotationFile || '',
+                                                // Advance lifecycle to Phase 4 (Execution) since wizard covered 1-3
+                                                lifecycleState: '4_execution',
+                                                phase: '4_execution',
+                                                currentPhase: 'Execution',
+                                                migrationScenario: guidedScenario || '',
+                                            };
+                                            handleUpdateProject(guidedData.projectId, projectPatch);
                                             setActiveProjectId(guidedData.projectId);
                                             setActivePhase('wizard');
                                         } else {
+                                            // No project created — go to standard wizard
                                             setActivePhase('wizard');
                                         }
                                         setGuidedScenario(null);
                                     }} onSkip={() => {
+                                        // Skip at simulation — go to project wizard at Phase 3 (Planning) since we have discovery + quotation
                                         if (guidedData.projectId) {
+                                            const projectPatch = {
+                                                customerName: guidedData.customerName || '',
+                                                country: guidedData.country || '',
+                                                region: guidedData.region || 'la-south-2',
+                                                mrr: Number(guidedData.mrr) || 0,
+                                                sourceCloud: guidedData.source || '',
+                                                lifecycleState: '3_planning',
+                                                phase: '3_planning',
+                                                currentPhase: 'Planning',
+                                                migrationScenario: guidedScenario || '',
+                                            };
+                                            handleUpdateProject(guidedData.projectId, projectPatch);
                                             setActiveProjectId(guidedData.projectId);
                                             setActivePhase('wizard');
                                         } else {

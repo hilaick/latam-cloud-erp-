@@ -11,13 +11,16 @@ function getRegion(country) {
 }
 
 export default function StepProjectSetup({ data, onChange }) {
-  const { customers, projects, handleAddProject } = useContext(ERPContext);
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [newCustName, setNewCustName] = useState('');
-  const [created, setCreated] = useState(false);
-  const d = data || {};
+    const { customers, projects, handleAddProject } = useContext(ERPContext);
+    const [showNewCustomer, setShowNewCustomer] = useState(false);
+    const [newCustName, setNewCustName] = useState('');
+    const [created, setCreated] = useState(false);
+    // Local state for immediate UI feedback on selects
+    const [localCountry, setLocalCountry] = useState(data?.country || '');
+    const [localCustomerId, setLocalCustomerId] = useState(data?.customerId || '');
+    const d = data || {};
 
-  const update = (key, val) => onChange({ ...d, [key]: val });
+    const update = (key, val) => onChange({ ...d, [key]: val });
 
   // Auto-derive region from country
   const derivedRegion = useMemo(() => getRegion(d.country), [d.country]);
@@ -105,14 +108,17 @@ export default function StepProjectSetup({ data, onChange }) {
             {!showNewCustomer ? (
               <div className="flex gap-2">
                 <select
-                  value={d.customerId || ''}
+                  value={localCustomerId}
                   onChange={e => {
-                    const cust = customers?.find(c => c.id === e.target.value);
+                    const custId = e.target.value;
+                    setLocalCustomerId(custId);
+                    const cust = customers?.find(c => c.id === custId);
                     if (cust) {
                       update('customerId', cust.id);
                       update('customerName', cust.name);
                       update('country', cust.country || '');
                       update('region', cust.region || '');
+                      setLocalCountry(cust.country || '');
                     } else {
                       update('customerId', '');
                       update('customerName', '');
@@ -162,8 +168,14 @@ export default function StepProjectSetup({ data, onChange }) {
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Country</label>
             <select
-              value={d.country || ''}
-              onChange={e => { update('country', e.target.value); update('region', getRegion(e.target.value)); setCreated(false); }}
+              value={localCountry}
+              onChange={e => {
+                const country = e.target.value;
+                setLocalCountry(country);
+                update('country', country);
+                update('region', getRegion(country));
+                setCreated(false);
+              }}
               className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
             >
               <option value="">Select country...</option>
