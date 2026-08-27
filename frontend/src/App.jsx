@@ -173,33 +173,70 @@ function App() {
                                         setGuidedScenario(null);
                                     }}
                                     onComplete={() => {
-                                        // Wizard finished (Step 4 = BoM upload = last step)
-                                        // Create project as presales lead → promote to ARB → advance to Phase 2
+                                        // Wizard finished — save all 31 intake fields to project and advance to Phase 2
                                         if (guidedData.projectId) {
-                                            // Project already created in Step 1 — update with all wizard data
                                             const projectPatch = {
-                                                // Presales data
+                                                // Section A: Customer & Account Identity
                                                 customerName: guidedData.customerName || '',
                                                 customerId: guidedData.customerId || '',
+                                                huaweiAccountName: guidedData.huaweiAccountName || '',
+                                                accountId: guidedData.accountId || '',
+                                                realNameVerification: guidedData.realNameVerification || '',
+                                                isPartner: guidedData.isPartner || '',
+                                                enterpriseProject: guidedData.enterpriseProject || '',
                                                 country: guidedData.country || '',
                                                 region: guidedData.region || 'la-south-2',
-                                                mrr: Number(guidedData.mrr) || 0,
+                                                // Section B: Stakeholder Contacts
                                                 sa: guidedData.sa || '',
                                                 partner: guidedData.partner || 'TBD',
-                                                techContact: guidedData.techContact || 'TBD',
-                                                // Triage data
+                                                cioItLead: guidedData.cioItLead || '',
+                                                technicalArchitect: guidedData.technicalArchitect || '',
+                                                // Section C: Discovery & Financials
+                                                discoveryNotes: guidedData.discoveryNotes || '',
+                                                mrr: Number(guidedData.mrr) || 0,
+                                                expectedCloseDate: guidedData.expectedCloseDate || '',
+                                                // Section D: Technical Sizing & Risk
                                                 project_type: guidedData.project_type || '',
                                                 migrationScope: guidedData.migrationScope || [],
-                                                sourceEnvironment: guidedData.sourceEnvironment || '',
+                                                sourceEnvironment: guidedData.sourceEnvironment || [],
                                                 authLevel: guidedData.authLevel || [],
                                                 deliveryScope: guidedData.deliveryScope || [],
-                                                businessDrivers: guidedData.businessDrivers || [],
-                                                // ARB data
-                                                artefacts: guidedData.artefacts || { hld: false, targetArch: false },
-                                                discoveryNotes: guidedData.discoveryNotes || '',
+                                                estimatedWorkloads: guidedData.estimatedWorkloads || '',
+                                                totalDiskCount: guidedData.totalDiskCount || '',
+                                                totalDiskCapacity: guidedData.totalDiskCapacity || '',
+                                                diskTypes: guidedData.diskTypes || '',
+                                                estimatedMigrationHours: guidedData.estimatedMigrationHours || '',
                                                 complexityLevel: guidedData.complexityLevel || 'Medium',
+                                                blocker: guidedData.blocker || '',
+                                                // Section E: Gate Artefacts
+                                                artefacts: guidedData.artefacts || { hld: false, targetArch: false, sow: false, wbs: false },
+                                                // Section F: Credentials
+                                                masterAk: guidedData.masterAk || '',
+                                                masterSk: guidedData.masterSk || '',
+                                                sourceHuaweiAk: guidedData.sourceHuaweiAk || '',
+                                                sourceHuaweiSk: guidedData.sourceHuaweiSk || '',
+                                                sourceHuaweiRegion: guidedData.sourceHuaweiRegion || '',
+                                                multiCloudCreds: guidedData.multiCloudCreds || '',
+                                                osDomain: guidedData.osDomain || '',
+                                                osUser: guidedData.osUser || '',
+                                                osPassword: guidedData.osPassword || '',
                                                 // BoM
                                                 quotationFile: guidedData.quotationFile || '',
+                                                blueprintData: guidedData.blueprintData || null,
+                                                // SAP-specific
+                                                sapSid: guidedData.sapSid || '',
+                                                sapDbSize: guidedData.sapDbSize || '',
+                                                sapTransactionalVolume: guidedData.sapTransactionalVolume || '',
+                                                sapAddonComplexity: guidedData.sapAddonComplexity || '',
+                                                sapSqlToHana: guidedData.sapSqlToHana || '',
+                                                sapIntegrations: guidedData.sapIntegrations || '',
+                                                sapOperationalConstraints: guidedData.sapOperationalConstraints || '',
+                                                sapCustomerPrioritization: guidedData.sapCustomerPrioritization || '',
+                                                sapMigrationPhases: guidedData.sapMigrationPhases || '',
+                                                sapDbConsolidation: guidedData.sapDbConsolidation || '',
+                                                sapTenancy: guidedData.sapTenancy || '',
+                                                sapMigrationWindows: guidedData.sapMigrationWindows || '',
+                                                sapTimelines: guidedData.sapTimelines || '',
                                                 // Promote from presales lead to active project
                                                 isWaiting: false,
                                                 waitingStage: null,
@@ -222,7 +259,6 @@ function App() {
                                     {guidedStep === 1 && <StepTriage data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
                                     {guidedStep === 2 && <StepARBHandover data={guidedData} onChange={setGuidedData} />}
                                     {guidedStep === 3 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
-                                >
                                 </GuidedWizardShell>
                             )}
                         </>

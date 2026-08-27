@@ -10,36 +10,54 @@ function getRegion(country) {
   return 'la-south-2';
 }
 
+const VERIFICATION_OPTIONS = ['Verified', 'Pending', 'Not Started'];
+
 export default function StepLeadInfo({ data, onChange }) {
     const { customers, projects, handleAddProject } = useContext(ERPContext);
     const [localCountry, setLocalCountry] = useState(data?.country || '');
-    const [localCustomerId, setLocalCustomerId] = useState(data?.customerId || '');
+    const [localVerification, setLocalVerification] = useState(data?.realNameVerification || '');
+    const [localIsPartner, setLocalIsPartner] = useState(data?.isPartner || '');
     const [created, setCreated] = useState(false);
     const d = data || {};
     const update = (k, v) => onChange({ ...d, [k]: v });
 
     const existingSAs = useMemo(() => Array.from(new Set((projects || []).map(p => p.sa).filter(Boolean))), [projects]);
     const existingPartners = useMemo(() => Array.from(new Set((projects || []).map(p => p.partner).filter(Boolean))), [projects]);
-    const selectedCustomer = customers?.find(c => c.id === localCustomerId);
+
+    const selectedCustomer = customers?.find(c => c.name?.toLowerCase() === (d.customerName || '').toLowerCase());
 
     const handleCreate = () => {
-        if (!d.projectName) return;
-        const custName = selectedCustomer?.name || d.customerName || '';
-        const custId = selectedCustomer?.id || d.customerId || '';
-        const region = selectedCustomer?.region || getRegion(d.country);
+        if (!d.customerName || !d.sa || !d.country) return;
+        const matchedCustomer = (customers || []).find(c => c.name?.toLowerCase() === d.customerName.toLowerCase().trim());
+        let customerId = null;
+        let customerName = d.customerName.trim().toUpperCase();
+        if (matchedCustomer) { customerId = matchedCustomer.id; customerName = matchedCustomer.name; }
 
-        // Create as presales lead (isWaiting: true — same as PreSalesRadar)
+        const region = matchedCustomer?.region || getRegion(d.country);
+
         const newProject = {
             id: `proj-${Date.now()}`,
-            name: d.projectName.toUpperCase(),
-            customerName: custName,
-            customerId: custId,
+            name: d.projectName ? d.projectName.toUpperCase() : `${customerName} Migration`,
+            customerName,
+            customerId,
+            // Section A fields
+            huaweiAccountName: d.huaweiAccountName || '',
+            accountId: d.accountId || '',
+            realNameVerification: d.realNameVerification || '',
+            isPartner: d.isPartner || '',
+            enterpriseProject: d.enterpriseProject || '',
             country: d.country || '',
             region,
-            mrr: Number(d.mrr) || 0,
+            // Section B fields
             sa: (d.sa || '').toUpperCase(),
             partner: d.partner || 'TBD',
-            techContact: d.techContact || 'TBD',
+            cioItLead: d.cioItLead || '',
+            technicalArchitect: d.technicalArchitect || '',
+            // Section C fields
+            discoveryNotes: d.discoveryNotes || '',
+            mrr: Number(d.mrr) || 0,
+            expectedCloseDate: d.expectedCloseDate || '',
+            // Defaults
             health: 'Yellow',
             isWaiting: true,
             waitingStage: 'prospect',
@@ -57,109 +75,115 @@ export default function StepLeadInfo({ data, onChange }) {
         if (handleAddProject) handleAddProject(newProject);
         update('projectId', newProject.id);
         update('region', region);
-        update('customerName', custName);
-        update('customerId', custId);
+        update('customerId', customerId);
         setCreated(true);
     };
+
+    const inputCls = "w-full px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-colors";
+    const labelCls = "block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5";
+    const sectionCls = "text-xs font-black uppercase tracking-widest text-slate-500 border-b border-slate-100 pb-2 mb-4";
 
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-black text-slate-800 mb-1">Presales Lead Information</h3>
-                <p className="text-xs text-slate-500">Capture the initial lead details — same fields as the Pre-Sales Radar.</p>
+                <h3 className="text-lg font-black text-slate-800 mb-1">Customer & Account Identity</h3>
+                <p className="text-xs text-slate-500">Section A + B of the BD/SA Intake Form — customer identity and stakeholder contacts.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                    {/* Project Name */}
+            {/* Section A: Customer & Account Identity */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6">
+                <div className={sectionCls}><i className="fas fa-building text-blue-500 mr-2"></i> A. Customer & Account Identity</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name *</label>
-                        <input type="text" value={d.projectName || ''} onChange={e => { update('projectName', e.target.value); setCreated(false); }}
-                            placeholder="e.g. SAP Migration — CODELPA"
-                            className={`w-full px-4 py-3 text-sm font-medium border rounded-xl outline-none ${!d.projectName ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'}`} />
-                        {!d.projectName && <p className="text-[10px] text-rose-400 mt-1">Required</p>}
+                        <label className={labelCls}>Customer Account Name *</label>
+                        <input type="text" list="guided-customers" value={d.customerName || ''} onChange={e => { update('customerName', e.target.value); setCreated(false); }} placeholder="Legal entity / brand name" className={inputCls} />
+                        <datalist id="guided-customers">{(customers || []).map(c => <option key={c.id} value={c.name}>{c.name} ({c.region})</option>)}</datalist>
                     </div>
-
-                    {/* Customer */}
                     <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Customer Account *</label>
-                        <input type="text" list="guided-customers" value={d.customerName || ''} onChange={e => { update('customerName', e.target.value); setCreated(false); }}
-                            placeholder="Type or select customer..."
-                            className="w-full px-4 py-3 text-sm font-bold uppercase border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
-                        <datalist id="guided-customers">
-                            {(customers || []).map(c => <option key={c.id} value={c.name}>{c.name} ({c.region})</option>)}
-                        </datalist>
-                        {selectedCustomer && (
-                            <div className="mt-1.5 p-2 bg-slate-50 rounded-lg text-[10px] text-slate-500 flex gap-3">
-                                <span><i className="fas fa-globe mr-1"></i>{selectedCustomer.country || '—'}</span>
-                                <span><i className="fas fa-map-marker-alt mr-1"></i>{selectedCustomer.region || '—'}</span>
-                                <span><i className={`fas ${selectedCustomer.ak ? 'fa-check-circle text-emerald-500' : 'fa-exclamation-triangle text-amber-500'} mr-1`}></i>{selectedCustomer.ak ? 'Keys OK' : 'No keys'}</span>
-                            </div>
-                        )}
+                        <label className={labelCls}>Huawei Account Name</label>
+                        <input type="text" value={d.huaweiAccountName || ''} onChange={e => update('huaweiAccountName', e.target.value)} placeholder="Huawei Cloud account display name" className={inputCls} />
                     </div>
-
-                    {/* Country */}
                     <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Target Country *</label>
-                        <select value={localCountry} onChange={e => { const c = e.target.value; setLocalCountry(c); update('country', c); update('region', getRegion(c)); setCreated(false); }}
-                            className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
+                        <label className={labelCls}>Account ID (Customer ID)</label>
+                        <input type="text" value={d.accountId || ''} onChange={e => update('accountId', e.target.value)} placeholder="e.g., 3a1b2c3d4e5f..." className={`${inputCls} font-mono`} />
+                    </div>
+                    <div>
+                        <label className={labelCls}>Real-Name Verification Status</label>
+                        <select value={localVerification} onChange={e => { setLocalVerification(e.target.value); update('realNameVerification', e.target.value); }} className={inputCls}>
+                            <option value="">Select...</option>
+                            {VERIFICATION_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className={labelCls}>Is this a Partner account?</label>
+                        <select value={localIsPartner} onChange={e => { setLocalIsPartner(e.target.value); update('isPartner', e.target.value); }} className={inputCls}>
+                            <option value="">Select...</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    {d.isPartner === 'Yes' && (
+                        <div>
+                            <label className={labelCls}>Enterprise Project (if Partner)</label>
+                            <input type="text" value={d.enterpriseProject || ''} onChange={e => update('enterpriseProject', e.target.value)} placeholder="EPS name/ID" className={inputCls} />
+                        </div>
+                    )}
+                    <div>
+                        <label className={labelCls}>Target Country *</label>
+                        <select value={localCountry} onChange={e => { const c = e.target.value; setLocalCountry(c); update('country', c); update('region', getRegion(c)); setCreated(false); }} className={inputCls}>
                             <option value="">Select country...</option>
                             {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                     </div>
-
-                    {/* SA + Partner + Tech Contact */}
-                    <div className="grid grid-cols-3 gap-3">
+                    {d.projectName === undefined && (
                         <div>
-                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">SA *</label>
-                            <input type="text" list="sa-list" value={d.sa || ''} onChange={e => update('sa', e.target.value)} placeholder="Name" className="w-full px-3 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400" />
-                            <datalist id="sa-list">{existingSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
+                            <label className={labelCls}>Project Name (optional)</label>
+                            <input type="text" value={d.projectName || ''} onChange={e => { update('projectName', e.target.value); setCreated(false); }} placeholder="Auto-generated if blank" className={inputCls} />
                         </div>
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Partner</label>
-                            <input type="text" list="partner-list" value={d.partner || ''} onChange={e => update('partner', e.target.value)} placeholder="TBD" className="w-full px-3 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400" />
-                            <datalist id="partner-list">{existingPartners.map(p => <option key={p} value={p} />)}</datalist>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Tech Contact</label>
-                            <input type="text" value={d.techContact || ''} onChange={e => update('techContact', e.target.value)} placeholder="TBD" className="w-full px-3 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400" />
-                        </div>
-                    </div>
-
-                    {/* MRR */}
-                    <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Target MRR ($/month)</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">$</span>
-                            <input type="number" value={d.mrr || ''} onChange={e => update('mrr', e.target.value)} placeholder="0" className="w-full pl-7 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200" />
-                        </div>
-                    </div>
-
-                    {/* Create lead */}
-                    <button onClick={handleCreate} disabled={!d.projectName || created}
-                        className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors ${created ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300'}`}>
-                        {created ? <><i className="fas fa-check-circle mr-1"></i> Lead Created — {d.projectId?.slice(-8)}</> : <><i className="fas fa-plus mr-1"></i> Create Presales Lead</>}
-                    </button>
+                    )}
                 </div>
-
-                {/* Summary */}
-                <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6 h-fit">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Lead Summary</h4>
-                    <div className="space-y-2.5">
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">Project</span><span className="text-xs font-bold text-slate-700">{d.projectName || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">Customer</span><span className="text-xs font-bold text-slate-700">{d.customerName || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">Country</span><span className="text-xs font-bold text-slate-700">{d.country || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">Region</span><span className="text-xs font-bold text-blue-600">{d.region || getRegion(d.country)}</span></div>
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">SA</span><span className="text-xs font-bold text-slate-700">{d.sa || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-xs text-slate-500">MRR</span><span className="text-xs font-bold text-emerald-600">{d.mrr ? `$${Number(d.mrr).toLocaleString()}` : '—'}</span></div>
+                {selectedCustomer && (
+                    <div className="mt-3 p-2 bg-white rounded-lg text-[10px] text-slate-500 flex gap-4 border border-slate-100">
+                        <span><i className="fas fa-globe mr-1"></i>{selectedCustomer.country || '—'}</span>
+                        <span><i className="fas fa-map-marker-alt mr-1"></i>{selectedCustomer.region || '—'}</span>
+                        <span><i className={`fas ${selectedCustomer.ak ? 'fa-check-circle text-emerald-500' : 'fa-exclamation-triangle text-amber-500'} mr-1`}></i>{selectedCustomer.ak ? 'Keys OK' : 'No keys'}</span>
                     </div>
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                        <p className="text-[10px] text-slate-400 leading-relaxed">
-                            <i className="fas fa-info-circle mr-1"></i> Creates a presales lead (visible in Pre-Sales Radar). Next step: qualify the opportunity.
-                        </p>
+                )}
+            </div>
+
+            {/* Section B: Stakeholder Contacts */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6">
+                <div className={sectionCls}><i className="fas fa-users text-purple-500 mr-2"></i> B. Stakeholder Contacts</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className={labelCls}>Sales Architect (SA) *</label>
+                        <input type="text" list="sa-list" value={d.sa || ''} onChange={e => update('sa', e.target.value)} placeholder="Who sold it" className={inputCls} />
+                        <datalist id="sa-list">{existingSAs.map(sa => <option key={sa} value={sa} />)}</datalist>
+                    </div>
+                    <div>
+                        <label className={labelCls}>Delivery Partner</label>
+                        <input type="text" list="partner-list" value={d.partner || ''} onChange={e => update('partner', e.target.value)} placeholder="e.g., Partner 1, Partner 2, or Internal" className={inputCls} />
+                        <datalist id="partner-list">{existingPartners.map(p => <option key={p} value={p} />)}</datalist>
+                    </div>
+                    <div>
+                        <label className={labelCls}>CIO / IT Lead</label>
+                        <input type="text" value={d.cioItLead || ''} onChange={e => update('cioItLead', e.target.value)} placeholder="Customer-side decision-maker" className={inputCls} />
+                    </div>
+                    <div>
+                        <label className={labelCls}>Technical Architect (Customer)</label>
+                        <input type="text" value={d.technicalArchitect || ''} onChange={e => update('technicalArchitect', e.target.value)} placeholder="Customer's technical POC" className={inputCls} />
                     </div>
                 </div>
             </div>
+
+            {/* Create lead button */}
+            <button onClick={handleCreate} disabled={!d.customerName || !d.sa || !d.country || created}
+                className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors ${created ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300'}`}>
+                {created ? <><i className="fas fa-check-circle mr-1"></i> Lead Created — {d.projectId?.slice(-8)}</> : <><i className="fas fa-plus mr-1"></i> Create Presales Lead</>}
+            </button>
+            {!created && (!d.customerName || !d.sa || !d.country) && (
+                <p className="text-[10px] text-rose-400 text-center">Customer Name, SA, and Country are required</p>
+            )}
         </div>
     );
 }
