@@ -33,16 +33,13 @@ import GuidedWizardShell from './components/guided/GuidedWizardShell';
 import StepProjectSetup from './components/guided/steps/StepProjectSetup';
 import StepSourceDiscovery from './components/guided/steps/StepSourceDiscovery';
 import StepQuotationUpload from './components/guided/steps/StepQuotationUpload';
-import StepTargetArchitecture from './components/guided/steps/StepTargetArchitecture';
-import StepSimulation from './components/guided/steps/StepSimulation';
 
-// Guided wizard step definitions
+// Guided wizard step definitions — covers presales + Phase 1 (ARB) only
+// After completion, hands off to regular Phase 2 (Architecture) in Project Wizard
 const GUIDED_STEPS = [
   { id: 'project', title: 'Project Setup', icon: 'fa-folder-plus', description: 'Name, customer, region' },
-  { id: 'discovery', title: 'Source Discovery', icon: 'fa-search', description: 'Connect & scan source' },
+  { id: 'discovery', title: 'Source Info', icon: 'fa-search', description: 'Source cloud & credentials' },
   { id: 'quotation', title: 'Quotation & BOM', icon: 'fa-file-excel', description: 'Upload presales BOM' },
-  { id: 'architecture', title: 'Target Architecture', icon: 'fa-sitemap', description: 'Feasibility & DTRB' },
-  { id: 'simulation', title: 'Simulation', icon: 'fa-rocket', description: 'Dry-run preview' },
 ];
 
 const GUIDED_SCENARIOS = {
@@ -162,20 +159,21 @@ function App() {
                                     currentStep={guidedStep}
                                     onNext={() => setGuidedStep(s => Math.min(s + 1, GUIDED_STEPS.length - 1))}
                                     onBack={() => setGuidedStep(s => Math.max(s - 1, 0))}
-                                    onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }}
-                                    onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }}
-                                >
-                                    {guidedStep === 0 && <StepProjectSetup data={guidedData} onChange={setGuidedData} />}
-                                    {guidedStep === 1 && <StepSourceDiscovery data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
-                                    {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
-                                    {guidedStep === 3 && <StepTargetArchitecture data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
-                                    {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => {
-                                        // Wizard completed — save all gathered data to the project and navigate
-                                        // Wizard covers Phase 1 (ARB) + Phase 2 (Architecture) data + simulation preview
-                                        // Land at Phase 3 (Planning) — user still needs wave planning, runbooks, FinOps before execution
+                                    onSkip={() => {
+                                        // Skip — go to project wizard at Phase 1 (ARB) if project created, else home
+                                        if (guidedData.projectId) {
+                                            setActiveProjectId(guidedData.projectId);
+                                            setActivePhase('wizard');
+                                        } else {
+                                            setActivePhase('home');
+                                        }
+                                        setGuidedScenario(null);
+                                    }}
+                                    onComplete={() => {
+                                        // Wizard finished (Step 3 = last step)
+                                        // Save gathered data to project and advance to Phase 2 (Architecture)
                                         if (guidedData.projectId) {
                                             const projectPatch = {
-                                                // Phase 1 data (from Step 1 + 3)
                                                 customerName: guidedData.customerName || '',
                                                 country: guidedData.country || '',
                                                 region: guidedData.region || 'la-south-2',
@@ -183,33 +181,10 @@ function App() {
                                                 sa: guidedData.sa || '',
                                                 partner: guidedData.partner || '',
                                                 quotationFile: guidedData.quotationFile || '',
-                                                // Phase 2 data (from Step 2 + 4)
                                                 sourceCloud: guidedData.source || '',
                                                 sapSid: guidedData.sapSid || '',
                                                 dbType: guidedData.dbType || '',
-                                                // Advance to Phase 3 (Planning) — wizard covered Phases 1-2
-                                                lifecycleState: '3_planning',
-                                                phase: '3_planning',
-                                                currentPhase: 'Planning',
-                                                migrationScenario: guidedScenario || '',
-                                            };
-                                            handleUpdateProject(guidedData.projectId, projectPatch);
-                                            setActiveProjectId(guidedData.projectId);
-                                            setActivePhase('wizard');
-                                        } else {
-                                            setActivePhase('wizard');
-                                        }
-                                        setGuidedScenario(null);
-                                    }} onSkip={() => {
-                                        // Skip at simulation — go to project wizard at Phase 2 (Architecture)
-                                        // User has project setup + discovery but hasn't completed architecture/DTRB
-                                        if (guidedData.projectId) {
-                                            const projectPatch = {
-                                                customerName: guidedData.customerName || '',
-                                                country: guidedData.country || '',
-                                                region: guidedData.region || 'la-south-2',
-                                                mrr: Number(guidedData.mrr) || 0,
-                                                sourceCloud: guidedData.source || '',
+                                                // Phase 1 (ARB) complete — advance to Phase 2 (Architecture)
                                                 lifecycleState: '2_architecture',
                                                 phase: '2_architecture',
                                                 currentPhase: 'Architecture',
@@ -222,7 +197,12 @@ function App() {
                                             setActivePhase('home');
                                         }
                                         setGuidedScenario(null);
-                                    }} />}
+                                    }}
+                                >
+                                    {guidedStep === 0 && <StepProjectSetup data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 1 && <StepSourceDiscovery data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
+                                    {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
+                                >
                                 </GuidedWizardShell>
                             )}
                         </>
