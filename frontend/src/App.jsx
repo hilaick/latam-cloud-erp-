@@ -30,10 +30,10 @@ import DocumentationCenter from './components/views/DocumentationCenter';
 // Direct imports (not lazy) — avoids React 19 chunk-boundary hook errors
 import ScenarioPicker from './components/guided/ScenarioPicker';
 import GuidedWizardShell from './components/guided/GuidedWizardShell';
-const StepLeadInfo = React.lazy(() => import('./components/guided/steps/StepLeadInfo'));
-const StepTriage = React.lazy(() => import('./components/guided/steps/StepTriage'));
-const StepARBHandover = React.lazy(() => import('./components/guided/steps/StepARBHandover'));
-const StepQuotationUpload = React.lazy(() => import('./components/guided/steps/StepQuotationUpload'));
+import StepLeadInfo from './components/guided/steps/StepLeadInfo';
+import StepTriage from './components/guided/steps/StepTriage';
+import StepARBHandover from './components/guided/steps/StepARBHandover';
+import StepQuotationUpload from './components/guided/steps/StepQuotationUpload';
 
 // Guided wizard — Presales → ARB (Phase 1) → hand off to Phase 2
 const GUIDED_STEPS = [
