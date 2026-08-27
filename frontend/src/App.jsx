@@ -169,7 +169,24 @@ function App() {
                                     {guidedStep === 1 && <StepSourceDiscovery data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
                                     {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
                                     {guidedStep === 3 && <StepTargetArchitecture data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
-                                    {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }} onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }} />}
+                                    {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => {
+                                        // Navigate to the project wizard at Phase 4 (Execution) if project was created
+                                        if (guidedData.projectId) {
+                                            setActiveProjectId(guidedData.projectId);
+                                            setActivePhase('wizard');
+                                        } else {
+                                            setActivePhase('wizard');
+                                        }
+                                        setGuidedScenario(null);
+                                    }} onSkip={() => {
+                                        if (guidedData.projectId) {
+                                            setActiveProjectId(guidedData.projectId);
+                                            setActivePhase('wizard');
+                                        } else {
+                                            setActivePhase('home');
+                                        }
+                                        setGuidedScenario(null);
+                                    }} />}
                                 </GuidedWizardShell>
                             )}
                         </>
