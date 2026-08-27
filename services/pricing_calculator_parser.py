@@ -337,6 +337,9 @@ def _parse_specs_for_topology(item: Dict[str, Any]) -> Dict[str, Any]:
         r'(AlmaLinux[^;|]*)',
         r'(Oracle[^;|]*)',
         r'(openSUSE[^;|]*)',
+        r'(SUSE Linux Enterprise Server[^;|]*)',
+        r'(SUSE[^;|]*)',
+        r'(SLES[^;|]*)',
     ]
     for pat in os_patterns:
         m = re.search(pat, specs, re.IGNORECASE)

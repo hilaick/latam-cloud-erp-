@@ -309,7 +309,7 @@ def process_generic_quotation_df(df: pd.DataFrame, customer_name: str) -> Dict[s
             "status": "OK" if flavor != "MISSING_FLAVOR" else "WARNING",
             "metadata": {
                 "tier": str(row[col_tier]).strip() if col_tier and pd.notna(row[col_tier]) else "Standard Compute",
-                "os_type": "Windows" if col_os and 'windows' in str(row[col_os]).lower() else "Linux",
+                "os_type": str(row[col_os]).strip() if col_os and pd.notna(row[col_os]) else ("Windows" if 'windows' in str(row[col_os] if col_os else '').lower() else "Linux"),
                 "cpu_cores": parse_integer(row[col_cpu]) if col_cpu else 0,
                 "ram_gb": parse_integer(row[col_ram]) if col_ram else 0,
                 "storage_gb": parse_integer(row[col_storage]) if col_storage else 0,
