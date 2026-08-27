@@ -27,14 +27,14 @@ import HaltedProjects from './components/views/HaltedProjects';
 import HelpDrawer from './components/utils/HelpDrawer';
 import DocumentationCenter from './components/views/DocumentationCenter';
 
-// Lazy-load guided wizard components (reduces initial bundle)
-const ScenarioPicker = React.lazy(() => import('./components/guided/ScenarioPicker'));
-const GuidedWizardShell = React.lazy(() => import('./components/guided/GuidedWizardShell'));
-const StepProjectSetup = React.lazy(() => import('./components/guided/steps/StepProjectSetup'));
-const StepSourceDiscovery = React.lazy(() => import('./components/guided/steps/StepSourceDiscovery'));
-const StepQuotationUpload = React.lazy(() => import('./components/guided/steps/StepQuotationUpload'));
-const StepTargetArchitecture = React.lazy(() => import('./components/guided/steps/StepTargetArchitecture'));
-const StepSimulation = React.lazy(() => import('./components/guided/steps/StepSimulation'));
+// Direct imports (not lazy) — avoids React 19 chunk-boundary hook errors
+import ScenarioPicker from './components/guided/ScenarioPicker';
+import GuidedWizardShell from './components/guided/GuidedWizardShell';
+import StepProjectSetup from './components/guided/steps/StepProjectSetup';
+import StepSourceDiscovery from './components/guided/steps/StepSourceDiscovery';
+import StepQuotationUpload from './components/guided/steps/StepQuotationUpload';
+import StepTargetArchitecture from './components/guided/steps/StepTargetArchitecture';
+import StepSimulation from './components/guided/steps/StepSimulation';
 
 function App() {
     const { isAuthenticated, loading: authLoading, logout } = useAuth();
@@ -129,7 +129,7 @@ function App() {
                     {activePhase === 'docs' && <DocumentationCenter />}
 
                     {activePhase === 'guided' && (
-                        <React.Suspense fallback={<div className="flex items-center justify-center h-64"><i className="fas fa-spinner fa-spin text-blue-500 text-2xl"></i></div>}>
+                        <>
                             {!guidedScenario ? (
                                 <ScenarioPicker
                                     onSelectScenario={(id) => { setGuidedScenario(id); setGuidedStep(0); setGuidedData({}); }}
@@ -151,7 +151,7 @@ function App() {
                                     {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }} onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }} />}
                                 </GuidedWizardShell>
                             )}
-                        </React.Suspense>
+                        </>
                     )}
 
                     {activePhase === 'login' && <LoginPage />}
@@ -195,11 +195,11 @@ function App() {
                     onClose={() => setIsHermesOpen(false)}
                 />
 
-                {/* 📖 GLOBAL HELP DRAWER */}
+                {/* 📖 GLOBAL HELP — now uses DocumentationCenter */}
                 <HelpDrawer
                     isOpen={isHelpOpen}
-                    onClose={() => setIsHelpOpen(false)}
-                    title="ERP Migration Factory — User Manual"
+                    onClose={() => { setIsHelpOpen(false); setActivePhase('docs'); }}
+                    title="ERP Migration Factory — Documentation"
                     docName="USER_MANUAL"
                 />
             </main>
