@@ -36,6 +36,24 @@ import StepQuotationUpload from './components/guided/steps/StepQuotationUpload';
 import StepTargetArchitecture from './components/guided/steps/StepTargetArchitecture';
 import StepSimulation from './components/guided/steps/StepSimulation';
 
+// Guided wizard step definitions
+const GUIDED_STEPS = [
+  { id: 'project', title: 'Project Setup', icon: 'fa-folder-plus', description: 'Name, customer, region' },
+  { id: 'discovery', title: 'Source Discovery', icon: 'fa-search', description: 'Connect & scan source' },
+  { id: 'quotation', title: 'Quotation & BOM', icon: 'fa-file-excel', description: 'Upload presales BOM' },
+  { id: 'architecture', title: 'Target Architecture', icon: 'fa-sitemap', description: 'Feasibility & DTRB' },
+  { id: 'simulation', title: 'Simulation', icon: 'fa-rocket', description: 'Dry-run preview' },
+];
+
+const GUIDED_SCENARIOS = {
+  'sap': { title: 'SAP S/4HANA Migration', subtitle: 'Migrate SAP workloads with certified flavors and manual cutover gates' },
+  'cross-cloud': { title: 'Cross-Cloud Migration', subtitle: 'Migrate from AWS or Azure to Huawei Cloud using SMS' },
+  'on-prem': { title: 'On-Prem Lift & Shift', subtitle: 'Migrate on-premises servers with SMS agent-based replication' },
+  'database': { title: 'Database-Only Migration', subtitle: 'Migrate databases using DRS with minimal downtime' },
+  'object-storage': { title: 'Object Storage Migration', subtitle: 'Migrate S3/Blob to Huawei Cloud OBS using OMS' },
+  'multi-region': { title: 'Multi-Region Deployment', subtitle: 'Deploy across multiple regions with DR and failover' },
+};
+
 function App() {
     const { isAuthenticated, loading: authLoading, logout } = useAuth();
     
@@ -138,8 +156,11 @@ function App() {
                             ) : (
                                 <GuidedWizardShell
                                     scenarioId={guidedScenario}
+                                    title={GUIDED_SCENARIOS[guidedScenario]?.title || 'Guided Migration Wizard'}
+                                    subtitle={GUIDED_SCENARIOS[guidedScenario]?.subtitle || ''}
+                                    steps={GUIDED_STEPS}
                                     currentStep={guidedStep}
-                                    onNext={() => setGuidedStep(s => Math.min(s + 1, 4))}
+                                    onNext={() => setGuidedStep(s => Math.min(s + 1, GUIDED_STEPS.length - 1))}
                                     onBack={() => setGuidedStep(s => Math.max(s - 1, 0))}
                                     onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }}
                                     onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }}

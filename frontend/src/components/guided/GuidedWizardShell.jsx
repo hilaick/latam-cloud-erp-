@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 export default function GuidedWizardShell({
-  scenarioId, title, subtitle, steps, currentStep,
+  scenarioId, title, subtitle, steps = [], currentStep = 0,
   onNext, onBack, onSkip, onComplete, children,
 }) {
   const progress = steps.length > 0 ? ((currentStep + 1) / steps.length) * 100 : 0;
