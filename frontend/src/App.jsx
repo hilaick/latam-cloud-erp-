@@ -30,16 +30,19 @@ import DocumentationCenter from './components/views/DocumentationCenter';
 // Direct imports (not lazy) — avoids React 19 chunk-boundary hook errors
 import ScenarioPicker from './components/guided/ScenarioPicker';
 import GuidedWizardShell from './components/guided/GuidedWizardShell';
-import StepProjectSetup from './components/guided/steps/StepProjectSetup';
-import StepSourceDiscovery from './components/guided/steps/StepSourceDiscovery';
-import StepQuotationUpload from './components/guided/steps/StepQuotationUpload';
+const StepLeadInfo = React.lazy(() => import('./components/guided/steps/StepLeadInfo'));
+const StepTriage = React.lazy(() => import('./components/guided/steps/StepTriage'));
+const StepARBHandover = React.lazy(() => import('./components/guided/steps/StepARBHandover'));
+const StepQuotationUpload = React.lazy(() => import('./components/guided/steps/StepQuotationUpload'));
 
-// Guided wizard step definitions — covers presales + Phase 1 (ARB) only
-// After completion, hands off to regular Phase 2 (Architecture) in Project Wizard
+// Guided wizard — Presales → ARB (Phase 1) → hand off to Phase 2
 const GUIDED_STEPS = [
-  { id: 'project', title: 'Project Setup', icon: 'fa-folder-plus', description: 'Name, customer, region' },
-  { id: 'discovery', title: 'Source Info', icon: 'fa-search', description: 'Source cloud & credentials' },
-  { id: 'quotation', title: 'Quotation & BOM', icon: 'fa-file-excel', description: 'Upload presales BOM' },
+  // Presales
+  { id: 'lead', title: 'Lead Info', icon: 'fa-user-plus', description: 'Customer, project, SA' },
+  { id: 'triage', title: 'Qualification', icon: 'fa-clipboard-list', description: 'Type, scope, source, delivery' },
+  // ARB (Phase 1)
+  { id: 'arb', title: 'ARB Handover', icon: 'fa-briefcase', description: 'Artifacts & SOW context' },
+  { id: 'bom', title: 'Quotation BoM', icon: 'fa-file-excel', description: 'Upload presales BOM' },
 ];
 
 const GUIDED_SCENARIOS = {
@@ -170,20 +173,36 @@ function App() {
                                         setGuidedScenario(null);
                                     }}
                                     onComplete={() => {
-                                        // Wizard finished (Step 3 = last step)
-                                        // Save gathered data to project and advance to Phase 2 (Architecture)
+                                        // Wizard finished (Step 4 = BoM upload = last step)
+                                        // Create project as presales lead → promote to ARB → advance to Phase 2
                                         if (guidedData.projectId) {
+                                            // Project already created in Step 1 — update with all wizard data
                                             const projectPatch = {
+                                                // Presales data
                                                 customerName: guidedData.customerName || '',
+                                                customerId: guidedData.customerId || '',
                                                 country: guidedData.country || '',
                                                 region: guidedData.region || 'la-south-2',
                                                 mrr: Number(guidedData.mrr) || 0,
                                                 sa: guidedData.sa || '',
-                                                partner: guidedData.partner || '',
+                                                partner: guidedData.partner || 'TBD',
+                                                techContact: guidedData.techContact || 'TBD',
+                                                // Triage data
+                                                project_type: guidedData.project_type || '',
+                                                migrationScope: guidedData.migrationScope || [],
+                                                sourceEnvironment: guidedData.sourceEnvironment || '',
+                                                authLevel: guidedData.authLevel || [],
+                                                deliveryScope: guidedData.deliveryScope || [],
+                                                businessDrivers: guidedData.businessDrivers || [],
+                                                // ARB data
+                                                artefacts: guidedData.artefacts || { hld: false, targetArch: false },
+                                                discoveryNotes: guidedData.discoveryNotes || '',
+                                                complexityLevel: guidedData.complexityLevel || 'Medium',
+                                                // BoM
                                                 quotationFile: guidedData.quotationFile || '',
-                                                sourceCloud: guidedData.source || '',
-                                                sapSid: guidedData.sapSid || '',
-                                                dbType: guidedData.dbType || '',
+                                                // Promote from presales lead to active project
+                                                isWaiting: false,
+                                                waitingStage: null,
                                                 // Phase 1 (ARB) complete — advance to Phase 2 (Architecture)
                                                 lifecycleState: '2_architecture',
                                                 phase: '2_architecture',
@@ -199,9 +218,10 @@ function App() {
                                         setGuidedScenario(null);
                                     }}
                                 >
-                                    {guidedStep === 0 && <StepProjectSetup data={guidedData} onChange={setGuidedData} />}
-                                    {guidedStep === 1 && <StepSourceDiscovery data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
-                                    {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 0 && <StepLeadInfo data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 1 && <StepTriage data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
+                                    {guidedStep === 2 && <StepARBHandover data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 3 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
                                 >
                                 </GuidedWizardShell>
                             )}
