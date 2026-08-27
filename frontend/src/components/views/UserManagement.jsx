@@ -4,6 +4,36 @@ import ModelConfigPanel from '../wizard/ModelConfigPanel';
 import KnowledgeTreePanel from '../utils/KnowledgeTreePanel';
 import McpServerView from './McpServerView';
 
+/* ── Collapsible Config Card ── */
+function CollapsibleCard({ icon, iconColor, title, subtitle, badge, defaultOpen, children }) {
+    const [open, setOpen] = useState(defaultOpen || false);
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div
+                className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
+                onClick={() => setOpen(!open)}
+            >
+                <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${iconColor || 'bg-blue-100 text-blue-600'}`}>
+                        <i className={`fas ${icon} text-sm`}></i>
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-black text-slate-800">{title}</h3>
+                        {subtitle && <p className="text-[10px] text-slate-400 mt-0.5">{subtitle}</p>}
+                    </div>
+                    {badge && <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-600 border border-slate-200">{badge}</span>}
+                </div>
+                <i className={`fas fa-chevron-${open ? 'up' : 'down'} text-slate-300 text-xs`}></i>
+            </div>
+            {open && (
+                <div className="border-t border-slate-100 p-5">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function UserManagement() {
     const roles = [
         "Master Admin", "Principal Architect", "TAM", "Sales", 
@@ -19,7 +49,7 @@ export default function UserManagement() {
 
     const [userToDelete, setUserToDelete] = useState(null); 
     const [editingUser, setEditingUser] = useState(null);
-    const [showQR, setShowQR] = useState(false); // Controls the 2FA Setup Modal
+    const [showQR, setShowQR] = useState(false);
 
     const executeDelete = () => {
         if (userToDelete !== null) {
@@ -35,7 +65,7 @@ export default function UserManagement() {
     };
 
     const targetUserName = users.find(u => u.id === userToDelete)?.name || 'Unknown User';
-    const myProfile = users[0]; // Assuming Hilaick is user 0 for the demo
+    const myProfile = users[0];
 
     return (
         <div className="animate-fade-in max-w-[1600px] mx-auto space-y-6 pb-12">
@@ -44,14 +74,15 @@ export default function UserManagement() {
             <div className="bg-slate-900 rounded-2xl shadow-xl p-6 md:p-8 flex flex-col md:flex-row justify-between items-center text-white border border-slate-700 gap-4 text-center md:text-left">
                 <div>
                     <h2 className="text-2xl md:text-3xl font-black mb-2"><i className="fas fa-users-cog text-blue-400 mr-3"></i> Profile & User Management</h2>
-                    <p className="text-sm text-slate-400">Manage your credentials, 2FA configuration, and Organization RBAC.</p>
+                    <p className="text-sm text-slate-400">Manage your credentials, 2FA configuration, system configuration, and Organization RBAC.</p>
                 </div>
             </div>
 
             <div className="flex flex-col xl:flex-row gap-6">
                 
-                {/* LEFT: MY PROFILE & 2FA CONFIGURATION */}
+                {/* LEFT: MY PROFILE + CONFIGURATION TABS */}
                 <div className="xl:w-1/3 shrink-0 flex flex-col gap-6">
+                    {/* My Profile card (always visible) */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                         <div className="flex justify-between items-start border-b border-slate-100 pb-6 mb-6">
                             <h3 className="font-black text-xl text-slate-800"><i className="fas fa-id-badge text-blue-600 mr-2"></i> My Profile</h3>
@@ -72,33 +103,41 @@ export default function UserManagement() {
                         </div>
                     </div>
 
-                    {/* ── Hermes AI Configuration ── */}
-                    <ModelConfigPanel />
+                    {/* ── Configuration Section — Collapsible Cards ── */}
+                    <div className="space-y-4">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">System Configuration</div>
 
-                    {/* ── Federated Knowledge Tree ── */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                        <div className="border-b border-slate-100 pb-3 mb-4">
-                            <h3 className="font-black text-base text-slate-800">
-                                <i className="fas fa-sitemap text-emerald-600 mr-2"></i> Skill Knowledge Tree
-                            </h3>
-                            <p className="text-[10px] text-slate-400 mt-1">
-                                Hierarchical view of all skills across 3 sources (Skill Registry · External · History)
-                            </p>
-                        </div>
-                        <KnowledgeTreePanel />
-                    </div>
+                        {/* AI Model Configuration */}
+                        <CollapsibleCard
+                            icon="fa-brain"
+                            iconColor="bg-purple-100 text-purple-600"
+                            title="AI Model Configuration"
+                            subtitle="LLM provider, model selection, and delivery agent settings"
+                            badge="GLM-5.2"
+                        >
+                            <ModelConfigPanel />
+                        </CollapsibleCard>
 
-                    {/* ── MCP Servers ── */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                        <div className="border-b border-slate-100 pb-3 mb-4">
-                            <h3 className="font-black text-base text-slate-800">
-                                <i className="fas fa-plug text-blue-600 mr-2"></i> MCP Servers
-                            </h3>
-                            <p className="text-[10px] text-slate-400 mt-1">
-                                Model Context Protocol servers for Huawei Cloud IaaS APIs
-                            </p>
-                        </div>
-                        <McpServerView />
+                        {/* Skill Knowledge Tree */}
+                        <CollapsibleCard
+                            icon="fa-sitemap"
+                            iconColor="bg-emerald-100 text-emerald-600"
+                            title="Skill Knowledge Tree"
+                            subtitle="3 sources: Skill Registry · External · Execution History"
+                            badge="19 skills"
+                        >
+                            <KnowledgeTreePanel />
+                        </CollapsibleCard>
+
+                        {/* MCP Servers */}
+                        <CollapsibleCard
+                            icon="fa-plug"
+                            iconColor="bg-blue-100 text-blue-600"
+                            title="MCP Servers"
+                            subtitle="Model Context Protocol servers for Huawei Cloud IaaS APIs"
+                        >
+                            <McpServerView />
+                        </CollapsibleCard>
                     </div>
                 </div>
 
@@ -145,7 +184,7 @@ export default function UserManagement() {
                 </div>
             </div>
 
-            {/* 🚨 MOCK QR CODE MODAL FOR 2FA CONFIGURATION */}
+            {/* 2FA QR MODAL */}
             {showQR && (
                 <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8 text-center relative border border-slate-300">
@@ -153,7 +192,6 @@ export default function UserManagement() {
                         <h3 className="font-black text-xl text-slate-800 mb-2">Configure Authenticator</h3>
                         <p className="text-xs text-slate-500 mb-6 font-medium">Scan this code using Google Authenticator or Authy to link your device.</p>
                         <div className="w-48 h-48 mx-auto bg-slate-100 border-4 border-slate-200 rounded-2xl flex items-center justify-center mb-6">
-                            {/* A mock visual representation of a QR Code */}
                             <i className="fas fa-qrcode text-[120px] text-slate-800"></i>
                         </div>
                         <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -164,7 +202,7 @@ export default function UserManagement() {
                 </div>
             )}
 
-            {/* 🚨 INLINE EDIT USER MODAL */}
+            {/* EDIT USER MODAL */}
             {editingUser && (
                 <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden">

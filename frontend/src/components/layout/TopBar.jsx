@@ -91,6 +91,18 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
 
     const profileMenuItems = [
         {
+            key: 'guided',
+            icon: <i className="fas fa-magic" />,
+            label: 'Guided Wizard',
+            onClick: () => { setActiveProjectId('none'); setActivePhase('guided'); setProfileMenuOpen(false); },
+        },
+        {
+            key: 'docs',
+            icon: <BookOutlined />,
+            label: 'Documentation',
+            onClick: () => { setActiveProjectId('none'); setActivePhase('docs'); setProfileMenuOpen(false); },
+        },
+        {
             key: 'users',
             icon: <UsergroupAddOutlined />,
             label: 'IAM & Profile',

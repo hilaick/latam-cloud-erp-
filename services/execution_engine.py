@@ -1054,11 +1054,16 @@ class ExecutionEngine:
         }
 
         # Start MCP servers on-demand (only the ones needed for this plan)
+        ak = credentials.get("ak", "")
+        sk = credentials.get("sk", "")
         mcp_started = {}
         try:
             from services.mcp_inventory import MCPInventory
-            mcp_started = MCPInventory.start_servers_for_plan(plan)
-            logger.info(f"MCP servers started on-demand: {mcp_started}")
+            # Start with customer credentials so MCP servers can call Huawei APIs directly
+            for svc in MCPInventory.get_services_for_plan(plan):
+                MCPInventory.start_server(svc, ak=ak, sk=sk)
+                mcp_started[svc] = True
+            logger.info(f"MCP servers started on-demand: {list(mcp_started.keys())}")
         except Exception as e:
             logger.warning(f"MCP server startup failed (will use hcloud CLI): {e}")
 
@@ -1070,8 +1075,6 @@ class ExecutionEngine:
             profile_name = "agent-test"
             logger.warning(f"Dynamic profile creation failed — falling back to '{profile_name}'")
 
-        ak = credentials.get("ak", "")
-        sk = credentials.get("sk", "")
         source_ak = credentials.get("source_ak", ak)
         source_sk = credentials.get("source_sk", sk)
         os_user = credentials.get("os_user", "root")
@@ -1109,6 +1112,31 @@ class ExecutionEngine:
             for cmd_info in step.get("commands", []):
                 cmd = cmd_info["cmd"]
                 cmd_type = cmd_info.get("type", "hcloud")
+
+                # ── Try MCP first if tool_source is mcp ──
+                if step.get("tool_source") == "mcp" and step.get("mcp_endpoint"):
+                    mcp_ep = step["mcp_endpoint"]
+                    try:
+                        from services.mcp_inventory import MCPInventory
+                        mcp_result = MCPInventory.call_tool(
+                            service_name=mcp_ep.get("service", "").replace("mcp_server_", ""),
+                            method=mcp_ep.get("method", "GET"),
+                            path=mcp_ep.get("path", ""),
+                            params=cmd_info.get("params", {}),
+                            credentials={"ak": ak, "sk": sk},
+                        )
+                        if mcp_result.get("success"):
+                            step_result["status"] = "success"
+                            step_result["mcp_tool"] = mcp_result.get("tool_name", "")
+                            step_result["mcp_data"] = mcp_result.get("data")
+                            step_result["source"] = "mcp"
+                            continue  # Skip hcloud CLI — MCP succeeded
+                        else:
+                            logger.info(f"MCP call failed for {step['action']}, falling back to hcloud CLI: {mcp_result.get('message', '')}")
+                            step_result["mcp_attempted"] = True
+                            step_result["mcp_fallback_reason"] = mcp_result.get("message", "")
+                    except Exception as e:
+                        logger.warning(f"MCP call error for {step['action']}: {e} — falling back to hcloud CLI")
 
                 # Substitute credentials and profile in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)

@@ -81,8 +81,17 @@ export default function RegionalMap() {
   const countries = useMemo(() => {
     const map = {};
     filtered.forEach(p => {
-      const c = p.country || 'Unknown';
-      if (!countryCoords[c]) return;
+      let c = p.country || 'Unknown';
+      // Normalize missing/unknown countries
+      if (c === '?' || c === 'Other / TBD' || c === 'Unknown' || !c.trim()) c = 'Unknown';
+      // Try exact match first, then partial match
+      if (!countryCoords[c]) {
+        const partial = Object.keys(countryCoords).find(k =>
+          c.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(c.toLowerCase())
+        );
+        if (partial) c = partial;
+        else return; // Skip truly unmappable countries
+      }
       if (!map[c]) map[c] = { name: c, coords: countryCoords[c], bu: getBusinessUnit(c), region: getCloudRegion(c), projects: [], mrr: 0, health: 'Green' };
       map[c].projects.push(p);
       map[c].mrr += Number(p.mrr) || 0;
@@ -92,6 +101,22 @@ export default function RegionalMap() {
     return Object.values(map).sort((a, b) => b.mrr - a.mrr);
   }, [filtered]);
 
+  /* ── Normalize a region string that may be comma-separated or non-standard ── */
+  const normalizeRegion = (r) => {
+    if (!r) return 'la-south-2';
+    // If comma-separated, take the first valid one
+    const parts = r.split(',').map(s => s.trim());
+    for (const p of parts) {
+      if (regionMeta[p]) return p;
+    }
+    // Partial match
+    for (const p of parts) {
+      const match = Object.keys(regionMeta).find(k => k.includes(p) || p.includes(k));
+      if (match) return match;
+    }
+    return 'la-south-2';
+  };
+
   const regionalCoverage = useMemo(() => {
     const cov = {};
     Object.keys(regionMeta).forEach(r => { cov[r] = { customers: 0, projects: 0, mrr: 0, credsConfigured: false }; });
@@ -100,7 +125,7 @@ export default function RegionalMap() {
       if (cov[r]) { cov[r].projects += c.projects.length; cov[r].mrr += c.mrr; }
     });
     (customers || []).forEach(cust => {
-      const r = cust.region || 'la-south-2';
+      const r = normalizeRegion(cust.region);
       if (cov[r]) {
         cov[r].customers++;
         cov[r].credsConfigured = cov[r].credsConfigured || !!(cust.ak && cust.sk);
@@ -160,7 +185,7 @@ export default function RegionalMap() {
   const buildCustomerLayer = useCallback(() => {
     const g = L.featureGroup();
     (customers || []).forEach(cust => {
-      const r = cust.region || 'la-south-2';
+      const r = normalizeRegion(cust.region);
       const meta = regionMeta[r];
       if (!meta) return;
       const hasCreds = !!(cust.ak && cust.sk);
@@ -194,8 +219,11 @@ export default function RegionalMap() {
     if (typeof L === 'undefined' || !mapRef.current) return;
 
     if (!mapInstance.current) {
-      mapInstance.current = L.map(mapRef.current, { zoomControl: false, attributionControl: false, minZoom: 2 }).setView([0, -70], 3);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance.current);
+      mapInstance.current = L.map(mapRef.current, { zoomControl: false, attributionControl: true, minZoom: 2 }).setView([0, -70], 3);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16,
+        attribution: 'Tiles &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS user community',
+      }).addTo(mapInstance.current);
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current);
       ['projects', 'regions', 'customers', 'arcs'].forEach(k => { layerGroups.current[k] = L.featureGroup().addTo(mapInstance.current); });
       setTimeout(() => mapInstance.current?.invalidateSize(), 300);

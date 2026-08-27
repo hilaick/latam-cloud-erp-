@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # MCP server base directory
-MCP_BASE = "/home/huawei-cloud/iaas-mcp-server/huaweicloud_services_server"
+MCP_BASE = "/tmp/mcp-update/iaas-mcp-server-main/huaweicloud_services_server"
 
 # Pillar → MCP service mapping (which services handle which migration pillar)
 PILLAR_SERVICES = {
@@ -191,11 +191,32 @@ class MCPInventory:
                 pass
         return sorted(needed)
 
-    @classmethod
-    def start_server(cls, service_name: str) -> bool:
-        """Start a single MCP server on-demand.
+    # Port allocation for MCP servers (each service gets a unique port)
+    _PORT_BASE = 8800
+    _port_map: dict = {}  # service_name → port
 
-        Only starts if not already running.
+    @classmethod
+    def _get_port(cls, service_name: str) -> int:
+        """Get or assign a port for an MCP service."""
+        if service_name not in cls._port_map:
+            # Hash the service name to a stable port in range 8800-8999
+            port = cls._PORT_BASE + (hash(service_name) % 200)
+            cls._port_map[service_name] = port
+        return cls._port_map[service_name]
+
+    @classmethod
+    def start_server(cls, service_name: str, ak: str = None, sk: str = None) -> bool:
+        """Start a single MCP server on-demand with HTTP transport.
+
+        Credential resolution order:
+          1. Explicitly passed ak/sk (per-customer)
+          2. HermesConfig.mcp_default_ak/sk (ERP default)
+          3. HUAWEI_ACCESS_KEY/HUAWEI_SECRET_KEY env vars
+
+        Args:
+            service_name: e.g. 'ecs', 'vpc', 'rds'
+            ak: Huawei Cloud Access Key (optional)
+            sk: Huawei Cloud Secret Key (optional)
         """
         if service_name in cls._running_servers:
             proc = cls._running_servers[service_name]
@@ -208,15 +229,49 @@ class MCPInventory:
             logger.warning(f"MCP server {service_name}: no run.py found at {run_file}")
             return False
 
+        port = cls._get_port(service_name)
+
+        # Credential resolution: explicit → HermesConfig → env vars
+        if not ak or not sk:
+            try:
+                from models import HermesConfig
+                hc = HermesConfig.get_config()
+                ak = ak or hc.mcp_default_ak or os.environ.get("HUAWEI_ACCESS_KEY", "")
+                sk = sk or hc.mcp_default_sk or os.environ.get("HUAWEI_SECRET_KEY", "")
+            except Exception:
+                ak = ak or os.environ.get("HUAWEI_ACCESS_KEY", "")
+                sk = sk or os.environ.get("HUAWEI_SECRET_KEY", "")
+
+        # Build environment with credentials
+        env = os.environ.copy()
+        if ak:
+            env["HUAWEI_ACCESS_KEY"] = ak
+        if sk:
+            env["HUAWEI_SECRET_KEY"] = sk
+
         try:
+            # Start with HTTP transport on the assigned port
+            # The run.py accepts -t (transport) and -p (port) args
             proc = subprocess.Popen(
-                ["python3", run_file],
+                ["python3", run_file, "-t", "http", "-p", str(port)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=server_dir,
+                env=env,
             )
             cls._running_servers[service_name] = proc
-            logger.info(f"MCP server {service_name} started (PID: {proc.pid})")
+
+            # Wait briefly for startup
+            import time
+            time.sleep(2)
+
+            if proc.poll() is not None:
+                # Process exited immediately — read stderr
+                stderr = proc.stderr.read().decode()[:500]
+                logger.error(f"MCP server {service_name} exited immediately: {stderr}")
+                return False
+
+            logger.info(f"MCP server {service_name} started on port {port} (PID: {proc.pid})")
             return True
         except Exception as e:
             logger.error(f"Failed to start MCP server {service_name}: {e}")
@@ -250,28 +305,132 @@ class MCPInventory:
     @classmethod
     def call_tool(cls, service_name: str, method: str, path: str,
                   params: dict = None, credentials: dict = None) -> dict:
-        """Call an MCP tool (API endpoint) with real credentials.
+        """Call an MCP tool (API endpoint) via the MCP HTTP protocol.
 
-        Falls back to hcloud CLI if MCP server is not running.
+        Starts the MCP server on-demand if not running, then sends a
+        JSON-RPC tools/call request to the server's /mcp endpoint.
+
+        Args:
+            service_name: e.g. 'ecs', 'vpc', 'rds'
+            method: HTTP method (GET, POST, PUT, DELETE) — used for logging
+            path: API path from the OpenAPI spec (e.g. '/v1/{project_id}/cloudservers')
+            params: dict of parameters to pass to the tool
+            credentials: dict with 'ak' and 'sk' keys
+
+        Returns:
+            dict with 'success', 'data', 'fallback' fields
         """
-        # Try MCP server first
+        import urllib.request
+        import urllib.error
+
+        # Start server if not running
+        ak = (credentials or {}).get("ak")
+        sk = (credentials or {}).get("sk")
         if service_name not in cls._running_servers:
-            started = cls.start_server(service_name)
+            started = cls.start_server(service_name, ak=ak, sk=sk)
             if not started:
-                # Fallback: use hcloud CLI
+                logger.warning(f"MCP server {service_name} unavailable — falling back to hcloud CLI")
                 return {
                     "success": False,
                     "fallback": "hcloud",
-                    "message": f"MCP server {service_name} not available — use hcloud CLI",
+                    "message": f"MCP server {service_name} could not start — use hcloud CLI",
                 }
 
-        # In a full implementation, this would call the MCP server's HTTP/stdio API
-        # For now, fall back to hcloud CLI (proven working)
-        return {
-            "success": False,
-            "fallback": "hcloud",
-            "message": f"MCP call not yet implemented for {service_name} — use hcloud CLI",
+        port = cls._get_port(service_name)
+        url = f"http://localhost:{port}/mcp"
+
+        # MCP protocol: JSON-RPC 2.0 tools/call
+        # The tool name is the operationId from the OpenAPI spec
+        # We need to find the operationId for this path+method
+        spec = cls._load_service_spec(service_name)
+        tool_name = None
+        if spec:
+            for spec_path, methods in spec.get("paths", {}).items():
+                if path and path in spec_path:
+                    for m, detail in methods.items():
+                        if m.upper() == method.upper():
+                            tool_name = detail.get("operationId", "")
+                            break
+                    if tool_name:
+                        break
+            # If no operationId found, try matching by path keyword
+            if not tool_name and path:
+                for spec_path, methods in spec.get("paths", {}).items():
+                    for m, detail in methods.items():
+                        if m.upper() == method.upper():
+                            # Check if the spec path contains a keyword from our path
+                            if any(kw in spec_path for kw in path.split("/")[1:3] if kw):
+                                tool_name = detail.get("operationId", "")
+                                break
+                    if tool_name:
+                        break
+
+        if not tool_name:
+            logger.warning(f"No MCP tool found for {service_name} {method} {path}")
+            return {
+                "success": False,
+                "fallback": "hcloud",
+                "message": f"No MCP tool match for {method} {path} — use hcloud CLI",
+            }
+
+        # Build MCP tools/call request (JSON-RPC 2.0)
+        rpc_payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": params or {},
+            },
         }
+
+        try:
+            req_data = json.dumps(rpc_payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+
+            if "error" in resp_data:
+                logger.error(f"MCP call error for {tool_name}: {resp_data['error']}")
+                return {
+                    "success": False,
+                    "fallback": "hcloud",
+                    "message": f"MCP tool {tool_name} returned error: {resp_data['error']}",
+                    "tool_name": tool_name,
+                }
+
+            # Extract result content
+            result = resp_data.get("result", {})
+            content = result.get("content", [])
+            if content and isinstance(content, list):
+                text = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
+                try:
+                    parsed = json.loads(text)
+                    return {"success": True, "data": parsed, "tool_name": tool_name, "source": "mcp"}
+                except json.JSONDecodeError:
+                    return {"success": True, "data": {"raw": text}, "tool_name": tool_name, "source": "mcp"}
+
+            return {"success": True, "data": result, "tool_name": tool_name, "source": "mcp"}
+
+        except urllib.error.URLError as e:
+            logger.error(f"MCP HTTP call failed for {service_name}: {e}")
+            return {
+                "success": False,
+                "fallback": "hcloud",
+                "message": f"MCP server {service_name} not reachable on port {port}: {e}",
+            }
+        except Exception as e:
+            logger.error(f"MCP call_tool unexpected error: {e}")
+            return {
+                "success": False,
+                "fallback": "hcloud",
+                "message": f"MCP call failed: {e}",
+            }
 
     @classmethod
     def _load_service_spec(cls, service: str) -> Optional[dict]:

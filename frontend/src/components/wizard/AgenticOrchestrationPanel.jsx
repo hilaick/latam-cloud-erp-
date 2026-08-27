@@ -735,23 +735,38 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   // ── Extract resources from project data — merge mapperNodes + targetArchitecture ──
   const resources = useMemo(() => {
     const topologyFilter = project?.topologyFilter || 'All';
-    let nodes = project?.mapperNodes || [];
+    let nodes = [...(project?.mapperNodes || [])];
 
     // Also include resources from target architecture (VPC, subnet, SG, EIP, etc.)
+    // Normalize entries: targetArchitecture uses source_name instead of name, and may lack type
     const targetArch = project?.targetArchitecture || {};
+    const normalizeTA = (n, fallbackType) => ({
+      ...n,
+      name: n.name || n.source_name || n.id || '',
+      type: n.type || fallbackType,
+    });
     if (targetArch.network && Array.isArray(targetArch.network)) {
       targetArch.network.forEach(n => {
-        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+        const norm = normalizeTA(n, 'VPC');
+        if (norm.name && !nodes.find(x => x.name === norm.name)) nodes.push(norm);
       });
     }
     if (targetArch.compute && Array.isArray(targetArch.compute)) {
       targetArch.compute.forEach(n => {
-        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+        const norm = normalizeTA(n, 'ECS');
+        if (norm.name && !nodes.find(x => x.name === norm.name)) nodes.push(norm);
       });
     }
     if (targetArch.storage && Array.isArray(targetArch.storage)) {
       targetArch.storage.forEach(n => {
-        if (!nodes.find(x => x.name === n.name)) nodes.push(n);
+        const norm = normalizeTA(n, 'EVS');
+        if (norm.name && !nodes.find(x => x.name === norm.name)) nodes.push(norm);
+      });
+    }
+    if (targetArch.database && Array.isArray(targetArch.database)) {
+      targetArch.database.forEach(n => {
+        const norm = normalizeTA(n, 'RDS');
+        if (norm.name && !nodes.find(x => x.name === norm.name)) nodes.push(norm);
       });
     }
 

@@ -247,6 +247,9 @@ class HermesConfig(db.Model):
     global_model = db.Column(db.String(100))    # e.g. deepseek-v4-pro, glm-5.2
     delegation_provider = db.Column(db.String(50))
     delegation_model = db.Column(db.String(100))
+    # MCP default credentials (ERP-level, used when no customer context)
+    mcp_default_ak = db.Column(db.String(255))
+    mcp_default_sk = db.Column(db.String(255))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @staticmethod
@@ -273,7 +276,8 @@ class HermesConfig(db.Model):
         return {k: getattr(self, k) for k in [
             'mode', 'hermes_binary_path', 'lb_url', 'lb_auth',
             'global_provider', 'global_model',
-            'delegation_provider', 'delegation_model'
+            'delegation_provider', 'delegation_model',
+            'mcp_default_ak', 'mcp_default_sk'
         ]}
 
 

@@ -25,6 +25,16 @@ import LoginPage from './components/auth/LoginPage';
 import ResourceDiscoveryMap from './components/views/ResourceDiscoveryMap';
 import HaltedProjects from './components/views/HaltedProjects';
 import HelpDrawer from './components/utils/HelpDrawer';
+import DocumentationCenter from './components/views/DocumentationCenter';
+
+// Lazy-load guided wizard components (reduces initial bundle)
+const ScenarioPicker = React.lazy(() => import('./components/guided/ScenarioPicker'));
+const GuidedWizardShell = React.lazy(() => import('./components/guided/GuidedWizardShell'));
+const StepProjectSetup = React.lazy(() => import('./components/guided/steps/StepProjectSetup'));
+const StepSourceDiscovery = React.lazy(() => import('./components/guided/steps/StepSourceDiscovery'));
+const StepQuotationUpload = React.lazy(() => import('./components/guided/steps/StepQuotationUpload'));
+const StepTargetArchitecture = React.lazy(() => import('./components/guided/steps/StepTargetArchitecture'));
+const StepSimulation = React.lazy(() => import('./components/guided/steps/StepSimulation'));
 
 function App() {
     const { isAuthenticated, loading: authLoading, logout } = useAuth();
@@ -34,6 +44,9 @@ function App() {
     const [isCommandDrawerOpen, setIsCommandDrawerOpen] = useState(false);
     const [isHermesOpen, setIsHermesOpen] = useState(false);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [guidedScenario, setGuidedScenario] = useState(null);
+    const [guidedStep, setGuidedStep] = useState(0);
+    const [guidedData, setGuidedData] = useState({});
 
     const { 
         projects, 
@@ -56,7 +69,7 @@ function App() {
         window.location.reload(); 
     };
 
-    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow', 'login', 'resource-discovery', 'halted'];
+    const knownRoutes = ['home', 'map', 'radar', 'pipeline', 'crm', 'migration_monitor', 'master_hub', 'wizard', 'finops', 'schedule', 'process', 'playbooks', 'users', 'workflow', 'login', 'resource-discovery', 'halted', 'guided', 'docs'];
     const activeProject = (projects || []).find(p => String(p.id) === String(activeProjectId));
 
     // ── Auth loading state ──
@@ -113,7 +126,34 @@ function App() {
                     {activePhase === 'playbooks' && <PlaybookStudio />}
                     {activePhase === 'halted' && <HaltedProjects />}
                     {activePhase === 'users' && <UserManagement />}
-                    
+                    {activePhase === 'docs' && <DocumentationCenter />}
+
+                    {activePhase === 'guided' && (
+                        <React.Suspense fallback={<div className="flex items-center justify-center h-64"><i className="fas fa-spinner fa-spin text-blue-500 text-2xl"></i></div>}>
+                            {!guidedScenario ? (
+                                <ScenarioPicker
+                                    onSelectScenario={(id) => { setGuidedScenario(id); setGuidedStep(0); setGuidedData({}); }}
+                                    onSkip={() => setActivePhase('home')}
+                                />
+                            ) : (
+                                <GuidedWizardShell
+                                    scenarioId={guidedScenario}
+                                    currentStep={guidedStep}
+                                    onNext={() => setGuidedStep(s => Math.min(s + 1, 4))}
+                                    onBack={() => setGuidedStep(s => Math.max(s - 1, 0))}
+                                    onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }}
+                                    onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }}
+                                >
+                                    {guidedStep === 0 && <StepProjectSetup data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 1 && <StepSourceDiscovery data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
+                                    {guidedStep === 2 && <StepQuotationUpload data={guidedData} onChange={setGuidedData} />}
+                                    {guidedStep === 3 && <StepTargetArchitecture data={guidedData} onChange={setGuidedData} scenarioId={guidedScenario} />}
+                                    {guidedStep === 4 && <StepSimulation data={guidedData} onChange={setGuidedData} onComplete={() => { setGuidedScenario(null); setActivePhase('wizard'); }} onSkip={() => { setGuidedScenario(null); setActivePhase('wizard'); }} />}
+                                </GuidedWizardShell>
+                            )}
+                        </React.Suspense>
+                    )}
+
                     {activePhase === 'login' && <LoginPage />}
                     
                     {!knownRoutes.includes(activePhase) && (
