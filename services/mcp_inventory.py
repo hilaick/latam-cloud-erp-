@@ -32,6 +32,8 @@ PILLAR_SERVICES = {
     "network": ["vpc", "eip", "elb", "nat", "vpn", "vpcep", "dns", "cfw"],
     "security": ["hss", "iam", "eps", "kms", "waf"],
     "monitoring": ["ces", "aom", "cts", "lts", "rms"],
+    "billing": ["bss"],
+    "tagging": ["tms"],
     "sms": ["smsapi"],
 }
 
@@ -63,6 +65,20 @@ ACTION_MAP = {
     "LIST_PROJECTS": {"service": "iam", "method": "GET", "path_kw": "projects"},
     "HSS_LIST_HOSTS": {"service": "hss", "method": "GET", "path_kw": "hosts"},
     "EPS_CREATE": {"service": "eps", "method": "POST", "path_kw": "enterprises"},
+    # Discovery (Phase 2)
+    "LIST_FLAVORS": {"service": "ecs", "method": "GET", "path_kw": "flavors"},
+    "LIST_IMAGES": {"service": "ims", "method": "GET", "path_kw": "images"},
+    # Quota checks (Phase 4.0)
+    "ECS_QUOTA": {"service": "ecs", "method": "GET", "path_kw": "limits"},
+    "EVS_QUOTA": {"service": "evs", "method": "GET", "path_kw": "limits"},
+    "VPC_QUOTA": {"service": "vpc", "method": "GET", "path_kw": "quotas"},
+    # Security (Phase 4.3-4.4)
+    "KMS_CREATE_KEY": {"service": "kms", "method": "POST", "path_kw": "create-key"},
+    "CBR_CREATE_POLICY": {"service": "cbr", "method": "POST", "path_kw": "policies"},
+    # Post-live (Phase 5)
+    "CES_CREATE_ALARM": {"service": "ces", "method": "POST", "path_kw": "alarms"},
+    "BSS_LIST_ORDERS": {"service": "bss", "method": "GET", "path_kw": "orders"},
+    "TMS_TAG_RESOURCES": {"service": "tms", "method": "POST", "path_kw": "predefine-tags"},
 }
 
 

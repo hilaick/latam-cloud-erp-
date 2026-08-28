@@ -753,7 +753,108 @@ class ExecutionEngine:
             "zero_trust_steps": sum(1 for s in steps if s.get("zero_trust")),
         }
 
-        # Determine which MCP servers to start (on-demand, not all 173)
+        # ═══ MCP-FIRST POLICY: Upgrade all hcloud steps to MCP primary with hcloud fallback ═══
+        # MCP is the preferred tool source. hcloud CLI is the fallback if MCP server fails.
+        # Skill-sourced steps (knowledge tree, external) keep their source — they're guidance, not API calls.
+        mcp_service_map = {
+            "ECS": "ecs", "RDS": "rds", "DDS": "dds", "GaussDB": "gaussdb",
+            "EVS": "evs", "OBS": "obs", "SFS": "sfs",
+            "VPC": "vpc", "SUBNET": "vpc", "SECURITY_GROUP": "vpc", "SECURITYGROUP": "vpc",
+            "EIP": "eip", "ELB": "elb", "NAT": "nat", "VPN": "vpn",
+            "CBR": "cbr", "HSS": "hss", "KMS": "kms", "WAF": "waf",
+            "IAM": "iam", "EPS": "eps",
+            "SMS": "smsapi", "DRS": "drs",
+        }
+        for step in steps:
+            if step.get("tool_source") == "hcloud":
+                # Determine which MCP service this step maps to
+                resource_type = str(step.get("target_resource", "")).upper()
+                action = str(step.get("action", "")).upper()
+                pillar = step.get("pillar", "")
+                mcp_service = None
+                # Try to match by resource type
+                for key, svc in mcp_service_map.items():
+                    if key in resource_type or key in action:
+                        mcp_service = svc
+                        break
+                if not mcp_service and pillar == "network":
+                    mcp_service = "vpc"
+                elif not mcp_service and pillar == "database":
+                    mcp_service = "rds"
+                elif not mcp_service and pillar == "storage":
+                    mcp_service = "evs"
+                elif not mcp_service and pillar == "security":
+                    mcp_service = "iam"
+                if mcp_service:
+                    step["tool_source"] = "mcp"
+                    step["mcp_service"] = mcp_service
+                    step["fallback_tool_source"] = "hcloud"
+                    step.setdefault("source_detail", "")
+                    if step["source_detail"]:
+                        step["source_detail"] += f" → MCP: {mcp_service} (fallback: hcloud)"
+                    else:
+                        step["source_detail"] = f"🔌 MCP: {mcp_service} (fallback: hcloud)"
+
+        # Add quota check steps at Phase 4.0 if we have compute resources
+        has_compute = any(s.get("pillar") == "compute" for s in steps)
+        has_storage = any(s.get("pillar") == "storage" for s in steps)
+        has_network = any(s.get("pillar") == "network" for s in steps)
+        if has_compute or has_storage or has_network:
+            quota_step_id = max(s.get("step_id", 0) for s in steps) + 1
+            quota_checks = []
+            if has_compute:
+                quota_checks.append({"service": "ecs", "action": "ECS_QUOTA", "desc": "Check ECS instance quota"})
+            if has_storage:
+                quota_checks.append({"service": "evs", "action": "EVS_QUOTA", "desc": "Check EVS disk quota"})
+            if has_network:
+                quota_checks.append({"service": "vpc", "action": "VPC_QUOTA", "desc": "Check VPC quota"})
+            for qc in quota_checks:
+                steps.append({
+                    "step_id": quota_step_id, "phase": ExecutionEngine.PHASE_4_0,
+                    "action": qc["action"],
+                    "target_resource": "account",
+                    "pillar": "network",
+                    "strategy": "validate",
+                    "tool_source": "mcp",
+                    "mcp_service": qc["service"],
+                    "fallback_tool_source": "hcloud",
+                    "commands": [{"desc": qc["desc"], "cmd": f"hcloud {qc['service'].upper()} ShowLimits --cli-profile=<profile> --cli-region={target_region}", "type": "hcloud"}],
+                    "credentials_needed": ["ak", "sk"],
+                    "zero_trust": False,
+                    "fallback_strategy": None,
+                    "rollback": None,
+                    "status": "pending",
+                    "source_detail": f"🔌 MCP: {qc['service']} quota check (fallback: hcloud)",
+                })
+
+        # Add post-live MCP steps (Phase 5)
+        # KMS key creation (Phase 4.4)
+        if any(s.get("action") == "CREATE_KMS" or s.get("pillar") == "security" for s in steps):
+            step_id += 1
+            steps.append({
+                "step_id": step_id, "phase": "PHASE_4_4",
+                "action": "KMS_KEY_CREATION",
+                "target_resource": "kms-key",
+                "pillar": "security",
+                "strategy": "provision",
+                "tool_source": "mcp",
+                "mcp_service": "kms",
+                "fallback_tool_source": "hcloud",
+                "commands": [{"desc": "Create KMS key for encryption", "cmd": "hcloud KMS CreateKey --alias='migration-key' --cli-profile=<profile>", "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": None,
+                "rollback": None,
+                "status": "pending",
+                "source_detail": "🔌 MCP: kms (fallback: hcloud)",
+            })
+
+        # Recalculate tool_sources summary after MCP upgrade
+        plan["summary"]["tool_sources"] = {
+            "skill": sum(1 for s in steps if s.get("tool_source") in ("skill", "external", "history")),
+            "mcp": sum(1 for s in steps if s.get("tool_source") == "mcp"),
+            "hcloud": sum(1 for s in steps if s.get("tool_source") == "hcloud"),
+        }
         try:
             from services.mcp_inventory import MCPInventory
             mcp_needed = MCPInventory.get_services_for_plan(plan)
@@ -1178,29 +1279,50 @@ class ExecutionEngine:
                 cmd_type = cmd_info.get("type", "hcloud")
 
                 # ── Try MCP first if tool_source is mcp ──
-                if step.get("tool_source") == "mcp" and step.get("mcp_endpoint"):
-                    mcp_ep = step["mcp_endpoint"]
-                    try:
-                        from services.mcp_inventory import MCPInventory
-                        mcp_result = MCPInventory.call_tool(
-                            service_name=mcp_ep.get("service", "").replace("mcp_server_", ""),
-                            method=mcp_ep.get("method", "GET"),
-                            path=mcp_ep.get("path", ""),
-                            params=cmd_info.get("params", {}),
-                            credentials={"ak": ak, "sk": sk},
-                        )
-                        if mcp_result.get("success"):
-                            step_result["status"] = "success"
-                            step_result["mcp_tool"] = mcp_result.get("tool_name", "")
-                            step_result["mcp_data"] = mcp_result.get("data")
-                            step_result["source"] = "mcp"
-                            continue  # Skip hcloud CLI — MCP succeeded
-                        else:
-                            logger.info(f"MCP call failed for {step['action']}, falling back to hcloud CLI: {mcp_result.get('message', '')}")
-                            step_result["mcp_attempted"] = True
-                            step_result["mcp_fallback_reason"] = mcp_result.get("message", "")
-                    except Exception as e:
-                        logger.warning(f"MCP call error for {step['action']}: {e} — falling back to hcloud CLI")
+                if step.get("tool_source") == "mcp":
+                    mcp_service = step.get("mcp_service", "")
+                    mcp_ep = step.get("mcp_endpoint", {})
+                    if mcp_service or mcp_ep:
+                        try:
+                            from services.mcp_inventory import MCPInventory
+                            service = mcp_service or mcp_ep.get("service", "").replace("mcp_server_", "")
+                            method = mcp_ep.get("method", "GET")
+                            path = mcp_ep.get("path", "")
+                            # If no explicit endpoint, use action map to find it
+                            if not path:
+                                from services.mcp_inventory import ACTION_MAP
+                                action_key = step.get("action", "")
+                                if action_key in ACTION_MAP:
+                                    mapping = ACTION_MAP[action_key]
+                                    service = mapping["service"]
+                                    method = mapping["method"]
+                                    # Find the actual path from the spec
+                                    specs = MCPInventory._load_service_spec(service)
+                                    if specs:
+                                        for tool in specs:
+                                            if mapping["path_kw"] in tool.get("path", "").lower():
+                                                path = tool["path"]
+                                                break
+
+                            mcp_result = MCPInventory.call_tool(
+                                service_name=service,
+                                method=method,
+                                path=path,
+                                params=cmd_info.get("params", {}),
+                                credentials={"ak": ak, "sk": sk},
+                            )
+                            if mcp_result.get("success"):
+                                step_result["status"] = "success"
+                                step_result["mcp_tool"] = mcp_result.get("tool_name", "")
+                                step_result["mcp_data"] = mcp_result.get("data")
+                                step_result["source"] = "mcp"
+                                continue  # Skip hcloud CLI — MCP succeeded
+                            else:
+                                logger.info(f"MCP call failed for {step['action']}, falling back to hcloud CLI: {mcp_result.get('message', '')}")
+                                step_result["mcp_attempted"] = True
+                                step_result["mcp_fallback_reason"] = mcp_result.get("message", "")
+                        except Exception as e:
+                            logger.warning(f"MCP call error for {step['action']}: {e} — falling back to hcloud CLI")
 
                 # Substitute credentials and profile in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)
