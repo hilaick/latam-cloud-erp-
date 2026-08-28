@@ -1161,5 +1161,6 @@ if __name__ == '__main__':
     except Exception as e:
         logging.warning(f"Knowledge store init failed (will lazy-load): {e}")
 
-    # Run with SocketIO support
-    socketio.run(app, host='0.0.0.0', port=9119, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
+    # Run with SocketIO support — threaded mode for concurrent requests
+    # (fixes ERR_EMPTY_RESPONSE when multiple users run scans/simulations)
+    socketio.run(app, host='0.0.0.0', port=9119, debug=False, use_reloader=False, allow_unsafe_werkzeug=True, threaded=True)
