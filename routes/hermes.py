@@ -184,6 +184,47 @@ ERP_TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "navigate",
+            "description": "Navigate the ERP frontend to a specific view/phase. Use this when the user asks to open something, go to a page, or switch views. This sends a real-time UI event to the user's browser. Requires Engineer role or higher.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Where to navigate. Options: 'home' (Dashboard), 'pipeline' (Master Pipeline), 'map' (Regional Map), 'radar' (Pre-Sales Radar), 'wizard' (Project Wizard — requires project_id), 'guided' (Guided Wizard), 'docs' (Documentation Center), 'finops' (FinOps Dashboard), 'schedule' (Global Schedule), 'process' (Process View), 'playbooks' (Playbook Studio), 'users' (IAM & Profile), 'crm' (Customer Directory), 'migration_monitor' (Live Cloud NOC), 'master_hub' (Master Execution Hub), 'workflow' (Workflow Graph)",
+                        "enum": ["home", "pipeline", "map", "radar", "wizard", "guided", "docs", "finops", "schedule", "process", "playbooks", "users", "crm", "migration_monitor", "master_hub", "workflow"]
+                    },
+                    "project_id": {"type": "string", "description": "Optional: project ID to select when navigating (e.g., to wizard). If provided, the frontend will switch to this project."}
+                },
+                "required": ["target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_presales_lead",
+            "description": "Create a new presales lead (project) in the ERP system. This is the same as the first step of the Guided Wizard or adding a lead in the Pre-Sales Radar. The project is created with isWaiting=true (presales status). After creating, you can navigate the user to the wizard to continue. Requires Engineer role or higher.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string", "description": "Project name (e.g., 'SAP Migration — CODELPA')"},
+                    "customer_name": {"type": "string", "description": "Customer account name (legal entity)"},
+                    "country": {"type": "string", "description": "Target country (e.g., 'Mexico', 'Chile')"},
+                    "sa": {"type": "string", "description": "Sales Architect name"},
+                    "partner": {"type": "string", "description": "Delivery partner (e.g., 'Partner 1', 'Internal')"},
+                    "mrr": {"type": "number", "description": "Target Monthly Recurring Revenue in USD"},
+                    "source_environment": {"type": "string", "description": "Source environment (e.g., 'aws', 'azure', 'vmware', 'on-prem')"},
+                    "complexity": {"type": "string", "description": "Complexity level", "enum": ["Low", "Medium", "High", "Ultra-High"], "default": "Medium"},
+                    "scenario": {"type": "string", "description": "Migration scenario (e.g., 'sap', 'cross-cloud', 'on-prem', 'database', 'object-storage', 'multi-region')"}
+                },
+                "required": ["project_name", "customer_name", "country", "sa"]
+            }
+        }
+    },
 ]
 
 
@@ -409,6 +450,87 @@ def execute_tool(tool_name, args, project_id="global", user_role="Viewer"):
             }
             return json.dumps(summary, default=str)[:6000]
 
+        elif tool_name == "navigate":
+            # Role check
+            if user_role not in ('Admin', 'PM', 'Engineer'):
+                return json.dumps({"error": "Access denied: navigate requires Engineer role or higher"})
+            target = args.get("target", "")
+            nav_project_id = args.get("project_id", "")
+            # Emit a real-time UI navigation event to the frontend
+            try:
+                socketio.emit('hermes_action', {
+                    "type": "navigate",
+                    "target": target,
+                    "project_id": nav_project_id,
+                })
+                return json.dumps({"success": True, "message": f"Frontend navigated to '{target}'" + (f" with project {nav_project_id}" if nav_project_id else "")})
+            except Exception as e:
+                return json.dumps({"error": f"Navigation emit failed: {str(e)}"})
+
+        elif tool_name == "create_presales_lead":
+            # Role check
+            if user_role not in ('Admin', 'PM', 'Engineer'):
+                return json.dumps({"error": "Access denied: create_presales_lead requires Engineer role or higher"})
+            import uuid
+            from datetime import datetime as dt
+            project_name = args.get("project_name", "New Project").upper()
+            customer_name = args.get("customer_name", "").upper()
+            country = args.get("country", "")
+            sa = args.get("sa", "").upper()
+            partner = args.get("partner", "TBD")
+            mrr = args.get("mrr", 0)
+            source_env = args.get("source_environment", "")
+            complexity = args.get("complexity", "Medium")
+            scenario = args.get("scenario", "")
+
+            # Derive region from country
+            c = country.lower()
+            if any(x in c for x in ['mexico','guatemala','salvador','honduras','nicaragua','costa','panama','dominican','cuba','jamaica']):
+                region = "la-north-2"
+            elif "brazil" in c:
+                region = "sa-brazil-1"
+            else:
+                region = "la-south-2"
+
+            new_id = f"proj-{int(dt.utcnow().timestamp())}-{uuid.uuid4().hex[:6]}"
+            new_project = ProjectData(
+                id=new_id,
+                project_type="migration",
+                data=json.dumps({
+                    "name": project_name,
+                    "customerName": customer_name,
+                    "country": country,
+                    "region": region,
+                    "sa": sa,
+                    "partner": partner,
+                    "mrr": mrr,
+                    "sourceEnvironment": source_env,
+                    "complexityLevel": complexity,
+                    "migrationScenario": scenario,
+                    "health": "Yellow",
+                    "isWaiting": True,
+                    "waitingStage": "prospect",
+                    "isDeleted": False,
+                    "createdAt": dt.utcnow().isoformat() + "Z",
+                    "updatedAt": dt.utcnow().isoformat() + "Z",
+                })
+            )
+            db.session.add(new_project)
+            db.session.commit()
+            logger.info(f"Created presales lead via Delivery Agent: {new_id} ({project_name})")
+
+            # Emit navigation event to switch the frontend to this new project
+            try:
+                socketio.emit('hermes_action', {
+                    "type": "navigate",
+                    "target": "wizard",
+                    "project_id": new_id,
+                })
+            except:
+                pass
+
+            return json.dumps({"success": True, "project_id": new_id, "message": f"Presales lead '{project_name}' created for {customer_name}. Navigating to wizard."})
+
         else:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -539,9 +661,13 @@ INSTRUCTIONS:
 - When asked about skills, use list_skills or get_knowledge_tree
 - When asked about system health, use get_system_info (Admin only)
 - When asked to update something, use update_project (requires Engineer+ role)
+- When asked to OPEN or GO TO a page/view, use navigate (e.g., "open the wizard", "go to dashboard", "show me the radar")
+- When asked to CREATE a new project or presales lead, use create_presales_lead — it creates the project AND navigates the user to the wizard automatically
+- You can navigate the user to: home, pipeline, map, radar, wizard, guided, docs, finops, schedule, process, playbooks, users, crm, migration_monitor, master_hub, workflow
 - Always provide clear, structured markdown responses
 - Reference real data from tool results, not assumptions
 - You can ONLY access the current project (except list_projects which shows all) — do not attempt to access other projects' data directly
+- You have FRONTEND ACCESS — you can navigate the user's browser and create projects that appear in their UI in real-time
 """
 
         messages = [{"role": "system", "content": system_instruction}]

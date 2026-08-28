@@ -10,7 +10,6 @@ import {
   BookOutlined,
   UsergroupAddOutlined,
   RobotOutlined,
-  QuestionCircleOutlined,
   ThunderboltOutlined,
   PoweroffOutlined,
   DownOutlined,
@@ -18,7 +17,7 @@ import {
   CloseOutlined,
 } from '@ant-design/icons';
 
-export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes, onOpenHelp }) {
+export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, onOpenHermes }) {
     const { projects, activeProjectId, setActiveProjectId, setActivePhase } = useContext(ERPContext);
     const { user } = useAuth();
     
@@ -192,16 +191,6 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                     size="large"
                     icon={<RobotOutlined />}
                     className="bg-purple-800 border-purple-700 text-purple-100 hover:bg-purple-700 hover:text-purple-50 hover:border-purple-500 shadow-md"
-                />
-
-                {/* Help */}
-                <Button 
-                    onClick={onOpenHelp}
-                    type="default"
-                    shape="circle"
-                    size="large"
-                    icon={<QuestionCircleOutlined />}
-                    className="bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-500 shadow-md"
                 />
 
                 {/* Command Terminal */}

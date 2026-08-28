@@ -1,327 +1,1460 @@
-// Centralized help content registry for the ERP Migration Factory
-// Merged: 40 original topics + USER_MANUAL.md + PROJECT_INTRODUCTION.md + DTRB_GOVERNANCE.md
-// Total: 46 topics across 10 categories
+// ERP Delivery & Migration Factory — Help Guide
+// Organized by lifecycle phase, then dashboards, then configuration.
+// Each topic is a self-contained article with practical guidance.
+
 export const helpTopics = {
-  'arb-handover': {
-    title: 'ARB Handover (Phase 1)',
-    category: 'Getting Started',
-    short: 'Architecture Review Board handover — project setup, customer, and BOM.',
-    long: '## Phase 1: ARB Handover\n\nThe ARB (Architecture Review Board) Handover is the first phase of the migration lifecycle. This is where the project is created and basic information is collected.\n\n### What happens here\n- Project name and customer assignment\n- Country and target region selection\n- MRR (Monthly Recurring Revenue) entry\n- Quotation/BOM upload\n- Sales and partner assignment\n\n### Who is involved\n- Sales team hands over the project\n- Architect reviews the BOM\n- PM sets up the project timeline',
-    tags: ['phase-1', 'getting-started', 'setup'],
-  },
+  // ═══════════════════════════════════════════════════════════
+  // GETTING STARTED
+  // ═══════════════════════════════════════════════════════════
   'getting-started': {
     title: 'Getting Started',
     category: 'Getting Started',
-    short: 'Login',
-    long: '## Getting Started\n\n### Login\n\n1. Navigate to `https://159.138.148.45:9119`\n2. Enter your credentials:\n   - **Admin:** `admin@erp.com`\n   - **Password:** Provided by your system administrator\n3. If 2FA is enabled, enter the code sent to your email\n\n### Roles & Permissions\n\n| Role | Access Level |\n|---|---|\n| **Admin** | Full system access — user management, all projects, configuration |\n| **Manager** | Create/edit projects, view all pipelines, FinOps access |\n| **SA (Solutions Architect)** | Architecture design, topology mapping, governance |\n| **Engineer** | Execution pipeline, runbook, migration tools |\n| **Viewer** | Read-only access to dashboards and project status |\n\n### Session Management\n\n- Sessions are JWT-based with automatic refresh\n- Tokens stored securely in `sessionStorage`\n- Sessions expire after 24 hours of inactivity\n- Click your avatar → **Logout** to end your session\n\n---',
-    tags: ['getting-started', 'login', 'setup'],
+    icon: 'fa-rocket',
+    short: 'Your first 5 minutes: login, navigate, and understand the layout.',
+    long: `## Getting Started
+
+Welcome to the **ERP Delivery & Migration Factory** — an end-to-end platform for planning, simulating, and executing cloud migrations to Huawei Cloud.
+
+### Step 1: Login
+
+Navigate to the platform URL and enter your credentials. Your role (Master Admin, Architect, Engineer, or Viewer) determines what you can see and do.
+
+### Step 2: Understand the Layout
+
+- **Left sidebar** — navigation between dashboards (Dashboard, Pipeline, Radar, Map, etc.)
+- **Top bar** — project selector, AI assistant (purple robot), command terminal (dark button), user menu, and logout
+- **Profile menu** (avatar, top-right) — Guided Wizard, Documentation (this guide), IAM & Profile, Glossary
+- **Main area** — changes based on the selected dashboard or active project
+
+### Step 3: Pick a Project
+
+Click the project name in the top bar to open the project switcher. Select a project to open the **Project Wizard** — the 5-phase migration lifecycle workspace. Select "Global View" to see all projects across dashboards.
+
+### Step 4: Use the Guided Wizard (New Users)
+
+Profile menu → **Guided Wizard** walks you through presales qualification, ARB handover, and quotation upload in 4 steps. It creates the project and advances it to Phase 2 (Architecture).
+
+### Step 5: Explore Dashboards
+
+Each sidebar item is a dashboard. Start with **Dashboard** (overview), then **Pipeline** (delivery tracker), then **Regional Map** (geographic view).`,
+    tags: ['getting-started', 'login', 'navigation'],
   },
-  'glossary': {
-    title: 'Terminology Glossary',
+  'platform-overview': {
+    title: 'Platform Overview',
     category: 'Getting Started',
-    short: 'Definitions of all ERP Migration Factory terms and acronyms.',
-    long: '## Terminology Glossary\n\nThe glossary contains definitions for all key terms and acronyms used throughout the ERP Migration Factory.\n\n### Key Terms\n- **ARB**: Architecture Review Board — governance gate for project intake\n- **DTRB**: Design Technical Review Board — governance gate for architecture approval\n- **BOM**: Bill of Materials — the quoted resource list from presales\n- **MRR**: Monthly Recurring Revenue — monthly income from a project\n- **SMS**: Server Migration Service — Huawei Cloud block-level migration tool\n- **DRS**: Data Replication Service — Huawei Cloud database replication\n- **OBS**: Object Storage Service — Huawei Cloud S3 equivalent\n- **ECS**: Elastic Cloud Server — Huawei Cloud VM\n- **EVS**: Elastic Volume Service — Huawei Cloud block storage\n- **VPC**: Virtual Private Cloud — isolated network environment\n- **EIP**: Elastic IP — public IP address\n- **SG**: Security Group — firewall rules\n- **MCP**: Model Context Protocol — structured API gateway\n- **HSR**: HANA System Replication — zero-downtime SAP HANA migration\n- **SDRS**: Storage Disaster Recovery Service — cross-AZ DR\n- **CBR**: Cloud Backup and Recovery — backup service\n- **HSS**: Host Security Service — server security monitoring\n\nAccess the full glossary from the profile menu → "Terminology Glossary".\n\n---\n\n### Detailed Guide (from User Manual)\n\n| Term | Definition |\n|---|---|\n| **ARB** | Architecture Review Board — formal project intake process |\n| **BoM** | Bill of Materials — hardware/software quotation |\n| **COC** | Cost Optimization Center — FinOps dashboard |\n| **CR** | Change Request — formal change to architecture/scope |\n| **DRS** | Data Replication Service — Huawei database migration |\n| **DTRB** | Delivery Technical Review Board — governance body |\n| **ECS** | Elastic Cloud Server — Huawei virtual machine |\n| **EPS** | Enterprise Project Service — Huawei resource hierarchy |\n| **EVS** | Elastic Volume Service — Huawei block storage |\n| **FinOps** | Financial Operations — cloud cost management |\n| **MgC** | Migration Center — Huawei source discovery tool |\n| **NOC** | Network Operations Center — live monitoring |\n| **OBS** | Object Storage Service — Huawei S3-compatible storage |\n| **ORA** | Operational Risk Assessment |\n| **RI** | Reserved Instance — discounted compute commitment |\n| **SA** | Solutions Architect |\n| **SFS** | Scalable File System — Huawei NAS storage |\n| **SMS** | Server Migration Service — Huawei VM migration |\n| **SOW** | Statement of Work — project scope document |\n\n---',
-    tags: ['glossary', 'terms', 'definitions', 'getting-started'],
-  },
-  'help-system': {
-    title: 'Help & Documentation',
-    category: 'Getting Started',
-    short: 'In-app documentation, contextual help, and searchable knowledge base.',
-    long: '## Help & Documentation\n\nThe ERP Migration Factory has multiple help resources:\n\n### Documentation Center\nAccessible via Profile Menu → "Documentation". Provides a searchable, categorized documentation hub with 30+ topics covering every feature. Includes "Was this helpful?" feedback.\n\n### Contextual Help\nLook for ? icons throughout the application. Clicking opens a slide-out panel with relevant help content for that specific feature.\n\n### Terminology Glossary\nAccessible via Profile Menu → "Terminology Glossary". Contains definitions for all acronyms (ARB, DTRB, BOM, MRR, SMS, DRS, OBS, ECS, EVS, VPC, EIP, SG, MCP, HSR, SDRS, CBR, HSS).\n\n### Guided Wizard\nNew users can use the Guided Wizard (Profile Menu → "Guided Wizard") for a step-by-step experience through presales qualification, ARB handover, and quotation upload.\n\n---\n\n### Detailed Guide (from User Manual)\n\n### Global Help\n\n**Access:** `?` icon in TopBar\n\nOpens a right-sliding panel with the **Project Introduction** — an overview of the ERP Migration Factory, its architecture, and how to use it.\n\n### Context-Sensitive Help\n\n**Access:** Help button within each wizard step\n\n- **DTRB Governance & CR Help:** Available in Phase 2 → Governance & CR tab\n- **More context help** available as needed per component\n\n### Glossary\n\n**Access:** Book icon in TopBar\n\nThe Global Glossary defines all migration-specific terminology used throughout the platform.\n\n### Command Drawer\n\n**Access:** Terminal icon in TopBar\n\nQuick-action command palette for power users.\n\n---',
-    tags: ['help', 'documentation', 'getting-started', 'guide'],
+    icon: 'fa-server',
+    short: 'What the ERP Migration Factory is and how it fits into your workflow.',
+    long: `## Platform Overview
+
+The **ERP Delivery & Migration Factory** is a single platform that covers the entire cloud migration lifecycle — from presales lead to post-live operations.
+
+### What it does
+
+- **Intake** — Capture presales leads, qualify them, and convert to projects
+- **Architecture** — Discover source resources, design target topology, validate with Physics Engine, get DTRB approval
+- **Planning** — Build migration waves, estimate costs, prepare runbooks
+- **Execution** — Simulate the migration (dry-run), then execute for real with MCP/hcloud
+- **Post-Live** — Validate billing, hand over to operations, close the project
+
+### The 5-Phase Lifecycle
+
+| Phase | Name | What Happens |
+|---|---|---|
+| 1 | ARB Handover | Project setup, customer, BOM upload |
+| 2 | Architecture | Discovery, topology, physics engine, DTRB gate |
+| 3 | Planning | Wave planning, FinOps, runbooks, tool selection |
+| 4 | Execution | Simulation → live execution, cutover, validation |
+| 5 | Post-Live | Billing reconciliation, operational handover |
+
+### Who uses it
+
+- **Sales / Presales** — Pre-Sales Radar, Guided Wizard, Quotation upload
+- **Architects** — Discovery, Target Architecture, DTRB, Physics Engine
+- **Engineers** — Wave planning, Execution, Cutover, NOC monitoring
+- **FinOps** — Cost tracking, RI reconciliation, Commercial True-Up
+- **PM / TAM** — Pipeline, Schedule, Halted Projects, TAM sign-off`,
+    tags: ['overview', 'architecture', 'lifecycle'],
   },
   'navigation-layout': {
     title: 'Navigation & Layout',
     category: 'Getting Started',
-    short: 'Top Bar',
-    long: '## Navigation & Layout\n\n### Top Bar\n\n| Element | Function |\n|---|---|\n| **Hamburger Menu** (left) | Toggle sidebar navigation |\n| **Search** | Quick-find projects, customers, or pages |\n| **? Help** | Opens global help documentation |\n| **Book Icon** | Opens Glossary of migration terms |\n| **Terminal Icon** | Opens Command Drawer (quick actions) |\n| **Brain Icon** | Opens Hermes AI Assistant |\n| **User Avatar** | Profile menu → Logout |\n\n### Sidebar Navigation\n\nThe left sidebar provides access to all system views:\n\n| Icon | View | Purpose |\n|---|---|---|\n| 📊 | **Dashboard** | Global migration overview & KPIs |\n| 📋 | **Pipeline** | Master delivery pipeline with timeline |\n| 📡 | **Pre-Sales Radar** | Estimated/upcoming project pipeline |\n| ♟️ | **Master Hub** | Aggregated execution control center |\n| 🌎 | **Regional Map** | Geographic project distribution |\n| 🏢 | **Customer Directory** | Customer & credential management |\n| 💰 | **FinOps (COC)** | Cost optimization & RI management |\n| 📅 | **Schedule** | Project timeline & calendar view |\n| 🗺️ | **Process** | Step-by-step methodology view |\n| 🔍 | **Discovery** | Source resource discovery map |\n| 📚 | **Playbooks** | Standard operating procedures |\n| 📺 | **Live NOC** | Real-time migration monitoring |\n| 🔀 | **Workflow Graph** | Visual process graph |\n| 📦 | **Halted Projects** | Archived/suspended/cancelled projects |\n\n### Mobile Navigation\n\nOn mobile devices, the sidebar collapses to a bottom dock for touch-friendly access. Key views are accessible via icon buttons.\n\n---',
+    icon: 'fa-compass',
+    short: 'Every button, menu, and panel explained.',
+    long: `## Navigation & Layout
+
+### Top Bar
+
+| Element | Function |
+|---|---|
+| **Project Selector** (left) | Switch between projects or Global View |
+| **Production DB** badge | Confirms live database connection |
+| **AI Assistant** (purple robot) | Open the Delivery Agent chat |
+| **Command Terminal** (dark button) | Open the global command drawer |
+| **User Avatar** | Profile menu: Guided Wizard, Documentation, IAM, Glossary |
+| **Logout** (red button) | End session |
+
+### Sidebar
+
+The sidebar has navigation icons for each dashboard. Hover to see labels. Click to switch views.
+
+### Profile Menu
+
+Click your avatar (top-right) to access:
+- **Guided Wizard** — Step-by-step new project creation
+- **Documentation** — This help guide
+- **IAM & Profile** — User management, AI model config, MCP servers, Skills tree
+- **Terminology Glossary** — Acronym definitions
+
+### Project Wizard
+
+When a project is selected, the main area shows the **Project Wizard** — a 5-phase tabbed interface. Click phase numbers at the top to navigate. All phases are unlocked for flexibility.`,
     tags: ['navigation', 'layout', 'ui'],
   },
-  'overview-architecture': {
-    title: 'Overview & Architecture',
+  'guided-wizard': {
+    title: 'Guided Wizard',
     category: 'Getting Started',
-    short: 'What is ERP Migration Factory?',
-    long: '## Overview & Architecture\n\n### What is ERP Migration Factory?\n\nThe **ERP Migration Factory** is an end-to-end cloud migration orchestration platform built for **Huawei Cloud LATAM**. It automates the complete lifecycle of migrating enterprise ERP workloads from on-premises, AWS, or Azure to Huawei Cloud — from initial sales handover through architecture design, planning, execution, and post-live validation.\n\n### Key Capabilities\n\n| Capability | Description |\n|---|---|\n| **5-Phase Migration Lifecycle** | ARB → Architecture → Planning → Execution → Post-Live |\n| **Multi-Tenant Project Management** | Isolated projects with RBAC access control |\n| **FinOps Cost Optimization** | RI/ECS reconciliation, burn tracking, TCO comparison |\n| **Physics Engine** | Server resource mapping, network topology, performance modeling |\n| **Automated Tool Recommendation** | AI-driven migration tool selection (SMS, DRS, OBS, etc.) |\n| **Execution Gateway** | 3-tier least-privilege credential provisioning |\n| **Hermes AI Assistant** | Built-in AI agent for queries, troubleshooting, and automation |\n| **Live NOC Monitoring** | Real-time migration dashboards |\n| **DTRB Governance** | Architecture review board compliance and change request tracking |\n\n### System Architecture\n\n```\n┌─────────────────────────────────────────────────────────┐\n│                    Web Browser (React)                    │\n│  Dashboard │ Pipeline │ Wizard │ FinOps │ NOC │ Admin   │\n└──────────────────────┬──────────────────────────────────┘\n                       │ HTTPS :9119\n┌──────────────────────▼──────────────────────────────────┐\n│              Flask Backend (Python 3.12)                 │\n│  Auth │ Projects │ CRM │ Gateway │ FinOps │ Execution   │\n└──────────┬──────────────────────────┬───────────────────┘\n           │                          │\n┌──────────▼──────────┐    ┌─────────▼────────────────────┐\n│  SQLite Database     │    │  Huawei Cloud APIs           │\n│  (Projects, Users,   │    │  (ECS, IAM, BSS, EPS, SMS,  │\n│   Customers, Vault)  │    │   OBS, DRS, VPC, DWS)       │\n└─────────────────────┘    └──────────────────────────────┘\n```\n\n---',
-    tags: ['overview', 'architecture', 'getting-started'],
+    icon: 'fa-magic',
+    short: 'Step-by-step project creation from presales lead to Phase 2.',
+    long: `## Guided Wizard
+
+The Guided Wizard (Profile menu → Guided Wizard) walks new users through project intake in 4 steps.
+
+### Step 1: Lead Info
+
+Capture customer identity, Huawei Cloud account details, country, region, and stakeholder contacts (SA, partner, CIO/IT lead, technical architect).
+
+### Step 2: Qualification
+
+Select migration type, scope (compute, database, storage, network), source environment, authorization level, and delivery scope. Also captures technical sizing estimates (workload count, disk capacity, complexity).
+
+### Step 3: ARB Handover
+
+Document discovery notes, expected close date, gate artefacts (HLD, target architecture, WBS), and credential availability status.
+
+### Step 4: Quotation BoM
+
+Upload the presales Bill of Materials (Excel). The parser extracts ECS flavors, RDS instances, storage, and networking components. MRR is calculated from the BOM.
+
+### After Completion
+
+The project is created and advanced to **Phase 2 (Architecture)**. All 31 intake fields are saved to the project record. The Guided Wizard supports 6 scenarios: SAP, Cross-Cloud, On-Prem, Database, Object Storage, and Multi-Region.`,
+    tags: ['guided', 'wizard', 'presales', 'intake'],
   },
-  'post-live': {
-    title: 'Post-Live (Phase 5)',
+  'glossary': {
+    title: 'Terminology Glossary',
     category: 'Getting Started',
-    short: 'Post-migration governance, billing validation, and operational handover.',
-    long: '## Phase 5: Post-Live\n\nAfter migration is complete, the Post-Live phase handles governance and operational handover.\n\n### Key activities\n- **Billing validation**: Reconcile actual Huawei Cloud costs against quotation\n- **Commercial true-up**: Adjust pricing based on actual usage\n- **Operational handover**: Transfer management to the operations team\n- **HSS configuration**: Ensure security monitoring is active\n- **CBR backup setup**: Configure backup policies for the migrated workloads\n- **Documentation**: Final delivery report and lessons learned',
-    tags: ['phase-5', 'post-live', 'governance', 'billing'],
+    icon: 'fa-book',
+    short: 'Every acronym and term used in the platform.',
+    long: `## Terminology Glossary
+
+| Term | Definition |
+|---|---|
+| **ARB** | Architecture Review Board — formal project intake process |
+| **BOM** | Bill of Materials — quoted resource list from presales |
+| **CBR** | Cloud Backup and Recovery — Huawei Cloud backup service |
+| **DCS** | Distributed Cache Service — Huawei Cloud Redis |
+| **DRS** | Data Replication Service — Huawei Cloud database replication |
+| **DTRB** | Design Technical Review Board — architecture approval gate |
+| **ECS** | Elastic Cloud Server — Huawei Cloud virtual machine |
+| **EIP** | Elastic IP — public IP address |
+| **EVS** | Elastic Volume Service — Huawei Cloud block storage |
+| **HSS** | Host Security Service — server security monitoring |
+| **HSR** | HANA System Replication — zero-downtime SAP HANA migration |
+| **MCP** | Model Context Protocol — structured API gateway to Huawei Cloud |
+| **mig_worker** | Transient server that runs migration operations on the target side |
+| **MRR** | Monthly Recurring Revenue — monthly income from a project |
+| **OBS** | Object Storage Service — Huawei Cloud S3 equivalent |
+| **RDS** | Relational Database Service — Huawei Cloud managed databases |
+| **SDRS** | Storage Disaster Recovery Service — cross-AZ disaster recovery |
+| **SG** | Security Group — firewall rules |
+| **SID** | SAP System Identifier — groups SAP components for migration |
+| **SMS** | Server Migration Service — Huawei Cloud block-level migration |
+| **TAM** | Technical Account Manager — final sign-off before post-live |
+| **VPC** | Virtual Private Cloud — isolated network environment |
+| **WBS** | Work Breakdown Structure — project task decomposition |
+
+Access the interactive glossary from Profile menu → Terminology Glossary.`,
+    tags: ['glossary', 'terms', 'definitions'],
   },
-  'project-introduction': {
-    title: 'Project Introduction',
-    category: 'Getting Started',
-    short: 'Overview of the ERP Migration Factory platform, its goals, and architecture.',
-    long: '# ERP Migration Factory — Project Introduction\n\nLearn about the ERP Migration Factory, an autonomous agentic orchestration platform for migrating enterprise ERP workloads to Huawei Cloud, designed for LATAM service delivery teams.\n\n---\n\n## Overview\n\nThe ERP Migration Factory is an **Execution Control Plane** that orchestrates end-to-end cloud migration waves — from ARB Handover through Architecture, Planning, Execution, and Post-Live. It combines a visual delivery constellation, an agentic orchestration engine, and real-time FinOps monitoring into a single integrated platform.\n\nThe Factory seamlessly integrates with Huawei Cloud infrastructure services (COC, BSS, IMS, DRS, OBS, DWS) and supports hybrid execution through both automated agent-driven pipelines and manual engineering workbenches.\n\nPrimarily intended for **internal service delivery teams** and **enterprise private deployment** at Huawei Cloud LATAM.\n\n### Core Features\n\n| Feature | Description |\n|---|---|\n| **Visual Delivery Constellation** | Interactive 5-phase project lifecycle (ARB Handover → Architecture → Planning → Execution → Post-Live) with real-time gates and dependency visualization |\n| **Agentic Orchestration Engine** | Multi-agent execution pipelines using Hermes Agent delegation — autonomous processing of migration waves with parallel workstreams |\n| **Physics Engine** | Compute, storage, and network sizing validation — validates quoted vs. target topology with automatic constraint checking |\n| **FinOps Budget & Burn** | Live Huawei Cloud COC/BSS integration for real-time cost tracking, budget burn-down, and commercial true-up against quotation BoM |\n| **Strategic Tooling** | Curated tool recommendation matrix for each migration step (SMS, DRS, OBS Browser, rsync, robocopy, etc.) |\n| **Wave & Runbook Planning** | Structured migration wave sequencing with dependency chains, cutover windows, and rollback paths |\n| **Governance & Change Control** | Built-in ARB intake, ORA risk profiling, DTRB gate reviews, and WAR sign-off workflows |\n| **Multi-tenant Architecture** | Adaptable for individual project delivery, regional service teams, and enterprise PMO deployment |\n\n---\n\n## Technical Architecture\n\n```\n┌──────────────────────────────────┐\n│         React SPA (Vite)         │  ← Frontend (port 9119 served by Flask)\n│  ┌────────────────────────────┐  │\n│  │  Delivery Constellation    │  │\n│  │  Physics Engine            │  │\n│  │  FinOps Dashboard          │  │\n│  │  Agentic Orchestration     │  │\n│  │  Execution Hub             │  │\n│  └────────────────────────────┘  │\n├──────────────────────────────────┤\n│      Flask API Gateway           │  ← Backend (Python 3.11)\n│  ┌────────────────────────────┐  │\n│  │  /api/auth/*    (JWT)      │  │\n│  │  /api/crm/*     (Projects) │  │\n│  │  /api/finops/*  (BSS/COC)  │  │\n│  │  /api/gateway/* (Gateway)   │  │\n│  │  /api/deploy/*  (SSH)      │  │\n│  └────────────────────────────┘  │\n├──────────────────────────────────┤\n│    External Services             │\n│  ┌──────────┬──────────┐         │\n│  │Huawei    │Huawei    │         │\n│  │COC/BSS   │IMS/DRS   │         │\n│  └──────────┴──────────┘         │\n│  ┌──────────┬──────────┐         │\n│  │Hermes    │PostgreSQL│         │\n│  │Agent     │DB        │         │\n│  └──────────┴──────────┘         │\n└──────────────────────────────────┘\n```\n\n| Component | Technology |\n|---|---|\n| **Frontend** | React 18 + Vite, Tailwind CSS, Font Awesome |\n| **Backend** | Flask (Python 3.11), SQLAlchemy, Flask-JWT-Extended |\n| **Database** | PostgreSQL (via SQLAlchemy ORM) |\n| **Agent Engine** | Hermes Agent delegation API |\n| **Cloud SDK** | Huawei Cloud Python SDK v3.1+ (COC, BSS, IMS, DRS) |\n| **Authentication** | JWT-based (access + refresh tokens, sessionStorage-persisted) |\n| **Deployment** | Single-pipe SSH deploy (tar.gz → base64 → SSH pipe → extract → restart) |\n\n---\n\n## Delivery Lifecycle\n\nThe ERP Migration Factory implements a **5-phase Operational PM Framework**:\n\n| Phase | Label | Key Steps |\n|---|---|---|\n| **1** | ARB Handover | 1.1 ARB Intake & SOW, 1.2 High-Level WBS |\n| **2** | Architecture | 2.1 Architecture Summary, 2.2 Source Discovery, 2.3 ORA Risk Profile, 2.4 Target Topology Mapper, 2.5 DTRB Governance |\n| **3** | Planning | 3.1 WBS & RACI Matrix, 3.2 Delivery Physics Engine, 3.3 FinOps Budget & Burn, 3.4 Strategic Tooling, 3.5 Wave & Runbook Planning |\n| **4** | Execution | 4.0 Readiness Gateway, 4.1-4.7 Execution Pipeline, 4.8 Engineering Workbench, 4.9 Delivery Command Center, 4.10 TAM Service Governance |\n| **5** | Post-Live | 5.1 3-Way Infrastructure Diff, 5.2 Target Constellation, 5.3 WAR Sign-Off, 5.4 Procurement & PO Handover |\n\n---\n\n## Deployment\n\n### Prerequisites\n\n- **Server**: Huawei Cloud ECS (root access)\n- **Python**: 3.11+ with venv\n- **Node.js**: 18+ (build only)\n- **SSH**: Key-based authentication (ed25519)\n- **Network**: Access to proxy.huawei.com:8080 for cloud API calls\n\n### Quick Start\n\n```bash\n# 1. Clone and build\ngit clone <repo-url>\ncd repo/frontend && npm install && npm run build\ncd ..\n\n# 2. Deploy via SSH\npython deploy.py  # Single-pipe: tar.gz → base64 → SSH pipe → extract\n\n# 3. Start\nssh root@<server> "cd /home/huawei-cloud/latam-cloud-erp- && venv/bin/python3 app.py"\n```\n\n### Server Details\n\n| Parameter | Value |\n|---|---|\n| **HTTP App Port** | 9119 |\n| **SSH Port** | 8443 |\n| **Default Credentials** | admin@erp.com |\n| **Auth Token Storage** | `sessionStorage` key: `hermes_access_token` |\n\n---\n\n## License\n\nThe ERP Migration Factory is proprietary software developed for Huawei Cloud LATAM service delivery. Internal use only.\n\n---\n\n## Key Design Decisions\n\n1. **Execution based on Target Topology (Phase 2.4), not source discovery (2.2)** — Source discovery is optional/additive; many customers don\'t grant source access. Target Topology is built from quotation BoM alone.\n2. **Always-on Commercial True-Up** — Runs unconditionally, even without tags/active RIs. Validates DELIVERED vs QUOTED. Never gates on RI/tag presence.\n3. **No simulated/estimated data** — Backend returns honest `{"live_data_available": false}` when APIs are unavailable (e.g., BSS billing detail for LATAM). Frontend shows "Unavailable" / "No Live Data" labels, never fake numbers.\n4. **Wizard sequence is deterministic** — Analysis before decisions: 3.1 WBS → 3.2 Physics → 3.3 FinOps → 3.4 Tooling → 3.5 Runbook.\n5. **Deploy must be visible** — Every deploy is verified with the server before reporting "Done". Code-only changes without deploy+restart+verify are incomplete.\n\n---\n\n## Support\n\nFor issues, feature requests, or access:\n- **ERP System**: http://159.138.148.45:9119\n- **Admin Login**: admin@erp.com\n- **Session Reference**: Search past sessions with `session_search` for implementation history\n',
-    tags: ['introduction', 'overview', 'getting-started'],
+
+  // ═══════════════════════════════════════════════════════════
+  // PHASE 1 — ARB HANDOVER
+  // ═══════════════════════════════════════════════════════════
+  'phase1-arb': {
+    title: 'Phase 1: ARB Handover',
+    category: 'Phase 1 — ARB',
+    icon: 'fa-handshake',
+    short: 'Project intake: customer setup, BOM upload, and stakeholder assignment.',
+    long: `## Phase 1: ARB Handover
+
+The ARB (Architecture Review Board) Handover is where a migration project is formally created and baseline information is captured.
+
+### What happens here
+
+1. **Project creation** — Name, customer assignment, country, target Huawei Cloud region
+2. **Stakeholder assignment** — Sales architect, partner, technical contacts
+3. **Financial baseline** — MRR (Monthly Recurring Revenue) entry
+4. **BOM upload** — Drag-and-drop the presales quotation Excel
+5. **Lifecycle state set** — Project starts at Phase 1, advances to Phase 2 on completion
+
+### How to get here
+
+- **Guided Wizard** (recommended for new users) — Profile menu → Guided Wizard
+- **Direct creation** — Pipeline or Customer Directory → New Project
+- **From Pre-Sales Radar** — Convert a qualified lead to a project
+
+### BOM Upload
+
+The quotation parser accepts Huawei Cloud pricing calculator Excel exports. It extracts:
+- ECS instances (flavor, vCPU, RAM, OS)
+- RDS instances (type, storage)
+- Storage (EVS, OBS, SFS)
+- Network components (VPC, EIP, ELB, NAT)
+- Monthly pricing → calculates MRR
+
+### Phase 1 → Phase 2
+
+Once the BOM is uploaded and basic info is complete, the project advances to Phase 2 (Architecture) for discovery and topology design.`,
+    tags: ['phase-1', 'arb', 'intake', 'bom'],
   },
-  'project-wizard': {
-    title: 'Project Wizard (5-Phase Lifecycle)',
-    category: 'Getting Started',
-    short: 'The main 5-phase migration lifecycle: ARB → Architecture → Planning → Execution → Post-Live.',
-    long: '## Project Wizard\n\nThe Project Wizard is the main interface for managing a migration project through its 5-phase lifecycle.\n\n### The 5 Phases\n1. **ARB Handover**: Project setup, customer, BOM upload\n2. **Architecture**: Discovery, topology mapping, physics engine, DTRB\n3. **Planning**: Wave planning, FinOps, runbooks, tool recommendations\n4. **Execution**: Agentic simulation, 3D constellation, live execution, cutover\n5. **Post-Live**: Billing validation, operational handover, documentation\n\n### Guided Wizard\nNew users can use the Guided Wizard for a scenario-based, step-by-step experience. Power users can use the standard wizard directly.\n\n### Navigation\nClick phase numbers at the top to navigate between phases. All phases are unlocked for development flexibility.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Click any project in Pipeline → Opens Wizard\n\nThe **Project Wizard** is the heart of the ERP Migration Factory. It guides users through the complete 5-phase migration lifecycle for each project.\n\n### Navigation\n\nThe wizard uses a horizontal stepper at the top showing all 5 phases. The active phase is highlighted. Completed phases show a checkmark.\n\n```\n[1. ARB] → [2. Architecture] → [3. Planning] → [4. Execution] → [5. Post-Live]\n```\n\n### Phase 1: ARB Handover\n\n**Purpose:** Formal intake from Architecture Review Board\n\n| Component | Description |\n|---|---|\n| **StepARB.jsx** | ARB intake form |\n\n**Key Fields:**\n- SOW reference number\n- High-level scope description\n- Assigned SA and PM\n- Target region and availability zone\n- Initial timeline estimate\n- Customer contact information\n\n**Gate:** ARB Intake & SOW signed → advances to Phase 2\n\n---\n\n### Phase 2: Architecture\n\n**Purpose:** Design target architecture, assess risks, map topology\n\n| Component | Description |\n|---|---|\n| **ArchitectureCanvas.jsx** | Container tab view for all architecture tools |\n| **DTRBReviewView.jsx** | Technical review board compliance checklist |\n| **TopologyMapperView.jsx** | Design target topology from BoM/quotation |\n| **MgCReconciliationView.jsx** | Optional source discovery data reconciliation |\n| **GovernanceAndCRView.jsx** | DTRB governance tracking and change requests |\n| **AssessmentView.jsx** | ORA risk profile and architecture assessment |\n\n#### Architecture Canvas Tabs\n\n| Tab | Purpose |\n|---|---|\n| **DTRB Review** | Architecture Review Board compliance checklist |\n| **Topology Mapper** | Design target server/network/storage topology |\n| **MgC Reconciliation** | Compare source discovery vs target topology |\n| **Governance & CR** | Track governance status and change requests |\n| **Assessment** | Risk profiling, dependency analysis |\n\n#### Key Workflows\n\n**Topology Mapper:**\n1. Import BoM/quotation data\n2. Map source servers to target Huawei Cloud specs\n3. Define network topology (VPC, subnet, security groups)\n4. Configure storage mapping (EVS, OBS, SFS)\n5. Export target topology for execution\n\n**Governance & CR (DTRB):**\n1. Review DTRB compliance status\n2. Create change requests for deviations\n3. Track CR approval workflow\n4. Link CRs to specific architecture decisions\n5. View governance score and compliance %\n\n**Gates (must all pass to advance):**\n- Architecture Summary complete\n- Source Discovery complete (or waived)\n- ORA Risk Profile assessed\n- Target Topology Mapped\n- DTRB Governance approved\n\n---\n\n### Phase 3: Planning\n\n**Purpose:** Resource planning, cost estimation, tool selection, wave design\n\n| Component | Description |\n|---|---|\n| **StepPlanning.jsx** | Container tab view for all planning tools |\n| **PhysicsEngine.jsx** | Server mapping & performance modeling |\n| **FinOpsCalculator.jsx** | Cost estimation & budgeting |\n| **ToolRecommendationView.jsx** | AI-driven migration tool selection |\n| **WBSImportView.jsx** | Work Breakdown Structure import |\n\n#### Planning Tabs\n\n| Tab | Purpose |\n|---|---|\n| **Physics Engine** | Map source→target specs, network, dependencies |\n| **FinOps Calculator** | Estimate monthly costs, RI needs, budget |\n| **Tool Recommendation** | Recommend migration tools per workload |\n| **WBS Import** | Import/define detailed work breakdown |\n\n**Gates:**\n- WBS & RACI Matrix defined\n- Physics Engine calibrated\n- FinOps Budget & Burn approved\n- Strategic Tooling selected\n- Wave & Runbook planned\n\n---\n\n### Phase 4: Execution\n\n**Purpose:** Pipeline execution, engineering workbench, cutover management\n\n| Component | Description |\n|---|---|\n| **StepExecution.jsx** | Container tab view for all execution tools |\n| **CutoverRunbookView.jsx** | Detailed cutover runbook with steps |\n| **DedicatedMigrationPlan.jsx** | Per-server migration plan |\n| **AgenticOrchestrationPanel.jsx** | AI agent orchestration for parallel tasks |\n| **ModelConfigPanel.jsx** | Hermes AI model configuration |\n| **WaveZeroConfigModal.jsx** | Initial wave configuration |\n\n#### Execution Tabs\n\n| Tab | Purpose |\n|---|---|\n| **Cutover Runbook** | Step-by-step cutover plan with commands |\n| **Migration Plan** | Per-server migration task assignments |\n| **Agentic AI** | Orchestrate parallel AI agents for tasks |\n| **Model Config** | Configure AI provider and model settings |\n\n**Gates:**\n- Readiness Gateway passed (all 3 credential tiers validated)\n- Execution Pipeline active\n- Engineering Workbench online\n- Delivery Command Center staffed\n- TAM Service Governance running\n\n---\n\n### Phase 5: Post-Live\n\n**Purpose:** Validation, reconciliation, sign-off, handover\n\n| Component | Description |\n|---|---|\n| **StepPostLive.jsx** | Container tab view for post-live tools |\n\n**Key Activities:**\n1. **3-Way Infrastructure Diff** — Compare source, target, and delivered\n2. **Target Constellation Verification** — Validate all services running\n3. **WAR Sign-Off** — Work Acceptance Report approval\n4. **Procurement Handover** — Transfer to ongoing operations\n5. **Lessons Learned** — Document findings for future projects\n\n---',
-    tags: ['wizard', 'lifecycle', 'getting-started', 'phases'],
+  'quotation-bom': {
+    title: 'Quotation & BOM Upload',
+    category: 'Phase 1 — ARB',
+    icon: 'fa-file-excel',
+    short: 'Upload the presales Bill of Materials to seed the project with quoted resources.',
+    long: `## Quotation & BOM Upload
+
+The quotation (Bill of Materials) is the presales document listing all Huawei Cloud resources quoted for the customer.
+
+### How to upload
+
+1. In the Project Wizard (Phase 1), drag and drop the Excel file into the upload zone
+2. The parser reads the file and creates a BOM preview
+3. Review the parsed resources — each row shows server name, flavor, vCPU, RAM, disk, OS, and monthly cost
+4. MRR is automatically calculated from the BOM totals
+
+### Excel format
+
+The parser expects a Huawei Cloud pricing calculator export with columns for:
+- Server name
+- Flavor (e.g., s6.large.2)
+- vCPU count
+- RAM (GB)
+- Disk size and type
+- Operating system (important for SAP detection — "SUSE Linux Enterprise Server for SAP" triggers SAP workload classification)
+- Monthly cost
+
+### What the BOM feeds
+
+- **Physics Engine** (Phase 2) — validates quoted resources against discovered source resources
+- **MRR calculation** — total monthly cost becomes the project MRR
+- **Flavor mapping** — quoted ECS flavors are matched to source servers during topology design
+- **Cost baseline** — FinOps Dashboard tracks actual spend against the BOM budget
+
+### Troubleshooting
+
+- **Parse error** — Ensure the file is a valid Excel export from the Huawei Cloud pricing calculator
+- **Missing OS** — If the OS column is blank, SAP workload detection won't trigger. Edit the row to add the full OS string
+- **Flavor mismatch** — If quoted flavors don't match available Huawei Cloud flavors, the Physics Engine will flag them in Phase 2`,
+    tags: ['quotation', 'bom', 'presales', 'excel'],
   },
-  'quotation': {
-    title: 'Quotation & BOM',
-    category: 'Getting Started',
-    short: 'Presales Bill of Materials — the quoted resources and pricing for the migration.',
-    long: '## Quotation & BOM\n\nThe quotation (Bill of Materials) is the presales document that lists all Huawei Cloud resources quoted for the customer.\n\n### What it contains\n- ECS instances with flavors and quantities\n- RDS instances with type and storage\n- Storage (EVS, OBS, SFS)\n- Network components (VPC, EIP, ELB, NAT)\n- Monthly pricing\n\n### How to upload\n1. Drag and drop the Excel file in the wizard\n2. The ERP parses it and creates a BOM preview\n3. Validate that all quoted resources have matching source resources\n4. MRR is calculated from the BOM\n\n### Format\nThe Excel file should have columns for: server name, flavor, vCPU, RAM, disk, OS, and monthly cost.',
-    tags: ['quotation', 'bom', 'presales', 'phase-1'],
+  'presales-radar': {
+    title: 'Pre-Sales Radar',
+    category: 'Phase 1 — ARB',
+    icon: 'fa-satellite-dish',
+    short: 'Track and qualify opportunities before they become projects.',
+    long: `## Pre-Sales Radar
+
+Access: Sidebar → Pre-Sales Radar
+
+The Pre-Sales Radar helps sales teams track opportunities before they become formal migration projects.
+
+### What it tracks
+
+- **Opportunity stage**: Lead → Qualified → Quoted → Won → Project
+- **Qualification matrix**: Migration scope (compute, database, storage, network)
+- **Source environment**: Cross-cloud, on-premise, or Huawei-to-Huawei
+- **Estimated MRR**: Projected revenue from the opportunity
+- **Customer and country**: Geographic distribution of pipeline
+
+### Conversion to Project
+
+Once an opportunity is won, it transitions to the Project Wizard starting at Phase 1 (ARB Handover). The Guided Wizard can also be used for a more structured intake.
+
+### When to use
+
+- **Sales managers** — Track pipeline health and revenue forecast
+- **Architects** — Pre-qualify technical feasibility before quoting
+- **PMO** — Forecast resource demand based on upcoming projects`,
+    tags: ['presales', 'radar', 'pipeline', 'sales'],
   },
-  'target-architecture': {
-    title: 'Target Architecture (Phase 2)',
-    category: 'Getting Started',
-    short: 'Discovery, topology mapping, physics engine, and DTRB governance.',
-    long: '## Phase 2: Architecture\n\nThe Architecture phase discovers the source environment and designs the target topology on Huawei Cloud.\n\n### Key activities\n1. **Resource Discovery**: Scan source cloud (AWS/Azure/On-Prem) for all resources\n2. **Topology Mapping**: Map source resources to target Huawei Cloud equivalents\n3. **Physics Engine**: Validate sizing and compatibility\n4. **DTRB Review**: Governance gate — architecture must be approved before proceeding\n\n### Output\nA complete target architecture with VPC, subnets, ECS, RDS, storage, and network components ready for execution planning.',
-    tags: ['phase-2', 'discovery', 'architecture', 'dtrb'],
+
+  // ═══════════════════════════════════════════════════════════
+  // PHASE 2 — ARCHITECTURE
+  // ═══════════════════════════════════════════════════════════
+  'phase2-architecture': {
+    title: 'Phase 2: Architecture',
+    category: 'Phase 2 — Architecture',
+    icon: 'fa-drafting-compass',
+    short: 'Discover source resources, design target topology, validate, and get DTRB approval.',
+    long: `## Phase 2: Architecture
+
+The Architecture phase discovers the source environment and designs the target topology on Huawei Cloud.
+
+### Key activities (in order)
+
+1. **Resource Discovery** — Scan source cloud for all resources (ECS, RDS, EVS, VPC, EIP, SG, NAT, ELB)
+2. **Workload Detection** — ServerProfiler automatically classifies servers (SAP HANA, SAP app, web, database) based on hostname, OS, and tags
+3. **Topology Mapping** — Map source resources to target Huawei Cloud equivalents
+4. **Physics Engine** — Validate that quoted resources (from BOM) will fit and perform on target infrastructure
+5. **DTRB Review** — Governance gate — architecture must be approved before proceeding to Phase 3
+
+### Output
+
+A complete target architecture with VPC, subnets, ECS, RDS, storage, and network components — ready for execution planning.
+
+### Zero Trust
+
+Discovery is **read-only**. The ERP never modifies the source environment. Source credentials are used solely to list resources via the source cloud API.
+
+### Target Architecture as Single Source of Truth
+
+The target architecture is the **primary data source** for the simulation and execution engines. Mapper nodes are secondary. This means any changes to the target topology flow directly into the migration plan.`,
+    tags: ['phase-2', 'architecture', 'discovery', 'dtrb'],
   },
-  'troubleshooting': {
-    title: 'Troubleshooting & FAQ',
-    category: 'Getting Started',
-    short: 'Common issues and their solutions.',
-    long: '## Troubleshooting & FAQ\n\n### Common Issues\n\n**Q: The 3D constellation is not loading**\nA: Ensure Three.js CDN is accessible. Check browser console for script loading errors. The CDN URL is `cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`.\n\n**Q: Simulation shows no steps**\nA: Ensure the project has mapperNodes (discovered resources) and a target architecture. Run discovery first (Phase 2).\n\n**Q: MCP server won\'t start**\nA: Check that ERP default credentials are configured (Profile → MCP Servers → Configure). The MCP server needs valid Huawei Cloud AK/SK to start.\n\n**Q: Delivery Agent is not responding**\nA: Check that the load balancer is running (HermesConfig mode = http, lb_url accessible). The agent uses GLM-5.2 via the load balancer.\n\n**Q: Regional map shows no markers**\nA: Projects need a valid `country` field. Unknown or "?" countries are filtered out. Edit the project in Phase 1 (ARB) to set the country.\n\n**Q: Browser shows ERR_CONNECTION_RESET on assets**\nA: Hard refresh (Ctrl+Shift+R) to clear cached old JavaScript bundles after a deploy.\n\n**Q: SAP servers not detected as SAP workload**\nA: Ensure the quotation parser preserved the full OS string (e.g., "SUSE Linux Enterprise Server for SAP"). The workload detector checks for "SAP" in the OS string.\n\n---\n\n### Detailed Guide (from User Manual)\n\n### Common Issues\n\n#### "Session Expired" Error\n**Cause:** JWT token expired or invalid  \n**Fix:** Click "Log In" button to re-authenticate\n\n#### "Module Not Found" on Startup\n**Cause:** Missing Python dependency  \n**Fix:** Run `pip install -r requirements.txt` on the server\n\n#### Credential Validation Fails\n**Cause:** Expired or incorrect AK/SK  \n**Fix:** Update credentials in Customer Directory → Vault\n\n#### RI Reconciliation Returns Empty\n**Cause:** No RI quotation uploaded  \n**Fix:** Upload quotation via FinOps → Upload RI Quotation\n\n#### HelpDrawer Not Opening\n**Cause:** Fixed in latest update — `useMemo` hooks ordering corrected  \n**Fix:** Refresh page to load latest bundle\n\n### Support\n\nFor issues not covered here:\n1. Open Hermes AI Assistant and describe the problem\n2. Check server logs at `/tmp/erp_server.log`\n3. Contact the ERP Migration Factory team\n\n---\n\n*© 2026 ERP Migration Factory — Huawei Cloud LATAM*',
-    tags: ['troubleshooting', 'faq', 'issues', 'getting-started'],
-  },
-  'wave-planning': {
-    title: 'Wave Planning (Phase 3)',
-    category: 'Getting Started',
-    short: 'Sequencing migration into waves with dependency chains and cutover windows.',
-    long: '## Wave Planning — Phase 3\n\nMigration waves group servers that should migrate together based on dependencies.\n\n### How waves are built\n1. **Dependency analysis**: Identify which servers depend on each other (database → app → web)\n2. **SID grouping**: For SAP, all servers with the same SID are in the same wave\n3. **Cutover windows**: Each wave has a defined cutover time window\n4. **Rollback paths**: Each wave has a defined rollback strategy\n\n### Wave zero\nWave 0 is the infrastructure wave — VPC, subnets, security groups, and shared services that must exist before any server migration.',
-    tags: ['phase-3', 'planning', 'waves', 'dependencies'],
-  },
-  'discovery': {
+  'resource-discovery': {
     title: 'Resource Discovery',
-    category: 'Architecture',
+    category: 'Phase 2 — Architecture',
+    icon: 'fa-search',
     short: 'Scanning the source environment to inventory all resources for migration.',
-    long: '## Resource Discovery\n\nResource discovery scans the source cloud environment to inventory all resources that need to be migrated.\n\n### What gets discovered\n- **Compute**: ECS/VM instances, their OS, vCPU, RAM\n- **Database**: RDS instances, type (MySQL, PostgreSQL, etc.), storage\n- **Storage**: EVS disks, OBS buckets, SFS\n- **Network**: VPCs, subnets, EIPs, security groups, NAT, ELB\n- **Other**: VPN, CDN, WAF, HSS\n\n### How it works\nThe ERP uses the source credentials (read-only) to call the source cloud API and list all resources. These become "mapperNodes" in the project data.\n\n### Zero Trust\nDiscovery is read-only — the ERP never modifies the source environment.',
-    tags: ['discovery', 'phase-2', 'source', 'credentials'],
+    long: `## Resource Discovery
+
+Access: Project Wizard → Phase 2 → Discovery tab, or Sidebar → Discovery Map
+
+Resource discovery scans the source cloud environment to inventory everything that needs to be migrated.
+
+### What gets discovered
+
+- **Compute**: ECS/VM instances with OS, vCPU, RAM, and disk layout
+- **Database**: RDS instances with type (MySQL, PostgreSQL, etc.) and storage
+- **Storage**: EVS disks, OBS buckets, SFS file systems
+- **Network**: VPCs, subnets, EIPs, security groups, NAT gateways, ELBs
+- **Other**: VPN, CDN, WAF, HSS agents
+
+### How it works
+
+1. Source credentials (read-only AK/SK) are stored in the Customer Directory
+2. The ERP calls the source cloud API to list all resources in all regions
+3. Discovered resources become **mapperNodes** in the project data
+4. **ServerProfiler** classifies each server by workload type (SAP, database, web, etc.)
+5. Results appear in the Resource Discovery Map view
+
+### Workload auto-detection
+
+ServerProfiler checks hostname patterns, OS strings, and tags to classify:
+- **SAP HANA** — hostname contains "hana" or OS includes "SAP" + "HANA"
+- **SAP App** — OS includes "SUSE" + "SAP" (non-HANA)
+- **Database** — hostname contains "db", "mysql", "postgres", "redis"
+- **Web** — hostname contains "web", "nginx", "apache"
+
+### Discovery Map
+
+Sidebar → Discovery Map shows a visual layout of all discovered resources grouped by type, with mapping status to target equivalents.`,
+    tags: ['discovery', 'phase-2', 'source', 'scan'],
   },
   'physics-engine': {
     title: 'Physics Engine',
-    category: 'Architecture',
+    category: 'Phase 2 — Architecture',
+    icon: 'fa-atom',
     short: 'Validates compute, storage, and network sizing against target topology.',
-    long: '## Physics Engine\n\nThe Physics Engine validates that your quoted resources (from the presales BOM) will fit and perform correctly on Huawei Cloud target infrastructure.\n\n### What it checks\n- **Compute**: vCPU and RAM matching between source servers and target ECS flavors\n- **Storage**: Disk capacity and type (EVS SSD/SAS/SATA) mapping\n- **Network**: VPC, subnet, EIP, and security group compatibility\n\n### When it runs\nThe Physics Engine runs automatically during Phase 2 (Architecture) after resource discovery. Results show as green (OK), yellow (warning), or red (blocked) per resource.',
-    tags: ['architecture', 'sizing', 'feasibility', 'phase-2'],
+    long: `## Physics Engine
+
+The Physics Engine validates that your quoted resources (from the presales BOM) will fit and perform correctly on Huawei Cloud target infrastructure.
+
+### What it checks
+
+- **Compute**: vCPU and RAM matching between source servers and target ECS flavors
+- **Storage**: Disk capacity and type (EVS SSD/SAS/SATA) mapping
+- **Network**: VPC, subnet, EIP, and security group compatibility
+- **Flavor availability**: Quoted flavors exist in the target region
+
+### When it runs
+
+The Physics Engine runs automatically during Phase 2 after resource discovery. Results show as:
+- 🟢 **Green (OK)** — Resource fits and is compatible
+- 🟡 **Yellow (Warning)** — Resource fits but with caveats (e.g., different disk type)
+- 🔴 **Red (Blocked)** — Resource does not fit or is unavailable in target region
+
+### How to use results
+
+- Fix all red items before requesting DTRB approval
+- Review yellow items and document any acceptable trade-offs
+- Green items can proceed without action
+
+### Common issues
+
+- **Flavor not found** — The quoted flavor may not exist in the target region. Check the Huawei Cloud flavor catalog for the correct region.
+- **Disk type mismatch** — Source uses SSD but BOM quotes SAS. Decide whether the performance difference is acceptable.
+- **Network incompatibility** — Source has more EIPs than quoted. Update the BOM or release unused EIPs.`,
+    tags: ['physics', 'validation', 'sizing', 'phase-2'],
+  },
+  'dtrb': {
+    title: 'DTRB (Design Technical Review Board)',
+    category: 'Phase 2 — Architecture',
+    icon: 'fa-clipboard-check',
+    short: 'Governance gate that reviews and approves the target architecture before execution.',
+    long: `## DTRB — Design Technical Review Board
+
+The DTRB is a governance gate between Phase 2 (Architecture) and Phase 3 (Planning). It ensures the proposed target architecture is technically sound before resources are committed.
+
+### What DTRB reviews
+
+- Target topology (VPC, subnets, ECS, RDS, storage)
+- Feasibility check results from the Physics Engine
+- Migration strategy (SMS, DRS, image conversion)
+- Risk assessment and rollback plan
+- Cost alignment (BOM vs. discovered resources)
+
+### Approval flow
+
+1. Architect submits the target architecture
+2. DTRB reviews and either **approves**, **requests changes**, or **rejects**
+3. Only approved architectures proceed to Phase 3 (Planning)
+
+### DTRB Governance document
+
+The full DTRB governance framework covers:
+
+- **Architecture standards** — VPC design patterns, subnet sizing, security group baselines
+- **Migration strategy selection** — When to use SMS vs. DRS vs. image conversion vs. HSR
+- **Risk classification** — Low/Medium/High/Critical based on workload sensitivity, data volume, and downtime tolerance
+- **Rollback requirements** — Every architecture must have a documented rollback path
+- **Sign-off authority** — DTRB board composition and quorum requirements
+
+### After approval
+
+Once DTRB approves, the project advances to Phase 3 (Planning) where waves are built, FinOps is finalized, and runbooks are prepared.`,
+    tags: ['dtrb', 'governance', 'approval', 'phase-2'],
+  },
+  'zero-trust': {
+    title: 'Zero Trust Security Model',
+    category: 'Phase 2 — Architecture',
+    icon: 'fa-shield-alt',
+    short: 'Source credentials are read-only. ERP never modifies the source environment.',
+    long: `## Zero Trust Security Model
+
+The ERP Migration Factory operates under a strict Zero Trust principle:
+
+### Core rules
+
+- **Read-only source access** — The ERP never writes to or modifies the source environment
+- **Customer installs agents** — SMS agents and mig_workers are installed by the customer, not by the ERP
+- **ERP runs ALL target-side ops** — All provisioning, configuration, and execution happens on the Huawei Cloud target
+
+### Why this matters
+
+If anything goes wrong during migration, the source environment is completely untouched and can serve as a rollback point. There is no risk of corrupting the source.
+
+### Credential handling
+
+- Source AK/SK are stored encrypted in the database (Customer Directory)
+- Source credentials are used **only** for read-only API calls (list resources)
+- Target credentials (Huawei Cloud AK/SK) are used for all provisioning and execution
+- Per-customer credentials override the ERP default MCP credentials during execution
+
+### mig_worker boundary
+
+The mig_worker operates on the **TARGET side only**. It never needs source credentials with write access. It:
+- Installs SMS agents on source servers (via SMS console, not direct source access)
+- Runs pre-migration scripts on the target
+- Manages data synchronization from target side
+- Executes post-migration validation on the target`,
+    tags: ['security', 'zero-trust', 'credentials'],
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PHASE 3 — PLANNING
+  // ═══════════════════════════════════════════════════════════
+  'phase3-planning': {
+    title: 'Phase 3: Planning',
+    category: 'Phase 3 — Planning',
+    icon: 'fa-map-signs',
+    short: 'Build migration waves, finalize FinOps, and prepare runbooks.',
+    long: `## Phase 3: Planning
+
+The Planning phase takes the DTRB-approved architecture and turns it into an executable plan.
+
+### Key activities
+
+1. **Wave Planning** — Group servers into migration waves based on dependencies
+2. **FinOps Finalization** — Lock down the budget, reconcile RI coverage, and estimate migration costs
+3. **Runbook Preparation** — Document step-by-step procedures for each wave
+4. **Tool Selection** — Choose migration tools (SMS, DRS, image conversion, HSR) per resource type
+5. **Execution Mode** — Choose dry-run (simulation) or live execution
+
+### Output
+
+A complete migration plan with:
+- Ordered waves with cutover windows
+- Tool assignments per resource
+- Cost estimates and RI reconciliation
+- Runbooks for each wave
+- Rollback procedures`,
+    tags: ['phase-3', 'planning', 'waves', 'finops'],
+  },
+  'wave-planning': {
+    title: 'Wave Planning',
+    category: 'Phase 3 — Planning',
+    icon: 'fa-layer-group',
+    short: 'Sequencing migration into waves with dependency chains and cutover windows.',
+    long: `## Wave Planning
+
+Migration waves group servers that should migrate together based on dependencies.
+
+### How waves are built
+
+1. **Dependency analysis** — Identify which servers depend on each other (database → app → web)
+2. **SID grouping** — For SAP, all servers with the same SID are automatically in the same wave
+3. **Cutover windows** — Each wave has a defined cutover time window
+4. **Rollback paths** — Each wave has a defined rollback strategy
+
+### Wave zero
+
+Wave 0 is the infrastructure wave — VPC, subnets, security groups, and shared services that must exist before any server migration.
+
+### Auto-grouping
+
+The platform auto-groups waves by:
+- **Application group** (from ServerProfiler classification)
+- **SID** (for SAP — all components of one SAP system migrate together)
+- **Dependency chains** (database before app before web)
+
+### Manual gates
+
+For sensitive workloads (SAP HANA, production databases), manual gates are inserted into the wave plan. These require human confirmation before proceeding to the next step.`,
+    tags: ['waves', 'planning', 'phase-3', 'dependencies'],
+  },
+  'finops-dashboard': {
+    title: 'FinOps Dashboard',
+    category: 'Phase 3 — Planning',
+    icon: 'fa-chart-line',
+    short: 'Real-time cost tracking, RI reconciliation, and budget burn-down.',
+    long: `## FinOps Dashboard
+
+Access: Sidebar → FinOps
+
+The FinOps Dashboard (Cost Optimization Center) provides financial operations monitoring for migration projects.
+
+### Features
+
+- **RI/ECS Reconciliation** — Match reserved instances against running ECS for savings analysis
+- **Budget Burn** — Track actual spend vs. quotation BOM
+- **Commercial True-Up** — Reconcile quoted costs with actual Huawei Cloud billing
+- **TCO Comparison** — Compare source cloud costs vs. Huawei Cloud target costs
+
+### Data sources
+
+- Huawei Cloud BSS (billing system) for actual costs
+- Quotation BOM for budgeted costs
+- ECS RI detector for reserved instance analysis
+
+### When to use
+
+- **During Phase 3** — Finalize budget before execution
+- **During Phase 4** — Monitor spend as resources are provisioned
+- **During Phase 5** — Reconcile final costs and perform commercial true-up
+
+### MRR
+
+MRR (Monthly Recurring Revenue) is the monthly revenue from each project. It's set during Phase 1 (ARB Handover) or calculated from the BOM. MRR feeds into:
+- Regional Map bubble sizes
+- FinOps revenue tracking
+- Pipeline revenue forecasting`,
+    tags: ['finops', 'cost', 'billing', 'ri'],
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PHASE 4 — EXECUTION
+  // ═══════════════════════════════════════════════════════════
+  'phase4-execution': {
+    title: 'Phase 4: Execution',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-play-circle',
+    short: 'Simulate the migration (dry-run), then execute for real with cutover and validation.',
+    long: `## Phase 4: Execution
+
+The Execution phase runs the migration — first as a simulation (dry-run), then for real.
+
+### Execution flow (15 sub-phases)
+
+| Sub-phase | What happens |
+|---|---|
+| 4.0 | Readiness Gateway — validate all prerequisites |
+| 4.1 | Network verification |
+| 4.2 | Wave planning, knowledge enrichment, preflight checks |
+| 4.2b | Source and agent preparation |
+| 4.2c | Target provisioning (create ECS, VPC, RDS) |
+| 4.2d | Data synchronization (SMS/DRS) |
+| 4.2e-f | Post-sync and smoke tests |
+| 4.3-4.5 | Landing zone, HSS, continuous sync |
+| 4.6 | Cutover (with manual gates) |
+| 4.7-4.8 | Cleanup and finalization |
+
+### Two modes
+
+- **Dry-Run (Simulation)** — Executes all 15 phases as a simulation. No real resources are created. Shows trace, resource usage, and delivery report. Visualized in the 3D Architecture Constellation.
+- **Live Execution** — Executes real operations via MCP servers or hcloud CLI. Creates real ECS, VPC, starts SMS sync, etc.
+
+### Knowledge enrichment
+
+During Phase 4.2, the simulator queries the 3-source knowledge tree (Skills, External, History) and shows which skills match each server. This informs the migration approach and flags potential issues.`,
+    tags: ['phase-4', 'execution', 'simulation', 'cutover'],
+  },
+  'readiness-gateway': {
+    title: 'Readiness Gateway (Phase 4.0)',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-door-closed',
+    short: 'Pre-execution validation gate — verifies all prerequisites are met.',
+    long: `## Readiness Gateway — Phase 4.0
+
+The Readiness Gateway is the first step of Phase 4 (Execution). It validates that all prerequisites are met before any real migration operations begin.
+
+### What it checks
+
+- **Credentials** — Customer AK/SK are valid and have sufficient permissions
+- **Target infrastructure** — VPC, subnets, and security groups are provisioned
+- **Source connectivity** — SMS agent can reach the source servers
+- **Quotation alignment** — BOM matches discovered resources
+- **DTRB approval** — Architecture has been approved
+- **Wave plan** — At least one wave is defined with a cutover window
+
+### Gate behavior
+
+- 🟢 **All green** → execution proceeds to Phase 4.1
+- 🔴 **Any red** → execution blocked with specific failure reason
+- 🟡 **Yellow warnings** → informational only — execution can proceed
+
+### Credential hierarchy
+
+The gateway checks credentials in this order:
+1. Per-customer AK/SK (from Customer Directory) — highest priority
+2. ERP default MCP credentials (from Profile → MCP Servers)
+3. hcloud CLI default profile — fallback
+
+If none are valid, the gate blocks execution.`,
+    tags: ['readiness', 'gate', 'validation', 'phase-4'],
+  },
+  'agentic-simulation': {
+    title: 'Agentic Simulation',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-vr-cardboard',
+    short: '15-phase dry-run that simulates the entire migration before executing anything real.',
+    long: `## Agentic Simulation
+
+The agentic simulator runs a complete migration dry-run across all 15 phases (4.0 through 4.8) without touching any real resources.
+
+### What it simulates
+
+- Phase 4.0: Readiness gateway validation
+- Phase 4.1: Network verification
+- Phase 4.2: Wave planning, knowledge enrichment, preflight checks
+- Phase 4.2b: Source and agent preparation
+- Phase 4.2c: Target provisioning
+- Phase 4.2d: Data synchronization
+- Phase 4.2e-f: Post-sync and smoke tests
+- Phase 4.3-4.5: Landing zone, HSS, continuous sync
+- Phase 4.6: Cutover (with manual gates)
+- Phase 4.7-4.8: Cleanup and finalization
+
+### Knowledge enrichment
+
+During Phase 4.2, the simulator queries the 3-source knowledge tree:
+1. **Skill Registry** (priority 1, confidence 90%) — curated skills from \`/root/.hermes/skills/\`
+2. **External Knowledge** (priority 2, confidence 75%) — community skills from GitHub
+3. **Execution History** (priority 3, confidence 55%) — patterns from past simulations
+
+The simulator shows which skills match each server and how they inform the migration approach.
+
+### 3D Constellation
+
+Results are visualized in the 3D Architecture Constellation with replay controls — step through each phase, see resources appear, watch data sync particles flow between source and target.
+
+### Delivery report
+
+After simulation, a delivery report shows:
+- Total time estimate
+- Resource utilization
+- Cost projection
+- Risk flags
+- Manual gate count`,
+    tags: ['simulation', 'dry-run', 'phases', 'ai'],
+  },
+  'agentic-orchestration': {
+    title: 'Agentic Orchestration & Execution',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-cogs',
+    short: 'Multi-agent execution pipeline that runs migration phases 4.0–4.8 autonomously.',
+    long: `## Agentic Orchestration & Execution
+
+Access: Project Wizard → Phase 4 → Agentic Orchestration panel
+
+### Two modes
+
+- **Dry-Run (Simulation)** — Executes all 15 phases as a simulation. No real resources are created. Shows trace, resource usage, and delivery report.
+- **Live Execution** — Executes real operations via MCP servers or hcloud CLI. Creates real ECS, VPC, starts SMS sync, etc.
+
+### Execution engine flow
+
+1. Starts MCP servers on-demand with customer credentials
+2. Creates dynamic hcloud CLI profile
+3. For each step: tries MCP first, falls back to hcloud CLI
+4. Records results, timing, and errors per step
+5. On completion: stops MCP servers, deletes hcloud profile
+
+### MCP vs. hcloud CLI
+
+| Aspect | MCP Server | hcloud CLI |
+|---|---|---|
+| Input/Output | Structured JSON | Text output |
+| Validation | OpenAPI spec | Manual |
+| Versioning | Automatic | Manual |
+| Self-documenting | Yes (tools/list) | No |
+| Fallback | — | Used when MCP fails |
+
+### 3D Constellation
+
+Results are visualized in the 3D Architecture Constellation with replay controls — step through each phase, see resources appear, watch data sync particles flow.`,
+    tags: ['orchestration', 'execution', 'mcp', 'hcloud'],
+  },
+  'mig-worker': {
+    title: 'Migration Worker (mig_worker)',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-worker',
+    short: 'Transient server that runs migration operations on the target side.',
+    long: `## mig_worker
+
+The mig_worker is a transient server deployed on Huawei Cloud that executes migration operations on the target side.
+
+### What it does
+
+- Installs SMS agents on source servers (via SMS console)
+- Runs pre-migration scripts (disk expansion, boot fixes, partition fixes)
+- Manages data synchronization
+- Executes post-migration validation
+
+### Lifecycle
+
+1. **Deployed** during Phase 4.2b (Source & Agent Prep)
+2. **Active** during Phase 4.2c–4.6 (provisioning through cutover)
+3. **Cleaned up** during Phase 4.7 (Cleanup)
+
+### When it triggers
+
+- **Cross-cloud migration** (AWS/Azure → Huawei) — triggers mig_worker
+- **Source inaccessible** — triggers mig_worker (customer-side ops only)
+- **Cross-region same-cloud** — does NOT trigger mig_worker (handled by SMS/DRS directly)
+
+### Zero Trust boundary
+
+The mig_worker operates on the **TARGET side only**. It never needs source credentials with write access. All source-side operations (agent installation) go through the SMS console API, not direct source access.`,
+    tags: ['mig-worker', 'execution', 'agent', 'phase-4'],
   },
   'cutover': {
     title: 'Cutover (Phase 4.6)',
-    category: 'Execution',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-exchange-alt',
     short: 'The critical switchover from source to target — includes manual gates and rollback.',
-    long: '## Cutover — Phase 4.6\n\nCutover is the critical moment when traffic switches from the source environment to the Huawei Cloud target.\n\n### What happens\n1. **Manual gate**: Confirm all sync is complete\n2. **Stop source services**: Application, database (for SAP: stop SAP → stop HANA)\n3. **Final sync**: Last incremental data sync\n4. **Start target**: Boot target servers, start applications\n5. **DNS switch**: Update DNS to point to target\n6. **Verify**: Smoke tests on target\n\n### Rollback\nIf cutover fails, the source environment is untouched (Zero Trust) and can be restarted. The manual gates ensure a human confirms each step.\n\n### SAP-specific\nFor SAP, cutover includes explicit manual gates: "Stop SAP S/4HANA" and "Stop SAP HANA" — these require human confirmation before proceeding.',
+    long: `## Cutover — Phase 4.6
+
+Cutover is the critical moment when traffic switches from the source environment to the Huawei Cloud target.
+
+### What happens (in order)
+
+1. **Manual gate** — Confirm all sync is complete
+2. **Stop source services** — Application, database
+3. **Final sync** — Last incremental data sync
+4. **Start target** — Boot target servers, start applications
+5. **DNS switch** — Update DNS to point to target
+6. **Verify** — Smoke tests on target
+
+### Rollback
+
+If cutover fails, the source environment is untouched (Zero Trust) and can be restarted. The manual gates ensure a human confirms each step before proceeding.
+
+### SAP-specific cutover
+
+For SAP, cutover includes explicit manual gates:
+1. **Stop SAP S/4HANA** — Application layer
+2. **Stop SAP HANA** — Database layer
+3. **Final HSR sync** — Last replication delta
+4. **Start target HANA** — Boot target HANA instance
+5. **Start target SAP** — Application layer
+6. **Smoke tests** — SAP transaction verification
+
+Each gate requires human confirmation. No automated cutover for SAP production.`,
     tags: ['cutover', 'phase-4', 'execution', 'rollback'],
   },
   'execution-workbench': {
     title: 'Execution Workbench (Phase 4.8)',
-    category: 'Execution',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-tools',
     short: 'Manual re-run and debugging interface for individual execution steps.',
-    long: '## Execution Workbench — Phase 4.8\n\nThe Execution Workbench allows operators to manually re-run individual steps from the migration pipeline.\n\n### What you can do\n- **Re-run failed steps**: Select any failed step and re-execute it\n- **Modify parameters**: Change parameters before re-running\n- **View step logs**: Detailed logs for each step execution\n- **Compare runs**: Compare results between different runs of the same step\n\n### When to use\nAfter a migration that had partial failures. Use the workbench to fix and re-run only the failed steps without re-running the entire pipeline.',
-    tags: ['execution', 'workbench', 'debug', 're-run', 'phase-4'],
-  },
-  'mig-worker': {
-    title: 'Migration Worker (mig_worker)',
-    category: 'Execution',
-    short: 'Transient server that runs migration operations on the target side.',
-    long: '## mig_worker\n\nThe mig_worker is a transient server deployed on Huawei Cloud that executes migration operations on the target side.\n\n### What it does\n- Installs SMS agents on source servers\n- Runs pre-migration scripts (disk expansion, boot fixes)\n- Manages data synchronization\n- Executes post-migration validation\n\n### Lifecycle\n1. Deployed during Phase 4.2b (Source & Agent Prep)\n2. Active during Phase 4.2c-4.6 (provisioning through cutover)\n3. Cleaned up during Phase 4.7 (Cleanup)\n\n### Zero Trust\nThe mig_worker operates on the TARGET side only. It never needs source credentials with write access.',
-    tags: ['execution', 'worker', 'agent', 'phase-4'],
-  },
-  'readiness-gateway': {
-    title: 'Readiness Gateway (Phase 4.0)',
-    category: 'Execution',
-    short: 'Pre-execution validation gate — verifies all prerequisites are met before migration begins.',
-    long: '## Readiness Gateway — Phase 4.0\n\nThe Readiness Gateway is the first step of Phase 4 (Execution). It validates that all prerequisites are met before any real migration operations begin.\n\n### What it checks\n- **Credentials**: Customer AK/SK are valid and have sufficient permissions\n- **Target infrastructure**: VPC, subnets, and security groups are provisioned\n- **Source connectivity**: SMS agent can reach the source servers\n- **Quotation alignment**: BOM matches discovered resources\n- **DTRB approval**: Architecture has been approved\n- **Wave plan**: At least one wave is defined with a cutover window\n\n### Gate behavior\n- All green → execution proceeds to Phase 4.1\n- Any red → execution blocked with specific failure reason\n- Yellow warnings are informational only — execution can proceed\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Project Wizard → Phase 4 → 4.0 Readiness Gateway\n\n### Credential Hierarchy\n\nThe gateway checks credential existence (not decryption — that happens at execution time):\n\n| Check | Status | Description |\n|-------|--------|-------------|\n| **Master AK/SK** | valid / configured / blocked | Control plane authentication |\n| **Real-Name Auth** | valid / unverified / unknown | Required for EPS + Tier 2 isolation |\n| **Tier 2 EPS Admin** | valid / missing | Enterprise Project-scoped access |\n| **EPS Bracket** | small / medium / large | Size classification |\n| **OS Data Plane** | configured / missing | Agentless migration credentials |\n\n### Unlocking Execution\n\nThe execution engine unlocks when:\n1. Master AK/SK is present (configured or valid)\n2. OS Data Plane credentials are configured\n\nReal-name auth and Tier 2 are NOT blockers — the system falls back to Master AK/SK (Path B) with a warning.\n| **TAM** | Technical Account Manager |\n| **TCO** | Total Cost of Ownership |\n| **VPC** | Virtual Private Cloud |\n| **WAR** | Work Acceptance Report — final sign-off |\n| **WBS** | Work Breakdown Structure — task hierarchy |\n\n---',
-    tags: ['execution', 'gate', 'validation', 'phase-4', 'readiness'],
-  },
-  'finops': {
-    title: 'FinOps Dashboard',
-    category: 'FinOps',
-    short: 'Real-time cost tracking, RI reconciliation, and budget burn-down.',
-    long: '## FinOps Dashboard\n\nThe FinOps Dashboard provides financial operations monitoring for migration projects.\n\n### Features\n- **RI/ECS Reconciliation**: Match reserved instances against running ECS for savings analysis\n- **Budget Burn**: Track actual spend vs. quotation BOM\n- **Commercial True-Up**: Reconcile quoted costs with actual Huawei Cloud billing\n- **TCO Comparison**: Compare source cloud costs vs. Huawei Cloud target costs\n\n### Data sources\n- Huawei Cloud BSS (billing system) for actual costs\n- Quotation BOM for budgeted costs\n- ECS RI detector for reserved instance analysis\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → FinOps (💰)\n\nThe **FinOps Dashboard** (Cost Optimization Center) manages cloud financial operations.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **RI Coverage Analysis** | Reserved Instance coverage % vs on-demand |\n| **ECS-RI Reconciliation** | Match RI purchases to running ECS instances |\n| **Burn Rate Tracking** | Monthly/daily cloud spend monitoring |\n| **TCO Comparison** | Compare source vs target cloud costs |\n| **Quotation Upload** | Import RI quotations from Huawei Cloud |\n| **Console RI Import** | Pull live RI data from Huawei Cloud Console |\n| **Commercial True-Up** | Validate delivered vs quoted infrastructure |\n| **Savings Dashboard** | Track realized vs projected savings |\n\n### Key Workflows\n\n#### ECS-RI Reconciliation\n1. Upload RI quotation (Excel from Huawei)\n2. Fetch live ECS inventory via API\n3. Run reconciliation to match RIs to instances\n4. Review unmatched RIs and uncovered instances\n5. Export optimization recommendations\n\n#### Commercial True-Up\n1. Load project quotation (BoM)\n2. Fetch delivered infrastructure from live APIs\n3. Compare line by line\n4. Flag discrepancies (missing, extra, misconfigured)\n5. Generate True-Up report\n\n---',
-    tags: ['finops', 'cost', 'billing', 'ri'],
-  },
-  'mrr': {
-    title: 'MRR (Monthly Recurring Revenue)',
-    category: 'FinOps',
-    short: 'Monthly revenue from each project, used for regional map and FinOps dashboards.',
-    long: '## MRR — Monthly Recurring Revenue\n\nMRR is the monthly revenue generated by each migration project. It is used across the ERP for:\n\n- **Regional Map**: Bubble size on the map represents total MRR per country\n- **FinOps Dashboard**: Revenue tracking against migration costs\n- **Pipeline**: Revenue forecasting for upcoming waves\n\n### How to set it\nMRR is set during Phase 1 (ARB Handover) or can be imported from the quotation BOM.',
-    tags: ['finops', 'revenue', 'finance'],
-  },
-  'mcp-servers': {
-    title: 'MCP Servers',
-    category: 'Configuration',
-    short: 'Model Context Protocol servers provide structured API access to Huawei Cloud services.',
-    long: '## MCP Servers\n\nMCP (Model Context Protocol) servers are local HTTP gateways between the ERP and Huawei Cloud APIs. Each server wraps a specific Huawei Cloud service (ECS, VPC, RDS, etc.) with structured input/output.\n\n### How they work\n1. MCP server starts on-demand on a local port (8800-8999)\n2. The ERP sends a JSON-RPC `tools/call` request\n3. The MCP server calls the real Huawei Cloud API using the SDK\n4. Structured JSON response returns to the ERP\n\n### Credentials\n- **ERP default**: Set in Profile → MCP Servers → Configure\n- **Per-customer**: Customer AK/SK from CRM overrides the default during execution\n\n### Benefits over hcloud CLI\n- Structured input/output (always JSON)\n- Parameter validation via OpenAPI spec\n- API versioning handled automatically\n- Self-documenting (tools/list shows all available endpoints)\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Users → MCP Servers panel (below Skills Knowledge Tree)\n\n### Overview\n\nThe Model Context Protocol (MCP) server provides 175+ Huawei Cloud IaaS API tools. The server is at `/home/huawei-cloud/iaas-mcp-server/` on the live server.\n\n### Features\n\n| Feature | Description |\n|---------|-------------|\n| **Server List** | Shows all MCP server directories (huaweicloud_services_server, dws, marketplace, common) |\n| **Sync from GitHub** | Pulls latest from `huaweicloud-samples/iaas-mcp-server` |\n| **Tool Count** | Shows total Python modules per server |\n| **Status** | Running/Stopped indicator |\n\n### MCP Integration Status\n\n- ✅ MCP server code synced to live server\n- ✅ UI panel with sync button in Profile section\n- ⚠️ MCP not yet integrated with execution engine (coming in future release)\n- Future: MCP tools will appear in simulation traces with 🔌 MCP label\n\n---',
-    tags: ['configuration', 'api', 'huawei-cloud', 'credentials'],
-  },
-  'model-config': {
-    title: 'AI Model Configuration',
-    category: 'Configuration',
-    short: 'Configure LLM providers, models, and connection settings for the Delivery Agent.',
-    long: '## AI Model Configuration\n\nThe AI Model Configuration panel (Profile → System Configuration → AI Model Configuration) controls how the Delivery Agent connects to LLMs.\n\n### Settings\n- **Connection Mode**: `cli` (local Hermes binary) or `http` (load balancer API)\n- **Global Model**: Primary model for the Delivery Agent (e.g., `glm-5.2`)\n- **Global Provider**: LLM provider (e.g., `zai`, `deepseek`)\n- **Delegation Model**: Model used for subagent delegation (e.g., `glm-5.2`)\n- **Delegation Provider**: Provider for delegation calls\n- **LB URL**: Load balancer endpoint (e.g., `http://localhost:8666/v1/chat/completions`)\n- **LB Auth**: Authentication header for the load balancer\n\n### How it works\nThe Delivery Agent (`routes/hermes.py`) reads these settings via `HermesConfig.get_config()` and uses them for the function-calling loop. The agent sends `tools` array with `tool_choice: auto` and processes up to 5 rounds of tool calls.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Users → AI Model Configuration panel\n\n### Overview\n\nThe ERP uses AI models for the ERP Agent (migration execution), simulation analysis, and chat assistance. Models are configured in priority order:\n\n### Priority Order\n\n```\n1. LoadBalancer (PRIMARY) — already configured with working API keys\n2. Individual Provider Keys (FALLBACK) — added via ModelConfigPanel\n3. Fallback Chain (LAST RESORT) — ordered provider list\n```\n\n### Configuration Steps\n\n1. **LoadBalancer (Priority 1):** The HuaweiLoadBalancer at `services/huawei_loadbalancer.py` has pre-configured API keys. When the delegate-task endpoint runs in HTTP mode, it POSTs to the loadbalancer URL. No additional configuration needed.\n\n2. **Individual Provider Keys (Priority 2):** In the Model Configuration panel:\n   - Select a provider (Alibaba, OpenAI, DeepSeek, etc.)\n   - Click "+ Add API key" and paste your key\n   - The key is stored encrypted and shown as masked (`****`)\n   - Green dot = key configured, Amber dot = no key\n\n3. **Primary Model:** Select which provider+model to use for main AI tasks\n4. **Delegation Model:** Select which provider+model to use for subagent spawning\n5. **Fallback Chain:** Drag to reorder providers — if primary fails, system tries next in chain\n\n### API Keys Needed\n\n| Key | Purpose | Where to Configure |\n|-----|---------|-------------------|\n| LLM API key (Alibaba/OpenAI/etc.) | ERP Agent AI calls | ModelConfigPanel → API key |\n| Huawei Master AK/SK | Control plane (ECS, VPC, IAM) | Customer Directory |\n| Huawei Source AK/SK | Source VM discovery + SMS agent | Customer Directory → source_huawei_ak/sk |\n| OS SSH credentials | Data plane (agent install, smoke tests) | Customer Directory → os_user/os_password |\n\n### ERP Agent Execution Modes\n\nThe ERP Agent (`/api/hermes-cli/delegate-task`) supports two modes:\n\n| Mode | When Used | Tool Access |\n|------|-----------|-------------|\n| **HTTP (LoadBalancer)** | Simple chat, queries, analysis | Text only — no tool execution |\n| **CLI (Hermes)** | Execution tasks (create, deploy, migrate) | Full terminal, file, browser access + `--yolo` auto-approve |\n\nThe system auto-detects execution tasks by keywords (create, delete, deploy, install, migrate, configure, etc.) and forces CLI mode for those.\n\n---',
-    tags: ['configuration', 'ai', 'model', 'llm', 'delivery-agent'],
-  },
-  'skills-knowledge': {
-    title: 'Skills Knowledge Tree',
-    category: 'Configuration',
-    short: '3-source federated knowledge: Skill Registry, External GitHub, and Execution History.',
-    long: '## Skills Knowledge Tree\n\nThe ERP uses a 3-source federated knowledge system to inform migration decisions:\n\n### Source 1: Skill Registry (priority 1, confidence 90%)\nCurated skills stored in `/root/.hermes/skills/` and the SkillRegistry. These are authoritative, human-reviewed migration procedures.\n\n### Source 2: External Knowledge (priority 2, confidence 75%)\nCommunity skills synced from GitHub (`binrogithub/1-3-Cloud-Adoption-Skills`). Auto-syncs every 6 hours. Includes OS tags, failure modes, and CLI commands.\n\n### Source 3: Execution History (priority 3, confidence 55%)\nEmpirical patterns from past simulations stored in `CognitiveLearningLog` in PostgreSQL. The playbook learner (`playbook_learner.py`) saves successful patterns for reuse.\n\n### How it is queried\n`KnowledgeProvider.query(profile, mapper_node)` merges all 3 sources, deduplicates by command signature, and ranks by priority + confidence.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Users → Skill Knowledge Tree panel\n\n### Overview\n\nThe Skills Knowledge Tree is a hierarchical registry of migration skills from 3 sources:\n\n| Source | Description | Count |\n|--------|-------------|-------|\n| **Skill Registry** | Hardcoded skills in `agentic_simulator.py` | 13 |\n| **External** | Skills synced from GitHub repos | Variable |\n| **History** | Learnings from past project executions | Variable |\n\n### How Skills Are Used\n\n1. **Simulation:** When a project is simulated, the `SkillRegistry.get_skills_for_server()` method matches skills to each server based on OS, cloud, and migration scope. Matched skills appear in the trace with a 🔧 Skilled label.\n\n2. **Execution:** When the ERP Agent runs in CLI mode, the skill list is injected into the system prompt so the agent knows what proven runbooks are available.\n\n3. **Learning:** Each simulation\'s outcomes are ingested into the `ExecutionHistoryStore`. Future simulations query this data and apply relevant learnings.\n\n### Managing Skills\n\n- **View:** The tree shows all skills with category, confidence, and relevance\n- **Sync:** Click "Sync from GitHub" to pull the latest skills from external repos\n- **Deployed:** Skills with `hermes_skill` field are deployed to the live server at `/root/ulearning-migration/skills/`\n\n### Available Skills (13)\n\n| Skill | Category | Purpose |\n|-------|----------|---------|\n| huawei-cloud-sms-migration | migration | SMS migration patterns with hcloud CLI |\n| huawei-cloud-sms-api-only | migration | SMS API-only migration (no CLI) |\n| huawei-cloud-sms-migration-exact-disk-config | migration | Exact 1:1 disk configuration for SMS |\n| huawei-sms-cross-region-migration | migration | Cross-region SMS (proven live) |\n| sms-handler | migration | SMS agent-based block-level replication |\n| data-plane-sync | migration | File-level sync (rsync/robocopy) |\n| image-conversion | migration | qemu-img conversion (vhd→qcow2→zvhd) |\n| obs-migration | storage | OBS bucket migration |\n| boot-fixes | post_migration | Boot failure fixes (initramfs, GRUB, BCD) |\n| partition-fixes | post_migration | Disk partition expansion |\n| agent-orchestrator | orchestration | HSS, UniAgent, LTS deployment |\n| mig-worker-framework | infrastructure | mig_worker deployment framework |\n| erp-execution-orchestration | orchestration | ERP execution orchestration |\n\n---',
-    tags: ['skills', 'knowledge', 'configuration', 'ai'],
-  },
-  'user-management': {
-    title: 'User Management (Admin)',
-    category: 'Configuration',
-    short: 'Access: Sidebar → Users (Admin only)',
-    long: '## User Management (Admin)\n\n**Access:** Sidebar → Users (Admin only)\n\nThe **User Management** page controls system user accounts and permissions.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **User List** | All registered users with roles |\n| **Add User** | Create new user account |\n| **Edit User** | Change role, name, email |\n| **Disable User** | Temporarily disable access |\n| **Delete User** | Permanently remove user |\n| **Role Assignment** | Assign Admin/Manager/SA/Engineer/Viewer |\n\n---',
-    tags: ['users', 'admin', 'management', 'configuration'],
-  },
-  'zero-trust': {
-    title: 'Zero Trust Model',
-    category: 'Security',
-    short: 'Source credentials are read-only. ERP never modifies the source environment.',
-    long: '## Zero Trust Security Model\n\nThe ERP Migration Factory operates under a Zero Trust principle:\n\n- **Read-only source access**: The ERP never writes to or modifies the source environment\n- **Customer installs agents**: SMS agents and mig_workers are installed by the customer, not by the ERP\n- **ERP runs ALL target-side ops**: All provisioning, configuration, and execution happens on the Huawei Cloud target\n\n### Why this matters\nThis ensures the source environment is never at risk during migration. If anything goes wrong, the source is untouched and can serve as a rollback point.',
-    tags: ['security', 'credentials', 'migration'],
-  },
-  'dtrb': {
-    title: 'DTRB (Design Technical Review Board)',
-    category: 'Governance',
-    short: 'Governance gate that reviews and approves the target architecture before execution.',
-    long: '## DTRB — Design Technical Review Board\n\nThe DTRB is a governance gate between Phase 2 (Architecture) and Phase 3 (Planning). It ensures the proposed target architecture is technically sound before resources are committed.\n\n### What DTRB reviews\n- Target topology (VPC, subnets, ECS, RDS, storage)\n- Feasibility check results from the Physics Engine\n- Migration strategy (SMS, DRS, image conversion)\n- Risk assessment and rollback plan\n\n### Approval flow\n1. Architect submits the target architecture\n2. DTRB reviews and either approves, requests changes, or rejects\n3. Only approved architectures proceed to Phase 3 (Planning)\n\n---\n\n### DTRB Governance Document\n\n# DTRB Governance & Change Requests\n\nAutomated Delivery Technical Review Board (DTRB) compliance and Architecture unlocking.\n\n---\n\n## Overview\n\nThe **DTRB Governance & Change Requests** module provides automated technical compliance validation for your migration architecture. It acts as a **Delivery Technical Review Board** — evaluating every architecture blueprint against security, continuity, and commercial standards before locking it for provisioning.\n\nThis is step **2.5** in the Architecture phase of the Standard Delivery Methodology.\n\n---\n\n## How It Works\n\n### 1. Automated Technical Scoring\n\nThe DTRB engine performs automated checks on your architecture nodes:\n\n| Check | Category | Weight | What It Validates |\n|---|---|---|---|\n| **CBR Backup Vaults** | Continuity | 20% | At least one CBR (Cloud Backup & Recovery) vault must be mapped |\n| **Security Groups** | Security | 20% | Security groups must be defined for network isolation |\n| **Database Isolation** | Security | 30% | No database should have a public IP address (must be on private subnet) |\n| **Commercial Alignment** | Commercial | Info only | Unquoted resources flagged as upsell opportunities (no deduction) |\n\nA score of **80% or above** is required to lock the architecture.\n\n### 2. Architecture Locking\n\n- **Lock & Approve Blueprint**: When score ≥ 80%, locks the architecture and transitions the project to "Approved" status\n- **Acknowledge Risks & Lock**: When score < 80%, allows locking with explicit risk acknowledgment\n- **[Admin Override] Force Lock**: Bypasses the DTRB gate entirely for testing/emergency scenarios\n\nOnce locked, the architecture is **immutable** — it cannot be edited without either:\n- Raising a Change Request (CR)\n- Admin force-unlock\n\n### 3. Change Requests (CR)\n\nStructural changes to a locked architecture require a formal Change Request:\n\n| CR Type | Approval | Effect |\n|---|---|---|\n| **Minor Modification** | Auto-approved | Unlocks architecture for edits immediately |\n| **Major / Phase 2 Scope** | Requires Phase 2 SOW spin-off | Logged as upsell opportunity; original blueprint stays locked |\n\nWhen submitting a CR:\n1. Enter the CR title and reason\n2. Select the affected resource and approver\n3. Set the cost impact (monthly)\n4. Optionally update the playbook with DTRB lessons learned\n5. CRs related to quotation changes are automatically linked to the latest quotation version\n\n### 4. Playbook Integration\n\nEnabling "Update Playbook" on a CR injects a new task into the **Standard VM Lift & Shift** playbook under `[DTRB LESSON]`. This builds institutional knowledge — every CR becomes a preventive check for future projects.\n\n---\n\n## Visual Indicators\n\n| State | Icon | Meaning |\n|---|---|---|\n| **Draft Mode Active** | 🔓 Unlock | Architecture is editable; awaiting DTRB sign-off |\n| **Blueprint Locked** | 🔒 Lock | Approved for provisioning; no edits allowed without CR |\n| **Admin Override** | 🛡 Shield | Force-lock or force-unlock for emergency/test scenarios |\n\n---\n\n## Workflow Summary\n\n```\nArchitecture Complete → DTRB Tech Score Evaluated\n                              │\n                    ┌─────────┴──────────┐\n                    │                    │\n                Score ≥ 80%          Score < 80%\n                    │                    │\n              Lock & Approve       Review warnings\n                    │                    │\n                    │              Acknowledge & Lock\n                    │              (or fix & re-check)\n                    │\n            Blueprint Locked\n                    │\n        ┌───────────┴───────────┐\n        │                       │\n   Raise CR (Minor)        Raise CR (Major)\n   → Unlock & Edit         → Phase 2 Upsell\n        │                       │\n   Re-lock after edit      New SOW block sent\n                           to Account Manager\n```\n\n---\n\n## FAQ\n\n**Q: What happens if I lock with a score below 80%?**\nA: The project proceeds but carries a risk flag. The warnings remain visible in the DTRB panel. Consider addressing the critical issues before execution begins.\n\n**Q: Can I change the scoring thresholds?**\nA: Currently thresholds are hard-coded. Contact the development team to customize scoring weights per project type.\n\n**Q: Where are CRs stored?**\nA: All change requests are persisted in the project\'s `changeRequests` array and visible in the Structural Change Log panel.\n\n**Q: What about quotation changes?**\nA: CRs containing "quotation" in the title or reason are automatically linked to the latest quotation version for traceability.\n',
-    tags: ['governance', 'phase-2', 'approval', 'architecture'],
+    long: `## Execution Workbench — Phase 4.8
+
+The Execution Workbench allows operators to manually re-run individual steps from the migration pipeline.
+
+### What you can do
+
+- **Re-run failed steps** — Select any failed step and re-execute it
+- **Modify parameters** — Change parameters before re-running
+- **View step logs** — Detailed logs for each step execution
+- **Compare runs** — Compare results between different runs of the same step
+
+### When to use
+
+After a migration that had partial failures. Use the workbench to fix and re-run only the failed steps without re-running the entire pipeline.
+
+### Common scenarios
+
+- **SMS sync failed on one server** — Re-run just that server's sync
+- **ECS creation timed out** — Retry the specific ECS creation step
+- **VPC subnet mismatch** — Fix the configuration and re-run the network step
+- **Post-migration validation failed** — Re-run validation after fixing the issue`,
+    tags: ['workbench', 'debug', 're-run', 'phase-4'],
   },
   'tam-governance': {
     title: 'TAM Governance (Phase 4.10)',
-    category: 'Governance',
+    category: 'Phase 4 — Execution',
+    icon: 'fa-user-tie',
     short: 'Technical Account Manager sign-off gate for migration completion.',
-    long: '## TAM Governance — Phase 4.10\n\nThe TAM (Technical Account Manager) Governance is the final sign-off gate before a migration is considered complete.\n\n### What the TAM reviews\n- All execution steps completed successfully\n- Post-migration validation passed\n- Customer acceptance received\n- Documentation delivered\n- FinOps reconciliation complete\n\n### Sign-off\nOnce the TAM signs off, the project transitions to Phase 5 (Post-Live) for operational handover.',
-    tags: ['governance', 'tam', 'sign-off', 'completion'],
+    long: `## TAM Governance — Phase 4.10
+
+The TAM (Technical Account Manager) Governance is the final sign-off gate before a migration is considered complete.
+
+### What the TAM reviews
+
+- All execution steps completed successfully
+- Post-migration validation passed
+- Customer acceptance received
+- Documentation delivered
+- FinOps reconciliation complete
+
+### Sign-off
+
+Once the TAM signs off, the project transitions to Phase 5 (Post-Live) for operational handover.
+
+### Prerequisites
+
+Before TAM review:
+- All cutover steps must be green
+- Smoke tests must pass
+- No open critical issues
+- FinOps true-up must be complete (or scheduled)`,
+    tags: ['tam', 'governance', 'sign-off', 'completion'],
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PHASE 5 — POST-LIVE
+  // ═══════════════════════════════════════════════════════════
+  'phase5-post-live': {
+    title: 'Phase 5: Post-Live',
+    category: 'Phase 5 — Post-Live',
+    icon: 'fa-flag-checkered',
+    short: 'Post-migration governance, billing validation, and operational handover.',
+    long: `## Phase 5: Post-Live
+
+After migration is complete, the Post-Live phase handles governance and operational handover.
+
+### Key activities
+
+- **Billing validation** — Reconcile actual Huawei Cloud costs against quotation
+- **Commercial true-up** — Adjust pricing based on actual usage
+- **Operational handover** — Transfer management to the operations team
+- **HSS configuration** — Ensure security monitoring is active on all migrated servers
+- **CBR backup setup** — Configure backup policies for the migrated workloads
+- **Documentation** — Final delivery report and lessons learned
+
+### Commercial True-Up
+
+The commercial true-up process:
+1. Pull actual billing from Huawei Cloud BSS
+2. Compare against BOM budget
+3. Identify variances (over/under utilization)
+4. Adjust RI commitments if needed
+5. Generate true-up report for customer
+
+### Project closure
+
+Once all Post-Live activities are complete:
+- Project status set to "Completed"
+- Final delivery report generated
+- Lessons learned captured in Execution History (knowledge tree Source 3)
+- Project archived but data retained for future reference`,
+    tags: ['phase-5', 'post-live', 'billing', 'handover'],
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // DASHBOARDS
+  // ═══════════════════════════════════════════════════════════
+  'dashboard': {
+    title: 'Global Dashboard',
+    category: 'Dashboards',
+    icon: 'fa-th-large',
+    short: 'Overview of all projects, MRR, health status, and recent activity.',
+    long: `## Global Dashboard
+
+Access: Sidebar → Dashboard (default landing page)
+
+The Global Dashboard is the landing page of the platform. It provides a high-level overview of your entire migration portfolio.
+
+### What you see
+
+- **Key Metrics** — Total projects, active migrations, total MRR, halted projects
+- **Health Distribution** — Green/Yellow/Red breakdown across all projects
+- **Phase Distribution** — How many projects are in each lifecycle phase
+- **Recent Activity** — Latest project updates and events
+
+### Navigation
+
+Click any project card to open it in the Project Wizard.`,
+    tags: ['dashboard', 'overview', 'home'],
+  },
+  'pipeline': {
+    title: 'Master Pipeline',
+    category: 'Dashboards',
+    icon: 'fa-stream',
+    short: 'Delivery tracker showing all projects across all phases with timeline.',
+    long: `## Master Pipeline
+
+Access: Sidebar → Pipeline
+
+The Master Pipeline is a delivery tracker that shows all migration projects across all lifecycle phases in a timeline view.
+
+### Features
+
+- **Phase columns** — Projects organized by ARB → Architecture → Planning → Execution → Post-Live
+- **Health indicators** — Color-coded health status per project
+- **Progress bars** — Visual progress within each phase
+- **Filters** — Filter by phase, health, customer, or SA
+
+### Usage
+
+Use the pipeline to identify bottlenecks, track delivery progress, and manage resource allocation across multiple projects.`,
+    tags: ['pipeline', 'delivery', 'tracking'],
+  },
+  'regional-map': {
+    title: 'Regional Map',
+    category: 'Dashboards',
+    icon: 'fa-globe-americas',
+    short: 'Geographic view of all projects, customers, and Huawei Cloud regions across LATAM.',
+    long: `## Regional Map
+
+Access: Sidebar → Regional Map
+
+The Regional Map provides a geographic view of all migration activity across LATAM.
+
+### Layers
+
+- **Projects by Country** — Bubble markers sized by project count, colored by health
+- **Cloud Region Coverage** — Dashed circles showing Huawei Cloud region coverage areas
+- **Customer Credentials** — Markers showing which customers have keys configured
+- **Migration Arcs** — Lines from source countries to target Huawei Cloud regions
+
+### Interactions
+
+- Click a country to see project details
+- Click a region to see customer and credential status
+- Filter by phase and health status`,
+    tags: ['map', 'regional', 'geographic', 'latam'],
   },
   'customer-directory': {
     title: 'Customer Directory (CRM)',
     category: 'Dashboards',
+    icon: 'fa-address-book',
     short: 'Manage customers, their Huawei Cloud credentials, and project associations.',
-    long: '## Customer Directory\n\nThe Customer Directory is the CRM module for managing customer accounts and their Huawei Cloud credentials.\n\n### What you can do\n- **Create customers**: Name, region, country, contact info\n- **Manage credentials**: Store AK/SK per customer (encrypted in DB)\n- **Link projects**: Associate projects with customers\n- **View credential status**: See which customers have keys configured\n- **Filter and search**: Find customers by name, region, or credential status\n\n### Credential Security\n- AK/SK are stored encrypted in the database\n- Credentials are used only for target-side Huawei Cloud API calls\n- Per-customer credentials override the ERP default MCP credentials during execution\n\n### Region Assignment\nEach customer is assigned to a Huawei Cloud region (la-north-2, la-south-2, sa-brazil-1) which determines where their target infrastructure is provisioned.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Customer Directory (🏢)\n\nThe **Customer Directory** manages customer records and their cloud credentials.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Customer List** | Searchable, filterable customer database |\n| **Add Customer** | Create new customer record with contact details |\n| **Credential Vault** | Securely store source cloud credentials (AWS, Azure, on-prem) |\n| **Credential Validation** | Test credentials against live APIs before migration |\n| **Encryption** | All credentials encrypted at rest (AES-256) |\n| **Credential Age** | Monitor credential freshness; alert on expired keys |\n\n### Credential Management\n\nCredentials follow the **least-privilege hierarchy**:\n\n1. **Master AK/SK** — Huawei Cloud account-level access\n2. **Tier 2 (EPS Admin)** — Enterprise project admin scope\n3. **Tier 3 (Tool-specific)** — SMS, DRS, OBS service accounts\n4. **Data Plane (OS)** — In-guest OS credentials for agent install\n\n---',
-    tags: ['crm', 'customers', 'credentials', 'management'],
-  },
-  'dashboard': {
-    title: 'Global Dashboard',
-    category: 'Dashboards',
-    short: 'Overview of all projects, MRR, health status, and recent activity.',
-    long: '## Global Dashboard\n\nThe Global Dashboard is the landing page of the ERP Migration Factory. It provides a high-level overview of your entire migration portfolio.\n\n### What you see\n- **Key Metrics**: Total projects, active migrations, total MRR, halted projects\n- **Health Distribution**: Green/Yellow/Red breakdown across all projects\n- **Phase Distribution**: How many projects are in each lifecycle phase\n- **Recent Activity**: Latest project updates and events\n\n### Navigation\nClick any project card to open it in the Project Wizard.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Dashboard (default landing page)\n\nThe **Global Dashboard** provides a high-level overview of all migration activities:\n\n### Dashboard Widgets\n\n| Widget | Description |\n|---|---|\n| **KPI Cards** | Total projects, active migrations, completed, at-risk |\n| **Regional Breakdown** | Projects by LATAM country (Brazil, Mexico, Argentina, etc.) |\n| **Phase Distribution** | Pie chart showing projects by lifecycle phase |\n| **Health Summary** | Green/Yellow/Red project health indicators |\n| **Upcoming Cutovers** | Next 7/14/30 day go-live schedule |\n| **FinOps Snapshot** | Monthly burn rate, RI coverage %, savings |\n| **Recent Activity** | Latest project updates, comments, status changes |\n\n### Actions\n\n- Click any KPI card to filter the pipeline view\n- Click a region to zoom into Regional Map\n- Click an upcoming cutover to open the project wizard\n\n---',
-    tags: ['dashboard', 'overview', 'home'],
-  },
-  'global-process': {
-    title: 'Global Process View',
-    category: 'Dashboards',
-    short: 'Process flow visualization showing all projects through the delivery lifecycle.',
-    long: '## Global Process View\n\nThe Global Process View shows the complete delivery process flow with all projects positioned at their current stage.\n\n### What it displays\n- **Process stages**: ARB → Architecture → Planning → Execution → Post-Live\n- **Project positions**: Each project shown at its current stage with progress indicator\n- **Bottleneck detection**: Stages with too many projects queued\n- **Throughput metrics**: Average time per stage\n\n### Usage\nUse this view to identify process bottlenecks, track overall delivery health, and forecast when projects will complete.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Process (🗺️)\n\nThe **Global Process View** displays the **Standard Delivery Methodology** — the step-by-step migration lifecycle that all projects follow.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **5-Phase Breakdown** | Expandable cards for each lifecycle phase |\n| **Step Details** | Detailed description of each step with tools |\n| **Phase Gates** | Quality gates that must pass before advancing |\n| **Workflow Graph** | Visual graph showing phase→gate→phase flow |\n| **Guided Tour** | Animated walkthrough of the methodology |\n| **Fullscreen Mode** | Expand to full-screen for presentations |\n\n---',
-    tags: ['process', 'flow', 'lifecycle', 'dashboards'],
-  },
-  'global-schedule': {
-    title: 'Global Schedule',
-    category: 'Dashboards',
-    short: 'Cross-project migration timeline with wave scheduling and dependencies.',
-    long: '## Global Schedule\n\nThe Global Schedule provides a timeline view of all migration waves across all projects.\n\n### Features\n- **Wave timeline**: Gantt-style view of migration waves with start/end dates\n- **Dependency chains**: Visual links between dependent waves\n- **Resource conflicts**: Highlights when multiple waves compete for the same mig_workers\n- **Cutover windows**: Marked time slots for each cutover event\n\n### Usage\nUse the schedule to plan wave sequencing, avoid resource conflicts, and communicate timelines to stakeholders.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Schedule (📅)\n\nThe **Global Schedule** provides calendar and timeline views for all project milestones.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Calendar View** | Monthly/weekly/daily calendar with cutover dates |\n| **Timeline** | Horizontal timeline with project bars |\n| **Weekend Critical** | Highlights cutovers falling on weekends (pink) |\n| **Filtering** | Filter by region, SA, phase, health |\n| **Export** | Download schedule as iCal/CSV |\n\n---',
-    tags: ['schedule', 'timeline', 'waves', 'planning'],
-  },
-  'halted-projects': {
-    title: 'Halted Projects',
-    category: 'Dashboards',
-    short: 'Projects that have been paused or halted with reason tracking and resume capability.',
-    long: '## Halted Projects\n\nThe Halted Projects view lists all projects that have been paused during execution.\n\n### What it tracks\n- **Halt reason**: Why the project was stopped (blocker, customer request, resource issue)\n- **Halt timestamp**: When the project was paused\n- **Phase at halt**: Which lifecycle phase the project was in when halted\n- **Resume capability**: Projects can be resumed from where they left off\n\n### Halt vs Delete\nHalting a project preserves all its data (mapperNodes, simulations, quotations) so it can be resumed. Deletion is permanent and requires 2FA confirmation.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Halted Projects (📦)\n\nThe **Halted Projects** view manages projects that have been suspended, cancelled, or transferred.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Halt Reasons** | View why each project was halted |\n| **Restore** | Reactivate a halted project |\n| **Archive** | Permanently archive completed/cancelled |\n| **Halt History** | Timeline of halt/resume actions |\n\n### Halt Actions\n\n| Action | Description |\n|---|---|\n| **Cancel** | Permanently cancel — cannot be restored |\n| **Suspend** | Temporarily pause — can be resumed |\n| **Transfer** | Reassign to different SA/team |\n\n---',
-    tags: ['halted', 'paused', 'resume', 'management'],
+    long: `## Customer Directory
+
+Access: Sidebar → Customer Directory
+
+The Customer Directory is the CRM module for managing customer accounts and their Huawei Cloud credentials.
+
+### What you can do
+
+- **Create customers** — Name, region, country, contact info
+- **Manage credentials** — Store AK/SK per customer (encrypted in DB)
+- **Link projects** — Associate projects with customers
+- **View credential status** — See which customers have keys configured
+- **Filter and search** — Find customers by name, region, or credential status
+
+### Credential security
+
+- AK/SK are stored encrypted in the database
+- Credentials are used only for target-side Huawei Cloud API calls
+- Per-customer credentials override the ERP default MCP credentials during execution
+
+### Region assignment
+
+Each customer is assigned to a Huawei Cloud region (la-north-2, la-south-2, sa-brazil-1) which determines where their target infrastructure is provisioned.`,
+    tags: ['crm', 'customers', 'credentials'],
   },
   'live-noc': {
     title: 'Live Cloud NOC',
     category: 'Dashboards',
+    icon: 'fa-tv',
     short: 'Real-time monitoring of active migrations, server status, and sync progress.',
-    long: '## Live Cloud NOC\n\nThe Live Cloud NOC (Network Operations Center) provides real-time monitoring of active migration operations.\n\n### What it monitors\n- **Active migrations**: SMS sync progress, DRS replication status\n- **Server health**: CPU, memory, disk utilization on target servers\n- **Alert feed**: Errors, warnings, and manual gate notifications\n- **Sync status**: Data synchronization progress bars\n\n### When to use\nDuring Phase 4 (Execution), the NOC is your real-time view into what\'s happening. Use it to:\n- Monitor ongoing SMS/DRS sync\n- Catch errors early\n- Track cutover progress\n- Verify post-migration health\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Live NOC (📺)\n\nThe **Live Cloud NOC** (Network Operations Center) provides real-time monitoring of active migrations.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Live Status Dashboard** | Real-time replication/sync progress |\n| **Agent Status** | Monitor SMS/DRS agent health |\n| **Transfer Rates** | Live data transfer throughput |\n| **Alerts** | Real-time alerts on failures or stalls |\n| **Log Viewer** | Live tail of migration agent logs |\n\n---',
+    long: `## Live Cloud NOC
+
+Access: Sidebar → Live NOC
+
+The Live Cloud NOC (Network Operations Center) provides real-time monitoring of active migration operations.
+
+### What it monitors
+
+- **Active migrations** — SMS sync progress, DRS replication status
+- **Server health** — CPU, memory, disk utilization on target servers
+- **Alert feed** — Errors, warnings, and manual gate notifications
+- **Sync status** — Data synchronization progress bars
+
+### When to use
+
+During Phase 4 (Execution), the NOC is your real-time view into what's happening. Use it to:
+- Monitor ongoing SMS/DRS sync
+- Catch errors early
+- Track cutover progress
+- Verify post-migration health`,
     tags: ['noc', 'monitoring', 'live', 'execution'],
   },
   'master-hub': {
     title: 'Master Execution Hub',
     category: 'Dashboards',
+    icon: 'fa-hub',
     short: 'Centralized execution control for all active migration waves.',
-    long: '## Master Execution Hub\n\nThe Master Execution Hub is the centralized control point for executing migration waves across multiple projects.\n\n### Capabilities\n- **Wave execution**: Start, pause, or stop migration waves\n- **Cross-project view**: See all active executions in one place\n- **Resource allocation**: Track mig_worker deployment and utilization\n- **Execution logs**: Real-time log streaming per step\n\n### Integration\nThe Execution Hub calls the execution engine (`execution_engine.py`) which:\n1. Starts MCP servers on-demand with customer credentials\n2. Creates dynamic hcloud CLI profiles\n3. Executes each step (MCP first, hcloud CLI fallback)\n4. Records results and timing\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Master Hub\n\nThe **Master Execution Hub** is the aggregated control center for active and pending migrations. It combines data from all projects into a unified execution view.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Execution Queue** | Ordered list of pending migration tasks |\n| **Resource Pool** | Available migration worker nodes |\n| **Active Migrations** | Currently running replication/sync jobs |\n| **Wave Management** | Migration wave grouping and sequencing |\n| **Dependency Graph** | Inter-project dependency visualization |\n| **Command Center** | Issue commands to worker nodes |\n\n---',
-    tags: ['execution', 'hub', 'control', 'waves'],
+    long: `## Master Execution Hub
+
+Access: Sidebar → Master Hub
+
+The Master Execution Hub is the centralized control point for executing migration waves across multiple projects.
+
+### Capabilities
+
+- **Wave execution** — Start, pause, or stop migration waves
+- **Cross-project view** — See all active executions in one place
+- **Resource allocation** — Track mig_worker deployment and utilization
+- **Execution logs** — Real-time log streaming per step
+
+### Integration
+
+The Execution Hub calls the execution engine which:
+1. Starts MCP servers on-demand with customer credentials
+2. Creates dynamic hcloud CLI profiles
+3. Executes each step (MCP first, hcloud CLI fallback)
+4. Records results and timing`,
+    tags: ['hub', 'execution', 'control', 'waves'],
   },
-  'pipeline': {
-    title: 'Master Pipeline',
+  'global-schedule': {
+    title: 'Global Schedule',
     category: 'Dashboards',
-    short: 'Delivery tracker showing all projects across all phases with timeline.',
-    long: '## Master Pipeline\n\nThe Master Pipeline is a delivery tracker that shows all migration projects across all lifecycle phases in a timeline view.\n\n### Features\n- **Phase columns**: Projects organized by ARB → Architecture → Planning → Execution → Post-Live\n- **Health indicators**: Color-coded health status per project\n- **Progress bars**: Visual progress within each phase\n- **Filters**: Filter by phase, health, customer, or SA\n\n### Usage\nUse the pipeline to identify bottlenecks, track delivery progress, and manage resource allocation across multiple projects.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Pipeline\n\nThe **Master Pipeline** is the central project management view for tracking all migration projects through their lifecycle.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Inline Editing** | Click any editable cell (status, dates, SA, nodes) to modify |\n| **Timeline View** | Horizontal Gantt-style project bars showing phase progress |\n| **Grid View** | Sortable table with filterable columns |\n| **Calendar View** | Monthly/weekly/daily calendar with cutover dates |\n| **Bulk Update** | Select multiple projects to update status, dates, or assignments |\n| **Export** | Download pipeline data as CSV/Excel |\n| **Edit History** | View change log per project (who changed what, when) |\n\n### Health Indicators\n\n| Color | Meaning |\n|---|---|\n| 🟢 **Green** | On track — no blockers |\n| 🟡 **Yellow** | At risk — attention needed |\n| 🔴 **Red** | Critical — blocked or delayed |\n| 🔵 **Blue (Dashed)** | Pre-Sales — estimated timeline |\n\n### Column Reference\n\n| Column | Description |\n|---|---|\n| **Project Name** | Customer/project identifier |\n| **SA** | Assigned Solutions Architect |\n| **PM** | Project Manager |\n| **Health** | Green/Yellow/Red status |\n| **Phase** | Current lifecycle phase (1-5) |\n| **Progress** | % completion within current phase |\n| **Start Date** | Project kickoff date |\n| **Target Go-Live** | Planned cutover date |\n| **Nodes** | Number of servers/VMs to migrate |\n| **Region** | Target Huawei Cloud region |\n\n---',
-    tags: ['pipeline', 'delivery', 'tracking', 'dashboards'],
+    icon: 'fa-calendar-alt',
+    short: 'Cross-project migration timeline with wave scheduling and dependencies.',
+    long: `## Global Schedule
+
+Access: Sidebar → Schedule
+
+The Global Schedule provides a timeline view of all migration waves across all projects.
+
+### Features
+
+- **Wave timeline** — Gantt-style view of migration waves with start/end dates
+- **Dependency chains** — Visual links between dependent waves
+- **Resource conflicts** — Highlights when multiple waves compete for the same mig_workers
+- **Cutover windows** — Marked time slots for each cutover event
+
+### Usage
+
+Use the schedule to plan wave sequencing, avoid resource conflicts, and communicate timelines to stakeholders.`,
+    tags: ['schedule', 'timeline', 'gantt'],
   },
-  'presales-radar': {
-    title: 'Pre-Sales Radar',
+  'global-process': {
+    title: 'Global Process View',
     category: 'Dashboards',
-    short: 'Track and qualify pre-sales opportunities before they become projects.',
-    long: '## Pre-Sales Radar\n\nThe Pre-Sales Radar helps sales and architecture teams track and qualify opportunities before they become formal migration projects.\n\n### What it tracks\n- **Opportunity stage**: Lead → Qualified → Quoted → Won → Project\n- **Qualification matrix**: Migration scope (compute, database, storage, network)\n- **Source environment**: Cross-cloud, on-premise, or Huawei-to-Huawei\n- **Estimated MRR**: Projected revenue from the opportunity\n\n### Qualification Matrix\nThe PreSalesQualificationMatrix captures:\n- Resource types to migrate (ECS, RDS, EVS, OBS, VPC, etc.)\n- Source cloud type (AWS, Azure, VMware, on-prem)\n- Migration complexity assessment\n\n### Transition to Project\nOnce an opportunity is won, it transitions to the Project Wizard starting at Phase 1 (ARB Handover).\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Pre-Sales Radar\n\nThe **Pre-Sales Radar** tracks potential and estimated projects that have not yet been formally handed over from ARB.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Opportunity Cards** | Each card shows customer, estimated scope, target quarter |\n| **Probability Scoring** | High/Medium/Low win probability |\n| **Waiting Stage** | Current stage in pre-sales pipeline |\n| **Quick Convert** | Convert a pre-sales opportunity to a formal project |\n\n### Lifecycle\n\nPre-sales projects are shown with dashed borders to distinguish them from committed projects. Once ARB handover is complete, they transition to the main Pipeline.\n\n---',
-    tags: ['presales', 'sales', 'radar', 'qualification'],
+    icon: 'fa-project-diagram',
+    short: 'Process flow visualization showing all projects through the delivery lifecycle.',
+    long: `## Global Process View
+
+Access: Sidebar → Process
+
+The Global Process View shows the complete delivery process flow with all projects positioned at their current stage.
+
+### What it displays
+
+- **Process stages** — ARB → Architecture → Planning → Execution → Post-Live
+- **Project positions** — Each project shown at its current stage with progress indicator
+- **Bottleneck detection** — Stages with too many projects queued
+- **Throughput metrics** — Average time per stage
+
+### Usage
+
+Use this view to identify process bottlenecks, track overall delivery health, and forecast when projects will complete.`,
+    tags: ['process', 'flow', 'lifecycle'],
   },
-  'regional-map': {
-    title: 'Regional Map',
+  'playbook-studio': {
+    title: 'Playbook Studio',
     category: 'Dashboards',
-    short: 'Geographic view of all projects, customers, and Huawei Cloud regions across LATAM.',
-    long: '## Regional Map\n\nThe Regional Map provides a geographic view of all migration activity across LATAM.\n\n### Layers\n- **Projects by Country**: Bubble markers sized by project count, colored by health\n- **Cloud Region Coverage**: Dashed circles showing Huawei Cloud region coverage areas\n- **Customer Credentials**: Markers showing which customers have keys configured\n- **Migration Arcs**: Lines from source countries to target Huawei Cloud regions\n\n### Interactions\n- Click a country to see project details\n- Click a region to see customer and credential status\n- Filter by phase and health status\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Regional Map\n\nThe **Regional Map** displays project distribution across LATAM on an interactive map.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Country Markers** | Colored pins showing project count per country |\n| **Click to Zoom** | Click a country to see city-level detail |\n| **Project List** | Side panel listing projects in selected region |\n| **Heat Map** | Toggle to show project density heat map |\n| **Infrastructure Overlay** | Show Huawei Cloud region/ AZ locations |\n\n---',
-    tags: ['map', 'dashboard', 'regional', 'latam'],
-  },
-  'resource-discovery': {
-    title: 'Resource Discovery Map',
-    category: 'Dashboards',
-    short: 'Visual map of discovered resources across source and target environments.',
-    long: '## Resource Discovery Map\n\nThe Resource Discovery Map provides a visual representation of all discovered resources from the source environment and their mapped counterparts on Huawei Cloud.\n\n### What it shows\n- Source resources (ECS, RDS, EVS, VPC, etc.) grouped by type\n- Target resource mapping with status indicators\n- Discovery progress and coverage\n- Unmapped or mismatched resources\n\n### When to use\nDuring Phase 2 (Architecture) after running resource discovery. Use it to verify all source resources have been discovered and properly mapped to target equivalents.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Discovery (🔍)\n\nThe **Resource Discovery Map** visualizes source environment resources discovered during the Architecture phase.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Resource Tree** | Hierarchical view of discovered resources |\n| **Dependency Graph** | Visualize inter-resource dependencies |\n| **MgC Integration** | Pull data from Huawei Migration Center |\n| **Resource Tagging** | Tag resources by migration wave, priority |\n| **Summary Stats** | Total VMs, storage, databases, networks |\n\n---',
-    tags: ['discovery', 'map', 'resources', 'phase-2'],
+    icon: 'fa-book-open',
+    short: 'Create and manage custom migration playbooks for repeatable processes.',
+    long: `## Playbook Studio
+
+Access: Sidebar → Playbooks
+
+The Playbook Studio lets you create, edit, and manage custom migration playbooks — reusable sequences of steps that can be applied across projects.
+
+### What playbooks contain
+
+- **Step sequences** — Ordered list of actions (create ECS, configure VPC, start SMS, etc.)
+- **Preconditions** — Checks that must pass before each step
+- **Rollback actions** — What to do if a step fails
+- **Variables** — Parameterized values that change per project
+
+### Self-learning
+
+The playbook learner automatically saves successful execution patterns to the CognitiveLearningLog in PostgreSQL. These become part of the knowledge tree (Source 3: History) for future projects.`,
+    tags: ['playbooks', 'automation', 'reusable'],
   },
   'workflow-graph': {
     title: 'Workflow Graph',
     category: 'Dashboards',
+    icon: 'fa-diagram-project',
     short: 'Visual dependency graph of migration steps and their relationships.',
-    long: '## Workflow Graph\n\nThe Workflow Graph provides a visual representation of migration step dependencies and execution flow.\n\n### What it shows\n- **Nodes**: Individual migration steps (create VPC, provision ECS, start SMS, etc.)\n- **Edges**: Dependencies between steps (must complete A before B)\n- **Status colors**: Pending (gray), running (blue), success (green), failed (red)\n- **Critical path**: Highlighted longest dependency chain\n\n### Usage\nUse the workflow graph to understand the execution order, identify parallelizable steps, and find bottleneck dependencies.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Workflow Graph (🔀)\n\nThe **Workflow Graph** provides a visual, interactive graph of the migration lifecycle phases and gates.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Interactive Nodes** | Clickable phase hubs and gate nodes |\n| **Guided Tour** | Animated step-by-step walkthrough |\n| **Zoom/Pan** | Mouse wheel zoom, drag to pan |\n| **Fullscreen** | Presentation-ready fullscreen mode |\n| **Project Context** | Highlight current project position |\n\n---',
-    tags: ['workflow', 'graph', 'dependencies', 'visualization'],
+    long: `## Workflow Graph
+
+Access: Sidebar → Workflow Graph
+
+The Workflow Graph provides a visual representation of migration step dependencies and execution flow.
+
+### What it shows
+
+- **Nodes** — Individual migration steps (create VPC, provision ECS, start SMS, etc.)
+- **Edges** — Dependencies between steps (must complete A before B)
+- **Status colors** — Pending (gray), running (blue), success (green), failed (red)
+- **Critical path** — Highlighted longest dependency chain
+
+### Usage
+
+Use the workflow graph to understand the execution order, identify parallelizable steps, and find bottleneck dependencies.`,
+    tags: ['workflow', 'graph', 'dependencies'],
   },
-  'agentic-orchestration': {
-    title: 'Agentic Orchestration & Execution',
-    category: 'AI & Automation',
-    short: 'Multi-agent execution pipeline that runs migration phases 4.0-4.8 autonomously.',
-    long: '## Agentic Orchestration & Execution\n\nThe Agentic Orchestration panel (in Phase 4 — Execution) runs the full migration pipeline using the agentic simulator and execution engine.\n\n### Two modes\n- **Dry-Run (Simulation)**: Executes all 15 phases (4.0-4.8) as a simulation — no real resources are created. Shows trace, resource usage, and delivery report.\n- **Live Execution**: Executes real operations via MCP servers or hcloud CLI. Creates real ECS, VPC, starts SMS sync, etc.\n\n### Execution engine flow\n1. Starts MCP servers on-demand with customer credentials\n2. Creates dynamic hcloud CLI profile\n3. For each step: tries MCP first, falls back to hcloud CLI\n4. Records results, timing, and errors per step\n5. On completion: stops MCP servers, deletes hcloud profile\n\n### 3D Constellation\nResults are visualized in the 3D Architecture Constellation with replay controls — step through each phase, see resources appear, watch data sync particles flow.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Project Wizard → Phase 3 → 3.4b Execution Mode\n\n### Execution Modes\n\n| Mode | Description | Use Case |\n|------|-------------|----------|\n| **Manual Pipeline** | Step-by-step Kanban execution | Small teams, manual control |\n| **Agentic Orchestration** | Hermes autonomous engine | Full automation, large migrations |\n| **Individual Tasks** | Isolated ad-hoc tasks | Small batches, database true-ups |\n\n### Agentic Orchestration Flow\n\n```\n3.4b: Select "Agentic Orchestration"\n  ↓\n4.0: Readiness Gateway (credential validation)\n  ↓\n4.1-4.7: Autonomous execution pipeline\n  ├── Network verification/provisioning\n  ├── Per-server SMS migration:\n  │   ├── SOURCE_ECS_ACTIVE_CHECK\n  │   ├── SMS_AGENT_INSTALL\n  │   ├── MIGRATION_PROJECT_CONFIG\n  │   ├── PREFLIGHT_SG_RULES (8900+22)\n  │   ├── PREFLIGHT_FLAVOR_IMAGE\n  │   ├── DISK_MAPPING (MGC-style)\n  │   ├── TARGET_SMS_TASK_CREATE\n  │   ├── SMS_SUBTASK_* (6 subtasks)\n  │   └── SMOKE_TESTS\n  ├── Cutover (HUMAN GATE)\n  └── Garbage Collection\n```\n\n### Simulation (Dry-Run)\n\nBefore live execution, run a dry-run simulation:\n1. Click "Run Simulation" in the Agentic Orchestration panel\n2. The simulator generates a trace with exact CLI commands, resource specs, and error prevention\n3. Each step shows 🔧 Skilled label if it came from the Skills Knowledge Tree\n4. The simulation includes a **rollback plan** — all reversible steps in reverse order\n\n### Rollback\n\nEvery resource-creating step has a `rollback_action` field:\n- TARGET_EIP_CREATE → Delete EIP\n- TARGET_ECS_CREATE → Delete ECS\n- PREFLIGHT_SG_RULES → Delete SG rules\n- TARGET_SMS_TASK_CREATE → Delete SMS task\n- SMS_AGENT_INSTALL → Uninstall agent\n- MIGRATION_PROJECT_CONFIG → Reset use_public_ip\n\nThe simulation returns a `rollback_plan` with all reversible steps. In live execution, the same rollback tracking applies.\n\n---',
-    tags: ['execution', 'agentic', 'simulation', 'orchestration', 'phase-4'],
+  'resource-discovery-map': {
+    title: 'Resource Discovery Map',
+    category: 'Dashboards',
+    icon: 'fa-map-marked-alt',
+    short: 'Visual map of discovered resources across source and target environments.',
+    long: `## Resource Discovery Map
+
+Access: Sidebar → Discovery Map
+
+The Resource Discovery Map provides a visual representation of all discovered resources from the source environment and their mapped counterparts on Huawei Cloud.
+
+### What it shows
+
+- Source resources (ECS, RDS, EVS, VPC, etc.) grouped by type
+- Target resource mapping with status indicators
+- Discovery progress and coverage
+- Unmapped or mismatched resources
+
+### When to use
+
+During Phase 2 (Architecture) after running resource discovery. Use it to verify all source resources have been discovered and properly mapped to target equivalents.`,
+    tags: ['discovery', 'map', 'resources'],
   },
-  'agentic-simulation': {
-    title: 'Agentic Simulation',
-    category: 'AI & Automation',
-    short: '15-phase dry-run that simulates the entire migration before executing anything real.',
-    long: '## Agentic Simulation\n\nThe agentic simulator runs a complete migration dry-run across all 15 phases (4.0 through 4.8) without touching any real resources.\n\n### What it simulates\n- Phase 4.0: Readiness gateway validation\n- Phase 4.1: Network verification\n- Phase 4.2: Wave planning, knowledge enrichment, preflight checks\n- Phase 4.2b: Source and agent preparation\n- Phase 4.2c: Target provisioning\n- Phase 4.2d: Data synchronization\n- Phase 4.2e-f: Post-sync and smoke tests\n- Phase 4.3-4.5: Landing zone, HSS, continuous sync\n- Phase 4.6: Cutover (with manual gates)\n- Phase 4.7-4.8: Cleanup and finalization\n\n### Knowledge enrichment\nDuring Phase 4.2K, the simulator queries the 3-source knowledge tree (Skills, External, History) and shows which skills match each server.\n\n### 3D Constellation\nResults are visualized in the 3D Architecture Constellation with replay controls.',
-    tags: ['ai', 'simulation', 'phases', 'dry-run'],
+  'halted-projects': {
+    title: 'Halted Projects',
+    category: 'Dashboards',
+    icon: 'fa-pause-circle',
+    short: 'Projects that have been paused or halted with reason tracking and resume capability.',
+    long: `## Halted Projects
+
+Access: Sidebar → Halted Projects
+
+The Halted Projects view lists all projects that have been paused during execution.
+
+### What it tracks
+
+- **Halt reason** — Why the project was stopped (blocker, customer request, resource issue)
+- **Halt timestamp** — When the project was paused
+- **Phase at halt** — Which lifecycle phase the project was in when halted
+- **Resume capability** — Projects can be resumed from where they left off
+
+### Halt vs Delete
+
+Halting a project preserves all its data (mapperNodes, simulations, quotations) so it can be resumed. Deletion is permanent and requires 2FA confirmation.`,
+    tags: ['halted', 'paused', 'resume'],
   },
-  'ai-automation-tools': {
-    title: 'AI & Automation Tools',
-    category: 'AI & Automation',
-    short: 'Hermes AI Assistant',
-    long: '## AI & Automation Tools\n\n### Hermes AI Assistant\n\n**Access:** Brain icon in TopBar\n\nHermes is the built-in AI assistant that can:\n- Answer questions about migration processes\n- Troubleshoot issues with commands and logs\n- Generate scripts and configurations\n- Explain error messages and solutions\n- Navigate you to relevant documentation\n\n### Hermes CLI Mode\n\n**Access:** Terminal icon → Hermes CLI tab\n\nThe CLI provides:\n- Direct terminal access to the backend\n- Sandboxed command execution\n- Background task delegation\n- Multi-agent parallel processing\n\n### Agentic Orchestration\n\n**Access:** Execution → Agentic AI tab\n\nThis feature:\n- Spawns parallel AI agents for migration tasks\n- Monitors agent progress and results\n- Handles retries and error recovery\n- Consolidates multi-agent output\n\n---',
-    tags: ['ai', 'automation', 'hermes', 'delivery-agent'],
-  },
+
+  // ═══════════════════════════════════════════════════════════
+  // AI & AUTOMATION
+  // ═══════════════════════════════════════════════════════════
   'delivery-agent': {
     title: 'Delivery Agent',
     category: 'AI & Automation',
+    icon: 'fa-robot',
     short: 'AI assistant with real function-calling tools to query and operate the ERP.',
-    long: '## Delivery Agent\n\nThe Delivery Agent (formerly "ERP Agent") is an AI assistant that uses real LLM function-calling to interact with the ERP system.\n\n### What it can do\n- Query project state, topology, and simulation results\n- Run agentic migration simulations\n- List registered skills and knowledge tree\n- Update project data (requires Engineer+ role)\n- View system info (Admin only)\n\n### How it works\n1. User asks a question via the chat interface\n2. The LLM (GLM-5.2) decides which tool to call\n3. The tool executes against the real ERP database\n4. Results feed back to the LLM for a natural language response\n\n### Security\n- RBAC enforced: tools check user role before executing\n- Project-scoped: tools can only access the current project\n- No terminal/root access',
-    tags: ['ai', 'automation', 'function-calling', 'rbac'],
+    long: `## Delivery Agent
+
+Access: Purple robot icon in the TopBar
+
+The Delivery Agent (formerly "ERP Agent") is an AI assistant that uses real LLM function-calling to interact with the ERP system.
+
+### What it can do
+
+- Query project state, topology, and simulation results
+- Run agentic migration simulations
+- List registered skills and knowledge tree
+- Update project data (requires Engineer+ role)
+- View system info (Admin only)
+
+### How it works
+
+1. User asks a question via the chat interface
+2. The LLM (GLM-5.2) decides which tool to call
+3. The tool executes against the real ERP database
+4. Results feed back to the LLM for a natural language response
+
+### Security
+
+- **RBAC enforced** — tools check user role before executing
+- **Project-scoped** — tools can only access the current project
+- **No terminal/root access** — the agent cannot run shell commands`,
+    tags: ['ai', 'agent', 'function-calling', 'rbac'],
   },
-  'playbook-studio': {
-    title: 'Playbook Studio',
+  'skills-knowledge': {
+    title: 'Skills Knowledge Tree',
     category: 'AI & Automation',
-    short: 'Create and manage custom migration playbooks for repeatable processes.',
-    long: '## Playbook Studio\n\nThe Playbook Studio lets you create, edit, and manage custom migration playbooks — reusable sequences of steps that can be applied across projects.\n\n### What playbooks contain\n- **Step sequences**: Ordered list of actions (create ECS, configure VPC, start SMS, etc.)\n- **Preconditions**: Checks that must pass before each step\n- **Rollback actions**: What to do if a step fails\n- **Variables**: Parameterized values that change per project\n\n### Self-Learning\nThe playbook learner (`playbook_learner.py`) automatically saves successful execution patterns to the `CognitiveLearningLog` in PostgreSQL. These become part of the knowledge tree (Source 3: History) for future projects.\n\n---\n\n### Detailed Guide (from User Manual)\n\n**Access:** Sidebar → Playbooks (📚)\n\nThe **Playbook Studio** houses standard operating procedures for common migration scenarios.\n\n### Features\n\n| Feature | Description |\n|---|---|\n| **Playbook Library** | Browse pre-built playbooks by category |\n| **Step-by-Step Guides** | Detailed instructions with commands |\n| **Copy Commands** | One-click copy shell/CLI commands |\n| **Custom Playbooks** | Create and save your own procedures |\n| **Runbook Export** | Export as executable runbook for Execution phase |\n\n---',
-    tags: ['playbooks', 'automation', 'reusable', 'ai'],
+    icon: 'fa-tree',
+    short: '3-source federated knowledge: Skill Registry, External GitHub, and Execution History.',
+    long: `## Skills Knowledge Tree
+
+Access: Profile menu → IAM & Profile → Skills Knowledge Tree
+
+The platform uses a 3-source federated knowledge system to inform migration decisions.
+
+### Source 1: Skill Registry (priority 1, confidence 90%)
+
+Curated skills stored in \`/root/.hermes/skills/\` and the SkillRegistry. These are authoritative, human-reviewed migration procedures.
+
+### Source 2: External Knowledge (priority 2, confidence 75%)
+
+Community skills synced from GitHub. Auto-syncs every 6 hours. Includes OS tags, failure modes, and CLI commands.
+
+### Source 3: Execution History (priority 3, confidence 55%)
+
+Empirical patterns from past simulations stored in CognitiveLearningLog in PostgreSQL. The playbook learner saves successful patterns for reuse.
+
+### How it is queried
+
+\`KnowledgeProvider.query(profile, mapper_node)\` merges all 3 sources, deduplicates by command signature, and ranks by priority + confidence.
+
+### SAP skills
+
+5 SAP-specific skills are dynamically discovered from the filesystem:
+- sap_hana_migration_sms
+- sap_hana_migration_hsr
+- sap_backint_backup
+- sap_dr_sdrs
+- sap_ha_deployment
+- sap_certified_flavors
+
+These appear as a separate "SAP" division in the knowledge tree when SAP workloads are detected.`,
+    tags: ['skills', 'knowledge', 'ai', 'federation'],
   },
+
+  // ═══════════════════════════════════════════════════════════
+  // CONFIGURATION
+  // ═══════════════════════════════════════════════════════════
+  'mcp-servers': {
+    title: 'MCP Servers',
+    category: 'Configuration',
+    icon: 'fa-network-wired',
+    short: 'Model Context Protocol servers provide structured API access to Huawei Cloud services.',
+    long: `## MCP Servers
+
+Access: Profile menu → IAM & Profile → MCP Servers
+
+MCP (Model Context Protocol) servers are local HTTP gateways between the ERP and Huawei Cloud APIs. Each server wraps a specific Huawei Cloud service (ECS, VPC, RDS, etc.) with structured input/output.
+
+### How they work
+
+1. MCP server starts on-demand on a local port (8800–8999)
+2. The ERP sends a JSON-RPC \`tools/call\` request
+3. The MCP server calls the real Huawei Cloud API using the SDK
+4. Structured JSON response returns to the ERP
+
+### Credentials
+
+- **ERP default** — Set in Profile → MCP Servers → Configure
+- **Per-customer** — Customer AK/SK from CRM overrides the default during execution
+
+### Benefits over hcloud CLI
+
+- Structured input/output (always JSON)
+- Parameter validation via OpenAPI spec
+- API versioning handled automatically
+- Self-documenting (tools/list shows all available endpoints)`,
+    tags: ['mcp', 'api', 'configuration', 'huawei-cloud'],
+  },
+  'model-config': {
+    title: 'AI Model Configuration',
+    category: 'Configuration',
+    icon: 'fa-microchip',
+    short: 'Configure LLM providers, models, and connection settings for the Delivery Agent.',
+    long: `## AI Model Configuration
+
+Access: Profile menu → IAM & Profile → AI Model Configuration
+
+Controls how the Delivery Agent connects to LLMs.
+
+### Settings
+
+- **Connection Mode** — \`cli\` (local Hermes binary) or \`http\` (load balancer API)
+- **Global Model** — Primary model for the Delivery Agent (e.g., \`glm-5.2\`)
+- **Global Provider** — LLM provider (e.g., \`zai\`, \`deepseek\`)
+- **Delegation Model** — Model used for subagent delegation
+- **Delegation Provider** — Provider for delegation calls
+- **LB URL** — Load balancer endpoint
+- **LB Auth** — Authentication header for the load balancer
+
+### How it works
+
+The Delivery Agent reads these settings via HermesConfig and uses them for the function-calling loop. The agent sends \`tools\` array with \`tool_choice: auto\` and processes up to 5 rounds of tool calls.`,
+    tags: ['ai', 'model', 'llm', 'configuration'],
+  },
+  'user-management': {
+    title: 'User Management (Admin)',
+    category: 'Configuration',
+    icon: 'fa-users-cog',
+    short: 'Manage system users, roles, and permissions.',
+    long: `## User Management
+
+Access: Sidebar → Users (Admin only)
+
+The User Management page controls system user accounts and their roles.
+
+### Roles
+
+| Role | Permissions |
+|---|---|
+| **Master Admin** | Full access — all projects, all settings, user management |
+| **Architect** | Create/edit projects, run discovery, design architecture, DTRB |
+| **Engineer** | Execute migrations, run simulations, update project data |
+| **Viewer** | Read-only access to dashboards and project data |
+
+### What you can do
+
+- Create and deactivate user accounts
+- Assign roles
+- View activity logs
+- Configure AI model settings (Admin only)
+- View MCP server status
+- Browse the Skills Knowledge Tree`,
+    tags: ['users', 'admin', 'roles', 'management'],
+  },
+  'command-terminal': {
+    title: 'Command Terminal',
+    category: 'Configuration',
+    icon: 'fa-terminal',
+    short: 'Global command drawer for quick actions and navigation.',
+    long: `## Command Terminal
+
+Access: Dark terminal button in the TopBar
+
+The Command Terminal is a global command drawer that provides quick access to actions and navigation.
+
+### What you can do
+
+- Quick navigation to any dashboard or project
+- Search across all projects and customers
+- Execute quick actions (create project, run discovery, etc.)
+- Access recent items
+
+### Keyboard shortcut
+
+Use \`Ctrl+K\` (or \`Cmd+K\` on Mac) to open the command drawer without clicking.`,
+    tags: ['command', 'terminal', 'navigation', 'shortcuts'],
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // SCENARIOS
+  // ═══════════════════════════════════════════════════════════
   'sap-migration': {
-    title: 'SAP Migration',
+    title: 'SAP S/4HANA Migration',
     category: 'Scenarios',
-    short: 'Specialized migration path for SAP S/4HANA workloads with certified flavors and manual gates.',
-    long: '## SAP S/4HANA Migration\n\nSAP migrations require special handling due to certification requirements and the need for manual gates during cutover.\n\n### Three approaches\n1. **SMS Block-Level**: For non-production or systems with maintenance windows (~18-65h for 500GB-2TB)\n2. **HANA System Replication (HSR)**: Zero/near-zero downtime for production (<1h cutover)\n3. **Backup/Restore with OBS**: Incremental backup to OBS, restore on target (~2h)\n\n### SAP-specific features in the ERP\n- **Workload detection**: ServerProfiler labels SAP/HANA servers at discovery\n- **SID-based wave grouping**: All servers with the same SID migrate together\n- **Manual gates**: Trace includes explicit stops for "Stop SAP" and "Stop HANA"\n- **Certified flavors**: Only SAP-certified ECS flavors (e3/e6/e7 for HANA, h1/m6 for NetWeaver)\n- **5 SAP skills**: hana-migration, backint-agent, certified-flavors, dr-strategy, ha-deployment',
+    icon: 'fa-industry',
+    short: 'Specialized migration path for SAP workloads with certified flavors and manual gates.',
+    long: `## SAP S/4HANA Migration
+
+SAP migrations require special handling due to certification requirements and the need for manual gates during cutover.
+
+### Three approaches
+
+| Approach | Downtime | Best for |
+|---|---|---|
+| **SMS Block-Level** | 18–65h (500GB–2TB) | Non-production, maintenance windows |
+| **HANA System Replication (HSR)** | <1h cutover | Production, near-zero downtime |
+| **Backup/Restore with OBS** | ~2h | Small databases, simple landscapes |
+
+### SAP-specific features in the platform
+
+- **Workload detection** — ServerProfiler labels SAP/HANA servers at discovery time based on hostname, OS, and tags
+- **SID-based wave grouping** — All servers with the same SID automatically migrate together
+- **Manual gates** — Trace includes explicit stops for "Stop SAP" and "Stop HANA"
+- **Certified flavors** — Only SAP-certified ECS flavors are selected (e3/e6/e7 for HANA, h1/m6 for NetWeaver)
+- **5 SAP skills** — Dynamically discovered from the skills filesystem
+
+### SAP intake fields (Guided Wizard)
+
+The Guided Wizard captures SAP-specific information:
+- SID, database size, transactional volume
+- Add-on complexity, SQL-to-HANA conversion
+- Integrations, operational constraints
+- Customer prioritization, migration phases
+- DB consolidation, tenancy model
+- Migration windows and timelines`,
     tags: ['sap', 'hana', 'scenarios', 'certified'],
+  },
+  'troubleshooting': {
+    title: 'Troubleshooting & FAQ',
+    category: 'Getting Started',
+    icon: 'fa-wrench',
+    short: 'Common issues and their solutions.',
+    long: `## Troubleshooting & FAQ
+
+### Common Issues
+
+**Q: The 3D constellation is not loading**
+A: Ensure Three.js CDN is accessible. Check browser console for script loading errors.
+
+**Q: Simulation shows no steps**
+A: Ensure the project has mapperNodes (discovered resources) and a target architecture. Run discovery first (Phase 2).
+
+**Q: MCP server won't start**
+A: Check that ERP default credentials are configured (Profile → MCP Servers → Configure). The MCP server needs valid Huawei Cloud AK/SK.
+
+**Q: Delivery Agent is not responding**
+A: Check that the load balancer is running (HermesConfig mode = http, lb_url accessible). The agent uses GLM-5.2 via the load balancer.
+
+**Q: Regional map shows no markers**
+A: Projects need a valid \`country\` field. Unknown or "?" countries are filtered out. Edit the project in Phase 1 to set the country.
+
+**Q: Browser shows ERR_CONNECTION_RESET on assets**
+A: Hard refresh (Ctrl+Shift+R) to clear cached old JavaScript bundles after a deploy.
+
+**Q: SAP servers not detected as SAP workload**
+A: Ensure the quotation parser preserved the full OS string (e.g., "SUSE Linux Enterprise Server for SAP"). The workload detector checks for "SAP" in the OS string.
+
+**Q: "Session Expired" error**
+A: JWT token expired. Log out and log back in. Token lifetime is 8 hours.
+
+**Q: Credential validation fails**
+A: The platform validates credentials via hcloud CLI subprocess (not the custom API signer). Ensure hcloud CLI is installed and the AK/SK has the required IAM permissions.`,
+    tags: ['troubleshooting', 'faq', 'issues'],
   },
 };

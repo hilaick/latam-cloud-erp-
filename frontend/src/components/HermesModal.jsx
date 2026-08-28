@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 const STORAGE_PREFIX = 'erp_agent_history_';
 const MAX_VISIBLE = 50; // Show last 50 messages, load more on scroll up
 
-const HermesModal = ({ isOpen, onClose, projectId }) => {
+const HermesModal = ({ isOpen, onClose, projectId, onNavigate }) => {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -222,6 +222,13 @@ const HermesModal = ({ isOpen, onClose, projectId }) => {
           return msg;
         })
       );
+
+    // Listen for frontend navigation actions from the Delivery Agent
+    sock.on("hermes_action", (data) => {
+      if (data && data.type === "navigate" && onNavigate) {
+        onNavigate(data.target, data.project_id || null);
+      }
+    });
       setLoading(false);
     });
 

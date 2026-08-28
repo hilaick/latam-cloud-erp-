@@ -115,7 +115,6 @@ function App() {
                     onOpenGlossary={() => setIsGlossaryOpen(true)} 
                     onOpenCommandDrawer={() => setIsCommandDrawerOpen(true)} // 🚨 PASSED PROP
                     onOpenHermes={() => setIsHermesOpen(true)} // 🚨 HERMES AI BUTTON
-                    onOpenHelp={() => setActivePhase('docs')} // 📖 Opens DocumentationCenter directly
                 />
 
                 <div className="p-3 md:p-8 lg:p-12 pb-12 flex-1">
@@ -289,15 +288,18 @@ function App() {
                 />
 
                 {/* 🚨 HERMES AI MODAL */}
-                <HermesModal 
+                <HermesModal
                     projectId={activeProjectId}
                     isOpen={isHermesOpen}
                     onClose={() => setIsHermesOpen(false)}
+                    onNavigate={(target, navProjectId) => {
+                        if (navProjectId) {
+                            setActiveProjectId(navProjectId);
+                        }
+                        setActivePhase(target);
+                    }}
                 />
 
-                {/* 📖 GLOBAL HELP — redirects directly to DocumentationCenter */}
-                {/* HelpDrawer removed: TopBar ? button now opens DocumentationCenter directly
-                     via onOpenHelp -> setActivePhase('docs'). All content merged into helpContent.js. */}
             </main>
         </div>
     );
