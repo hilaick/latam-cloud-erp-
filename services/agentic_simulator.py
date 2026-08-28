@@ -6273,10 +6273,19 @@ class AgenticExecutionSimulator:
         1. Group by application_group (SAP SID) — all components of one SAP system migrate together
         2. Within each application group, order by role: database first, then web, then app
         3. Resources without application_group are grouped by role as before
+        
+        Non-server resources (VPC, SG, EIP, EVS, SUBNET, etc.) are excluded from waves.
         """
-        # Classify all nodes first
+        # Filter to server-type resources only
+        SERVER_TYPES = {"ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS", "GAUSSDB"}
+        server_nodes = [n for n in mapper_nodes
+                        if (n.get("type") or "").upper() in SERVER_TYPES
+                        or ((n.get("type") or "").upper() not in ("VPC", "SUBNET", "SG", "EIP", "ELB", "NAT", "VPN", "EVS", "OBS", "SFS", "CBR", "HSS", "KMS", "WAF", "CDN", "DNS")
+                            and not (n.get("type") or "").upper().startswith("NETWORK"))]
+        
+        # Classify all server nodes first
         classified = []
-        for node in mapper_nodes:
+        for node in server_nodes:
             profile = ServerProfiler.classify(node)
             classified.append((node, profile))
         
