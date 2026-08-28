@@ -4947,6 +4947,21 @@ class AgenticExecutionSimulator:
             logger.info(f"No targetArchitecture found — falling back to mapperNodes: {len(migration_resources)} resources")
 
         waves = project.get("waves", [])
+        # If server selection is active, filter pre-defined waves to only include selected servers
+        selected_set = project.get("_selected_servers", set())
+        if selected_set and waves:
+            filtered_waves = []
+            for w in waves:
+                w_servers = w.get("servers", w.get("serverNames", []))
+                w_filtered = [s for s in w_servers if s in selected_set or s not in set(
+                    # Keep non-server ids (they might be network resources)
+                    n.get("id") for n in migration_resources
+                    if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS")
+                )]
+                if w_filtered:
+                    filtered_waves.append({**w, "servers": w_filtered, "serverNames": w_filtered})
+            waves = filtered_waves
+            logger.info(f"Server selection: filtered pre-defined waves from {len(project.get('waves', []))} to {len(waves)}")
         physics = project.get("physics", {})
         finops = project.get("finops", {})
         tool_assignments = project.get("toolAssignments", {})
