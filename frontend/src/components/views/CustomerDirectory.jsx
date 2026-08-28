@@ -119,25 +119,12 @@ export default function CustomerDirectory() {
   };
 
   const handleEditCustomer = (customer) => {
-    // Normalize credential indicators for the edit form
-    // AK fields: keep masked reference (e.g. 'HPU***VUV') or True → '********', False → ''
-    // SK fields: True → '********', False → ''
-    const akFields = ['ak', 'source_huawei_ak', 'tier1AK', 'tier2AK', 'tier3AK', 'awsAK'];
-    const skFields = ['sk', 'source_huawei_sk', 'tier1SK', 'tier2SK', 'tier3SK', 'awsSK'];
-    const otherCredFields = ['azureTenant', 'azureClient', 'azureSecret'];
+    // Normalize boolean credential indicators back to empty strings
+    const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
+      'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
+      'azureTenant', 'azureClient', 'azureSecret'];
     const normalized = { ...customer };
-    akFields.forEach(f => {
-      if (typeof normalized[f] === 'boolean') {
-        normalized[f] = normalized[f] ? '********' : '';
-      }
-      // If it's a masked string like 'HPU***VUV', keep it as-is for display
-    });
-    skFields.forEach(f => {
-      if (typeof normalized[f] === 'boolean') {
-        normalized[f] = normalized[f] ? '********' : '';
-      }
-    });
-    otherCredFields.forEach(f => {
+    credentialFields.forEach(f => {
       if (typeof normalized[f] === 'boolean') normalized[f] = '';
     });
     setEditingCustomer(normalized);
@@ -160,28 +147,10 @@ export default function CustomerDirectory() {
       const token = sessionStorage.getItem('hermes_access_token');
       // Huawei credential types use the new gateway validate-credential endpoint
       if (['master', 'source', 'tier1', 'tier2', 'tier3'].includes(provider)) {
-        // Map provider to form field names
-        const fieldMap = {
-          master: { ak: 'ak', sk: 'sk' },
-          source: { ak: 'source_huawei_ak', sk: 'source_huawei_sk' },
-          tier1:  { ak: 'tier1AK', sk: 'tier1SK' },
-          tier2:  { ak: 'tier2AK', sk: 'tier2SK' },
-          tier3:  { ak: 'tier3AK', sk: 'tier3SK' },
-        };
-        const f = fieldMap[provider];
-        const formAk = typeof editingCustomer[f.ak] === 'string' ? editingCustomer[f.ak] : '';
-        const formSk = typeof editingCustomer[f.sk] === 'string' ? editingCustomer[f.sk] : '';
-
         const res = await fetch('/api/gateway/validate-credential', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({
-            customer_id: editingCustomer.id,
-            credential_type: provider,
-            // Send form values so backend can validate before saving
-            ak: formAk || undefined,
-            sk: formSk || undefined,
-          }),
+          body: JSON.stringify({ customer_id: editingCustomer.id, credential_type: provider }),
         });
         const data = await res.json();
         setValidationStatus(prev => ({ ...prev, [provider]: data }));
@@ -224,10 +193,7 @@ export default function CustomerDirectory() {
     if (!f) return;
     const ak = typeof editingCustomer[f.ak] === 'string' ? editingCustomer[f.ak] : '';
     const sk = typeof editingCustomer[f.sk] === 'string' ? editingCustomer[f.sk] : '';
-    // Reject masked placeholders — user must type NEW values to sync
-    const isMasked = (v) => !v || v === '********' || (v.includes('***') && v.length <= 15);
     if (!ak || !sk) return alert(`Enter new ${provider} AK/SK first.`);
-    if (isMasked(ak) || isMasked(sk)) return alert(`Masked values detected. Type the FULL new ${provider} AK/SK to sync.`);
     if (ak.length < 10 || sk.length < 10) return alert('AK/SK look too short to be valid.');
     setIsValidating(true);
     try {
@@ -618,43 +584,14 @@ export default function CustomerDirectory() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Default Cloud Region</label>
-                      <select value={editingCustomer.region || 'la-north-2'} onChange={e => setEditingCustomer({ ...editingCustomer, region: e.target.value })} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-white cursor-pointer">
+                      <select value={editingCustomer.region || 'la-south-2'} onChange={e => setEditingCustomer({ ...editingCustomer, region: e.target.value })} className="w-full p-3 border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-500 bg-white cursor-pointer">
                         <optgroup label="Latin America">
                           <option value="la-south-2">Santiago, Chile (la-south-2)</option>
                           <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
                           <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
                         </optgroup>
-                        <optgroup label="Asia Pacific">
-                          <option value="ap-southeast-1">Hong Kong (ap-southeast-1)</option>
-                          <option value="ap-southeast-2">Bangkok, Thailand (ap-southeast-2)</option>
-                          <option value="ap-southeast-3">Singapore (ap-southeast-3)</option>
-                          <option value="ap-southeast-4">Jakarta, Indonesia (ap-southeast-4)</option>
-                          <option value="ap-southeast-5">Manila, Philippines (ap-southeast-5)</option>
-                          <option value="cn-north-1">Beijing 1 (cn-north-1)</option>
-                          <option value="cn-north-4">Beijing 4 (cn-north-4)</option>
-                          <option value="cn-east-2">Shanghai 1 (cn-east-2)</option>
-                          <option value="cn-east-3">Shanghai 2 (cn-east-3)</option>
-                          <option value="cn-south-1">Guangzhou (cn-south-1)</option>
-                          <option value="cn-southwest-2">Guiyang (cn-southwest-2)</option>
-                        </optgroup>
                         <optgroup label="Africa">
                           <option value="af-south-1">Johannesburg, South Africa (af-south-1)</option>
-                          <option value="af-north-1">Casablanca, Morocco (af-north-1)</option>
-                        </optgroup>
-                        <optgroup label="Europe">
-                          <option value="eu-west-0">Paris, France (eu-west-0)</option>
-                          <option value="eu-west-101">Dublin, Ireland (eu-west-101)</option>
-                          <option value="eu-central-1">Berlin, Germany (eu-central-1)</option>
-                          <option value="eu-south-1">Madrid, Spain (eu-south-1)</option>
-                          <option value="la-nicaragua-1">Nicaragua (la-nicaragua-1)</option>
-                        </optgroup>
-                        <optgroup label="Middle East">
-                          <option value="me-east-1">Dubai, UAE (me-east-1)</option>
-                          <option value="me-east-2">Riyadh, Saudi Arabia (me-east-2)</option>
-                        </optgroup>
-                        <optgroup label="North America">
-                          <option value="na-mexico-1">Mexico (na-mexico-1)</option>
-                          <option value="us-east-1">Virginia, USA (us-east-1)</option>
                         </optgroup>
                       </select>
                     </div>
@@ -694,7 +631,7 @@ export default function CustomerDirectory() {
                       <button onClick={() => syncKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Syncing...</> : <><i className="fas fa-cloud-upload-alt mr-1"></i> Sync & Validate</>}
                       </button>
-                      <button onClick={() => validateKeys('master')} disabled={isValidating} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
+                      <button onClick={() => validateKeys('master')} disabled={isValidating || !editingCustomer.ak || !editingCustomer.sk} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-colors">
                         {isValidating ? <><i className="fas fa-spinner fa-spin mr-1"></i> Validating...</> : <><i className="fas fa-shield-check mr-1"></i> Validate Master Keys</>}
                       </button>
                     </div>
@@ -759,45 +696,7 @@ export default function CustomerDirectory() {
                     </div>
                     <div className="flex justify-between items-end">
                       <div className="grid grid-cols-3 gap-4 flex-1 mr-4">
-                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><select value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white cursor-pointer">
-                          <option value="">-- Select Source Region --</option>
-                          <optgroup label="Latin America">
-                            <option value="la-south-2">Santiago, Chile (la-south-2)</option>
-                            <option value="la-north-2">Mexico City, Mexico (la-north-2)</option>
-                            <option value="sa-brazil-1">São Paulo, Brazil (sa-brazil-1)</option>
-                          </optgroup>
-                          <optgroup label="Asia Pacific">
-                            <option value="ap-southeast-1">Hong Kong (ap-southeast-1)</option>
-                            <option value="ap-southeast-2">Bangkok, Thailand (ap-southeast-2)</option>
-                            <option value="ap-southeast-3">Singapore (ap-southeast-3)</option>
-                            <option value="ap-southeast-4">Jakarta, Indonesia (ap-southeast-4)</option>
-                            <option value="ap-southeast-5">Manila, Philippines (ap-southeast-5)</option>
-                            <option value="cn-north-1">Beijing 1 (cn-north-1)</option>
-                            <option value="cn-north-4">Beijing 4 (cn-north-4)</option>
-                            <option value="cn-east-2">Shanghai 1 (cn-east-2)</option>
-                            <option value="cn-east-3">Shanghai 2 (cn-east-3)</option>
-                            <option value="cn-south-1">Guangzhou (cn-south-1)</option>
-                            <option value="cn-southwest-2">Guiyang (cn-southwest-2)</option>
-                          </optgroup>
-                          <optgroup label="Africa">
-                            <option value="af-south-1">Johannesburg, South Africa (af-south-1)</option>
-                            <option value="af-north-1">Casablanca, Morocco (af-north-1)</option>
-                          </optgroup>
-                          <optgroup label="Europe">
-                            <option value="eu-west-0">Paris, France (eu-west-0)</option>
-                            <option value="eu-west-101">Dublin, Ireland (eu-west-101)</option>
-                            <option value="eu-central-1">Berlin, Germany (eu-central-1)</option>
-                            <option value="eu-south-1">Madrid, Spain (eu-south-1)</option>
-                          </optgroup>
-                          <optgroup label="Middle East">
-                            <option value="me-east-1">Dubai, UAE (me-east-1)</option>
-                            <option value="me-east-2">Riyadh, Saudi Arabia (me-east-2)</option>
-                          </optgroup>
-                          <optgroup label="North America">
-                            <option value="na-mexico-1">Mexico (na-mexico-1)</option>
-                            <option value="us-east-1">Virginia, USA (us-east-1)</option>
-                          </optgroup>
-                        </select></div>
+                        <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Region</label><input type="text" value={editingCustomer.source_huawei_region || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_region: e.target.value })} placeholder="ap-southeast-3" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Project ID</label><input type="text" value={editingCustomer.source_huawei_project_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_project_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                         <div><label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1">Source Domain ID</label><input type="text" value={editingCustomer.source_huawei_domain_id || ''} onChange={e => setEditingCustomer({ ...editingCustomer, source_huawei_domain_id: e.target.value })} placeholder="Optional" className="w-full p-2.5 border border-blue-300 rounded-lg text-xs font-mono outline-none focus:border-blue-500 bg-white" /></div>
                       </div>

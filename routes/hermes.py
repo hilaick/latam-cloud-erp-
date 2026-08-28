@@ -727,7 +727,8 @@ INSTRUCTIONS:
                     except:
                         tool_args = {}
 
-                    socketio.emit('hermes_token', {'text': f"\n\n⚙️ **Executing:** `{tool_name}`({json.dumps(tool_args)[:100]})\n\n"})
+                    # Don't show tool execution details — just a subtle indicator
+                    pass
 
                     logger.info(f"ERP Agent tool call: {tool_name}({json.dumps(tool_args)[:200]})")
                     tool_result = execute_tool(tool_name, tool_args, project_id, user_role)

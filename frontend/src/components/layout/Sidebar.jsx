@@ -1,5 +1,6 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { ERPContext } from '../../context/ERPContext';
+import { useAuth } from '../../context/AuthContext';
 import { Button, Badge } from 'antd';
 import {
   CloudOutlined,
@@ -19,10 +20,19 @@ import {
   DesktopOutlined,
   ProjectOutlined,
   PauseCircleOutlined,
-  ApiOutlined,
 } from '@ant-design/icons';
 
-const navItems = [
+// ── Role-based navigation config ──
+const ROLE_NAV = {
+    'Admin':    ['home', 'pipeline', 'radar', 'master_hub', 'map', 'crm', 'finops', 'schedule', 'process', 'playbooks', 'migration_monitor', 'halted'],
+    'PM':       ['home', 'pipeline', 'radar', 'master_hub', 'map', 'crm', 'finops', 'schedule', 'process', 'playbooks', 'migration_monitor', 'halted'],
+    'SA':       ['home', 'radar', 'crm'],
+    'Engineer': ['home', 'pipeline', 'master_hub', 'migration_monitor', 'halted'],
+    'Partner':  ['home', 'radar'],
+    'Viewer':   ['home'],
+};
+
+const allNavItems = [
     { id: 'home', icon: DashboardOutlined, label: 'Dashboard', mobileLabel: 'Dash' },
     { id: 'pipeline', icon: UnorderedListOutlined, label: 'Pipeline', mobileLabel: 'Pipeline' },
     { id: 'radar', icon: ExperimentOutlined, label: 'Pre-Sales Radar', mobileLabel: 'Radar' },
@@ -32,13 +42,21 @@ const navItems = [
     { id: 'finops', icon: DollarOutlined, label: 'FinOps (COC)', mobileLabel: 'FinOps' },
     { id: 'schedule', icon: CalendarOutlined, label: 'Schedule', mobileLabel: 'Schedule' },
     { id: 'process', icon: BranchesOutlined, label: 'Process', mobileLabel: 'Process' },
+    { id: 'resource-discovery', icon: SearchOutlined, label: 'Discovery', mobileLabel: 'Discovery' },
     { id: 'playbooks', icon: BookOutlined, label: 'Playbooks', mobileLabel: 'Playbooks' },
-    { id: 'migration_monitor', icon: DesktopOutlined, label: 'Cloud Scanner', mobileLabel: 'Scanner' },
+    { id: 'migration_monitor', icon: DesktopOutlined, label: 'Live NOC', mobileLabel: 'NOC' },
+    { id: 'workflow', icon: ProjectOutlined, label: 'Workflow Graph', mobileLabel: 'Flow' },
     { id: 'halted', icon: PauseCircleOutlined, label: 'Halted Projects', mobileLabel: 'Halted' },
 ];
 
 export default function Sidebar() {
     const { activePhase, activeProjectId, setActivePhase, setActiveProjectId } = useContext(ERPContext);
+    const { user } = useAuth();
+
+    // ── Filter nav items by user role ──
+    const userRole = user?.role || 'Viewer';
+    const allowedIds = ROLE_NAV[userRole] || ROLE_NAV['Viewer'];
+    const navItems = allNavItems.filter(item => allowedIds.includes(item.id));
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [desktopMenuOpen, setDesktopMenuOpen] = useState(false); 
     const [isScrolling, setIsScrolling] = useState(false);
