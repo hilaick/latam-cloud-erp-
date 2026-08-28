@@ -702,44 +702,6 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
   const [showServerSelect, setShowServerSelect] = useState(false);
 
-  // ── Server selection — compute resources only (ECS/COMPUTE/DB) ──
-  const serverList = useMemo(() => {
-    return resources.filter(r => {
-      const t = (r.type || '').toUpperCase();
-      return t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
-             t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
-    }).map(r => r.name || r.id).filter(Boolean);
-  }, [resources]);
-
-  const [excludedServers, setExcludedServers] = useState(new Set());
-
-  const selectedServers = useMemo(() => {
-    return serverList.filter(name => !excludedServers.has(name));
-  }, [serverList, excludedServers]);
-
-  const toggleServer = (name) => {
-    setExcludedServers(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
-  // Resources filtered by server selection — used for constellation animation
-  const constellationResources = useMemo(() => {
-    if (excludedServers.size === 0) return resources;
-    return resources.filter(r => {
-      const name = r.name || r.id || '';
-      const t = (r.type || '').toUpperCase();
-      const isServer = t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
-                       t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
-      // Only filter out compute/DB servers; keep network/storage/etc
-      if (isServer && excludedServers.has(name)) return false;
-      return true;
-    });
-  }, [resources, excludedServers]);
-
   // ── Replay state ──
   const [replayMode, setReplayMode] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
@@ -820,6 +782,43 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     // Include ALL resource types (not just ECS/RDS/STORAGE) — VPC, SG, EIP, Subnet needed for constellation
     return nodes;
   }, [project?.mapperNodes, project?.topologyFilter, project?.targetArchitecture]);
+
+  // ── Server selection — compute resources only (ECS/COMPUTE/DB) ──
+  const serverList = useMemo(() => {
+    return resources.filter(r => {
+      const t = (r.type || '').toUpperCase();
+      return t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
+             t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
+    }).map(r => r.name || r.id).filter(Boolean);
+  }, [resources]);
+
+  const [excludedServers, setExcludedServers] = useState(new Set());
+
+  const selectedServers = useMemo(() => {
+    return serverList.filter(name => !excludedServers.has(name));
+  }, [serverList, excludedServers]);
+
+  const toggleServer = (name) => {
+    setExcludedServers(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  // Resources filtered by server selection — used for constellation animation
+  const constellationResources = useMemo(() => {
+    if (excludedServers.size === 0) return resources;
+    return resources.filter(r => {
+      const name = r.name || r.id || '';
+      const t = (r.type || '').toUpperCase();
+      const isServer = t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
+                       t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
+      if (isServer && excludedServers.has(name)) return false;
+      return true;
+    });
+  }, [resources, excludedServers]);
 
   // ── Compute resource status from trace up to replayIndex ──
   const resourceStatus = useMemo(() => {
