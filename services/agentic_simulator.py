@@ -4950,14 +4950,25 @@ class AgenticExecutionSimulator:
         # If server selection is active, filter pre-defined waves to only include selected servers
         selected_set = project.get("_selected_servers", set())
         if selected_set and waves:
+            # Build the full set of server IDs and names from the ORIGINAL mapperNodes (before filtering)
+            # so we can identify which wave entries are servers vs non-server resources
+            all_server_ids = set()
+            for n in mapper_nodes:
+                if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS"):
+                    if n.get("id"): all_server_ids.add(n["id"])
+                    if n.get("name"): all_server_ids.add(n["name"])
+            # Also add TA compute/database names
+            for cat in ("compute", "database"):
+                for r in (target_arch.get(cat) or []):
+                    rname = r.get("name") or r.get("source_name") or r.get("id") or ""
+                    if rname: all_server_ids.add(rname)
+
             filtered_waves = []
             for w in waves:
                 w_servers = w.get("servers", w.get("serverNames", []))
-                w_filtered = [s for s in w_servers if s in selected_set or s not in set(
-                    # Keep non-server ids (they might be network resources)
-                    n.get("id") for n in migration_resources
-                    if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS")
-                )]
+                w_filtered = [s for s in w_servers
+                              if s not in all_server_ids  # non-server resource — always keep
+                              or s in selected_set]        # server resource — only keep if selected
                 if w_filtered:
                     filtered_waves.append({**w, "servers": w_filtered, "serverNames": w_filtered})
             waves = filtered_waves
