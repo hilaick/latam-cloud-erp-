@@ -233,29 +233,36 @@ export const ERPProvider = ({ children }) => {
 
     const handleAddProject = (newProject) => {
         const custName = newProject.customerName?.trim();
-        let customerRegion = getRegionFromCountry(newProject.country); // Use country-based mapping
+        let customerRegion = getRegionFromCountry(newProject.country);
         
         if (custName) {
             const existingCustomer = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
             if (existingCustomer) {
                 newProject = { ...newProject, customerId: existingCustomer.id };
-                // Inherit region from customer, default to country-based mapping if not set
                 customerRegion = existingCustomer.region || getRegionFromCountry(newProject.country);
             }
         }
         
-        // Add region to project (inherit from customer or use country-based mapping)
         newProject = { ...newProject, region: customerRegion };
         
         setProjects(prev => [newProject, ...prev]);
         fetch('/api/erp/projects', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(newProject) })
             .then(r => { 
-                if(r.status === 401 || r.status === 422) handleAuthError();
-                else if(!r.ok) throw new Error(`Failed to add project: ${r.status} ${r.statusText}`);
+                if(r.status === 401 || r.status === 422) {
+                    console.error('Auth error creating project:', r.status);
+                    handleAuthError();
+                    return;
+                }
+                if(!r.ok) {
+                    r.text().then(txt => {
+                        console.error('Failed to create project:', r.status, txt);
+                        alert(`Failed to create project: ${r.status} ${txt}`);
+                    });
+                }
             })
             .catch(err => {
-                console.error('Error adding project:', err);
-                alert(`Failed to add project: ${err.message}`);
+                console.error('Network error adding project:', err);
+                alert(`Network error adding project: ${err.message}`);
             });
     };
 

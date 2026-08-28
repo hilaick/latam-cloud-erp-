@@ -41,15 +41,33 @@ export default function CustomerDirectory() {
   const [validationStatus, setValidationStatus] = useState({});
   const [isValidating, setIsValidating] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [localCustomers, setLocalCustomers] = useState([]);
+  const { fetchState } = useContext(ERPContext);
 
-  /* ── auto-open customer vault from URL hash ── */
+  // Refresh customers from API
+  useEffect(() => {
+    const token = sessionStorage.getItem('hermes_access_token');
+    fetch('/api/erp/customers', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setLocalCustomers(data);
+        else if (data.customers) setLocalCustomers(data.customers);
+      })
+      .catch(err => console.error('Failed to refresh customers:', err));
+  }, [refreshKey]);
+
+  // Use localCustomers (from refresh) if available, otherwise from context
+  const allCustomers = localCustomers.length > 0 ? localCustomers : customers;
   useEffect(() => {
     const h = window.location.hash.replace('#','');
     const p = new URLSearchParams(h);
     const custId = p.get('customer');
     const custName = p.get('cname');
-    if (custId && custName && customers.length > 0) {
-      const target = (customers || []).find(
+    if (custId && custName && allCustomers.length > 0) {
+      const target = (allCustomers || []).find(
         c => String(c.id) === custId || c.name === decodeURIComponent(custName)
       );
       if (target) {
@@ -65,12 +83,12 @@ export default function CustomerDirectory() {
         setActiveTab('vault');
       }
     }
-  }, [customers]);
+  }, [allCustomers]);
 
   /* ── derived ── */
 
   const enriched = useMemo(() => {
-    const list = (customers || []).map(c => ({
+    const list = (allCustomers || []).map(c => ({
       ...c,
       _health: credentialHealth(c),
       _keyAge: c?.key_age || {},
@@ -89,10 +107,10 @@ export default function CustomerDirectory() {
       if (tabFilter === 'invalid')     return !h.any;
       return true;
     });
-  }, [customers, projects, searchTerm, tabFilter]);
+  }, [allCustomers, projects, searchTerm, tabFilter]);
 
   const stats = useMemo(() => {
-    const all = (customers || []).map(c => credentialHealth(c));
+    const all = (allCustomers || []).map(c => credentialHealth(c));
     return {
       total: all.length,
       withValid: all.filter(h => h.any).length,
@@ -100,7 +118,7 @@ export default function CustomerDirectory() {
       withMultiCloud: all.filter(h => h.multicloud_any).length,
       withDataPlane: all.filter(h => h.dataplane).length,
     };
-  }, [customers]);
+  }, [allCustomers]);
 
   /* ── modal actions ── */
 
@@ -219,7 +237,7 @@ export default function CustomerDirectory() {
   };
 
   const initiateDeleteCustomer = (customerId) => {
-    const customer = customers.find(c => c?.id === customerId);
+    const customer = allCustomers.find(c => c?.id === customerId);
     if (!customer) return;
     const attached = (projects || []).filter(p => p?.customerId === customerId || p?.customerName === customer.name);
     if (attached.length > 0) {
@@ -256,19 +274,29 @@ export default function CustomerDirectory() {
         <div className="absolute bottom-[-15%] right-[-10%] w-[600px] h-[600px] rounded-full bg-gradient-to-tl from-emerald-700/12 to-cyan-700/10 blur-3xl"></div>
       </div>
 
-      <div className="relative z-10 max-w-[1600px] mx-auto px-6 py-8 pb-12">
+      <div className="relative z-10 w-full mx-auto px-4 sm:px-6 py-6 pb-12">
 
         {/* ── brand header ── */}
-        <div className="mb-8">
-          <div className="inline-flex items-center gap-4 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/25 flex items-center justify-center">
-              <i className="fas fa-building text-white text-xl"></i>
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-white tracking-tight">Customer Directory & Secure Vault</h1>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Multi-Tier Least Privilege Credential Management</p>
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <div className="inline-flex items-center gap-4 mb-2">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/25 flex items-center justify-center">
+                <i className="fas fa-building text-white text-xl"></i>
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight">Customer Directory & Secure Vault</h1>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Multi-Tier Least Privilege Credential Management</p>
+              </div>
             </div>
           </div>
+          {/* Refresh button */}
+          <button
+            onClick={() => { setRefreshKey(k => k + 1); }}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-700 transition-all flex items-center gap-2"
+            title="Refresh customer list"
+          >
+            <i className="fas fa-sync-alt"></i> Refresh
+          </button>
         </div>
 
         {/* ── stats bar ── */}
