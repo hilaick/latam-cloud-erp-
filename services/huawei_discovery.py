@@ -226,9 +226,25 @@ class HuaweiDiscovery:
                             elif 'windows' in img_name.lower():
                                 ecs_os_version = 'Windows'
                         
+                        # 🚨 FIX: Parse tags FIRST (before effective_os uses them)
+                        server_tags = {}
+                        for tag_src in ['tags', 'sys_tags']:
+                            tags_list = getattr(s, tag_src, [])
+                            if not tags_list: continue
+                            
+                            for t in tags_list:
+                                if isinstance(t, str):
+                                    if '=' in t:
+                                        k, v = t.split('=', 1)
+                                        server_tags[k.strip()] = v.strip()
+                                    else:
+                                        server_tags[t.strip()] = "true"
+                                elif hasattr(t, 'key') and hasattr(t, 'value'):
+                                    server_tags[str(t.key)] = str(t.value)
+                                elif isinstance(t, dict):
+                                    server_tags[str(t.get('key', ''))] = str(t.get('value', ''))
+                        
                         # Use tag override > ECS metadata > Unknown
-                        # Note: for migrated servers, the real guest OS may differ from image OS
-                        # Presales can set "os" tag with the actual OS (e.g., "SUSE Linux Enterprise Server for SAP")
                         effective_os = server_tags.get("os", ecs_os_version)
                         
                         is_reserved = False
@@ -239,25 +255,6 @@ class HuaweiDiscovery:
                         if hasattr(s, 'flavor') and s.flavor:
                             if hasattr(s.flavor, 'id'): flavor_id = s.flavor.id
                             elif isinstance(s.flavor, dict): flavor_id = s.flavor.get('id', 'Unknown')
-                        
-                        # 🚨 FIX: Aggressively pull and parse tags for the FinOps Matrix
-                        server_tags = {}
-                        for tag_src in ['tags', 'sys_tags']:
-                            tags_list = getattr(s, tag_src, [])
-                            if not tags_list: continue
-                            
-                            for t in tags_list:
-                                if isinstance(t, str):
-                                    # Formats like "marked_for_deletion=true"
-                                    if '=' in t:
-                                        k, v = t.split('=', 1)
-                                        server_tags[k.strip()] = v.strip()
-                                    else:
-                                        server_tags[t.strip()] = "true"
-                                elif hasattr(t, 'key') and hasattr(t, 'value'):
-                                    server_tags[str(t.key)] = str(t.value)
-                                elif isinstance(t, dict):
-                                    server_tags[str(t.get('key', ''))] = str(t.get('value', ''))
                         
                         # ── Workload sensitivity detection at discovery time ──
                         workload_profile = {}
