@@ -24,6 +24,7 @@ import {
 
 // ── Role-based navigation config ──
 const ROLE_NAV = {
+    'Master Admin': ['home', 'pipeline', 'radar', 'master_hub', 'map', 'crm', 'finops', 'schedule', 'process', 'playbooks', 'migration_monitor', 'halted'],
     'Admin':    ['home', 'pipeline', 'radar', 'master_hub', 'map', 'crm', 'finops', 'schedule', 'process', 'playbooks', 'migration_monitor', 'halted'],
     'PM':       ['home', 'pipeline', 'radar', 'master_hub', 'map', 'crm', 'finops', 'schedule', 'process', 'playbooks', 'migration_monitor', 'halted'],
     'SA':       ['home', 'radar', 'crm'],
