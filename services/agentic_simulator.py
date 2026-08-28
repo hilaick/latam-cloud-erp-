@@ -4900,22 +4900,29 @@ class AgenticExecutionSimulator:
             # Target architecture exists — use it as the source of truth
             migration_resources = []
             for r in (target_arch.get("compute") or []):
+                # Normalize: ensure name is set (TA items may only have source_name)
+                norm_name = r.get("name") or r.get("source_name") or r.get("id") or ""
                 migration_resources.append({
                     **r, "type": r.get("type", "ECS"),
-                    "source_name": r.get("source_name", r.get("name", "")),
+                    "name": norm_name,
+                    "source_name": r.get("source_name", norm_name),
                     "source_region": r.get("source_region", ""),
                     "is_target_resource": True,
                 })
             for r in (target_arch.get("database") or []):
-                migration_resources.append({**r, "type": r.get("type", "RDS"), "is_target_resource": True})
+                norm_name = r.get("name") or r.get("source_name") or r.get("id") or ""
+                migration_resources.append({**r, "type": r.get("type", "RDS"), "name": norm_name, "is_target_resource": True})
             for r in (target_arch.get("storage") or []):
-                migration_resources.append({**r, "type": r.get("type", "EVS"), "is_target_resource": True})
+                norm_name = r.get("name") or r.get("source_name") or r.get("id") or ""
+                migration_resources.append({**r, "type": r.get("type", "EVS"), "name": norm_name, "is_target_resource": True})
             # Network resources from target architecture
             network_resources = target_arch.get("network") or []
             # Merge any mapper nodes not in target architecture (scope creep detection)
-            target_names = {r.get("name") for r in migration_resources}
+            # Use normalized name for dedup to avoid None matching
+            target_names = {r.get("name") for r in migration_resources if r.get("name")}
             for mn in mapper_nodes:
-                if mn.get("name") not in target_names:
+                mn_name = mn.get("name") or mn.get("source_name") or ""
+                if mn_name and mn_name not in target_names:
                     migration_resources.append({**mn, "scope_status": "not_in_target_arch"})
             logger.info(f"Simulation using targetArchitecture: {len(migration_resources)} resources "
                         f"(target: {len(target_arch.get('compute', [])) + len(target_arch.get('database', [])) + len(target_arch.get('storage', []))}, "
@@ -6219,6 +6226,14 @@ class AgenticExecutionSimulator:
             final_outcome = "SIMULATED_SMS_SUCCESS"
             final_sync_hours = sms_retry_result["sync_hours"]
             path_taken = "retrospective_sms_simulated"
+
+        # ── Tag all trace steps with server_id and server_name for frontend tracker ──
+        server_id = server.get("id", server_name)
+        for entry in all_trace:
+            entry["server_id"] = server_id
+            entry.setdefault("decision", {})
+            entry["decision"]["server_name"] = server_name
+            entry["decision"]["server_id"] = server_id
 
         # Aggregate resource usage (handled by caller)
         return {
