@@ -170,9 +170,10 @@ function App() {
                                         setGuidedScenario(null);
                                     }}
                                     onComplete={() => {
-                                        // Wizard finished — save all 31 intake fields to project and advance to Phase 2
+                                        // Wizard finished — create/update project with all intake data, then go to Pipeline
                                         if (guidedData.projectId) {
-                                            const projectPatch = {
+                                            const projectData = {
+                                                id: guidedData.projectId,
                                                 // Section A: Customer & Account Identity
                                                 customerName: guidedData.customerName || '',
                                                 customerId: guidedData.customerId || '',
@@ -207,7 +208,7 @@ function App() {
                                                 blocker: guidedData.blocker || '',
                                                 // Section E: Gate Artefacts
                                                 artefacts: guidedData.artefacts || { hld: false, targetArch: false, wbs: false },
-                                                // Section F: Credential availability (yes/no — actual creds via secure channel)
+                                                // Section F: Credential availability
                                                 credStatus: guidedData.credStatus || {},
                                                 // BoM
                                                 quotationFile: guidedData.quotationFile || '',
@@ -226,18 +227,34 @@ function App() {
                                                 sapTenancy: guidedData.sapTenancy || '',
                                                 sapMigrationWindows: guidedData.sapMigrationWindows || '',
                                                 sapTimelines: guidedData.sapTimelines || '',
-                                                // Promote from presales lead to active project
+                                                // Active project (not presales lead)
                                                 isWaiting: false,
                                                 waitingStage: null,
+                                                isDeleted: false,
+                                                health: 'Yellow',
                                                 // Phase 1 (ARB) complete — advance to Phase 2 (Architecture)
                                                 lifecycleState: '2_architecture',
                                                 phase: '2_architecture',
                                                 currentPhase: 'Architecture',
                                                 migrationScenario: guidedScenario || '',
+                                                createdAt: guidedData.createdAt || new Date().toISOString(),
+                                                updatedAt: new Date().toISOString(),
                                             };
-                                            handleUpdateProject(guidedData.projectId, projectPatch);
+                                            // Direct POST (create or update) — doesn't rely on initial handleAddProject
+                                            const token = sessionStorage.getItem('hermes_access_token');
+                                            fetch('/api/erp/projects', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+                                                body: JSON.stringify(projectData)
+                                            }).then(r => {
+                                                if (!r.ok) {
+                                                    r.text().then(txt => alert(`Failed to save project: ${r.status} ${txt}`));
+                                                }
+                                            }).catch(err => alert(`Network error: ${err.message}`));
+                                            // Update local state + navigate to Pipeline
+                                            handleUpdateProject(guidedData.projectId, projectData);
                                             setActiveProjectId(guidedData.projectId);
-                                            setActivePhase('wizard');
+                                            setActivePhase('pipeline');
                                         } else {
                                             setActivePhase('home');
                                         }
