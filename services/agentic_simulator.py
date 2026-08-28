@@ -6505,16 +6505,33 @@ def register_agentic_dry_run_routes(execution_bp):
             if selected_servers and isinstance(selected_servers, list) and len(selected_servers) > 0:
                 selected_set = set(selected_servers)
                 # Build ALL server ids/names BEFORE filtering (for wave filtering later)
+                # Also build a name→id and id→name mapping so we can resolve wave entries
                 all_server_ids = set()
+                name_to_id = {}
+                id_to_name = {}
                 for n in contract["mapperNodes"]:
                     if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS"):
-                        if n.get("id"): all_server_ids.add(n["id"])
-                        if n.get("name"): all_server_ids.add(n["name"])
+                        nid = n.get("id") or ""
+                        nname = n.get("name") or ""
+                        if nid: all_server_ids.add(nid)
+                        if nname: all_server_ids.add(nname)
+                        if nid and nname:
+                            name_to_id[nname] = nid
+                            id_to_name[nid] = nname
                 ta_orig = contract.get("targetArchitecture", {})
                 for cat in ("compute", "database"):
                     for r in (ta_orig.get(cat) or []):
                         rname = r.get("name") or r.get("source_name") or r.get("id") or ""
                         if rname: all_server_ids.add(rname)
+
+                # Expand selected_set to include both names AND their corresponding ids
+                expanded_selected = set(selected_set)
+                for name in selected_set:
+                    if name in name_to_id:
+                        expanded_selected.add(name_to_id[name])
+                for sid in list(expanded_selected):
+                    if sid in id_to_name:
+                        expanded_selected.add(id_to_name[sid])
 
                 # Now filter
                 contract["mapperNodes"] = [n for n in contract["mapperNodes"]
@@ -6527,8 +6544,8 @@ def register_agentic_dry_run_routes(execution_bp):
                                    if (n.get("name") or n.get("source_name") or n.get("id") or "") in selected_set]
                 logger.info(f"Dry-run: server selection active — {len(selected_servers)} servers included, "
                             f"mapperNodes={len(contract['mapperNodes'])}")
-                # Pass selected set and all server ids to simulator
-                contract["_selected_servers"] = selected_set
+                # Pass selected set (expanded with ids) and all server ids to simulator
+                contract["_selected_servers"] = expanded_selected
                 contract["_all_server_ids"] = all_server_ids
 
             # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
