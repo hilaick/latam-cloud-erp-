@@ -4919,10 +4919,22 @@ class AgenticExecutionSimulator:
             network_resources = target_arch.get("network") or []
             # Merge any mapper nodes not in target architecture (scope creep detection)
             # Use normalized name for dedup to avoid None matching
+            # Respect server selection: don't re-add filtered-out servers
+            selected_set = project.get("_selected_servers", set())
             target_names = {r.get("name") for r in migration_resources if r.get("name")}
             for mn in mapper_nodes:
                 mn_name = mn.get("name") or mn.get("source_name") or ""
-                if mn_name and mn_name not in target_names:
+                mn_type = (mn.get("type") or "").upper()
+                is_server = mn_type in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS")
+                # Skip if already in target architecture
+                if mn_name and mn_name in target_names:
+                    continue
+                # Skip if this is a server that was explicitly filtered out
+                if is_server and selected_set:
+                    mn_id = mn.get("id") or ""
+                    if mn_name not in selected_set and mn_id not in selected_set:
+                        continue
+                if mn_name:
                     migration_resources.append({**mn, "scope_status": "not_in_target_arch"})
             logger.info(f"Simulation using targetArchitecture: {len(migration_resources)} resources "
                         f"(target: {len(target_arch.get('compute', [])) + len(target_arch.get('database', [])) + len(target_arch.get('storage', []))}, "
@@ -6464,6 +6476,8 @@ def register_agentic_dry_run_routes(execution_bp):
                                    if (n.get("name") or n.get("source_name") or n.get("id") or "") in selected_set]
                 logger.info(f"Dry-run: server selection active — {len(selected_servers)} servers included, "
                             f"mapperNodes={len(contract['mapperNodes'])}")
+                # Pass selected set to simulator so scope-creep merge respects the filter
+                contract["_selected_servers"] = selected_set
 
             # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
             customer_id = project_data.get("customerId")
