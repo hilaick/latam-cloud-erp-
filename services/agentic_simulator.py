@@ -6323,6 +6323,21 @@ def register_agentic_dry_run_routes(execution_bp):
                 "sowResources": project_data.get("sowResources", {}),
             }
 
+            # 🎯 Server selection: if the frontend passed selectedServers, filter mapperNodes + targetArchitecture
+            selected_servers = data.get("selectedServers")
+            if selected_servers and isinstance(selected_servers, list) and len(selected_servers) > 0:
+                selected_set = set(selected_servers)
+                contract["mapperNodes"] = [n for n in contract["mapperNodes"]
+                                           if (n.get("name") or n.get("id") or "") in selected_set
+                                           or n.get("type", "").upper() not in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS")]
+                ta = contract.get("targetArchitecture", {})
+                for cat in ("compute", "database"):
+                    if cat in ta and isinstance(ta[cat], list):
+                        ta[cat] = [n for n in ta[cat]
+                                   if (n.get("name") or n.get("source_name") or n.get("id") or "") in selected_set]
+                logger.info(f"Dry-run: server selection active — {len(selected_servers)} servers included, "
+                            f"mapperNodes={len(contract['mapperNodes'])}")
+
             # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
             customer_id = project_data.get("customerId")
             if customer_id:

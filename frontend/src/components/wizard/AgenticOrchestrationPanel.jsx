@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Card, Collapse, Space, Statistic, Badge, Progress, Table, Descriptions,
   Alert, Button, Tag, Typography, Divider, Row, Col, Tooltip,
-  Empty, Spin, Timeline, Tabs, Drawer
+  Empty, Spin, Timeline, Tabs, Drawer, Checkbox
 } from 'antd';
 import {
   RobotOutlined, PlayCircleOutlined, PauseCircleOutlined,
@@ -14,7 +14,8 @@ import {
   CopyOutlined, CheckOutlined, ArrowRightOutlined,
   DatabaseOutlined, DesktopOutlined, WifiOutlined,
   SwapOutlined, SafetyCertificateOutlined, FileTextOutlined,
-  ExperimentOutlined, FullscreenOutlined, CloseOutlined
+  ExperimentOutlined, FullscreenOutlined, CloseOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
@@ -699,6 +700,45 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [showConstellation, setShowConstellation] = useState(false);
   const [constellationFullscreen, setConstellationFullscreen] = useState(false);
   const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
+  const [showServerSelect, setShowServerSelect] = useState(false);
+
+  // ── Server selection — compute resources only (ECS/COMPUTE/DB) ──
+  const serverList = useMemo(() => {
+    return resources.filter(r => {
+      const t = (r.type || '').toUpperCase();
+      return t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
+             t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
+    }).map(r => r.name || r.id).filter(Boolean);
+  }, [resources]);
+
+  const [excludedServers, setExcludedServers] = useState(new Set());
+
+  const selectedServers = useMemo(() => {
+    return serverList.filter(name => !excludedServers.has(name));
+  }, [serverList, excludedServers]);
+
+  const toggleServer = (name) => {
+    setExcludedServers(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  // Resources filtered by server selection — used for constellation animation
+  const constellationResources = useMemo(() => {
+    if (excludedServers.size === 0) return resources;
+    return resources.filter(r => {
+      const name = r.name || r.id || '';
+      const t = (r.type || '').toUpperCase();
+      const isServer = t === 'ECS' || t === 'COMPUTE' || t === 'APP' || t === 'WEB' ||
+                       t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
+      // Only filter out compute/DB servers; keep network/storage/etc
+      if (isServer && excludedServers.has(name)) return false;
+      return true;
+    });
+  }, [resources, excludedServers]);
 
   // ── Replay state ──
   const [replayMode, setReplayMode] = useState(false);
@@ -879,7 +919,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        }
+        },
+        body: JSON.stringify({ selectedServers: selectedServers.length < serverList.length ? selectedServers : undefined }),
       });
       if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
       const data = await res.json();
@@ -1096,12 +1137,75 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                   {manualMigWorker ? 'mig_worker: ON' : 'mig_worker: OFF'}
                 </Button>
               </Tooltip>
+              {serverList.length > 1 && (
+                <Tooltip title="Select which servers to include in the simulation">
+                  <Button
+                    type={showServerSelect ? 'primary' : 'default'}
+                    icon={<UnorderedListOutlined />}
+                    onClick={() => setShowServerSelect(!showServerSelect)}
+                    size="small"
+                  >
+                    Servers ({selectedServers.length}/{serverList.length})
+                  </Button>
+                </Tooltip>
+              )}
               {result && (
                 <Button onClick={clearResults}>Clear Results</Button>
               )}
             </Space>
           </Col>
         </Row>
+
+        {/* Server selection panel */}
+        {showServerSelect && serverList.length > 1 && (
+          <Row style={{ marginTop: 12 }}>
+            <Col span={24}>
+              <div style={{
+                background: '#f5f7fa', borderRadius: 8, padding: '12px 16px',
+                border: '1px solid #e4e7ed',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text strong style={{ fontSize: 13 }}>
+                    <UnorderedListOutlined style={{ marginRight: 6 }} />
+                    Server Selection — {selectedServers.length} of {serverList.length} included
+                  </Text>
+                  <Space size={4}>
+                    <Button size="small" type="link" onClick={() => setExcludedServers(new Set())}>Select All</Button>
+                    <Button size="small" type="link" onClick={() => setExcludedServers(new Set(serverList))}>Deselect All</Button>
+                  </Space>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                  {serverList.map(name => {
+                    const included = !excludedServers.has(name);
+                    const res = resources.find(r => (r.name || r.id) === name);
+                    const t = (res?.type || '').toUpperCase();
+                    const isDB = t === 'RDS' || t === 'DATABASE' || t === 'DB' || t === 'DCS';
+                    return (
+                      <Checkbox
+                        key={name}
+                        checked={included}
+                        onChange={() => toggleServer(name)}
+                        style={{ fontSize: 12 }}
+                      >
+                        <Tag color={isDB ? 'green' : 'blue'} style={{ fontSize: 10, marginRight: 4 }}>{isDB ? 'DB' : 'ECS'}</Tag>
+                        {name}
+                      </Checkbox>
+                    );
+                  })}
+                </div>
+                {excludedServers.size > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <Alert
+                      type="info" showIcon
+                      message={`${excludedServers.size} server(s) excluded — simulation will only process the ${selectedServers.length} selected server(s).`}
+                      style={{ fontSize: 12 }}
+                    />
+                  </div>
+                )}
+              </div>
+            </Col>
+          </Row>
+        )}
         
         {/* Data source badge */}
         {dataSourceLabel && (
@@ -1456,7 +1560,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             <SimulationConstellation
               trace={result?.trace || []}
               resourceUsage={summary?.resource_usage || {}}
-              resources={resources}
+              resources={constellationResources}
               replayMode={replayMode}
               replayIndex={replayIndex}
               onReplayStart={startReplay}
@@ -1493,7 +1597,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               <SimulationConstellation
                 trace={result?.trace || []}
                 resourceUsage={summary?.resource_usage || {}}
-                resources={resources}
+                resources={constellationResources}
                 replayMode={replayMode}
                 replayIndex={replayIndex}
                 onReplayStart={startReplay}
@@ -1510,16 +1614,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             </div>
           )}
 
-          {/* Comparison Toggle */}
+          {/* Dry-run disclaimer */}
           <div style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-            <Button
-              type="link"
-              size="small"
-              onClick={() => window.dispatchEvent(new CustomEvent('hermes:show-standard-view'))}
-            >
-              <i className="fas fa-project-diagram"></i> Switch to Standard Methodology View
-            </Button>
-            <Divider type="vertical" />
             <Space>
               <SafetyCertificateOutlined style={{ fontSize: 10 }} />
               <Text type="secondary" style={{ fontSize: 11 }}>

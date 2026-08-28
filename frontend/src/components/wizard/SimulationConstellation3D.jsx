@@ -111,11 +111,11 @@ function makeEnvMap(THREE) {
   canvas.width = 512; canvas.height = 256;
   const ctx = canvas.getContext('2d');
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#1a1a3e');
-  grad.addColorStop(0.3, '#0d0d24');
-  grad.addColorStop(0.5, '#080816');
-  grad.addColorStop(0.7, '#0d1024');
-  grad.addColorStop(1, '#1a1a3e');
+  grad.addColorStop(0, '#2a2a5e');
+  grad.addColorStop(0.3, '#1a1a3e');
+  grad.addColorStop(0.5, '#12122e');
+  grad.addColorStop(0.7, '#1a1a3e');
+  grad.addColorStop(1, '#2a2a5e');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 512, 256);
   // Light streaks
@@ -685,14 +685,14 @@ function SimulationConstellation({
     const h = fullscreen ? (window.innerHeight - 60) : 600;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x06060f);
-    scene.fog = new THREE.Fog(0x06060f, 400, 1200);
+    scene.background = new THREE.Color(0x0a0e1a);
+    scene.fog = new THREE.Fog(0x0a0e1a, 800, 1800);
     // Set environment map for scene-wide reflections
     scene.environment = getEnvMap(THREE);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2500);
-    camera.position.set(0, 120, 600);
+    const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 3000);
+    camera.position.set(0, 150, 750);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -711,23 +711,23 @@ function SimulationConstellation({
       controlsRef.current = controls;
     }
 
-    // ── Professional 3-point lighting + atmosphere ──
-    const hemi = new THREE.HemisphereLight(0x818cf8, 0x0a0a14, 0.4);
+    // ── Bright 3-point lighting + atmosphere ──
+    const hemi = new THREE.HemisphereLight(0xb0c4ff, 0x1a1a2e, 0.7);
     scene.add(hemi);
-    const ambient = new THREE.AmbientLight(0x1a1a3e, 0.3);
+    const ambient = new THREE.AmbientLight(0x3a3a5e, 0.5);
     scene.add(ambient);
     // Key light — warm-white from top-right
-    const key = new THREE.DirectionalLight(0xfff5e6, 0.9);
+    const key = new THREE.DirectionalLight(0xfff5e6, 1.2);
     key.position.set(200, 300, 200); scene.add(key);
     // Fill light — cool blue from left
-    const fill = new THREE.DirectionalLight(0x818cf8, 0.5);
+    const fill = new THREE.DirectionalLight(0x818cf8, 0.7);
     fill.position.set(-200, 100, 150); scene.add(fill);
     // Rim light — behind, for edge separation
-    const rim = new THREE.DirectionalLight(0x3b82f6, 0.6);
+    const rim = new THREE.DirectionalLight(0x3b82f6, 0.8);
     rim.position.set(0, 50, -300); scene.add(rim);
     // Colored point lights near source and target
-    const plSource = new THREE.PointLight(0x6b7280, 0.8, 600); plSource.position.set(-420, 80, 50); scene.add(plSource);
-    const plTarget = new THREE.PointLight(0x3b82f6, 1.2, 600); plTarget.position.set(420, 80, 50); scene.add(plTarget);
+    const plSource = new THREE.PointLight(0x8a8a9a, 1.0, 800); plSource.position.set(-500, 80, 50); scene.add(plSource);
+    const plTarget = new THREE.PointLight(0x3b82f6, 1.5, 800); plTarget.position.set(500, 80, 50); scene.add(plTarget);
 
     // ── Starfield background ──
     const starGeo = new THREE.BufferGeometry();
@@ -778,13 +778,13 @@ function SimulationConstellation({
 
     // ── Source cloud ──
     const srcCloud = buildSourceCloud(THREE, sourceLabel);
-    srcCloud.position.set(-420, 0, 0);
+    srcCloud.position.set(-500, 0, 0);
     scene.add(srcCloud);
     objectMapRef.current['__SOURCE__'] = { group: srcCloud, alwaysVisible: true };
 
     // ── Target cloud ──
     const tgtCloud = buildTargetCloud(THREE);
-    tgtCloud.position.set(420, 0, 0);
+    tgtCloud.position.set(500, 0, 0);
     scene.add(tgtCloud);
     objectMapRef.current['__TARGET__'] = { group: tgtCloud, alwaysVisible: true };
 
@@ -829,18 +829,21 @@ function SimulationConstellation({
     });
     const netNodes = allResources.filter(r => {
       const t = (r.type || '').toUpperCase();
-      return t === 'NAT' || t === 'ELB' || t === 'VPN' || t === 'CDN' || t === 'SUBNET';
+      const n = (r.name || '').toLowerCase();
+      return t === 'NAT' || t === 'ELB' || t === 'VPN' || t === 'CDN' || t === 'SUBNET' ||
+             (t === 'VPC' && n.includes('subnet'));
     });
 
     // ── Source-side servers (left) ──
     const srcServers = [];
     const allCompute = [...computeNodes, ...dbNodes];
+    const serverSpacing = allCompute.length > 6 ? 90 : 70;
     allCompute.forEach((res, i) => {
       const name = res.name || res.id || `Server-${i}`;
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, name, cfg.color);
-      const yOff = (i - (allCompute.length - 1) / 2) * 60;
-      obj.position.set(-360, yOff, 30);
+      const yOff = (i - (allCompute.length - 1) / 2) * serverSpacing;
+      obj.position.set(-440, yOff, 30);
       obj.visible = false; // hidden until discovered
       scene.add(obj);
       objectMapRef.current[name] = { group: obj, name, isSource: true, shape: cfg.shape };
@@ -851,7 +854,7 @@ function SimulationConstellation({
     // ── Target VPC (right) ──
     const vpcName = vpcNodes.length > 0 ? (vpcNodes[0].name || 'VPC') : 'VPC';
     const vpcObj = buildObject(THREE, 'VPC', vpcName, 0x8b5cf6);
-    vpcObj.position.set(300, 0, 0);
+    vpcObj.position.set(360, 0, 0);
     scene.add(vpcObj);
     objectMapRef.current['__VPC__'] = { group: vpcObj, alwaysVisible: false, isVPC: true };
 
@@ -862,8 +865,8 @@ function SimulationConstellation({
       const tgtName = `${name}-TARGET`;
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, tgtName, cfg.color);
-      const yOff = (i - (allCompute.length - 1) / 2) * 60;
-      obj.position.set(300, yOff, -20);
+      const yOff = (i - (allCompute.length - 1) / 2) * serverSpacing;
+      obj.position.set(360, yOff, -20);
       obj.visible = false;
       scene.add(obj);
       objectMapRef.current[tgtName] = { group: obj, name: tgtName, isTarget: true, sourceName: name, shape: cfg.shape };
@@ -871,56 +874,56 @@ function SimulationConstellation({
     });
     targetServersRef.current = tgtServers;
 
-    // ── Storage nodes (disks, OBS, CBR) near their servers ──
+    // ── Storage nodes (disks, OBS, CBR) — offset to the far left, below servers ──
     storageNodes.forEach((res, i) => {
       const name = res.name || res.id || `Storage-${i}`;
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, name, cfg.color);
-      obj.position.set(-360, -80 - i * 30, 30);
+      obj.position.set(-560, -100 - i * 50, 60);
       obj.visible = false;
       scene.add(obj);
       objectMapRef.current[name] = { group: obj, name, isStorage: true, shape: cfg.shape, layerType: 'storage' };
     });
 
-    // ── EIPs (floating near target) ──
+    // ── EIPs (floating near target, spread vertically) ──
     eipNodes.forEach((res, i) => {
       const name = res.name || res.id || `EIP-${i}`;
       const obj = buildObject(THREE, 'EIP', name, 0xfbbf24);
-      obj.position.set(400 + i * 22, 100 + i * 12, 50);
+      obj.position.set(520 + i * 30, 120 + i * 20, 50);
       obj.visible = false;
       scene.add(obj);
       objectMapRef.current[name] = { group: obj, name, isEIP: true, layerType: 'eip' };
     });
 
-    // ── Security Groups (inside VPC, top) ──
+    // ── Security Groups (inside VPC, top, spread) ──
     sgNodes.forEach((res, i) => {
       const name = res.name || res.id || `SG-${i}`;
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, name, cfg.color);
-      obj.position.set(300 + i * 30, 80, 60);
+      obj.position.set(360 + i * 40, 130, 80);
       obj.visible = false;
       scene.add(obj);
       objectMapRef.current[name] = { group: obj, name, isSG: true, layerType: 'sg' };
     });
 
-    // ── Network nodes (NAT, ELB, VPN, Subnet, CDN) ──
+    // ── Network nodes (NAT, ELB, VPN, Subnet, CDN) — below target VPC ──
     netNodes.forEach((res, i) => {
       const name = res.name || res.id || `Net-${i}`;
       const rType = (res.type || '').toUpperCase();
       const cfg = getResConfig(res.type);
       const obj = buildObject(THREE, res.type, name, cfg.color);
-      obj.position.set(300 + i * 40, -100, 60);
+      obj.position.set(360 + i * 50, -130, 80);
       obj.visible = false;
       scene.add(obj);
       // Tag with specific layer type
-      const layerType = rType === 'SUBNET' ? 'subnet' : rType === 'VPN' ? 'vpn' :
+      const layerType = rType === 'SUBNET' || (rType === 'VPC' && (res.name || '').toLowerCase().includes('subnet')) ? 'subnet' : rType === 'VPN' ? 'vpn' :
         rType === 'NAT' ? 'nat' : rType === 'ELB' ? 'elb' : rType === 'CDN' ? 'cdn' : 'net';
       objectMapRef.current[name] = { group: obj, name, isNet: true, layerType };
     });
 
     // ── mig_worker ──
     const mw = buildMigWorker(THREE);
-    mw.position.set(380, -70, 60);
+    mw.position.set(440, -80, 60);
     mw.visible = false;
     scene.add(mw);
     objectMapRef.current['mig_worker'] = { group: mw, name: 'mig_worker', isWorker: true, layerType: 'worker' };
@@ -929,9 +932,9 @@ function SimulationConstellation({
     const lines = [];
     allCompute.forEach((res, i) => {
       const name = res.name || res.id || `Server-${i}`;
-      const yOff = (i - (allCompute.length - 1) / 2) * 60;
-      const srcPos = new THREE.Vector3(-360, yOff, 30);
-      const tgtPos = new THREE.Vector3(300, yOff, -20);
+      const yOff = (i - (allCompute.length - 1) / 2) * serverSpacing;
+      const srcPos = new THREE.Vector3(-440, yOff, 30);
+      const tgtPos = new THREE.Vector3(360, yOff, -20);
       // Main beam — thin tube for 3D depth
       const dir = new THREE.Vector3().subVectors(tgtPos, srcPos);
       const len = dir.length();
@@ -1160,7 +1163,7 @@ function SimulationConstellation({
         entry.group.visible = layerEffective(lt, autoVis);
       }
       if (entry.isStorage) {
-        const autoVis = sourceVisible || discoveredResources.has(entry.name) || phaseProgression.includes('PHASE_4_2c_TARGET');
+        const autoVis = discoveredResources.has(entry.name) && phaseProgression.includes('PHASE_4_2c_TARGET');
         entry.group.visible = layerEffective('storage', autoVis);
       }
       if (entry.isWorker) {
@@ -1259,7 +1262,7 @@ function SimulationConstellation({
   const resetView = useCallback(() => {
     const cam = cameraRef.current; const ctrl = controlsRef.current;
     if (!cam || !ctrl) return;
-    cam.position.set(0, 120, 600); ctrl.target.set(0, 0, 0); ctrl.update();
+    cam.position.set(0, 150, 750); ctrl.target.set(0, 0, 0); ctrl.update();
   }, []);
   const toggleRotate = useCallback(() => {
     const ctrl = controlsRef.current;
