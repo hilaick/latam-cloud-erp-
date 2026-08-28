@@ -699,6 +699,11 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [showSummary, setShowSummary] = useState(true);
   const [showConstellation, setShowConstellation] = useState(false);
   const [constellationFullscreen, setConstellationFullscreen] = useState(false);
+  const [showLearning, setShowLearning] = useState(false);
+  const [showResourceFootprint, setShowResourceFootprint] = useState(false);
+  const [showComparison, setShowComparison] = useState(true);
+  const [showTrace, setShowTrace] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
   const [showServerSelect, setShowServerSelect] = useState(false);
 
@@ -824,30 +829,85 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const resourceStatus = useMemo(() => {
     if (!result?.trace || resources.length === 0) return {};
     const status = {};
-    resources.forEach(r => { status[r.id || r.name] = 'pending'; });
+    // Build a map of all possible resource keys (id, name, source_name)
+    const resourceKeyMap = {};
+    resources.forEach(r => {
+      const key = r.id || r.name;
+      status[key] = 'pending';
+      // Map all possible identifiers to this key
+      if (r.id) resourceKeyMap[r.id] = key;
+      if (r.name) resourceKeyMap[r.name] = key;
+      if (r.source_name) resourceKeyMap[r.source_name] = key;
+    });
 
     const visibleTrace = replayMode ? result.trace.slice(0, replayIndex + 1) : result.trace;
-    
+
+    // Track which servers have been seen in non-start steps
+    const seenServers = new Set();
+    // Track completed waves — when a wave completes, mark all its servers as completed
+    const waveServerMap = {}; // wave name → [server keys]
+
     visibleTrace.forEach(step => {
-      const serverId = step.server_id || (step.decision && step.decision.server_id) || (step.decision && step.decision.server_name) || '';
+      const serverId = step.server_id || (step.decision && step.decision.server_id) || '';
       const serverName = (step.decision && step.decision.server_name) || '';
-      const matched = resources.find(r =>
-        (r.id && (r.id === serverId || r.id === serverName)) ||
-        (r.name && (r.name === serverId || r.name === serverName))
-      );
+      const target = step.target || '';
 
-      if (matched) {
-        const key = matched.id || matched.name;
+      // Resolve to resource key using the map
+      let matchedKey = null;
+      if (serverId && resourceKeyMap[serverId]) matchedKey = resourceKeyMap[serverId];
+      if (!matchedKey && serverName && resourceKeyMap[serverName]) matchedKey = resourceKeyMap[serverName];
+      if (!matchedKey && target && resourceKeyMap[target]) matchedKey = resourceKeyMap[target];
+
+      if (matchedKey) {
+        seenServers.add(matchedKey);
         const resultOutcome = (step.result || step.outcome || '').toLowerCase();
-        const isSuccess = resultOutcome.includes('success') || resultOutcome === 'capacity_ok' || resultOutcome === 'registered';
-        const isFail = resultOutcome.includes('error') || resultOutcome.includes('failed') || resultOutcome.includes('blocked') || resultOutcome === 'not_resolved';
-        const isComplete = step.action === 'WAVE_COMPLETE' || step.action === 'SERVER_COMPLETE' || step.action === 'HANDOFF';
+        const action = (step.action || '').toUpperCase();
 
-        if (isComplete || isSuccess) { status[key] = 'completed'; }
-        else if (isFail) { status[key] = 'failed'; }
-        else if (step.action !== 'WAVE_START') { status[key] = 'active'; }
+        // Broadened success detection
+        const isSuccess = resultOutcome.includes('success') || resultOutcome.includes('ok') ||
+                          resultOutcome.includes('registered') || resultOutcome.includes('provisioned') ||
+                          resultOutcome.includes('complete') || resultOutcome.includes('done') ||
+                          action === 'SMOKE_TESTS' || action === 'SERVER_COMPLETE' ||
+                          action === 'WAVE_COMPLETE' || action === 'HANDOFF';
+
+        const isFail = resultOutcome.includes('error') || resultOutcome.includes('failed') ||
+                       resultOutcome.includes('blocked') || resultOutcome === 'not_resolved';
+
+        // Track wave→server mapping for WAVE_COMPLETE
+        if (action === 'WAVE_START' && step.decision?.server_names) {
+          const wname = step.decision?.wave_name || step.target || '';
+          if (wname) {
+            waveServerMap[wname] = step.decision.server_names
+              .map(n => resourceKeyMap[n])
+              .filter(Boolean);
+          }
+        }
+
+        if (isSuccess) {
+          status[matchedKey] = 'completed';
+          // Also mark all servers in the same wave as completed on WAVE_COMPLETE
+          if (action === 'WAVE_COMPLETE') {
+            Object.values(waveServerMap).forEach(servers => {
+              servers.forEach(sk => { status[sk] = 'completed'; });
+            });
+          }
+        } else if (isFail) {
+          status[matchedKey] = 'failed';
+        } else if (action !== 'WAVE_START' && action !== 'INIT') {
+          if (status[matchedKey] === 'pending') {
+            status[matchedKey] = 'active';
+          }
+        }
       }
     });
+
+    // If not in replay mode and the trace is complete, mark all seen servers as completed
+    if (!replayMode && result?.trace) {
+      seenServers.forEach(key => {
+        if (status[key] === 'active') status[key] = 'completed';
+      });
+    }
+
     return status;
   }, [result, replayIndex, replayMode, resources]);
 
@@ -945,6 +1005,19 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     if (onUpdateProject) {
       onUpdateProject(project.id, { agenticDryRun: null });
     }
+  };
+
+  // Scroll-to-top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 600);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // ── Derived metadata ──
@@ -1324,8 +1397,19 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                   <Text strong style={{ fontSize: 14 }}>Self-Learning Engine</Text>
                 </Space>
               }
-              styles={{ body: { background: 'linear-gradient(135deg, #f0f5ff 0%, #f9f0ff 100%)', borderRadius: 8 } }}
+              extra={
+                <Button
+                  type="link"
+                  icon={showLearning ? <UpOutlined /> : <DownOutlined />}
+                  onClick={() => setShowLearning(!showLearning)}
+                >
+                  {showLearning ? 'Collapse' : 'Expand'}
+                </Button>
+              }
+              styles={{ body: { background: showLearning ? 'linear-gradient(135deg, #f0f5ff 0%, #f9f0ff 100%)' : 'transparent', borderRadius: 8, display: showLearning ? 'block' : 'none' } }}
             >
+              {showLearning && (
+              <>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={8} lg={4}>
                   <Statistic title="History Records" value={summary.learning_system.total_history_records} valueStyle={{ fontSize: 20, color: '#4a6cf7' }} />
@@ -1350,6 +1434,8 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8, opacity: 0.7 }}>
                 {summary.learning_system.note}
               </Text>
+              </>
+              )}
             </Card>
           )}
 
@@ -1362,7 +1448,18 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                   <Text strong style={{ fontSize: 14 }}>Simulated Resource Footprint</Text>
                 </Space>
               }
+              extra={
+                <Button
+                  type="link"
+                  icon={showResourceFootprint ? <UpOutlined /> : <DownOutlined />}
+                  onClick={() => setShowResourceFootprint(!showResourceFootprint)}
+                >
+                  {showResourceFootprint ? 'Collapse' : 'Expand'}
+                </Button>
+              }
+              styles={{ body: { display: showResourceFootprint ? 'block' : 'none' } }}
             >
+              {showResourceFootprint && (
               <Row gutter={[12, 12]}>
                 {Object.entries(summary.resource_usage).map(([key, val]) => (
                   key !== 'peak_parallel_agents' && (
@@ -1380,6 +1477,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                   )
                 ))}
               </Row>
+              )}
             </Card>
           )}
 
@@ -1509,20 +1607,34 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 <Button
                   size="small"
                   type="link"
-                  onClick={() => setExpandedSteps(Object.fromEntries((result.trace || []).map(s => [s.id, true])))}
+                  icon={showTrace ? <UpOutlined /> : <DownOutlined />}
+                  onClick={() => setShowTrace(!showTrace)}
                 >
-                  Expand All
+                  {showTrace ? 'Collapse' : 'Expand'}
                 </Button>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => setExpandedSteps({})}
-                >
-                  Collapse All
-                </Button>
+                {showTrace && (
+                  <>
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => setExpandedSteps(Object.fromEntries((result.trace || []).map(s => [s.id, true])))}
+                    >
+                      Expand All
+                    </Button>
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => setExpandedSteps({})}
+                    >
+                      Collapse All
+                    </Button>
+                  </>
+                )}
               </Space>
             }
+            styles={{ body: { display: showTrace ? 'block' : 'none' } }}
           >
+            {showTrace && (
             <Collapse
               activeKey={Object.entries(expandedPhases).filter(([k, v]) => v).map(([k]) => k)}
               onChange={(keys) => {
@@ -1533,6 +1645,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               }}
               items={phaseItems}
             />
+            )}
           </Card>
 
           {/* ── Simulation Constellation (at end, with button + fullscreen) ── */}
@@ -1623,6 +1736,24 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             </Space>
           </div>
         </>
+      )}
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <Button
+          type="primary"
+          shape="circle"
+          size="large"
+          icon={<UpOutlined />}
+          onClick={scrollToTop}
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          }}
+        />
       )}
     </Space>
   );
