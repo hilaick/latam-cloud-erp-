@@ -4999,26 +4999,28 @@ class AgenticExecutionSimulator:
         is_cross_cloud = any("cross-cloud" in s.lower() for s in (migration_scope if isinstance(migration_scope, list) else [migration_scope]))
         needs_image_conversion = has_vmware or has_hyperv
 
-        # ── MCP Tool Discovery (P1: integrate MCP with execution engine) ──
+        # ── MCP Tool Discovery (real MCPInventory integration) ──
         mcp_tools_available = []
         mcp_tool_count = 0
+        mcp_services_for_plan = []
         try:
-            import os as _os
-            mcp_base = "/home/huawei-cloud/iaas-mcp-server"
-            if _os.path.exists(mcp_base):
-                for d in _os.listdir(mcp_base):
-                    full = _os.path.join(mcp_base, d)
-                    if _os.path.isdir(full) and not d.startswith('.') and d != '__pycache__':
-                        # Count .py files recursively (MCP server has nested dirs)
-                        py_count = 0
-                        for root_mcp, dirs_mcp, files_mcp in _os.walk(full):
-                            for f in files_mcp:
-                                if f.endswith('.py') and not f.startswith('__'):
-                                    py_count += 1
-                        mcp_tools_available.append({"server": d, "tools": py_count})
-                        mcp_tool_count += py_count
-        except Exception:
-            pass
+            from services.mcp_inventory import MCPInventory, PILLAR_SERVICES, ACTION_MAP
+            summary = MCPInventory.get_inventory_summary()
+            mcp_tool_count = summary.get("total_endpoints", 0)
+            mcp_tools_available = summary.get("services", [])
+            # Determine which MCP services this plan needs
+            needed_services = set()
+            for r in migration_resources:
+                rtype = str(r.get("type", "")).upper()
+                for pillar, services in PILLAR_SERVICES.items():
+                    for svc in services:
+                        if svc.upper() in rtype or rtype in svc.upper():
+                            needed_services.add(svc)
+            # Always include IAM for credential validation
+            needed_services.add("iam")
+            mcp_services_for_plan = sorted(needed_services)
+        except Exception as e:
+            logger.info(f"MCP inventory lookup failed (non-fatal): {e}")
 
         step_id += 1
         trace.append({
@@ -5026,14 +5028,82 @@ class AgenticExecutionSimulator:
             "action": "MCP_TOOL_DISCOVERY",
             "message": (
                 f"[MCP] Discovered {len(mcp_tools_available)} MCP server(s) with {mcp_tool_count} total tools. "
-                + ("Available: " + ", ".join(f"{s['server']}({s['tools']})" for s in mcp_tools_available[:5]) if mcp_tools_available else "MCP server not found on this host.")
+                f"Services needed for this plan: {', '.join(mcp_services_for_plan) if mcp_services_for_plan else 'none detected'}. "
+                f"MCP-first policy: all provisioning steps will attempt MCP before hcloud CLI fallback."
             ),
             "timestamp_offset_seconds": total_simulated_seconds,
             "result": "mcp_discovered" if mcp_tools_available else "mcp_not_found",
-            "live_data": {"mcp_servers": mcp_tools_available, "total_tools": mcp_tool_count},
+            "live_data": {"mcp_servers": mcp_tools_available, "total_tools": mcp_tool_count, "services_for_plan": mcp_services_for_plan},
             "source_label": "🔌 MCP (iaas-mcp-server)" if mcp_tools_available else None,
         })
         total_simulated_seconds += 1
+
+        # ── EPS Provisioning (from presales account identity) ──
+        account_id = presales.get("accountId", "")
+        huawei_account_name = presales.get("huaweiAccountName", "")
+        real_name_verification = presales.get("realNameVerification", "")
+        is_partner = presales.get("isPartner", "")
+        enterprise_project = presales.get("enterpriseProject", "")
+
+        if is_partner == "Yes" and enterprise_project:
+            eps_path_a = (real_name_verification.lower() == "verified" and bool(enterprise_project))
+            step_id += 1
+            if eps_path_a:
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+                    "action": "EPS_PROVISIONING",
+                    "message": (
+                        f"[MCP] EPS Path A: Real-name verification={real_name_verification}, EPS='{enterprise_project}'. "
+                        f"Creating Enterprise Project via MCP (eps → POST /v1.0/enterprise-projects) for account {account_id or huawei_account_name}. "
+                        f"Fallback: hcloud CLI."
+                    ),
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "eps_provisioned",
+                    "tool_source": "mcp",
+                    "mcp_service": "eps",
+                    "fallback_tool_source": "hcloud",
+                    "decision": {"eps_path": "A", "enterprise_project": enterprise_project, "account_id": account_id},
+                })
+            else:
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+                    "action": "EPS_VERIFICATION_REQUIRED",
+                    "message": (
+                        f"[MCP] EPS Path B: Real-name verification={real_name_verification or 'Not Started'}, EPS='{enterprise_project or 'not provided'}. "
+                        f"BLOCKED: Customer must complete real-name verification before EPS provisioning. "
+                        f"Account: {account_id or huawei_account_name}."
+                    ),
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "blocked",
+                    "tool_source": "manual",
+                    "decision": {"eps_path": "B", "verification": real_name_verification, "enterprise_project": enterprise_project},
+                })
+            total_simulated_seconds += 2
+
+        # ── Quota Checks (MCP-first) ──
+        has_compute = any(r.get("type", "").upper() in ("ECS", "SERVER") for r in migration_resources)
+        has_storage = any(r.get("type", "").upper() in ("EVS", "OBS", "SFS", "DISK") for r in migration_resources)
+        has_network = any(r.get("type", "").upper() in ("VPC", "SUBNET", "SECURITY_GROUP", "EIP") for r in migration_resources)
+        quota_checks = []
+        if has_compute:
+            quota_checks.append({"service": "ecs", "action": "ECS_QUOTA", "desc": "ECS instance quota"})
+        if has_storage:
+            quota_checks.append({"service": "evs", "action": "EVS_QUOTA", "desc": "EVS disk quota"})
+        if has_network:
+            quota_checks.append({"service": "vpc", "action": "VPC_QUOTA", "desc": "VPC quota"})
+        for qc in quota_checks:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+                "action": qc["action"],
+                "message": f"[MCP] {qc['desc']} check via MCP ({qc['service']} → GET /limits). Fallback: hcloud CLI.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "quota_ok",
+                "tool_source": "mcp",
+                "mcp_service": qc["service"],
+                "fallback_tool_source": "hcloud",
+            })
+            total_simulated_seconds += 1
 
         # ── P1: mig_worker deployment check (resilience for cross-cloud/overload) ──
         # Track real values for mig_worker decision
@@ -5769,6 +5839,48 @@ class AgenticExecutionSimulator:
                     "rollback_cmd": rb.get("cmd"),
                     "rollback_label": rb.get("label"),
                 })
+
+        # ═══ MCP-FIRST TAGGING: Tag all provisioning steps with MCP tool_source ═══
+        # Every step that creates/modifies a cloud resource uses MCP first, hcloud fallback
+        mcp_action_map = {
+            "NETWORK_PROVISION": "vpc",
+            "TARGET_EIP_CREATE": "eip",
+            "TARGET_ECS_CREATE": "ecs",
+            "TARGET_SMS_TASK_CREATE": "smsapi",
+            "SMS_TASK_CREATE": "smsapi",
+            "IMAGE_IMPORT_TO_IMS": "ims",
+            "IMAGE_EXPORT": "ims",
+            "CBR_VAULT_CREATE": "cbr",
+            "HSS_AGENT_INSTALL": "hss",
+            "DATASYNC_INITIAL_SYNC": "drs",
+            "KMS_KEY_CREATION": "kms",
+            "FLAVOR_CAPACITY_CHECK": "ecs",
+            "SOURCE_ECS_ACTIVE_CHECK": "ecs",
+        }
+        mcp_tagged = 0
+        for entry in trace:
+            action = entry.get("action", "")
+            # Skip steps that already have a tool_source set (EPS, quota checks from above)
+            if entry.get("tool_source"):
+                continue
+            if action in mcp_action_map:
+                entry["tool_source"] = "mcp"
+                entry["mcp_service"] = mcp_action_map[action]
+                entry["fallback_tool_source"] = "hcloud"
+                mcp_tagged += 1
+            elif action in ("PREFLIGHT_SOURCE_REGISTRATION", "PREFLIGHT_HCLOUD_CLI", "PREFLIGHT_SG_RULES"):
+                entry["tool_source"] = "mcp"
+                entry["mcp_service"] = "iam" if "REGISTRATION" in action else "vpc"
+                entry["fallback_tool_source"] = "hcloud"
+                mcp_tagged += 1
+
+        summary["mcp_tagged_steps"] = mcp_tagged
+        summary["tool_sources"] = {
+            "mcp": sum(1 for s in trace if s.get("tool_source") == "mcp"),
+            "skill": sum(1 for s in trace if s.get("tool_source") in ("skill", "external", "history") or "KNOWLEDGE" in s.get("action", "")),
+            "manual": sum(1 for s in trace if s.get("tool_source") == "manual"),
+            "none": sum(1 for s in trace if not s.get("tool_source")),
+        }
 
         return {
             "success": True,
