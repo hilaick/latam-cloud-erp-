@@ -4952,11 +4952,14 @@ class AgenticExecutionSimulator:
         if selected_set and waves:
             # Build the full set of server IDs and names from the ORIGINAL mapperNodes (before filtering)
             # so we can identify which wave entries are servers vs non-server resources
-            all_server_ids = set()
-            for n in mapper_nodes:
-                if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS"):
-                    if n.get("id"): all_server_ids.add(n["id"])
-                    if n.get("name"): all_server_ids.add(n["name"])
+            # Note: mapper_nodes here is already filtered — use _all_server_ids passed from API route
+            all_server_ids = project.get("_all_server_ids", set())
+            if not all_server_ids:
+                # Fallback: build from what we have (filtered list — may miss filtered-out servers)
+                for n in mapper_nodes:
+                    if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS"):
+                        if n.get("id"): all_server_ids.add(n["id"])
+                        if n.get("name"): all_server_ids.add(n["name"])
             # Also add TA compute/database names
             for cat in ("compute", "database"):
                 for r in (target_arch.get(cat) or []):
@@ -6501,6 +6504,19 @@ def register_agentic_dry_run_routes(execution_bp):
             selected_servers = data.get("selectedServers")
             if selected_servers and isinstance(selected_servers, list) and len(selected_servers) > 0:
                 selected_set = set(selected_servers)
+                # Build ALL server ids/names BEFORE filtering (for wave filtering later)
+                all_server_ids = set()
+                for n in contract["mapperNodes"]:
+                    if (n.get("type") or "").upper() in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS"):
+                        if n.get("id"): all_server_ids.add(n["id"])
+                        if n.get("name"): all_server_ids.add(n["name"])
+                ta_orig = contract.get("targetArchitecture", {})
+                for cat in ("compute", "database"):
+                    for r in (ta_orig.get(cat) or []):
+                        rname = r.get("name") or r.get("source_name") or r.get("id") or ""
+                        if rname: all_server_ids.add(rname)
+
+                # Now filter
                 contract["mapperNodes"] = [n for n in contract["mapperNodes"]
                                            if (n.get("name") or n.get("id") or "") in selected_set
                                            or n.get("type", "").upper() not in ("ECS", "COMPUTE", "APP", "WEB", "RDS", "DATABASE", "DB", "DCS")]
@@ -6511,8 +6527,9 @@ def register_agentic_dry_run_routes(execution_bp):
                                    if (n.get("name") or n.get("source_name") or n.get("id") or "") in selected_set]
                 logger.info(f"Dry-run: server selection active — {len(selected_servers)} servers included, "
                             f"mapperNodes={len(contract['mapperNodes'])}")
-                # Pass selected set to simulator so scope-creep merge respects the filter
+                # Pass selected set and all server ids to simulator
                 contract["_selected_servers"] = selected_set
+                contract["_all_server_ids"] = all_server_ids
 
             # 🔑 Enrich server mapper nodes with OS data-plane credentials from Customer
             customer_id = project_data.get("customerId")
