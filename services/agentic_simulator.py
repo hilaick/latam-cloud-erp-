@@ -5379,6 +5379,24 @@ class AgenticExecutionSimulator:
             if (mn.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
                 mapper_node_names.add(mn.get("name") or mn.get("source_name") or "")
         source_ecs_for_sms = [s for s in source_ecs_for_sms if s.get("name", "") in mapper_node_names] if mapper_node_names else source_ecs_for_sms
+
+        # PREFLIGHT: Check for existing resources in target account (name conflicts)
+        # This prevents Terraform apply failures due to duplicate VPC/ECS names
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+            "action": "TARGET_ACCOUNT_CLEAN_CHECK",
+            "message": (
+                "🔍 PREFLIGHT: Checking target account for existing erp- tagged resources that could conflict. "
+                "If orphaned resources from previous runs exist, they must be torn down before execution. "
+                "Run: hcloud ECS ListServersDetails + hcloud VPC ListVpcs + hcloud EIP ListPublicips to audit."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "simulated",
+            "decision": {"blocking": False, "fix": "If Terraform apply fails with 'name already exists', run cleanup script to remove orphaned erp- tagged resources"},
+            "source_label": "🛡️ Preflight",
+        })
+        total_simulated_seconds += 1
         for src in source_ecs_for_sms:
             src_id = src.get("id", "")
             src_ip = src.get("ip") or src.get("private_ip_address") or src.get("public_ip_address") or ""

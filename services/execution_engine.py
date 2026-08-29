@@ -1390,6 +1390,17 @@ class ExecutionEngine:
 
         # ── LIVE EXECUTION ──
 
+        # Phase 4.0: Clean up orphaned resources from previous runs
+        cleanup_result = TerraformExecutor.cleanup_orphaned_resources(project_id, target_region, ak, sk)
+        results["steps"].append({
+            "step_id": len(results["steps"]), "action": "TARGET_CLEANUP", "target_resource": "N/A",
+            "pillar": "PHASE_4.0", "tool_source": "hcloud", "tool_name": "cleanup_orphaned",
+            "status": "success",
+            "message": f"Cleaned up orphaned erp- resources: {cleanup_result.get('deleted', {})}",
+            "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
         # Phase 4.1: Generate Terraform files + init + apply network
         logger.info("[EXECUTE] Phase 4.1: Generating Terraform files...")
         tf_gen = TerraformExecutor.generate_tf_files(project_id, all_resources, target_region, ak, sk)

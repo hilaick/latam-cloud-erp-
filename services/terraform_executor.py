@@ -28,6 +28,77 @@ class TerraformExecutor:
     """Manages Terraform workspaces for ERP migration projects."""
 
     @staticmethod
+    def cleanup_orphaned_resources(project_id: str, target_region: str, ak: str, sk: str) -> dict:
+        """
+        Clean up ALL erp- tagged resources in target account before a new deployment.
+        This prevents name conflicts from previous failed runs.
+        """
+        import subprocess as _sp
+        logger.info(f"[CLEANUP] Removing orphaned erp- resources in {target_region}...")
+
+        _sp.run([
+            "hcloud", "configure", "set",
+            "--cli-profile=erp-cleanup",
+            f"--access-key={ak}", f"--secret-key={sk}",
+            f"--cli-region={target_region}"
+        ], capture_output=True, text=True, timeout=15)
+
+        def _hcj(cmd):
+            r = _sp.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+            idx = r.stdout.find("{")
+            if idx >= 0:
+                try:
+                    return json.loads(r.stdout[idx:])
+                except:
+                    pass
+            return {}
+
+        def _hcd(cmd):
+            _sp.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+
+        deleted = {"ecs": 0, "eip": 0, "evs": 0, "vpc": 0, "sg": 0}
+        p = f"--cli-region={target_region} --cli-profile=erp-cleanup"
+
+        d = _hcj(f"hcloud ECS ListServersDetails {p}")
+        for srv in d.get("servers", []):
+            if "erp-" in srv.get("name", ""):
+                _hcd(f"hcloud ECS DeleteServer --server_id={srv['id']} {p} --public_delete=true")
+                deleted["ecs"] += 1
+                time.sleep(3)
+
+        time.sleep(15)
+        d = _hcj(f"hcloud EVS ListVolumes {p}")
+        for v in d.get("volumes", []):
+            if "erp-" in v.get("name", "") and v.get("status") == "available":
+                _hcd(f"hcloud EVS DeleteVolume --volume_id={v['id']} {p}")
+                deleted["evs"] += 1
+                time.sleep(2)
+
+        d = _hcj(f"hcloud EIP ListPublicips {p}")
+        for e in d.get("publicips", []):
+            _hcd(f"hcloud EIP DeletePublicip --publicip_id={e['id']} {p}")
+            deleted["eip"] += 1
+            time.sleep(2)
+
+        time.sleep(5)
+        d = _hcj(f"hcloud VPC ListVpcs/v2 {p}")
+        for v in d.get("vpcs", []):
+            if "erp-" in v.get("name", ""):
+                _hcd(f"hcloud VPC DeleteVpc --vpc_id={v['id']} {p}")
+                deleted["vpc"] += 1
+                time.sleep(3)
+
+        d = _hcj(f"hcloud VPC ListSecurityGroups {p}")
+        for sg in d.get("security_groups", []):
+            if "erp-" in sg.get("name", ""):
+                _hcd(f"hcloud VPC DeleteSecurityGroup --security_group_id={sg['id']} {p}")
+                deleted["sg"] += 1
+                time.sleep(2)
+
+        logger.info(f"[CLEANUP] Deleted: {deleted}")
+        return {"success": True, "deleted": deleted}
+
+    @staticmethod
     def _workspace_dir(project_id: str) -> str:
         """Get the Terraform workspace directory for a project."""
         d = os.path.join(TF_BASE_DIR, project_id)
