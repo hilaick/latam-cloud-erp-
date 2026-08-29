@@ -1298,10 +1298,11 @@ class ExecutionEngine:
                                     method = mapping["method"]
                                     # Find the actual path from the spec
                                     specs = MCPInventory._load_service_spec(service)
-                                    if specs:
-                                        for tool in specs:
-                                            if mapping["path_kw"] in tool.get("path", "").lower():
-                                                path = tool["path"]
+                                    if specs and isinstance(specs, dict):
+                                        path_kw = mapping.get("path_kw", "").lower()
+                                        for spec_path in specs.get("paths", {}):
+                                            if path_kw and path_kw in spec_path.lower():
+                                                path = spec_path
                                                 break
 
                             mcp_result = MCPInventory.call_tool(
