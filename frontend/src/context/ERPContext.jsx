@@ -287,7 +287,7 @@ export const ERPProvider = ({ children }) => {
         // it wipes the stored credential. Strip empty credential fields before sending.
         const credentialFields = ['ak', 'sk', 'tier1AK', 'tier1SK', 'tier2AK', 'tier2SK',
           'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
-          'azureTenant', 'azureClient', 'azureSecret'];
+          'azureTenant', 'azureClient', 'azureSecret', 'osPassword', 'os_password'];
         const safeCustomer = { ...updatedCustomer };
         let hasCredChange = false;
         credentialFields.forEach(f => {
