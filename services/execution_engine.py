@@ -494,6 +494,8 @@ class ExecutionEngine:
             # ── Resources from target architecture (PRIMARY source of truth) ──
             "resources": [],
             "target_architecture_compute_count": 0,
+            # ── mgcData from discovery (has real Huawei UUIDs + IPs) ──
+            "mgcData": project.get("mgcData", {}),
         }
 
         # ── Build resources list from target architecture (PRIMARY) ──
