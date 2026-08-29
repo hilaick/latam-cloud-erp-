@@ -267,9 +267,7 @@ class MCPInventory:
         # Set PYTHONPATH so run.py can import from assets/utils
         # assets/ is at the MCP repo root (parent of huaweicloud_services_server/)
         mcp_repo_root = os.path.dirname(MCP_BASE)  # .../iaas-mcp-server-main/
-        assets_dir = os.path.join(mcp_repo_root, "assets")
-        src_dir = os.path.join(server_dir, "src")
-        env["PYTHONPATH"] = f"{assets_dir}:{src_dir}:{env.get('PYTHONPATH', '')}"
+        env["PYTHONPATH"] = f"{mcp_repo_root}:{env.get('PYTHONPATH', '')}"
 
         try:
             # Start with HTTP transport on the assigned port
