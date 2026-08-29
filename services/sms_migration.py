@@ -133,7 +133,7 @@ cd SMS-Agent
                 if idx >= 0:
                     data = json.loads(result["stdout"][idx:])
                     for eip in data.get("publicips", []):
-                        vnic = eip.get("vnic", {})
+                        vnic = eip.get("vnic") or {}
                         device_id = vnic.get("device_id", "")
                         public_ip = eip.get("public_ip_address", "")
                         if device_id and public_ip:
