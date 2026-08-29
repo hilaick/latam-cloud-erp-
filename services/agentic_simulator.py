@@ -5080,7 +5080,11 @@ class AgenticExecutionSimulator:
                 )
                 if _profile_result.returncode == 0:
                     import re as _re
-                    available_profiles = _re.findall(r'(\S+)\s+\S+\s+(?:running|stopped)', _profile_result.stdout)
+                    # Match profile lines like "◆default  model  running" — strip diamond marker
+                    available_profiles = [
+                        p.lstrip('◆').strip() for p in
+                        _re.findall(r'◆?(\S+)\s+\S+\s+(?:running|stopped)', _profile_result.stdout)
+                    ]
                     exec_profile_exists = "exec" in available_profiles
             except Exception:
                 pass
