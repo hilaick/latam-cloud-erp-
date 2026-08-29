@@ -1300,10 +1300,23 @@ class ExecutionEngine:
                                     specs = MCPInventory._load_service_spec(service)
                                     if specs and isinstance(specs, dict):
                                         path_kw = mapping.get("path_kw", "").lower()
-                                        for spec_path in specs.get("paths", {}):
-                                            if path_kw and path_kw in spec_path.lower():
-                                                path = spec_path
-                                                break
+                                        op_kw = mapping.get("op_kw", "").lower()
+                                        # First try matching by operationId keyword
+                                        if op_kw:
+                                            for spec_path, spec_methods in specs.get("paths", {}).items():
+                                                for m, detail in spec_methods.items():
+                                                    op_id = detail.get("operationId", "") if isinstance(detail, dict) else ""
+                                                    if op_kw in op_id.lower():
+                                                        path = spec_path
+                                                        break
+                                                if path:
+                                                    break
+                                        # Fallback: match by path keyword
+                                        if not path and path_kw:
+                                            for spec_path in specs.get("paths", {}):
+                                                if path_kw in spec_path.lower():
+                                                    path = spec_path
+                                                    break
 
                             mcp_result = MCPInventory.call_tool(
                                 service_name=service,

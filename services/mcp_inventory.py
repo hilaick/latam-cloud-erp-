@@ -371,22 +371,37 @@ class MCPInventory:
             }
         tool_name = None
         if spec:
+            # First try: match by path (REST-style specs)
             for spec_path, methods in spec.get("paths", {}).items():
                 if path and path in spec_path:
                     for m, detail in methods.items():
                         if m.upper() == method.upper():
-                            tool_name = detail.get("operationId", "")
+                            tool_name = detail.get("operationId", "") if isinstance(detail, dict) else ""
                             break
                     if tool_name:
                         break
-            # If no operationId found, try matching by path keyword
+            # Second try: match by operationId keyword (Huawei MCP uses operationId as path)
+            if not tool_name:
+                for spec_path, methods in spec.get("paths", {}).items():
+                    for m, detail in methods.items():
+                        if m.upper() == method.upper() and isinstance(detail, dict):
+                            op_id = detail.get("operationId", "")
+                            # The spec_path itself may be the operationId (e.g. /CreateVpc)
+                            if path and path.lower() in op_id.lower():
+                                tool_name = op_id
+                                break
+                            if path and path.lower() in spec_path.lower():
+                                tool_name = op_id
+                                break
+                    if tool_name:
+                        break
+            # Third try: match by path keyword
             if not tool_name and path:
                 for spec_path, methods in spec.get("paths", {}).items():
                     for m, detail in methods.items():
                         if m.upper() == method.upper():
-                            # Check if the spec path contains a keyword from our path
                             if any(kw in spec_path for kw in path.split("/")[1:3] if kw):
-                                tool_name = detail.get("operationId", "")
+                                tool_name = detail.get("operationId", "") if isinstance(detail, dict) else ""
                                 break
                     if tool_name:
                         break
