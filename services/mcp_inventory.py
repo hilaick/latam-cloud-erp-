@@ -423,19 +423,24 @@ class MCPInventory:
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
                 resp_raw = resp.read().decode("utf-8")
-                # MCP with fastmcp returns SSE format: "data: {...}\n\n"
-                # Strip SSE prefix if present
-                if resp_raw.startswith("data:"):
-                    resp_raw = resp_raw.replace("data:", "").strip()
-                    # May have multiple lines — take the last one (the actual response)
-                    lines = [l.strip() for l in resp_raw.split("\n") if l.strip()]
-                    if lines:
-                        resp_raw = lines[-1]
-                try:
-                    resp_data = json.loads(resp_raw)
-                except json.JSONDecodeError:
-                    logger.warning(f"MCP server {service_name} returned non-JSON: {resp_raw[:200]}")
-                    return {"success": False, "fallback": "hcloud", "message": f"MCP returned non-JSON response"}
+                # MCP with fastmcp returns SSE format: "event: message\r\ndata: {...}\n\n"
+                # Extract the JSON from the data: line
+                resp_data = None
+                for sse_line in resp_raw.split("\n"):
+                    sse_line = sse_line.strip()
+                    if sse_line.startswith("data:"):
+                        json_str = sse_line[5:].strip()
+                        try:
+                            resp_data = json.loads(json_str)
+                        except json.JSONDecodeError:
+                            pass
+                if resp_data is None:
+                    # Try parsing as plain JSON (non-SSE response)
+                    try:
+                        resp_data = json.loads(resp_raw)
+                    except json.JSONDecodeError:
+                        logger.warning(f"MCP server {service_name} returned unparseable: {resp_raw[:200]}")
+                        return {"success": False, "fallback": "hcloud", "message": "MCP returned unparseable response"}
 
             if not isinstance(resp_data, dict):
                 return {"success": False, "fallback": "hcloud", "message": f"MCP returned {type(resp_data).__name__}"}
