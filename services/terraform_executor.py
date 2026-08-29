@@ -98,10 +98,9 @@ resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
             elif rtype in ("SG", "SECURITY_GROUP"):
                 sg_count += 1
                 lines.append(f"""
-resource "huaweicloud_vpc_security_group" "sg_{sg_count}" {{
+resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
   name        = "{name}"
   description = "Security group for ERP migration project {project_id}"
-  {base_tags}
 }}
 """)
 
@@ -144,10 +143,9 @@ resource "huaweicloud_vpc_subnet" "subnet_1" {{
   {base_tags}
 }}
 
-resource "huaweicloud_vpc_security_group" "sg_1" {{
+resource "huaweicloud_networking_secgroup" "sg_1" {{
   name        = "erp-sg-{project_id[-6:]}"
   description = "Default security group for ERP migration"
-  {base_tags}
 }}
 """)
 
@@ -172,20 +170,31 @@ resource "huaweicloud_vpc_security_group" "sg_1" {{
             if rtype in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
                 ecs_count += 1
                 flavor = r.get("flavor") or r.get("specification") or "s6.large.2"
-                image = r.get("os_image") or r.get("image_id") or "Ubuntu 22.04 server 64bit"
+                image_name = r.get("os_image") or r.get("image_id") or "Ubuntu 22.04 server 64bit"
                 disk_size = int(r.get("disk_size") or r.get("size") or 40)
 
-                # Use image name — Terraform provider will resolve it
+                # Use image name — Terraform data source will resolve it
+                # If image_name looks like a UUID, use it directly; otherwise use data source
+                if len(image_name) == 36 and "-" in image_name:
+                    image_ref = f'"{image_name}"'
+                else:
+                    image_ref = "${data.huaweicloud_images_image.selected.id}"
+
                 lines.append(f"""
+data "huaweicloud_images_image" "img_{ecs_count}" {{
+  name        = "{image_name}"
+  most_recent = true
+}}
+
 resource "huaweicloud_compute_instance" "ecs_{ecs_count}" {{
   name              = "{name}"
-  image_id          = "{image}"
+  image_id          = data.huaweicloud_images_image.img_{ecs_count}.id
   flavor_id         = "{flavor}"
   system_disk_type  = "SAS"
   system_disk_size  = {disk_size}
-  security_group_ids = ["${{huaweicloud_vpc_security_group.sg_1.id}}"]
+  security_group_ids = [huaweicloud_networking_secgroup.sg_1.id]
   network {{
-    uuid = "${{huaweicloud_vpc_subnet.subnet_1.id}}"
+    uuid = huaweicloud_vpc_subnet.subnet_1.id
   }}
   {base_tags}
 }}
@@ -211,8 +220,8 @@ resource "huaweicloud_vpc_eip" "eip_ecs_{ecs_count}" {{
 }}
 
 resource "huaweicloud_compute_eip_associate" "bind_ecs_{ecs_count}" {{
-  public_ip   = "${{huaweicloud_vpc_eip.eip_ecs_{ecs_count}.address}}"
-  instance_id = "${{huaweicloud_compute_instance.ecs_{ecs_count}.id}}"
+  public_ip   = huaweicloud_vpc_eip.eip_ecs_{ecs_count}.address
+  instance_id = huaweicloud_compute_instance.ecs_{ecs_count}.id
 }}
 """)
 
