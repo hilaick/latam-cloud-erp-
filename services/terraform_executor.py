@@ -162,6 +162,7 @@ resource "huaweicloud_networking_secgroup" "sg_1" {{
 
         ecs_count = 0
         eip_count = 0
+        evs_count = 0
 
         for r in resources:
             rtype = (r.get("type") or "").upper()
@@ -226,9 +227,10 @@ resource "huaweicloud_compute_eip_associate" "bind_ecs_{ecs_count}" {{
 """)
 
             elif rtype in ("EVS", "DISK", "VOLUME"):
+                evs_count += 1
                 disk_size = int(r.get("size") or r.get("disk_size") or 100)
                 lines.append(f"""
-resource "huaweicloud_evs_volume" "disk_{ecs_count + 1}" {{
+resource "huaweicloud_evs_volume" "disk_{evs_count}" {{
   name        = "{name}"
   volume_type = "SAS"
   size        = {disk_size}
