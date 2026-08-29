@@ -851,12 +851,25 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
       const serverId = step.server_id || (step.decision && step.decision.server_id) || '';
       const serverName = (step.decision && step.decision.server_name) || '';
       const target = step.target || '';
+      const message = step.message || '';
 
       // Resolve to resource key using the map
       let matchedKey = null;
       if (serverId && resourceKeyMap[serverId]) matchedKey = resourceKeyMap[serverId];
       if (!matchedKey && serverName && resourceKeyMap[serverName]) matchedKey = resourceKeyMap[serverName];
       if (!matchedKey && target && resourceKeyMap[target]) matchedKey = resourceKeyMap[target];
+
+      // Also match by scanning the message text for resource names (for non-server resources like VPC, EIP, EVS)
+      if (!matchedKey) {
+        resources.forEach(r => {
+          const rKey = r.id || r.name;
+          const rName = r.name || r.source_name || '';
+          if (rName && rName !== 'default' && message.includes(rName) && status[rKey] === 'pending') {
+            // Found this resource mentioned in the trace message
+            matchedKey = rKey;
+          }
+        });
+      }
 
       if (matchedKey) {
         seenServers.add(matchedKey);
@@ -901,10 +914,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
       }
     });
 
-    // If not in replay mode and the trace is complete, mark all seen servers as completed
+    // If not in replay mode and the trace is complete, mark ALL resources as completed
+    // (both servers and non-server resources like VPC, EIP, EVS)
     if (!replayMode && result?.trace) {
-      seenServers.forEach(key => {
-        if (status[key] === 'active') status[key] = 'completed';
+      resources.forEach(r => {
+        const key = r.id || r.name;
+        if (status[key] === 'active' || status[key] === 'pending') {
+          // Mark as completed if the simulation finished — all resources were provisioned
+          status[key] = 'completed';
+        }
       });
     }
 
