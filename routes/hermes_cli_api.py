@@ -408,6 +408,20 @@ When done, report what you actually executed and the results."""
         
         # ── CLI mode (default + execution tasks) — full tool access ──
         binary = hc.hermes_binary_path or 'hermes'
+        
+        # Check if the requested profile exists, fall back to 'default'
+        profile_check = subprocess.run(
+            [binary, 'profile', 'list'],
+            capture_output=True, text=True, timeout=10
+        )
+        available_profiles = []
+        if profile_check.returncode == 0:
+            import re as _re
+            available_profiles = _re.findall(r'(\S+)\s+\S+\s+(?:running|stopped)', profile_check.stdout)
+        if profile not in available_profiles:
+            logger.warning(f"Profile '{profile}' not found. Available: {available_profiles}. Falling back to 'default'.")
+            profile = 'default'
+        
         # P0-1: Use system prompt with tool manifest + skill context for execution tasks
         cmd = [binary, 'chat', '-q', f"{system_prompt}\n\n---\nTask: {full_prompt}", '--profile', profile, '--quiet']
 
