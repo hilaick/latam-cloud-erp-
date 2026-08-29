@@ -5352,7 +5352,33 @@ class AgenticExecutionSimulator:
             total_simulated_seconds += 1
 
         # PREFLIGHT: Verify source servers have valid Huawei Cloud UUIDs and reachable IPs
-        source_ecs_for_sms = [r for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")]
+        # Source: use mgcData.raw_inventory (has real Huawei UUIDs) if available,
+        # otherwise fall back to migration_resources (mapperNodes with internal IDs)
+        raw_inventory = project.get("mgcData", {}).get("raw_inventory", {})
+        source_ecs_for_sms = []
+        if raw_inventory and raw_inventory.get("compute"):
+            # Use raw inventory — has real Huawei UUIDs and IPs
+            for srv in raw_inventory.get("compute", []):
+                source_ecs_for_sms.append({
+                    "id": srv.get("id", ""),
+                    "name": srv.get("name", ""),
+                    "ip": srv.get("private_ip_address") or srv.get("ip", ""),
+                    "public_ip": srv.get("public_ip_address", ""),
+                    "flavor": srv.get("flavor", ""),
+                    "region": srv.get("region", ""),
+                })
+        else:
+            # Fall back to migration_resources (may have internal IDs)
+            source_ecs_for_sms = [{"id": r.get("id", ""), "name": r.get("name", r.get("source_name", "")),
+                                   "ip": r.get("ip") or r.get("private_ip_address") or r.get("public_ip_address") or ""}
+                                  for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")]
+
+        # Only check servers that are in the mapperNodes (user-selected for migration)
+        mapper_node_names = set()
+        for mn in mapper_nodes:
+            if (mn.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
+                mapper_node_names.add(mn.get("name") or mn.get("source_name") or "")
+        source_ecs_for_sms = [s for s in source_ecs_for_sms if s.get("name", "") in mapper_node_names] if mapper_node_names else source_ecs_for_sms
         for src in source_ecs_for_sms:
             src_id = src.get("id", "")
             src_ip = src.get("ip") or src.get("private_ip_address") or src.get("public_ip_address") or ""
