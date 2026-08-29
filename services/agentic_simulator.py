@@ -5072,6 +5072,7 @@ class AgenticExecutionSimulator:
         # Check 2: Hermes profiles — verify 'exec' profile exists (or fallback to 'default')
         exec_profile_exists = False
         available_profiles = []
+        delegation_model_configured = None
         if hermes_binary and os.path.isfile(hermes_binary):
             try:
                 import subprocess as _subproc
@@ -5097,6 +5098,15 @@ class AgenticExecutionSimulator:
             except Exception:
                 pass
 
+        # Check delegation model is configured
+        try:
+            from models import HermesConfig as _HC3
+            _hc3 = _HC3.query.first()
+            if _hc3 and _hc3.delegation_model:
+                delegation_model_configured = _hc3.delegation_model
+        except Exception:
+            pass
+
         step_id += 1
         if exec_profile_exists:
             trace.append({
@@ -5111,10 +5121,10 @@ class AgenticExecutionSimulator:
             trace.append({
                 "id": step_id, "phase": "PHASE_4_0", "agent": "ReadinessGateway",
                 "action": "CHECK_HERMES_PROFILE",
-                "message": f"⚠️ Hermes 'exec' profile NOT FOUND. Available profiles: {available_profiles}. Will fall back to 'default'. Recommendation: create 'exec' profile with execution-appropriate model + --yolo enabled.",
+                "message": f"⚠️ Hermes 'exec' profile NOT FOUND. Available: {available_profiles}. Will fall back to 'default' with model={delegation_model_configured or 'glm-5.2'}. Delegation model: {delegation_model_configured or 'not configured (will use glm-5.2)'}.",
                 "timestamp_offset_seconds": total_simulated_seconds,
                 "result": "warning",
-                "decision": {"fallback": "default", "available": available_profiles},
+                "decision": {"fallback": "default", "available": available_profiles, "delegation_model": delegation_model_configured or "glm-5.2"},
             })
         else:
             readiness_failures.append("No Hermes profiles configured — execution agent cannot spawn")
@@ -5225,8 +5235,10 @@ class AgenticExecutionSimulator:
         # Check 5: MCP server base path exists
         mcp_base_ok = False
         try:
-            from services.mcp_inventory import MCPInventory as _MCPInv
-            mcp_base_ok = os.path.isdir(_MCPInv.MCP_BASE)
+            import services.mcp_inventory as _mcp_mod
+            _mcp_base = getattr(_mcp_mod, "MCP_BASE", None)
+            if _mcp_base:
+                mcp_base_ok = os.path.isdir(_mcp_base)
         except Exception:
             pass
 

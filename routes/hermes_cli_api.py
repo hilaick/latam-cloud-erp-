@@ -425,10 +425,13 @@ When done, report what you actually executed and the results."""
         # P0-1: Use system prompt with tool manifest + skill context for execution tasks
         cmd = [binary, 'chat', '-q', f"{system_prompt}\n\n---\nTask: {full_prompt}", '--profile', profile, '--quiet']
 
-        if model_override:
-            cmd.extend(['--model', model_override])
+        # Always use delegation_model from HermesConfig (glm-5.2) unless explicitly overridden
+        delegation_model = model_override or hc.delegation_model or 'glm-5.2'
+        cmd.extend(['--model', delegation_model])
         if provider_override:
             cmd.extend(['--provider', provider_override])
+        elif hc.delegation_provider:
+            cmd.extend(['--provider', hc.delegation_provider])
 
         # P0-1: For execution tasks, add --yolo (auto-approve) for autonomous operation
         if is_execution_task:
