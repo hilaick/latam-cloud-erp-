@@ -265,7 +265,9 @@ class MCPInventory:
         if sk:
             env["HUAWEI_SECRET_KEY"] = sk
         # Set PYTHONPATH so run.py can import from assets/utils
-        assets_dir = os.path.join(MCP_BASE, "assets")
+        # assets/ is at the MCP repo root (parent of huaweicloud_services_server/)
+        mcp_repo_root = os.path.dirname(MCP_BASE)  # .../iaas-mcp-server-main/
+        assets_dir = os.path.join(mcp_repo_root, "assets")
         src_dir = os.path.join(server_dir, "src")
         env["PYTHONPATH"] = f"{assets_dir}:{src_dir}:{env.get('PYTHONPATH', '')}"
 
@@ -344,8 +346,8 @@ class MCPInventory:
         import urllib.error
 
         # Start server if not running
-        ak = (credentials or {}).get("ak")
-        sk = (credentials or {}).get("sk")
+        ak = (credentials or {}).get("ak") if isinstance(credentials, dict) else None
+        sk = (credentials or {}).get("sk") if isinstance(credentials, dict) else None
         if service_name not in cls._running_servers:
             started = cls.start_server(service_name, ak=ak, sk=sk)
             if not started:
@@ -363,6 +365,12 @@ class MCPInventory:
         # The tool name is the operationId from the OpenAPI spec
         # We need to find the operationId for this path+method
         spec = cls._load_service_spec(service_name)
+        if not spec or not isinstance(spec, dict):
+            return {
+                "success": False,
+                "fallback": "hcloud",
+                "message": f"MCP spec not found for {service_name} — use hcloud CLI",
+            }
         tool_name = None
         if spec:
             for spec_path, methods in spec.get("paths", {}).items():

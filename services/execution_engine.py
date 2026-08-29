@@ -1327,16 +1327,16 @@ class ExecutionEngine:
                 # Substitute credentials, profile, and variables in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)
                 cmd_filled = cmd_filled.replace("<profile>", profile_name)
-                cmd_filled = cmd_filled.replace("agent-test", profile_name)  # replace hardcoded profile
-                # Substitute shell-style variables used in command templates
-                cmd_filled = cmd_filled.replace("$REGION", target_region).replace("${REGION}", target_region)
-                cmd_filled = cmd_filled.replace("$SOURCE_REGION", source_region or target_region).replace("${SOURCE_REGION}", source_region or target_region)
-                cmd_filled = cmd_filled.replace("$source_ak", source_ak).replace("$source_sk", source_sk)
-                cmd_filled = cmd_filled.replace("$AK", ak).replace("$SK", sk)
-                cmd_filled = cmd_filled.replace("$project_id", credentials.get("source_project_id", "")).replace("$PROJECT_ID", credentials.get("source_project_id", ""))
-                # Remove any remaining unsubstituted $variables that would cause shell errors
+                cmd_filled = cmd_filled.replace("agent-test", profile_name)
+                # Substitute known values
+                cmd_filled = cmd_filled.replace("<source_ak>", source_ak).replace("<source_sk>", source_sk)
+                cmd_filled = cmd_filled.replace("<ak>", ak).replace("<sk>", sk)
+                # Remove remaining angle-bracket placeholders (<vpc_id>, <sg_id>, <ecs_id>, etc.)
+                # These are resource IDs from prior steps that aren't available in this pass.
+                # The execution engine should be enhanced to capture step outputs and chain them.
+                # For now, strip them to prevent shell redirect errors.
                 import re as _re_sub
-                cmd_filled = _re_sub.sub(r'\$\{?\w+\}?', '', cmd_filled)
+                cmd_filled = _re_sub.sub(r'<[^>]+>', '', cmd_filled)
 
                 if cmd_type == "hcloud":
                     result = _hcloud(cmd_filled, timeout=30)
