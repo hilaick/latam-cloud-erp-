@@ -68,8 +68,11 @@ provider "huaweicloud" {{
         for r in resources:
             rtype = (r.get("type") or "").upper()
             name = r.get("name") or r.get("source_name") or f"resource-{r.get('id', 'unknown')}"
-            # Prefix with project ID to avoid naming conflicts in target account
-            safe_name = f"erp-{project_id[-6:]}-{name}" if not name.startswith("erp-") else name
+            # Prefix with project ID + unique suffix to avoid naming conflicts
+            # (Huawei VPC v1 API has stale router name cache — same name fails on retry)
+            import time as _tf_time
+            _suffix = str(int(_tf_time.time()))[-4:]
+            safe_name = f"erp-{project_id[-6:]}-{name}-{_suffix}"
 
             if rtype in ("VPC", "VIRTUAL_PRIVATE_CLOUD"):
                 # Skip if this is actually a subnet (name contains 'subnet' or CIDR is /24)
