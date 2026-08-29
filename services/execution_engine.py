@@ -1282,61 +1282,67 @@ class ExecutionEngine:
                 if step.get("tool_source") == "mcp":
                     mcp_service = step.get("mcp_service", "")
                     mcp_ep = step.get("mcp_endpoint", {})
-                    if mcp_service or mcp_ep:
-                        try:
-                            from services.mcp_inventory import MCPInventory
-                            service = mcp_service or mcp_ep.get("service", "").replace("mcp_server_", "")
-                            method = mcp_ep.get("method", "GET")
-                            path = mcp_ep.get("path", "")
-                            # If no explicit endpoint, use action map to find it
-                            if not path:
-                                from services.mcp_inventory import ACTION_MAP
-                                action_key = step.get("action", "")
-                                if action_key in ACTION_MAP:
-                                    mapping = ACTION_MAP[action_key]
-                                    service = mapping["service"]
-                                    method = mapping["method"]
-                                    # Find the actual path from the spec
-                                    specs = MCPInventory._load_service_spec(service)
-                                    if specs and isinstance(specs, dict):
-                                        path_kw = mapping.get("path_kw", "").lower()
-                                        op_kw = mapping.get("op_kw", "").lower()
-                                        # First try matching by operationId keyword
-                                        if op_kw:
-                                            for spec_path, spec_methods in specs.get("paths", {}).items():
-                                                for m, detail in spec_methods.items():
-                                                    op_id = detail.get("operationId", "") if isinstance(detail, dict) else ""
-                                                    if op_kw in op_id.lower():
-                                                        path = spec_path
-                                                        break
-                                                if path:
-                                                    break
-                                        # Fallback: match by path keyword
-                                        if not path and path_kw:
-                                            for spec_path in specs.get("paths", {}):
-                                                if path_kw in spec_path.lower():
-                                                    path = spec_path
-                                                    break
+                    action_key = step.get("action", "")
 
-                            mcp_result = MCPInventory.call_tool(
-                                service_name=service,
-                                method=method,
-                                path=path,
-                                params=cmd_info.get("params", {}),
-                                credentials={"ak": ak, "sk": sk},
-                            )
-                            if mcp_result.get("success"):
-                                step_result["status"] = "success"
-                                step_result["mcp_tool"] = mcp_result.get("tool_name", "")
-                                step_result["mcp_data"] = mcp_result.get("data")
-                                step_result["source"] = "mcp"
-                                continue  # Skip hcloud CLI — MCP succeeded
-                            else:
-                                logger.info(f"MCP call failed for {step['action']}, falling back to hcloud CLI: {mcp_result.get('message', '')}")
-                                step_result["mcp_attempted"] = True
-                                step_result["mcp_fallback_reason"] = mcp_result.get("message", "")
-                        except Exception as e:
-                            logger.warning(f"MCP call error for {step['action']}: {e} — falling back to hcloud CLI")
+                    # Resolve service, method, path from ACTION_MAP
+                    resolved_path = ""
+                    if mcp_service or mcp_ep:
+                        from services.mcp_inventory import MCPInventory, ACTION_MAP
+
+                        service = mcp_service or mcp_ep.get("service", "").replace("mcp_server_", "")
+                        method = mcp_ep.get("method", "GET")
+                        resolved_path = mcp_ep.get("path", "")
+
+                        # If no explicit path, use ACTION_MAP to resolve via op_kw
+                        if not resolved_path and action_key in ACTION_MAP:
+                            mapping = ACTION_MAP[action_key]
+                            service = mapping["service"]
+                            method = mapping["method"]
+                            specs = MCPInventory._load_service_spec(service)
+                            if specs and isinstance(specs, dict):
+                                op_kw = mapping.get("op_kw", "").lower()
+                                path_kw = mapping.get("path_kw", "").lower()
+                                # Match by operationId keyword (Huawei MCP style)
+                                if op_kw:
+                                    for spec_path, spec_methods in specs.get("paths", {}).items():
+                                        for m, detail in spec_methods.items():
+                                            op_id = detail.get("operationId", "") if isinstance(detail, dict) else ""
+                                            if op_kw in op_id.lower():
+                                                resolved_path = spec_path
+                                                break
+                                        if resolved_path:
+                                            break
+                                # Fallback: match by path keyword
+                                if not resolved_path and path_kw:
+                                    for spec_path in specs.get("paths", {}):
+                                        if path_kw in spec_path.lower():
+                                            resolved_path = spec_path
+                                            break
+
+                        # Only call MCP if we have a service AND a resolved path
+                        if service and resolved_path:
+                            try:
+                                mcp_result = MCPInventory.call_tool(
+                                    service_name=service,
+                                    method=method,
+                                    path=resolved_path,
+                                    params=cmd_info.get("params", {}),
+                                    credentials={"ak": ak, "sk": sk},
+                                )
+                                if mcp_result.get("success"):
+                                    step_result["status"] = "success"
+                                    step_result["mcp_tool"] = mcp_result.get("tool_name", "")
+                                    step_result["mcp_data"] = mcp_result.get("data")
+                                    step_result["source"] = "mcp"
+                                    continue  # Skip hcloud CLI — MCP succeeded
+                                else:
+                                    logger.info(f"MCP call failed for {action_key}, falling back to hcloud CLI: {mcp_result.get('message', '')}")
+                                    step_result["mcp_attempted"] = True
+                                    step_result["mcp_fallback_reason"] = mcp_result.get("message", "")
+                            except Exception as e:
+                                logger.warning(f"MCP call error for {action_key}: {e} — falling back to hcloud CLI")
+                        else:
+                            logger.info(f"MCP skipped for {action_key}: no resolved path (service={service}, path={resolved_path}) — using hcloud CLI")
 
                 # Substitute credentials, profile, and variables in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)
