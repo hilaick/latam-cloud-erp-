@@ -153,8 +153,11 @@ export default function CustomerDirectory() {
 
   const handleSave = () => {
     if (!editingCustomer.name) return alert('Customer Name is required.');
-    if (isCreating) handleAddCustomer(editingCustomer);
-    else handleUpdateCustomer(editingCustomer);
+    // Don't send empty password — keep existing
+    const customerToSave = { ...editingCustomer };
+    if (!customerToSave.osPassword) delete customerToSave.osPassword;
+    if (isCreating) handleAddCustomer(customerToSave);
+    else handleUpdateCustomer(customerToSave);
     setEditingCustomer(null);
     setIsCreating(false);
   };
@@ -802,7 +805,7 @@ export default function CustomerDirectory() {
                     <div className="grid grid-cols-3 gap-4">
                       <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Domain</label><input type="text" value={editingCustomer.osDomain || ''} onChange={e => setEditingCustomer({ ...editingCustomer, osDomain: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
                       <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Username</label><input type="text" value={editingCustomer.osUser || ''} onChange={e => setEditingCustomer({ ...editingCustomer, osUser: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
-                      <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Password</label><input type="password" value={editingCustomer.osPassword || ''} onChange={e => setEditingCustomer({ ...editingCustomer, osPassword: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
+                      <div><label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">Password</label><input type="password" placeholder={editingCustomer.osPassword === '********' ? '•••••••• (saved — type to replace)' : 'Enter password'} value={editingCustomer.osPassword === '********' ? '' : (editingCustomer.osPassword || '')} onChange={e => setEditingCustomer({ ...editingCustomer, osPassword: e.target.value })} className="w-full p-3 border border-indigo-200 rounded-lg text-xs font-mono outline-none focus:border-indigo-500" /></div>
                     </div>
                   </div>
                 </div>
