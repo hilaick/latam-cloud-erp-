@@ -289,6 +289,11 @@ export const ERPProvider = ({ children }) => {
           'tier3AK', 'tier3SK', 'awsAK', 'awsSK', 'source_huawei_ak', 'source_huawei_sk',
           'azureTenant', 'azureClient', 'azureSecret', 'osPassword', 'os_password'];
         const safeCustomer = { ...updatedCustomer };
+        // Map camelCase to snake_case for API
+        if (safeCustomer.osPassword !== undefined) {
+          safeCustomer.os_password = safeCustomer.osPassword;
+          delete safeCustomer.osPassword;
+        }
         let hasCredChange = false;
         credentialFields.forEach(f => {
             const val = safeCustomer[f];
