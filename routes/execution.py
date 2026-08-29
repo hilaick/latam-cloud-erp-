@@ -801,6 +801,7 @@ def build_execution_plan(project_id):
             "enterpriseProject": pd.get("enterpriseProject", ""),
             "realNameVerification": pd.get("realNameVerification", ""),
             "isPartner": pd.get("isPartner", ""),
+            "mgcData": pd.get("mgcData", {}),
         }
 
         customer = None

@@ -1473,15 +1473,36 @@ class ExecutionEngine:
         tf_state = TerraformExecutor.get_state(project_id)
         target_ecs = [r for r in tf_state.get("resources", []) if "compute_instance" in r.get("type", "")]
 
-        # Get source ECS instances from mapperNodes (source resources to migrate)
+        # Get source ECS instances — use mgcData.raw_inventory (real Huawei UUIDs) if available
         source_ecs = []
-        for r in all_resources:
-            if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
-                source_ecs.append({
-                    "id": r.get("id", r.get("name", "")),
-                    "name": r.get("name", ""),
-                    "ip": r.get("private_ip_address") or r.get("ip", ""),
-                })
+        raw_inv = plan.get("mgcData", {}).get("raw_inventory", {})
+        if raw_inv and raw_inv.get("compute"):
+            # Use raw inventory — has real Huawei Cloud UUIDs and IPs
+            mapper_names = set()
+            for r in all_resources:
+                if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
+                    mapper_names.add(r.get("name", ""))
+            for srv in raw_inv.get("compute", []):
+                srv_name = srv.get("name", "")
+                # Only include servers that are in the migration scope (mapperNodes)
+                if not mapper_names or srv_name in mapper_names:
+                    source_ecs.append({
+                        "id": srv.get("id", ""),
+                        "name": srv_name,
+                        "ip": srv.get("private_ip_address") or srv.get("ip", ""),
+                        "public_ip": srv.get("public_ip_address", ""),
+                        "flavor": srv.get("flavor", ""),
+                    })
+        if not source_ecs:
+            # Fall back to plan resources (may have internal IDs)
+            for r in all_resources:
+                if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
+                    source_ecs.append({
+                        "id": r.get("id", r.get("name", "")),
+                        "name": r.get("name", ""),
+                        "ip": r.get("private_ip_address") or r.get("ip", ""),
+                        "public_ip": r.get("public_ip_address", ""),
+                    })
 
         logger.info(f"[EXECUTE] Phase 4.3: SMS migration — {len(source_ecs)} source servers → {len(target_ecs)} target servers")
 
@@ -1489,8 +1510,10 @@ class ExecutionEngine:
         if source_ecs and target_ecs:
             # Step 1: Install SMS agents on source servers
             for src in source_ecs:
+                # Use EIP for SSH if available (source servers may not be reachable via private IP from ERP)
+                ssh_ip = src.get("public_ip") or src.get("ip", "")
                 agent_result = SMSMigration.install_sms_agent(
-                    source_ip=src.get("ip", ""),
+                    source_ip=ssh_ip,
                     os_user=credentials.get("os_user", "root"),
                     os_password=credentials.get("os_password", ""),
                 )
