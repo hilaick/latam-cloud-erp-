@@ -5079,23 +5079,19 @@ class AgenticExecutionSimulator:
                     capture_output=True, text=True, timeout=10
                 )
                 if _profile_result.returncode == 0:
-                    import re as _re
-                    # Parse hermes profile list output — lines like "◆default  model  running"
-                    # The diamond ◆ (U+25C6) marks the active profile
+                    # Parse hermes profile list — look for lines containing 'running' or 'stopped'
+                    # The output has lines like " ◆default  model  running  —  —"
                     available_profiles = []
                     for line in _profile_result.stdout.split('\n'):
-                        # Strip leading whitespace and any non-ASCII diamond marker
-                        line = line.strip()
-                        # Remove the ◆ marker (U+25C6) if present
-                        if line and ord(line[0]) == 0x25C6:
-                            line = line[1:].strip()
-                        # Skip header lines and separators
-                        if not line or line.startswith('Profile') or line.startswith('─'):
-                            continue
-                        # Profile line: first word is the profile name
-                        parts = line.split()
-                        if parts and any(kw in line.lower() for kw in ('running', 'stopped')):
-                            available_profiles.append(parts[0])
+                        ll = line.lower()
+                        if 'running' in ll or 'stopped' in ll:
+                            # Extract the profile name — strip markers, whitespace, and take first word
+                            cleaned = line.strip()
+                            # Remove any leading non-alpha characters (◆, spaces, etc.)
+                            while cleaned and not cleaned[0].isalpha():
+                                cleaned = cleaned[1:]
+                            if cleaned:
+                                available_profiles.append(cleaned.split()[0])
                     exec_profile_exists = "exec" in available_profiles
             except Exception:
                 pass
