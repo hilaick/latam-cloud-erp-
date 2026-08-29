@@ -108,6 +108,41 @@ cd SMS-Agent
             }
 
     @classmethod
+    def resolve_source_eips(cls, source_region: str, source_ak: str = "", source_sk: str = "") -> dict:
+        """
+        Query EIPs from source region via hcloud CLI.
+        Returns mapping: {device_id (ECS UUID): public_ip_address}
+        """
+        cmd = f"hcloud EIP ListPublicips --cli-region={source_region}"
+        if source_ak:
+            import subprocess as _sp
+            _sp.run([
+                "hcloud", "configure", "set",
+                "--cli-profile=erp-source",
+                f"--access-key={source_ak}",
+                f"--secret-key={source_sk}",
+                f"--cli-region={source_region}"
+            ], capture_output=True, text=True, timeout=15)
+            cmd += " --cli-profile=erp-source"
+
+        result = cls._hcloud(cmd, timeout=30)
+        eip_map = {}
+        if result["success"] and result.get("stdout"):
+            try:
+                idx = result["stdout"].find("{")
+                if idx >= 0:
+                    data = json.loads(result["stdout"][idx:])
+                    for eip in data.get("publicips", []):
+                        vnic = eip.get("vnic", {})
+                        device_id = vnic.get("device_id", "")
+                        public_ip = eip.get("public_ip_address", "")
+                        if device_id and public_ip:
+                            eip_map[device_id] = public_ip
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return eip_map
+
+    @classmethod
     def list_sources(cls, source_region: str, ak: str, sk: str) -> dict:
         """
         List registered SMS sources in the source region.

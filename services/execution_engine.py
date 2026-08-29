@@ -1510,10 +1510,36 @@ class ExecutionEngine:
 
         # Phase 4.3: SMS Agent Install + Source Registration + Task Creation
         if source_ecs and target_ecs:
-            # Step 1: Install SMS agents on source servers
+            # Resolve EIPs from source API (don't rely on cached discovery data)
+            source_eip_map = SMSMigration.resolve_source_eips(
+                source_region=source_region or target_region,
+                source_ak=source_ak, source_sk=source_sk,
+            )
+            if source_eip_map:
+                logger.info(f"[EXECUTE] Resolved {len(source_eip_map)} source EIPs via API")
+                for src in source_ecs:
+                    src_id = src.get("id", "")
+                    if src_id in source_eip_map:
+                        src["public_ip"] = source_eip_map[src_id]
+                        logger.info(f"[EXECUTE] Source {src.get('name','')}: EIP={src['public_ip']}")
+
+            # Step 1: Install SMS agents on source servers (use EIP for SSH)
             for src in source_ecs:
-                # Use EIP for SSH if available (source servers may not be reachable via private IP from ERP)
                 ssh_ip = src.get("public_ip") or src.get("ip", "")
+                if not ssh_ip:
+                    results["steps"].append({
+                        "step_id": len(results["steps"]), "action": "SMS_AGENT_INSTALL",
+                        "target_resource": src.get("name", ""),
+                        "pillar": "PHASE_4.3", "tool_source": "internal", "tool_name": "sms_agent_install",
+                        "status": "failed",
+                        "message": f"No reachable IP for source server '{src.get('name','')}' — cannot SSH to install SMS agent. Private IP={src.get('ip','')}, EIP not found via API.",
+                        "error": "No reachable IP",
+                        "server_id": src.get("id", src.get("name", "")),
+                        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    })
+                    continue
+
                 agent_result = SMSMigration.install_sms_agent(
                     source_ip=ssh_ip,
                     os_user=credentials.get("os_user", "root"),
