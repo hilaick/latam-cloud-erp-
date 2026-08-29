@@ -5080,11 +5080,18 @@ class AgenticExecutionSimulator:
                 )
                 if _profile_result.returncode == 0:
                     import re as _re
-                    # Match profile lines like "◆default  model  running" — strip diamond marker
-                    available_profiles = [
-                        p.lstrip('◆').strip() for p in
-                        _re.findall(r'◆?(\S+)\s+\S+\s+(?:running|stopped)', _profile_result.stdout)
-                    ]
+                    # Parse hermes profile list output — lines like "◆default  model  running"
+                    # The diamond ◆ is a UTF-8 marker for the active profile
+                    available_profiles = []
+                    for line in _profile_result.stdout.split('\n'):
+                        line = line.strip().lstrip('◆').strip()
+                        # Skip header lines and separators
+                        if not line or line.startswith('Profile') or line.startswith('──'):
+                            continue
+                        # Profile line: first word is the profile name
+                        parts = line.split()
+                        if parts and any(kw in line.lower() for kw in ('running', 'stopped')):
+                            available_profiles.append(parts[0])
                     exec_profile_exists = "exec" in available_profiles
             except Exception:
                 pass
