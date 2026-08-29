@@ -5074,7 +5074,8 @@ class AgenticExecutionSimulator:
         available_profiles = []
         if hermes_binary and os.path.isfile(hermes_binary):
             try:
-                _profile_result = subprocess.run(
+                import subprocess as _subproc
+                _profile_result = _subproc.run(
                     [hermes_binary, "profile", "list"],
                     capture_output=True, text=True, timeout=10
                 )
