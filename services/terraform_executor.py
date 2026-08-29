@@ -126,24 +126,33 @@ resource "huaweicloud_vpc_eip" "eip_{eip_count}" {{
 }}
 """)
 
-        # If no VPC found in resources, create a default one
+        # Always ensure a default VPC, subnet, and SG exist (compute.tf references them)
         if vpc_count == 0:
+            vpc_count += 1
             lines.append(f"""
-resource "huaweicloud_vpc" "vpc_1" {{
+resource "huaweicloud_vpc" "vpc_{vpc_count}" {{
   name = "erp-vpc-{project_id[-6:]}"
   cidr = "192.168.0.0/16"
   {base_tags}
 }}
+""")
 
-resource "huaweicloud_vpc_subnet" "subnet_1" {{
+        if subnet_count == 0:
+            subnet_count += 1
+            lines.append(f"""
+resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
   name       = "erp-subnet-{project_id[-6:]}"
   cidr       = "192.168.1.0/24"
   gateway_ip = "192.168.1.1"
-  vpc_id     = "${{huaweicloud_vpc.vpc_1.id}}"
+  vpc_id     = huaweicloud_vpc.vpc_1.id
   {base_tags}
 }}
+""")
 
-resource "huaweicloud_networking_secgroup" "sg_1" {{
+        if sg_count == 0:
+            sg_count += 1
+            lines.append(f"""
+resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
   name        = "erp-sg-{project_id[-6:]}"
   description = "Default security group for ERP migration"
 }}
@@ -152,7 +161,7 @@ resource "huaweicloud_networking_secgroup" "sg_1" {{
         return "\n".join(lines)
 
     @staticmethod
-    def _generate_compute_tf(project_id: str, resources: list) -> str:
+    def _generate_compute_tf(project_id: str, resources: list, target_region: str = "la-north-2") -> str:
         """Generate compute resources (ECS instances, EVS disks) as HCL."""
         lines = []
         base_tags = f"""tags = {{
@@ -231,9 +240,10 @@ resource "huaweicloud_compute_eip_associate" "bind_ecs_{ecs_count}" {{
                 disk_size = int(r.get("size") or r.get("disk_size") or 100)
                 lines.append(f"""
 resource "huaweicloud_evs_volume" "disk_{evs_count}" {{
-  name        = "{name}"
-  volume_type = "SAS"
-  size        = {disk_size}
+  name              = "{name}"
+  volume_type       = "SAS"
+  size              = {disk_size}
+  availability_zone = "{target_region}a"
   {base_tags}
 }}
 """)
@@ -300,7 +310,7 @@ variable "secret_key" {
         # compute.tf
         compute_path = os.path.join(ws_dir, "compute.tf")
         with open(compute_path, "w") as f:
-            f.write(cls._generate_compute_tf(project_id, compute_resources))
+            f.write(cls._generate_compute_tf(project_id, compute_resources, target_region))
         files["compute"] = compute_path
 
         # terraform.tfvars (credentials — NOT committed to git)
