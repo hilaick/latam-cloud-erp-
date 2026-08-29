@@ -5081,12 +5081,16 @@ class AgenticExecutionSimulator:
                 if _profile_result.returncode == 0:
                     import re as _re
                     # Parse hermes profile list output — lines like "◆default  model  running"
-                    # The diamond ◆ is a UTF-8 marker for the active profile
+                    # The diamond ◆ (U+25C6) marks the active profile
                     available_profiles = []
                     for line in _profile_result.stdout.split('\n'):
-                        line = line.strip().lstrip('◆').strip()
+                        # Strip leading whitespace and any non-ASCII diamond marker
+                        line = line.strip()
+                        # Remove the ◆ marker (U+25C6) if present
+                        if line and ord(line[0]) == 0x25C6:
+                            line = line[1:].strip()
                         # Skip header lines and separators
-                        if not line or line.startswith('Profile') or line.startswith('──'):
+                        if not line or line.startswith('Profile') or line.startswith('─'):
                             continue
                         # Profile line: first word is the profile name
                         parts = line.split()
