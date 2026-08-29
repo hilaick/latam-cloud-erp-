@@ -68,13 +68,15 @@ provider "huaweicloud" {{
         for r in resources:
             rtype = (r.get("type") or "").upper()
             name = r.get("name") or r.get("source_name") or f"resource-{r.get('id', 'unknown')}"
+            # Prefix with project ID to avoid naming conflicts in target account
+            safe_name = f"erp-{project_id[-6:]}-{name}" if not name.startswith("erp-") else name
 
             if rtype in ("VPC", "VIRTUAL_PRIVATE_CLOUD"):
                 vpc_count += 1
                 cidr = r.get("cidr") or "192.168.0.0/16"
                 lines.append(f"""
 resource "huaweicloud_vpc" "vpc_{vpc_count}" {{
-  name = "{name}"
+  name = "{safe_name}"
   cidr = "{cidr}"
   {base_tags}
 }}
@@ -87,7 +89,7 @@ resource "huaweicloud_vpc" "vpc_{vpc_count}" {{
                 vpc_ref = f"huaweicloud_vpc.vpc_{vpc_count}.id" if vpc_count else '"${{huaweicloud_vpc.vpc_1.id}}"'
                 lines.append(f"""
 resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
-  name       = "{name}"
+  name       = "{safe_name}"
   cidr       = "{cidr}"
   gateway_ip = "{gateway}"
   vpc_id     = "${{huaweicloud_vpc.vpc_1.id}}"
@@ -99,7 +101,7 @@ resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
                 sg_count += 1
                 lines.append(f"""
 resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
-  name        = "{name}"
+  name        = "{safe_name}"
   description = "Security group for ERP migration project {project_id}"
 }}
 """)
@@ -176,6 +178,7 @@ resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
         for r in resources:
             rtype = (r.get("type") or "").upper()
             name = r.get("name") or r.get("source_name") or f"server-{r.get('id', 'unknown')}"
+            safe_name = f"erp-{project_id[-6:]}-{name}" if not name.startswith("erp-") else name
 
             if rtype in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
                 ecs_count += 1
@@ -197,7 +200,7 @@ data "huaweicloud_images_image" "img_{ecs_count}" {{
 }}
 
 resource "huaweicloud_compute_instance" "ecs_{ecs_count}" {{
-  name              = "{name}"
+  name              = "{safe_name}"
   image_id          = data.huaweicloud_images_image.img_{ecs_count}.id
   flavor_id         = "{flavor}"
   system_disk_type  = "SAS"
