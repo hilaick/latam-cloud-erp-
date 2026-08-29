@@ -357,7 +357,7 @@ class MCPInventory:
                 }
 
         port = cls._get_port(service_name)
-        url = f"http://localhost:{port}/mcp"
+        url = f"http://localhost:{port}/mcp/"  # trailing slash required by fastmcp
 
         # MCP protocol: JSON-RPC 2.0 tools/call
         # The tool name is the operationId from the OpenAPI spec
@@ -415,11 +415,30 @@ class MCPInventory:
             req = urllib.request.Request(
                 url,
                 data=req_data,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
+                resp_raw = resp.read().decode("utf-8")
+                # MCP with fastmcp returns SSE format: "data: {...}\n\n"
+                # Strip SSE prefix if present
+                if resp_raw.startswith("data:"):
+                    resp_raw = resp_raw.replace("data:", "").strip()
+                    # May have multiple lines — take the last one (the actual response)
+                    lines = [l.strip() for l in resp_raw.split("\n") if l.strip()]
+                    if lines:
+                        resp_raw = lines[-1]
+                try:
+                    resp_data = json.loads(resp_raw)
+                except json.JSONDecodeError:
+                    logger.warning(f"MCP server {service_name} returned non-JSON: {resp_raw[:200]}")
+                    return {"success": False, "fallback": "hcloud", "message": f"MCP returned non-JSON response"}
+
+            if not isinstance(resp_data, dict):
+                return {"success": False, "fallback": "hcloud", "message": f"MCP returned {type(resp_data).__name__}"}
 
             if "error" in resp_data:
                 logger.error(f"MCP call error for {tool_name}: {resp_data['error']}")
@@ -431,7 +450,9 @@ class MCPInventory:
                 }
 
             # Extract result content
-            result = resp_data.get("result", {})
+            result = resp_data.get("result", {}) if isinstance(resp_data, dict) else {}
+            if not isinstance(result, dict):
+                result = {"raw": str(result)}
             content = result.get("content", [])
             if content and isinstance(content, list):
                 text = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
