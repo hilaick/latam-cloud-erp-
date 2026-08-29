@@ -5411,11 +5411,8 @@ class AgenticExecutionSimulator:
                 try:
                     import os as _os_mod
                     _os_mod.environ.setdefault("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
-                    from services.credential_manager import get_credential_manager
-                    import json as _json
-                    cm = get_credential_manager(_os_mod.environ.get("VAULT_MASTER_PASSWORD"))
-                    enc_dict = _json.loads(os_password_raw)
-                    decrypted = cm.decrypt_credential(enc_dict)
+                    from routes.gateway import _decrypt_credential
+                    decrypted = _decrypt_credential(os_password_raw)
                     os_password_valid = bool(decrypted and len(decrypted) >= 4)
                 except Exception:
                     os_password_valid = False
