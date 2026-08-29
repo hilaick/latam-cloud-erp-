@@ -1464,65 +1464,133 @@ class ExecutionEngine:
             results["summary"] = {"total_steps": len(results["steps"]), "succeeded": sum(1 for s in results["steps"] if s["status"] == "success"), "failed": sum(1 for s in results["steps"] if s["status"] == "failed")}
             return results
 
-        # Phase 4.3-4.5: MCP runtime operations (SMS, HSS, monitoring)
-        # These use the already-provisioned infrastructure
-        for phase_name, action, tool, desc in [
-            ("PHASE_4.3", "MCP_SMS_CREATE", "mcp", "Creating SMS migration tasks via MCP (smsapi → CreateTask)"),
-            ("PHASE_4.4", "MCP_HSS_INSTALL", "mcp", "Installing HSS agents on target servers via MCP (hss → ListHosts)"),
-            ("PHASE_4.5", "MCP_SMS_MONITOR", "mcp", "Monitoring SMS sync progress via MCP (smsapi → ShowTask)"),
-        ]:
-            logger.info(f"[EXECUTE] {phase_name}: {action}...")
-            # Try MCP first, then hcloud fallback
-            mcp_succeeded = False
-            try:
-                from services.mcp_inventory import MCPInventory
-                # For now, these are status queries — real SMS task creation needs source server IDs
-                if action == "MCP_SMS_CREATE":
-                    # SMS task creation requires source server IDs + target ECS IDs
-                    # These come from the Terraform state (created_resources)
-                    ecs_resources = [r for r in created if "compute_instance" in r.get("type", "")]
-                    results["steps"].append({
-                        "step_id": len(results["steps"]), "action": action, "target_resource": f"{len(ecs_resources)} ECS",
-                        "pillar": phase_name, "tool_source": "mcp", "tool_name": "sms_create_task",
-                        "status": "success" if ecs_resources else "skipped",
-                        "message": f"Created {len(ecs_resources)} SMS migration tasks for target ECS instances. Source server registration required (Zero Trust: customer responsibility).",
-                        "created_resources": ecs_resources,
-                        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    })
-                    mcp_succeeded = True
-                elif action == "MCP_HSS_INSTALL":
-                    results["steps"].append({
-                        "step_id": len(results["steps"]), "action": action, "target_resource": "N/A",
-                        "pillar": phase_name, "tool_source": "mcp", "tool_name": "hss_install",
-                        "status": "success",
-                        "message": "HSS agent installation queued for all target ECS instances via MCP (hss service).",
-                        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    })
-                    mcp_succeeded = True
-                elif action == "MCP_SMS_MONITOR":
-                    results["steps"].append({
-                        "step_id": len(results["steps"]), "action": action, "target_resource": "N/A",
-                        "pillar": phase_name, "tool_source": "mcp", "tool_name": "sms_monitor",
-                        "status": "success",
-                        "message": "SMS sync monitoring active. All tasks in SYNCING state. Estimated completion: 2-4 hours.",
-                        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    })
-                    mcp_succeeded = True
-            except Exception as e:
-                logger.warning(f"[EXECUTE] MCP {action} failed: {e} — using hcloud CLI fallback")
+        # Phase 4.3-4.5: SMS Migration Runtime Operations
+        # Uses the target ECS instances provisioned by Terraform (from state file)
+        # to run real SMS migration: agent install → task creation → sync monitoring
+        from services.sms_migration import SMSMigration
 
-            if not mcp_succeeded:
+        # Get target ECS instances from Terraform state
+        tf_state = TerraformExecutor.get_state(project_id)
+        target_ecs = [r for r in tf_state.get("resources", []) if "compute_instance" in r.get("type", "")]
+
+        # Get source ECS instances from mapperNodes (source resources to migrate)
+        source_ecs = []
+        for r in all_resources:
+            if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
+                source_ecs.append({
+                    "id": r.get("id", r.get("name", "")),
+                    "name": r.get("name", ""),
+                    "ip": r.get("private_ip_address") or r.get("ip", ""),
+                })
+
+        logger.info(f"[EXECUTE] Phase 4.3: SMS migration — {len(source_ecs)} source servers → {len(target_ecs)} target servers")
+
+        # Phase 4.3: SMS Agent Install + Source Registration + Task Creation
+        if source_ecs and target_ecs:
+            # Step 1: Install SMS agents on source servers
+            for src in source_ecs:
+                agent_result = SMSMigration.install_sms_agent(
+                    source_ip=src.get("ip", ""),
+                    os_user=credentials.get("os_user", "root"),
+                    os_password=credentials.get("os_password", ""),
+                )
                 results["steps"].append({
-                    "step_id": len(results["steps"]), "action": action, "target_resource": "N/A",
-                    "pillar": phase_name, "tool_source": "hcloud", "tool_name": action.lower(),
-                    "status": "skipped",
-                    "message": f"MCP unavailable, hcloud CLI fallback: {desc}",
+                    "step_id": len(results["steps"]), "action": "SMS_AGENT_INSTALL",
+                    "target_resource": src.get("name", ""),
+                    "pillar": "PHASE_4.3", "tool_source": "ssh", "tool_name": "sms_agent_install",
+                    "status": "success" if agent_result["success"] else "failed",
+                    "message": agent_result.get("message", ""),
+                    "error": agent_result.get("error"),
+                    "server_id": src.get("id", src.get("name", "")),
                     "started_at": datetime.datetime.utcnow().isoformat() + "Z",
                     "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
                 })
+
+            # Step 2: List registered SMS sources
+            sms_sources = SMSMigration.list_sources(
+                source_region=source_region or target_region,
+                ak=source_ak, sk=source_sk,
+            )
+            results["steps"].append({
+                "step_id": len(results["steps"]), "action": "SMS_LIST_SOURCES",
+                "target_resource": "N/A",
+                "pillar": "PHASE_4.3", "tool_source": "hcloud", "tool_name": "sms_list_sources",
+                "status": "success" if sms_sources["success"] else "warning",
+                "message": f"Found {len(sms_sources.get('sources', []))} registered SMS sources in {source_region or target_region}.",
+                "live_data": sms_sources,
+                "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+            })
+
+            # Step 3: Create SMS migration tasks (source → target)
+            sms_tasks = []
+            for i, src in enumerate(source_ecs):
+                tgt = target_ecs[i] if i < len(target_ecs) else None
+                if not tgt:
+                    continue
+
+                # Match SMS source by name
+                registered_source = None
+                for rs in sms_sources.get("sources", []):
+                    if src.get("name", "") in rs.get("name", "") or rs.get("name", "") in src.get("name", ""):
+                        registered_source = rs
+                        break
+
+                source_id = registered_source.get("id", src.get("id", "")) if registered_source else src.get("id", "")
+
+                task_result = SMSMigration.create_sms_task(
+                    source_server_id=source_id,
+                    target_server_id=tgt.get("id", ""),
+                    source_region=source_region or target_region,
+                    target_region=target_region,
+                    source_server_name=src.get("name", ""),
+                    ak=ak, sk=sk,
+                )
+
+                if task_result["success"]:
+                    sms_tasks.append(task_result["task_id"])
+
+                results["steps"].append({
+                    "step_id": len(results["steps"]), "action": "SMS_TASK_CREATE",
+                    "target_resource": src.get("name", ""),
+                    "pillar": "PHASE_4.3", "tool_source": "hcloud", "tool_name": "sms_create_task",
+                    "status": "success" if task_result["success"] else "failed",
+                    "message": task_result.get("message", ""),
+                    "error": task_result.get("error"),
+                    "server_id": src.get("id", src.get("name", "")),
+                    "task_id": task_result.get("task_id", ""),
+                    "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                })
+
+            # Phase 4.5: Monitor SMS sync until complete
+            for task_id in sms_tasks:
+                monitor_result = SMSMigration.monitor_until_complete(
+                    task_id=task_id,
+                    source_region=source_region or target_region,
+                    max_wait=3600,
+                )
+                results["steps"].append({
+                    "step_id": len(results["steps"]), "action": "SMS_SYNC_MONITOR",
+                    "target_resource": task_id,
+                    "pillar": "PHASE_4.5", "tool_source": "hcloud", "tool_name": "sms_monitor",
+                    "status": "success" if monitor_result["success"] else "failed",
+                    "message": f"SMS task {task_id}: state={monitor_result.get('state')}, progress={monitor_result.get('progress', 0)}%",
+                    "error": monitor_result.get("error"),
+                    "task_id": task_id,
+                    "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                })
+        else:
+            results["steps"].append({
+                "step_id": len(results["steps"]), "action": "SMS_MIGRATION",
+                "target_resource": "N/A",
+                "pillar": "PHASE_4.3", "tool_source": "internal", "tool_name": "sms_migration",
+                "status": "skipped",
+                "message": f"No SMS migration needed — source ECS: {len(source_ecs)}, target ECS: {len(target_ecs)}",
+                "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+            })
 
         # Phase 4.6: Cutover (human gate)
         results["steps"].append({
@@ -1544,8 +1612,7 @@ class ExecutionEngine:
             "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
         })
 
-        # Phase 4.8: Delivery report
-        tf_state = TerraformExecutor.get_state(project_id)
+        # Phase 4.8: Delivery report (reuse tf_state from Phase 4.3)
         results["steps"].append({
             "step_id": len(results["steps"]), "action": "DELIVERY_REPORT", "target_resource": "N/A",
             "pillar": "PHASE_4.8", "tool_source": "internal", "tool_name": "delivery_report",
