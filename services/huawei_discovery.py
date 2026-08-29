@@ -186,10 +186,20 @@ class HuaweiDiscovery:
                     ecs_client = EcsClient.new_builder().with_credentials(region_creds).with_region(ecs_region).build()
                     for s in ecs_client.list_servers_details(ListServersDetailsRequest(limit=100)).servers or []:
                         private_ip = 'N/A'
+                        public_ip = ''
                         if getattr(s, 'addresses', None):
-                            vals = list(s.addresses.values())
-                            if vals and len(vals) > 0 and len(vals[0]) > 0:
-                                private_ip = vals[0][0].get('addr', 'N/A') if isinstance(vals[0][0], dict) else getattr(vals[0][0], 'addr', 'N/A')
+                            for net_name, addr_list in s.addresses.items():
+                                for addr in addr_list:
+                                    if isinstance(addr, dict):
+                                        ip_addr = addr.get('addr', '')
+                                        ip_type = addr.get('OSEXTIPStype', 'fixed')
+                                    else:
+                                        ip_addr = getattr(addr, 'addr', '')
+                                        ip_type = getattr(addr, 'OSEXTIPStype', 'fixed')
+                                    if ip_type == 'fixed' and private_ip == 'N/A':
+                                        private_ip = ip_addr
+                                    elif ip_type == 'floating':
+                                        public_ip = ip_addr
                         
                         billing_mode = 'Unknown'
                         charging_mode = 'Unknown'
@@ -276,7 +286,8 @@ class HuaweiDiscovery:
                             "id": s.id, 
                             "name": s.name, 
                             "type": "ECS", 
-                            "private_ip_address": private_ip, 
+                            "private_ip_address": private_ip,
+                            "public_ip_address": public_ip,
                             "region": target_region,
                             "billing_mode": billing_mode,
                             "charging_mode": charging_mode,
