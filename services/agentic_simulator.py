@@ -5351,6 +5351,52 @@ class AgenticExecutionSimulator:
             })
             total_simulated_seconds += 1
 
+        # PREFLIGHT: Verify source servers have valid Huawei Cloud UUIDs and reachable IPs
+        source_ecs_for_sms = [r for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")]
+        for src in source_ecs_for_sms:
+            src_id = src.get("id", "")
+            src_ip = src.get("ip") or src.get("private_ip_address") or src.get("public_ip_address") or ""
+            src_name = src.get("name") or src.get("source_name", "")
+
+            # Check if ID looks like a Huawei Cloud UUID (36 chars with dashes)
+            is_valid_uuid = bool(src_id and len(src_id) == 36 and src_id.count("-") == 4)
+            # Check if IP is present and not a private-only IP without EIP
+            has_ip = bool(src_ip)
+
+            if not is_valid_uuid:
+                step_id += 1
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                    "action": "SOURCE_ID_VALIDATION",
+                    "message": (
+                        f"❌ PREFLIGHT: Source server '{src_name}' has ID '{src_id}' — not a valid Huawei Cloud UUID. "
+                        f"SMS migration requires the real Huawei Cloud server UUID. "
+                        f"Run Source Infrastructure Discovery to get proper resource IDs from the source account."
+                    ),
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "fail",
+                    "decision": {"blocking": True, "fix": "Run Source Infrastructure Discovery to get real Huawei Cloud UUIDs"},
+                    "source_label": "🛡️ Preflight",
+                })
+                total_simulated_seconds += 1
+
+            if not has_ip:
+                step_id += 1
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                    "action": "SOURCE_IP_VALIDATION",
+                    "message": (
+                        f"❌ PREFLIGHT: Source server '{src_name}' has no IP address. "
+                        f"SMS agent installation requires SSH access to the source server (EIP or private IP via VPN). "
+                        f"Ensure source discovery captures the server's EIP or private IP."
+                    ),
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "fail",
+                    "decision": {"blocking": True, "fix": "Ensure source discovery captures EIP or private IP"},
+                    "source_label": "🛡️ Preflight",
+                })
+                total_simulated_seconds += 1
+
         # Defaults if no explicit resources found
         if tf_vpc_count == 0: tf_vpc_count = 1
         if tf_subnet_count == 0: tf_subnet_count = 1
