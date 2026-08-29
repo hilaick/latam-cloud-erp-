@@ -5317,6 +5317,162 @@ class AgenticExecutionSimulator:
             "decision": {"blocking": bool(readiness_failures)} if readiness_failures else None,
         })
         total_simulated_seconds += 2
+
+        # ═══ PHASE 4.0c: TERRAFORM IaC PROVISIONING PHASES ═══
+        # Terraform-first: provisioning is done via IaC, not individual API calls.
+        # The simulation shows these as high-level phases, not per-resource steps.
+
+        # Count resources by type for the Terraform summary
+        tf_vpc_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("VPC", "VIRTUAL_PRIVATE_CLOUD")])
+        tf_subnet_count = len([r for r in migration_resources if (r.get("type") or "").upper() == "SUBNET"])
+        tf_sg_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("SG", "SECURITY_GROUP")])
+        tf_eip_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("EIP", "ELASTIC_IP")])
+        tf_ecs_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")])
+        tf_evs_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("EVS", "DISK", "VOLUME")])
+        tf_total = tf_vpc_count + tf_subnet_count + tf_sg_count + tf_eip_count + tf_ecs_count + tf_evs_count
+        # Defaults if no explicit resources found
+        if tf_vpc_count == 0: tf_vpc_count = 1
+        if tf_subnet_count == 0: tf_subnet_count = 1
+        if tf_sg_count == 0: tf_sg_count = 1
+
+        # TERRAFORM_INIT
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "TerraformExecutor",
+            "action": "TERRAFORM_INIT",
+            "message": (
+                f"[TERRAFORM] Initializing Huawei Cloud Terraform provider in workspace /tmp/erp-terraform/{project_name}/. "
+                f"Downloading huaweicloud/huaweicloud provider (>= 1.60.0). "
+                f"Provider configured for region {region} with customer credentials."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "terraform_initialized",
+            "tool_source": "terraform",
+            "mcp_service": "",
+            "fallback_tool_source": "",
+            "source_label": "🏗️ Terraform (IaC)",
+        })
+        total_simulated_seconds += 5
+
+        # GENERATE_TF_CONFIG
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "TerraformExecutor",
+            "action": "GENERATE_TF_CONFIG",
+            "message": (
+                f"[TERRAFORM] Generated Terraform configuration: {tf_total} resources — "
+                f"{tf_vpc_count} VPC, {tf_subnet_count} subnet, {tf_sg_count} SG, {tf_eip_count} EIP, "
+                f"{tf_ecs_count} ECS, {tf_evs_count} EVS. "
+                f"Files: provider.tf, variables.tf, network.tf, compute.tf, terraform.tfvars. "
+                f"All resources tagged with erp_project_id for lifecycle management."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "tf_config_generated",
+            "tool_source": "terraform",
+            "mcp_service": "",
+            "fallback_tool_source": "",
+            "source_label": "🏗️ Terraform (IaC)",
+            "live_data": {
+                "vpc": tf_vpc_count, "subnet": tf_subnet_count, "sg": tf_sg_count,
+                "eip": tf_eip_count, "ecs": tf_ecs_count, "evs": tf_evs_count, "total": tf_total,
+            },
+        })
+        total_simulated_seconds += 2
+
+        # TERRAFORM_PLAN
+        step_id += 1
+        network_total = tf_vpc_count + tf_subnet_count + tf_sg_count + tf_eip_count
+        compute_total = tf_ecs_count + tf_evs_count
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "TerraformExecutor",
+            "action": "TERRAFORM_PLAN",
+            "message": (
+                f"[TERRAFORM] terraform plan: {tf_total} to create, 0 to change, 0 to destroy. "
+                f"Network phase: {network_total} resources. Compute phase: {compute_total} resources. "
+                f"State file will be at /tmp/erp-terraform/{project_name}/terraform.tfstate. "
+                f"Rollback available via terraform destroy."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "plan_ready",
+            "tool_source": "terraform",
+            "mcp_service": "",
+            "fallback_tool_source": "",
+            "source_label": "🏗️ Terraform (IaC)",
+        })
+        total_simulated_seconds += 3
+
+        # TERRAFORM_APPLY_NETWORK
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_1", "agent": "TerraformExecutor",
+            "action": "TERRAFORM_APPLY_NETWORK",
+            "message": (
+                f"[TERRAFORM] Applying network infrastructure: {tf_vpc_count} VPC, {tf_subnet_count} subnet, "
+                f"{tf_sg_count} security group, {tf_eip_count} EIP ({network_total} resources). "
+                f"terraform apply -auto-approve. State-tracked, idempotent, rollback-capable."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "network_provisioned",
+            "tool_source": "terraform",
+            "mcp_service": "",
+            "fallback_tool_source": "",
+            "source_label": "🏗️ Terraform (IaC)",
+        })
+        total_simulated_seconds += 30
+
+        # TERRAFORM_APPLY_COMPUTE
+        step_id += 1
+        if compute_total > 0:
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_2", "agent": "TerraformExecutor",
+                "action": "TERRAFORM_APPLY_COMPUTE",
+                "message": (
+                    f"[TERRAFORM] Applying compute infrastructure: {tf_ecs_count} ECS instances, "
+                    f"{tf_evs_count} EVS disks ({compute_total} resources). "
+                    f"EIPs associated with each ECS for SMS migration. "
+                    f"terraform apply -auto-approve. All resources tagged erp_project_id."
+                ),
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "compute_provisioned",
+                "tool_source": "terraform",
+                "mcp_service": "",
+                "fallback_tool_source": "",
+                "source_label": "🏗️ Terraform (IaC)",
+            })
+        else:
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_2", "agent": "TerraformExecutor",
+                "action": "TERRAFORM_APPLY_COMPUTE",
+                "message": "[TERRAFORM] No compute resources in target architecture. Skipping compute phase.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "skipped",
+                "tool_source": "terraform",
+                "source_label": "🏗️ Terraform (IaC)",
+            })
+        total_simulated_seconds += 60
+
+        # TERRAFORM_APPLY_COMPLETE
+        step_id += 1
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_2", "agent": "TerraformExecutor",
+            "action": "TERRAFORM_APPLY_COMPLETE",
+            "message": (
+                f"[TERRAFORM] Apply complete! {tf_total} resources provisioned. "
+                f"State file: /tmp/erp-terraform/{project_name}/terraform.tfstate. "
+                f"Resource IDs available for MCP runtime operations (SMS, HSS, monitoring). "
+                f"Rollback: terraform destroy (removes all resources cleanly)."
+            ),
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "apply_complete",
+            "tool_source": "terraform",
+            "mcp_service": "",
+            "fallback_tool_source": "",
+            "source_label": "🏗️ Terraform (IaC)",
+            "live_data": {"resources_provisioned": tf_total, "state_file": f"/tmp/erp-terraform/{project_name}/terraform.tfstate"},
+        })
+        total_simulated_seconds += 2
+
+        # ═══ PHASE 4.0b: PRESALES TRIAGE ANALYSIS (discovered 2026-08-23) ═══
         # Read presales radar triage data to determine migration strategy
         presales = project.get("presales", {})
         auth_level = presales.get("authLevel", [])
