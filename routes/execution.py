@@ -773,7 +773,7 @@ def build_execution_plan(project_id):
     try:
         from services.execution_engine import ExecutionEngine
         from models import ProjectData, Customer
-        from routes.gateway import _decrypt_credential_pair
+        from routes.gateway import _decrypt_credential_pair, _decrypt_credential
 
         project = ProjectData.query.get(project_id)
         if not project:
@@ -835,7 +835,7 @@ def execute_plan(project_id):
     try:
         from services.execution_engine import ExecutionEngine
         from models import ProjectData, Customer
-        from routes.gateway import _decrypt_credential_pair
+        from routes.gateway import _decrypt_credential_pair, _decrypt_credential
 
         data = request.get_json(silent=True) or {}
         dry_run = data.get("dry_run", False)
@@ -870,7 +870,7 @@ def execute_plan(project_id):
             "source_ak": source_ak or ak or "",
             "source_sk": source_sk or sk or "",
             "os_user": getattr(customer, "os_user", "root") or "root",
-            "os_password": getattr(customer, "os_password", "") or "",
+            "os_password": _decrypt_credential(getattr(customer, "os_password", "") or "") or "",
             "source_region": getattr(customer, "source_huawei_region", "") or pd.get("sourceRegion", pd.get("source_region", "")),
             "source_project_id": getattr(customer, "source_huawei_project_id", "") or "",
         }
