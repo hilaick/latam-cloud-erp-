@@ -5397,6 +5397,47 @@ class AgenticExecutionSimulator:
             "source_label": "🛡️ Preflight",
         })
         total_simulated_seconds += 1
+
+        # PREFLIGHT: Verify OS credentials for SSH access to source servers
+        # SMS agent installation requires SSH to source servers — if the OS password
+        # is masked (********) or can't be decrypted, the agent install will fail
+        os_user = project.get("os_user", "root")
+        os_password_raw = project.get("os_password", "")
+        os_password_valid = False
+        if os_password_raw and os_password_raw != "********" and len(os_password_raw) >= 4:
+            # Check if it's encrypted (JSON blob) or plaintext
+            if os_password_raw.startswith("{"):
+                # Encrypted — try to decrypt
+                try:
+                    import os as _os_mod
+                    _os_mod.environ.setdefault("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+                    from services.credential_manager import get_credential_manager
+                    import json as _json
+                    cm = get_credential_manager(_os_mod.environ.get("VAULT_MASTER_PASSWORD"))
+                    enc_dict = _json.loads(os_password_raw)
+                    decrypted = cm.decrypt_credential(enc_dict)
+                    os_password_valid = bool(decrypted and len(decrypted) >= 4)
+                except Exception:
+                    os_password_valid = False
+            else:
+                # Plaintext — check length
+                os_password_valid = len(os_password_raw) >= 4
+        if not os_password_valid:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "OS_CREDENTIAL_VALIDATION",
+                "message": (
+                    f"❌ PREFLIGHT: OS password for SSH access is {'masked (********) — not the actual password' if os_password_raw == '********' else 'missing or too short'}. "
+                    f"SMS agent installation requires SSH to source servers with user='{os_user}'. "
+                    f"Update the customer's OS password in the Customer Directory with the actual root/admin password."
+                ),
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "fail",
+                "decision": {"blocking": True, "fix": "Set actual OS password in Customer Directory → OS tab"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
         for src in source_ecs_for_sms:
             src_id = src.get("id", "")
             src_ip = src.get("ip") or src.get("private_ip_address") or src.get("public_ip_address") or ""
@@ -7051,6 +7092,11 @@ def register_agentic_dry_run_routes(execution_bp):
                 "lifecycleState": project_data.get("lifecycleState", ""),
                 "arbResults": project_data.get("arbResults", {}),
                 "sowResources": project_data.get("sowResources", {}),
+                # OS credentials for SSH preflight (SMS agent install)
+                "os_user": getattr(customer_for_region, "os_user", "root") if customer_for_region else "root",
+                "os_password": getattr(customer_for_region, "os_password", "") if customer_for_region else "",
+                "customerId": customer_id,
+                "mgcData": project_data.get("mgcData", {}),
             }
 
             # 🎯 Server selection: if the frontend passed selectedServers, filter mapperNodes + targetArchitecture

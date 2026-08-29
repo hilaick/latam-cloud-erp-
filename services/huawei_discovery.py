@@ -666,12 +666,18 @@ class HuaweiDiscovery:
                         evs_region = Region(id=target_region, endpoint=f"https://evs.{target_region}.myhuaweicloud.com")
                         evs_client = EvsClient.new_builder().with_credentials(region_creds).with_region(evs_region).build()
                         for volume in evs_client.list_volumes(ListVolumesRequest()).volumes or []:
+                            # Skip system/boot disks — they're part of the ECS, not separate data disks
+                            bootable = getattr(volume, 'bootable', 'false')
+                            if str(bootable) == 'true':
+                                continue
                             inventory["storage"].append({ 
                                 "id": volume.id, 
                                 "name": getattr(volume, 'name', 'Unknown'), 
-                                "type": "EVS Volume",  # Changed from "EVS" to "EVS Volume"
+                                "type": "EVS", 
                                 "region": target_region,
-                                "subtype": "block_storage"  # For frontend filtering
+                                "subtype": "block_storage",
+                                "size": getattr(volume, 'size', 0),
+                                "bootable": False,
                             })
                     except Exception as e: 
                         inventory["diagnostics"].append(f"[{target_region}] EVS Connect Error: {str(e)}")
