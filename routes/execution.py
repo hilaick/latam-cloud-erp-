@@ -782,7 +782,8 @@ def build_execution_plan(project_id):
         pd = json.loads(project.data or '{}') if isinstance(project.data, str) else (project.data or {})
         mapper_nodes = pd.get("mapperNodes", [])
         project_dict = {
-            "projectName": pd.get("projectName", "UNNAMED"),
+            "id": project_id,
+            "projectName": pd.get("projectName", pd.get("name", "UNNAMED")),
             "mapperNodes": mapper_nodes,
             "targetArchitecture": pd.get("targetArchitecture", {}),
             "physics": pd.get("physics", {}),
@@ -794,6 +795,12 @@ def build_execution_plan(project_id):
             "authLevel": pd.get("authLevel", pd.get("presales", {}).get("authLevel", "")),
             "project_type": pd.get("project_type", project.project_type if hasattr(project, 'project_type') else ""),
             "manualMigWorker": pd.get("manualMigWorker", False),
+            "presales": pd.get("presales", {}),
+            "accountId": pd.get("accountId", ""),
+            "huaweiAccountName": pd.get("huaweiAccountName", ""),
+            "enterpriseProject": pd.get("enterpriseProject", ""),
+            "realNameVerification": pd.get("realNameVerification", ""),
+            "isPartner": pd.get("isPartner", ""),
         }
 
         customer = None

@@ -475,6 +475,7 @@ class ExecutionEngine:
 
         plan = {
             "project_name": project.get("projectName", "UNNAMED"),
+            "project_id": project.get("id", f"erp-{int(time.time())}"),
             "source_region": source_region,
             "target_region": target_region,
             "execution_mode": execution_mode,
@@ -490,7 +491,60 @@ class ExecutionEngine:
             "pillars": {"compute": 0, "database": 0, "storage": 0, "network": 0},
             "steps": [],
             "summary": {},
+            # ── Resources from target architecture (PRIMARY source of truth) ──
+            "resources": [],
+            "target_architecture_compute_count": 0,
         }
+
+        # ── Build resources list from target architecture (PRIMARY) ──
+        # Falls back to mapperNodes only if target architecture is empty
+        ta = project.get("targetArchitecture", {})
+        ta_compute = ta.get("compute", []) or []
+        ta_database = ta.get("database", []) or []
+        ta_storage = ta.get("storage", []) or []
+        ta_network = ta.get("network", []) or []
+
+        plan_resources = []
+        for r in ta_compute:
+            plan_resources.append({
+                "type": "ECS", "name": r.get("name") or r.get("source_name") or r.get("id", ""),
+                "flavor": r.get("flavor") or r.get("specification", ""),
+                "os_image": r.get("os_image") or r.get("image_id", ""),
+                "disk_size": r.get("disk_size") or r.get("size", 40),
+            })
+        for r in ta_database:
+            plan_resources.append({"type": "RDS", "name": r.get("name") or r.get("source_name", "")})
+        for r in ta_storage:
+            rtype = (r.get("type") or "EVS").upper()
+            plan_resources.append({
+                "type": rtype, "name": r.get("name") or r.get("source_name", ""),
+                "size": r.get("size") or r.get("disk_size", 100),
+            })
+        for r in ta_network:
+            rtype = (r.get("type") or "VPC").upper()
+            plan_resources.append({"type": rtype, "name": r.get("name") or r.get("source_name", "")})
+
+        # If target architecture is empty, fall back to mapperNodes (with filtering)
+        if not plan_resources:
+            for n in project.get("mapperNodes", []):
+                ntype = (n.get("type") or "").upper()
+                if ntype in ("ECS", "COMPUTE", "SERVER", "APP", "WEB", "VPC", "SUBNET", "SG", "SECURITY_GROUP", "EIP", "EVS", "DISK", "RDS", "DATABASE"):
+                    plan_resources.append({
+                        "type": ntype,
+                        "name": n.get("name") or n.get("source_name") or n.get("id", ""),
+                        "flavor": n.get("flavor") or n.get("specification", ""),
+                        "os_image": n.get("os_image") or n.get("image_id", ""),
+                        "disk_size": n.get("disk_size") or n.get("size", 40),
+                    })
+
+        plan["resources"] = plan_resources
+        plan["target_architecture_compute_count"] = len(ta_compute) if ta_compute else len([r for r in plan_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER")])
+        plan["pillars"]["compute"] = plan["target_architecture_compute_count"]
+        plan["pillars"]["network"] = len([r for r in plan_resources if (r.get("type") or "").upper() in ("VPC", "SUBNET", "SG", "SECURITY_GROUP", "EIP")])
+        plan["pillars"]["storage"] = len([r for r in plan_resources if (r.get("type") or "").upper() in ("EVS", "DISK", "OBS")])
+        plan["pillars"]["database"] = len([r for r in plan_resources if (r.get("type") or "").upper() in ("RDS", "DATABASE")])
+
+        logger.info(f"[BUILD_PLAN] Resources from target architecture: {len(plan_resources)} total, compute={plan['pillars']['compute']}, network={plan['pillars']['network']}, storage={plan['pillars']['storage']}, database={plan['pillars']['database']}")
 
         step_id = 0
         steps = plan["steps"]
@@ -1227,16 +1281,51 @@ class ExecutionEngine:
         project_id = plan.get("project_id", f"erp-{int(time.time())}")
         project_name = plan.get("project_name", "UNNAMED")
 
-        # Gather all resources from the plan
+        # ── SAFEGUARD: Resources MUST come from target architecture, not plan steps ──
+        # The plan should carry the actual resources from the target architecture.
+        # NEVER infer resources from plan steps — that creates duplicates and wrong types.
         all_resources = plan.get("resources", [])
+
         if not all_resources:
-            # Build resources from plan steps (fallback)
-            for step in plan.get("steps", []):
-                if step.get("target_resource") and step.get("target_resource") != "N/A":
-                    all_resources.append({
-                        "type": step.get("pillar", "ECS"),
-                        "name": step.get("target_resource", ""),
-                    })
+            # Try to get from project data via the API route (which has access to mapperNodes + targetArchitecture)
+            # The execute_plan route passes the plan which should include resources
+            # If not found, FAIL — do not guess
+            results["steps"].append({
+                "step_id": 0, "action": "RESOURCE_VALIDATION", "target_resource": "N/A",
+                "pillar": "safeguard", "tool_source": "internal", "tool_name": "resource_check",
+                "status": "failed",
+                "error": "No resources in execution plan. Build the plan from target architecture first.",
+                "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+            })
+            results["success"] = False
+            results["completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+            results["summary"] = {"total_steps": 1, "succeeded": 0, "failed": 1}
+            return results
+
+        # Safeguard: count resources by type and log for audit
+        resource_audit = {}
+        for r in all_resources:
+            rtype = (r.get("type") or "UNKNOWN").upper()
+            resource_audit[rtype] = resource_audit.get(rtype, 0) + 1
+        logger.info(f"[EXECUTE] SAFEGUARD: Resource audit from target architecture: {resource_audit}")
+
+        # SAFEGUARD: If ECS count doesn't match target architecture compute count, abort
+        ecs_in_resources = resource_audit.get("ECS", 0) + resource_audit.get("COMPUTE", 0) + resource_audit.get("SERVER", 0)
+        ta_compute = plan.get("target_architecture_compute_count", 0)
+        if ta_compute > 0 and ecs_in_resources != ta_compute:
+            results["steps"].append({
+                "step_id": 0, "action": "RESOURCE_COUNT_MISMATCH", "target_resource": "N/A",
+                "pillar": "safeguard", "tool_source": "internal", "tool_name": "count_check",
+                "status": "failed",
+                "error": f"SAFEGUARD: ECS count mismatch — resources has {ecs_in_resources} ECS, target architecture has {ta_compute}. Aborting to prevent over-provisioning.",
+                "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+            })
+            results["success"] = False
+            results["completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+            results["summary"] = {"total_steps": 1, "succeeded": 0, "failed": 1}
+            return results
 
         logger.info(f"[EXECUTE] Project {project_id} ({project_name}) — {len(all_resources)} resources, region={target_region}, dry_run={dry_run}")
 

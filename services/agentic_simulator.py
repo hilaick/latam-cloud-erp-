@@ -5330,6 +5330,27 @@ class AgenticExecutionSimulator:
         tf_ecs_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")])
         tf_evs_count = len([r for r in migration_resources if (r.get("type") or "").upper() in ("EVS", "DISK", "VOLUME")])
         tf_total = tf_vpc_count + tf_subnet_count + tf_sg_count + tf_eip_count + tf_ecs_count + tf_evs_count
+
+        # SAFEGUARD: Verify resource count matches target architecture
+        ta_compute_count = len(target_arch.get("compute", []) or [])
+        ta_db_count = len(target_arch.get("database", []) or [])
+        ta_expected_servers = ta_compute_count + ta_db_count
+        if ta_expected_servers > 0 and tf_ecs_count != ta_expected_servers:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Safeguard",
+                "action": "RESOURCE_COUNT_WARNING",
+                "message": (
+                    f"⚠️ SAFEGUARD: Resource count mismatch — migration_resources has {tf_ecs_count} ECS, "
+                    f"target architecture has {ta_expected_servers} compute/database. "
+                    f"This could cause over-provisioning. Verify target architecture is the source of truth."
+                ),
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "warning",
+                "source_label": "🛡️ Safeguard",
+            })
+            total_simulated_seconds += 1
+
         # Defaults if no explicit resources found
         if tf_vpc_count == 0: tf_vpc_count = 1
         if tf_subnet_count == 0: tf_subnet_count = 1
