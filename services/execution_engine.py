@@ -1254,8 +1254,8 @@ class ExecutionEngine:
                 "target_resource": step["target_resource"],
                 "pillar": step["pillar"],
                 "strategy": step["strategy"],
-                "tool_source": step["tool_source"],
-                "tool_name": step["tool_name"],
+                "tool_source": step.get("tool_source", "hcloud"),
+                "tool_name": step.get("tool_name", step.get("action", "")),
                 "status": "pending",
                 "started_at": datetime.datetime.utcnow().isoformat() + "Z",
             }
@@ -1324,10 +1324,19 @@ class ExecutionEngine:
                         except Exception as e:
                             logger.warning(f"MCP call error for {step['action']}: {e} — falling back to hcloud CLI")
 
-                # Substitute credentials and profile in command
+                # Substitute credentials, profile, and variables in command
                 cmd_filled = cmd.replace("<AK>", source_ak).replace("<SK>", source_sk)
                 cmd_filled = cmd_filled.replace("<profile>", profile_name)
                 cmd_filled = cmd_filled.replace("agent-test", profile_name)  # replace hardcoded profile
+                # Substitute shell-style variables used in command templates
+                cmd_filled = cmd_filled.replace("$REGION", target_region).replace("${REGION}", target_region)
+                cmd_filled = cmd_filled.replace("$SOURCE_REGION", source_region or target_region).replace("${SOURCE_REGION}", source_region or target_region)
+                cmd_filled = cmd_filled.replace("$source_ak", source_ak).replace("$source_sk", source_sk)
+                cmd_filled = cmd_filled.replace("$AK", ak).replace("$SK", sk)
+                cmd_filled = cmd_filled.replace("$project_id", credentials.get("source_project_id", "")).replace("$PROJECT_ID", credentials.get("source_project_id", ""))
+                # Remove any remaining unsubstituted $variables that would cause shell errors
+                import re as _re_sub
+                cmd_filled = _re_sub.sub(r'\$\{?\w+\}?', '', cmd_filled)
 
                 if cmd_type == "hcloud":
                     result = _hcloud(cmd_filled, timeout=30)

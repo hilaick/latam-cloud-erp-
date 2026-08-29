@@ -863,7 +863,7 @@ def execute_plan(project_id):
             "source_sk": source_sk or sk or "",
             "os_user": getattr(customer, "os_user", "root") or "root",
             "os_password": getattr(customer, "os_password", "") or "",
-            "source_region": pd.get("sourceRegion", pd.get("source_region", "")),
+            "source_region": getattr(customer, "source_huawei_region", "") or pd.get("sourceRegion", pd.get("source_region", "")),
             "source_project_id": getattr(customer, "source_huawei_project_id", "") or "",
         }
 

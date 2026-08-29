@@ -264,6 +264,10 @@ class MCPInventory:
             env["HUAWEI_ACCESS_KEY"] = ak
         if sk:
             env["HUAWEI_SECRET_KEY"] = sk
+        # Set PYTHONPATH so run.py can import from assets/utils
+        assets_dir = os.path.join(MCP_BASE, "assets")
+        src_dir = os.path.join(server_dir, "src")
+        env["PYTHONPATH"] = f"{assets_dir}:{src_dir}:{env.get('PYTHONPATH', '')}"
 
         try:
             # Start with HTTP transport on the assigned port
