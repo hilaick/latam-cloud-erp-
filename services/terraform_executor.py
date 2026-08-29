@@ -72,6 +72,20 @@ provider "huaweicloud" {{
             safe_name = f"erp-{project_id[-6:]}-{name}" if not name.startswith("erp-") else name
 
             if rtype in ("VPC", "VIRTUAL_PRIVATE_CLOUD"):
+                # Skip if this is actually a subnet (name contains 'subnet' or CIDR is /24)
+                cidr = r.get("ip") or r.get("cidr") or "192.168.0.0/16"
+                if "subnet" in name.lower() or "/24" in cidr:
+                    subnet_count += 1
+                    lines.append(f"""
+resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
+  name       = "{safe_name}"
+  cidr       = "{cidr}"
+  gateway_ip = "{cidr.split('/')[0].rsplit('.', 1)[0]}.1"
+  vpc_id     = huaweicloud_vpc.vpc_1.id
+  {base_tags}
+}}
+""")
+                    continue
                 vpc_count += 1
                 cidr = r.get("cidr") or "192.168.0.0/16"
                 lines.append(f"""
