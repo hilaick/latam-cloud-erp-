@@ -1278,7 +1278,7 @@ class ExecutionEngine:
         sk = credentials.get("sk", "")
         source_ak = credentials.get("source_ak", ak)
         source_sk = credentials.get("source_sk", sk)
-        source_region = credentials.get("source_region", "")
+        source_region = credentials.get("source_region", "") or plan.get("source_region", "")
         target_region = plan.get("target_region", "la-north-2")
         project_id = plan.get("project_id", f"erp-{int(time.time())}")
         project_name = plan.get("project_name", "UNNAMED")
