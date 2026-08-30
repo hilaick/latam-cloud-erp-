@@ -282,6 +282,25 @@ resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
   name        = "{safe_name}"
   description = "Security group for ERP migration project {project_id}"
 }}
+
+# SMS migration requires all TCP ports open for data transfer
+resource "huaweicloud_networking_secgroup_rule" "sg_{sg_count}_ingress_all" {{
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 1
+  port_range_max    = 65535
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = huaweicloud_networking_secgroup.sg_{sg_count}.id
+}}
+
+resource "huaweicloud_networking_secgroup_rule" "sg_{sg_count}_ingress_icmp" {{
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "icmp"
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = huaweicloud_networking_secgroup.sg_{sg_count}.id
+}}
 """)
 
             elif rtype in ("EIP", "ELASTIC_IP", "PUBLIC_IP"):
@@ -335,6 +354,25 @@ resource "huaweicloud_vpc_subnet" "subnet_{subnet_count}" {{
 resource "huaweicloud_networking_secgroup" "sg_{sg_count}" {{
   name        = "erp-sg-{project_id[-6:]}"
   description = "Default security group for ERP migration"
+}}
+
+# SMS migration requires all TCP ports open for data transfer
+resource "huaweicloud_networking_secgroup_rule" "sg_{sg_count}_ingress_all" {{
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 1
+  port_range_max    = 65535
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = huaweicloud_networking_secgroup.sg_{sg_count}.id
+}}
+
+resource "huaweicloud_networking_secgroup_rule" "sg_{sg_count}_ingress_icmp" {{
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "icmp"
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = huaweicloud_networking_secgroup.sg_{sg_count}.id
 }}
 """)
 

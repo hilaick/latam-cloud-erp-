@@ -60,12 +60,12 @@ MIGRATION_OPERATIONS = {
         "objective": "Return the list of all source servers registered in SMS, with their IDs, names, states, and connection status.",
         "approach": [
             "Try MCP: search the 173 MCP servers for an SMS-related service (smsapi) that has a ListServers tool",
-            "Try hcloud: hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-source",
+            "Try hcloud: hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-target (uses TARGET account AK/SK, NOT source)",
             "Parse the JSON response for: id, name, state, connected fields",
         ],
         "troubleshooting": [
             "If MCP fails: check if the smsapi MCP server is started, try starting it",
-            "If hcloud returns empty: no sources registered — agent install needed first",
+            "If hcloud returns empty: verify using TARGET account profile (erp-target), NOT source profile (erp-source). SMS API uses target account credentials.",
             "If hcloud returns error: check --cli-profile and --cli-region are correct",
         ],
         "verification": ["The output must contain a JSON array of source servers"],
