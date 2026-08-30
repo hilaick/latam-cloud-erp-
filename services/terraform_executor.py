@@ -417,6 +417,16 @@ resource "huaweicloud_compute_eip_associate" "bind_ecs_{ecs_count}" {{
 """)
 
             elif rtype in ("EVS", "DISK", "VOLUME"):
+                # Skip system disks — they're part of the ECS system_disk block, not separate volumes
+                # System disk pattern: name contains "-volume-0000" or bootable=True
+                is_system_disk = (
+                    "-volume-0000" in name
+                    or r.get("bootable") is True
+                    or r.get("device_use", "").upper() == "OS"
+                )
+                if is_system_disk:
+                    logger.info(f"[TF] Skipping system disk '{name}' — already handled by ECS system_disk block")
+                    continue
                 evs_count += 1
                 disk_size = int(r.get("size") or r.get("disk_size") or 100)
                 lines.append(f"""

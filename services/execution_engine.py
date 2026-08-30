@@ -1513,10 +1513,10 @@ class ExecutionEngine:
             # Terraform succeeded — read state for target ECS IDs
             target_ecs = [r for r in created if "compute_instance" in r.get("type", "")]
 
-        # Phase 4.3-4.5: SMS Migration Runtime Operations
-        # Uses the target ECS instances provisioned by Terraform (from state file)
-        # or hcloud CLI fallback
-        from services.sms_migration import SMSMigration
+        # Phase 4.3-4.5: SMS Migration Runtime Operations (Skill-Driven)
+        # Uses the Skills Knowledge Tree (68 skills) to determine HOW to execute
+        # Tool order: Skills → MCP → hcloud CLI → SSH
+        from services.skill_driven_executor import SkillDrivenExecutor
 
         # Get target ECS from Terraform state (if TF succeeded) or from hcloud result (if fallback)
         if tf_apply_result["success"]:
@@ -1524,18 +1524,16 @@ class ExecutionEngine:
             target_ecs = [r for r in tf_state.get("resources", []) if "compute_instance" in r.get("type", "")]
         # else: target_ecs already set from hcloud_result above
 
-        # Get source ECS instances — use mgcData.raw_inventory (real Huawei UUIDs) if available
+        # Get source ECS — use mgcData.raw_inventory (real Huawei UUIDs) if available
         source_ecs = []
         raw_inv = plan.get("mgcData", {}).get("raw_inventory", {})
         if raw_inv and raw_inv.get("compute"):
-            # Use raw inventory — has real Huawei Cloud UUIDs and IPs
             mapper_names = set()
             for r in all_resources:
                 if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
                     mapper_names.add(r.get("name", ""))
             for srv in raw_inv.get("compute", []):
                 srv_name = srv.get("name", "")
-                # Only include servers that are in the migration scope (mapperNodes)
                 if not mapper_names or srv_name in mapper_names:
                     source_ecs.append({
                         "id": srv.get("id", ""),
@@ -1545,7 +1543,6 @@ class ExecutionEngine:
                         "flavor": srv.get("flavor", ""),
                     })
         if not source_ecs:
-            # Fall back to plan resources (may have internal IDs)
             for r in all_resources:
                 if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB"):
                     source_ecs.append({
@@ -1555,129 +1552,37 @@ class ExecutionEngine:
                         "public_ip": r.get("public_ip_address", ""),
                     })
 
-        logger.info(f"[EXECUTE] Phase 4.3: SMS migration — {len(source_ecs)} source servers → {len(target_ecs)} target servers")
+        logger.info(f"[EXECUTE] Phase 4.3: Skill-driven SMS migration — {len(source_ecs)} source → {len(target_ecs)} target")
 
-        # Phase 4.3: SMS Agent Install + Source Registration + Task Creation
+        # Run the full skill-driven migration
         if source_ecs and target_ecs:
-            # Resolve EIPs from source API (don't rely on cached discovery data)
-            source_eip_map = SMSMigration.resolve_source_eips(
+            migration_results = SkillDrivenExecutor.run_full_migration_skill_driven(
+                source_servers=source_ecs,
+                target_servers=target_ecs,
                 source_region=source_region or target_region,
-                source_ak=source_ak, source_sk=source_sk,
+                target_region=target_region,
+                os_user=credentials.get("os_user", "root"),
+                os_password=credentials.get("os_password", ""),
+                target_ak=ak,
+                target_sk=sk,
+                source_ak=source_ak,
+                source_sk=source_sk,
             )
-            if source_eip_map:
-                logger.info(f"[EXECUTE] Resolved {len(source_eip_map)} source EIPs via API")
-                for src in source_ecs:
-                    src_id = src.get("id", "")
-                    if src_id in source_eip_map:
-                        src["public_ip"] = source_eip_map[src_id]
-                        logger.info(f"[EXECUTE] Source {src.get('name','')}: EIP={src['public_ip']}")
 
-            # Step 1: Install SMS agents on source servers (use EIP for SSH)
-            for src in source_ecs:
-                ssh_ip = src.get("public_ip") or src.get("ip", "")
-                if not ssh_ip:
-                    results["steps"].append({
-                        "step_id": len(results["steps"]), "action": "SMS_AGENT_INSTALL",
-                        "target_resource": src.get("name", ""),
-                        "pillar": "PHASE_4.3", "tool_source": "internal", "tool_name": "sms_agent_install",
-                        "status": "failed",
-                        "message": f"No reachable IP for source server '{src.get('name','')}' — cannot SSH to install SMS agent. Private IP={src.get('ip','')}, EIP not found via API.",
-                        "error": "No reachable IP",
-                        "server_id": src.get("id", src.get("name", "")),
-                        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    })
-                    continue
-
-                agent_result = SMSMigration.install_sms_agent(
-                    source_ip=ssh_ip,
-                    os_user=credentials.get("os_user", "root"),
-                    os_password=credentials.get("os_password", ""),
-                )
+            # Convert migration results to execution steps
+            for mr in migration_results:
                 results["steps"].append({
-                    "step_id": len(results["steps"]), "action": "SMS_AGENT_INSTALL",
-                    "target_resource": src.get("name", ""),
-                    "pillar": "PHASE_4.3", "tool_source": "ssh", "tool_name": "sms_agent_install",
-                    "status": "success" if agent_result["success"] else "failed",
-                    "message": agent_result.get("message", ""),
-                    "error": agent_result.get("error"),
-                    "server_id": src.get("id", src.get("name", "")),
-                    "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                })
-
-            # Step 2: List registered SMS sources
-            sms_sources = SMSMigration.list_sources(
-                source_region=source_region or target_region,
-                ak=source_ak, sk=source_sk,
-            )
-            results["steps"].append({
-                "step_id": len(results["steps"]), "action": "SMS_LIST_SOURCES",
-                "target_resource": "N/A",
-                "pillar": "PHASE_4.3", "tool_source": "hcloud", "tool_name": "sms_list_sources",
-                "status": "success" if sms_sources["success"] else "warning",
-                "message": f"Found {len(sms_sources.get('sources', []))} registered SMS sources in {source_region or target_region}.",
-                "live_data": sms_sources,
-                "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-            })
-
-            # Step 3: Create SMS migration tasks (source → target)
-            sms_tasks = []
-            for i, src in enumerate(source_ecs):
-                tgt = target_ecs[i] if i < len(target_ecs) else None
-                if not tgt:
-                    continue
-
-                # Match SMS source by name
-                registered_source = None
-                for rs in sms_sources.get("sources", []):
-                    if src.get("name", "") in rs.get("name", "") or rs.get("name", "") in src.get("name", ""):
-                        registered_source = rs
-                        break
-
-                source_id = registered_source.get("id", src.get("id", "")) if registered_source else src.get("id", "")
-
-                task_result = SMSMigration.create_sms_task(
-                    source_server_id=source_id,
-                    target_server_id=tgt.get("id", ""),
-                    source_region=source_region or target_region,
-                    target_region=target_region,
-                    source_server_name=src.get("name", ""),
-                    ak=ak, sk=sk,
-                )
-
-                if task_result["success"]:
-                    sms_tasks.append(task_result["task_id"])
-
-                results["steps"].append({
-                    "step_id": len(results["steps"]), "action": "SMS_TASK_CREATE",
-                    "target_resource": src.get("name", ""),
-                    "pillar": "PHASE_4.3", "tool_source": "hcloud", "tool_name": "sms_create_task",
-                    "status": "success" if task_result["success"] else "failed",
-                    "message": task_result.get("message", ""),
-                    "error": task_result.get("error"),
-                    "server_id": src.get("id", src.get("name", "")),
-                    "task_id": task_result.get("task_id", ""),
-                    "started_at": datetime.datetime.utcnow().isoformat() + "Z",
-                    "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
-                })
-
-            # Phase 4.5: Monitor SMS sync until complete
-            for task_id in sms_tasks:
-                monitor_result = SMSMigration.monitor_until_complete(
-                    task_id=task_id,
-                    source_region=source_region or target_region,
-                    max_wait=3600,
-                )
-                results["steps"].append({
-                    "step_id": len(results["steps"]), "action": "SMS_SYNC_MONITOR",
-                    "target_resource": task_id,
-                    "pillar": "PHASE_4.5", "tool_source": "hcloud", "tool_name": "sms_monitor",
-                    "status": "success" if monitor_result["success"] else "failed",
-                    "message": f"SMS task {task_id}: state={monitor_result.get('state')}, progress={monitor_result.get('progress', 0)}%",
-                    "error": monitor_result.get("error"),
-                    "task_id": task_id,
+                    "step_id": len(results["steps"]),
+                    "action": mr.get("operation", "SMS_MIGRATION"),
+                    "target_resource": mr.get("source", ""),
+                    "pillar": "PHASE_4.3" if "INSTALL" in mr.get("operation", "") else "PHASE_4.5",
+                    "tool_source": mr.get("tool", "skill"),
+                    "tool_name": mr.get("skill", "sms_migration"),
+                    "status": mr.get("status", "unknown"),
+                    "message": mr.get("message", ""),
+                    "error": mr.get("error"),
+                    "server_id": mr.get("source", ""),
+                    "task_id": mr.get("task_id", ""),
                     "started_at": datetime.datetime.utcnow().isoformat() + "Z",
                     "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
                 })
