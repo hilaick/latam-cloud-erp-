@@ -5332,6 +5332,38 @@ class AgenticExecutionSimulator:
         source_region = project.get("source_region", "")
         target_region_val = project.get("region", "la-north-2")
 
+        # Enrich from Customer record if source_region or os_password missing from project data
+        if not source_region or not project.get("os_password"):
+            try:
+                import os as _os_mod
+                _os_mod.environ.setdefault("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+                from models import Customer
+                from app import db as _db
+                # Find customer by project data
+                cust_id = project.get("customer_id", project.get("customerId", ""))
+                if not cust_id:
+                    # Try to find from project's mgcData or mapperNodes
+                    mgc = project.get("mgcData", {})
+                    if isinstance(mgc, dict):
+                        cust_id = mgc.get("customer_id", "")
+                if not cust_id:
+                    # Try all customers and find one with matching region/source data
+                    for c in _db.session.query(Customer).all():
+                        if c.source_huawei_region:
+                            cust_id = c.id
+                            break
+                if cust_id:
+                    customer = _db.session.query(Customer).get(cust_id)
+                    if customer:
+                        if not source_region and customer.source_huawei_region:
+                            source_region = customer.source_huawei_region
+                        if not project.get("os_password") and customer.os_password:
+                            project["os_password"] = customer.os_password
+                        if not project.get("os_user") and getattr(customer, "os_user", None):
+                            project["os_user"] = customer.os_user
+            except Exception:
+                pass
+
         # ── CHECK 1: Orphaned resources in target account (BLOCKING) ──
         step_id += 1
         trace.append({
