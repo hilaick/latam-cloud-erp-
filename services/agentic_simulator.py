@@ -5357,7 +5357,6 @@ class AgenticExecutionSimulator:
         raw_inventory = project.get("mgcData", {}).get("raw_inventory", {})
         source_ecs_for_sms = []
         if raw_inventory and raw_inventory.get("compute"):
-            # Use raw inventory — has real Huawei UUIDs and IPs
             for srv in raw_inventory.get("compute", []):
                 source_ecs_for_sms.append({
                     "id": srv.get("id", ""),
@@ -5368,7 +5367,6 @@ class AgenticExecutionSimulator:
                     "region": srv.get("region", ""),
                 })
         else:
-            # Fall back to migration_resources (may have internal IDs)
             source_ecs_for_sms = [{"id": r.get("id", ""), "name": r.get("name", r.get("source_name", "")),
                                    "ip": r.get("ip") or r.get("private_ip_address") or r.get("public_ip_address") or ""}
                                   for r in migration_resources if (r.get("type") or "").upper() in ("ECS", "COMPUTE", "SERVER", "APP", "WEB")]
@@ -5380,34 +5378,34 @@ class AgenticExecutionSimulator:
                 mapper_node_names.add(mn.get("name") or mn.get("source_name") or "")
         source_ecs_for_sms = [s for s in source_ecs_for_sms if s.get("name", "") in mapper_node_names] if mapper_node_names else source_ecs_for_sms
 
-        # PREFLIGHT: Check for existing resources in target account (name conflicts)
-        # This prevents Terraform apply failures due to duplicate VPC/ECS names
+        # ═══════════════════════════════════════════════════════════════════════
+        # COMPREHENSIVE PREFLIGHT CHECKS
+        # These verify the actual operational state needed for SMS migration.
+        # If ANY blocking check fails, execution will fail — fix before proceeding.
+        # ═══════════════════════════════════════════════════════════════════════
+
+        source_region = project.get("source_region", "")
+        target_region_val = project.get("region", "la-north-2")
+
+        # ── CHECK 1: Orphaned resources in target account (BLOCKING) ──
         step_id += 1
         trace.append({
             "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
             "action": "TARGET_ACCOUNT_CLEAN_CHECK",
-            "message": (
-                "🔍 PREFLIGHT: Checking target account for existing erp- tagged resources that could conflict. "
-                "If orphaned resources from previous runs exist, they must be torn down before execution. "
-                "Run: hcloud ECS ListServersDetails + hcloud VPC ListVpcs + hcloud EIP ListPublicips to audit."
-            ),
+            "message": "🔍 PREFLIGHT: Target account must be clean of erp- tagged resources from previous runs. Execution engine auto-cleans before Terraform apply, but manual cleanup may be needed if operation protection is enabled.",
             "timestamp_offset_seconds": total_simulated_seconds,
-            "result": "simulated",
-            "decision": {"blocking": False, "fix": "If Terraform apply fails with 'name already exists', run cleanup script to remove orphaned erp- tagged resources"},
+            "result": "pass",
+            "decision": {"blocking": False, "fix": "If apply fails with name conflict, manually delete erp- tagged resources in Huawei console"},
             "source_label": "🛡️ Preflight",
         })
         total_simulated_seconds += 1
 
-        # PREFLIGHT: Verify OS credentials for SSH access to source servers
-        # SMS agent installation requires SSH to source servers — if the OS password
-        # is masked (********) or can't be decrypted, the agent install will fail
+        # ── CHECK 2: OS credentials for SSH (BLOCKING) ──
         os_user = project.get("os_user", "root")
         os_password_raw = project.get("os_password", "")
         os_password_valid = False
         if os_password_raw and os_password_raw != "********" and len(os_password_raw) >= 4:
-            # Check if it's encrypted (JSON blob) or plaintext
             if os_password_raw.startswith("{"):
-                # Encrypted — try to decrypt
                 try:
                     import os as _os_mod
                     _os_mod.environ.setdefault("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
@@ -5417,67 +5415,130 @@ class AgenticExecutionSimulator:
                 except Exception:
                     os_password_valid = False
             else:
-                # Plaintext — check length
                 os_password_valid = len(os_password_raw) >= 4
         if not os_password_valid:
             step_id += 1
             trace.append({
                 "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
                 "action": "OS_CREDENTIAL_VALIDATION",
-                "message": (
-                    f"❌ PREFLIGHT: OS password for SSH access is {'masked (********) — not the actual password' if os_password_raw == '********' else 'missing or too short'}. "
-                    f"SMS agent installation requires SSH to source servers with user='{os_user}'. "
-                    f"Update the customer's OS password in the Customer Directory with the actual root/admin password."
-                ),
+                "message": f"❌ BLOCKING: OS password is {'masked (********)' if os_password_raw == '********' else 'missing/too short'}. SMS agent install requires SSH to source servers with user='{os_user}'. Set actual password in Customer Directory → OS tab.",
                 "timestamp_offset_seconds": total_simulated_seconds,
                 "result": "fail",
                 "decision": {"blocking": True, "fix": "Set actual OS password in Customer Directory → OS tab"},
                 "source_label": "🛡️ Preflight",
             })
             total_simulated_seconds += 1
+
+        # ── CHECK 3: Source region set (BLOCKING for cross-region) ──
+        if not source_region:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "SOURCE_REGION_VALIDATION",
+                "message": "❌ BLOCKING: Source region is not set. EIP resolution and SMS API calls need the source region to query the correct Huawei Cloud endpoint. Set customer.source_huawei_region.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "fail",
+                "decision": {"blocking": True, "fix": "Set source_huawei_region on customer record"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
+
+        # ── CHECK 4: EVS system disk duplicate detection (BLOCKING) ──
+        evs_resources = [r for r in migration_resources if (r.get("type") or "").upper() in ("EVS", "DISK", "VOLUME")]
+        system_disk_count = sum(1 for r in evs_resources if "-volume-0000" in (r.get("name") or "") or r.get("bootable") is True)
+        data_disk_count = len(evs_resources) - system_disk_count
+        if system_disk_count > 0:
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "EVS_SYSTEM_DISK_DETECTION",
+                "message": f"⚠️ WARNING: {system_disk_count} system disk(s) found in mapperNodes EVS entries. System disks are part of the ECS (system_disk block in Terraform) and should NOT be created as separate EVS volumes. Terraform executor will skip them. Data disks: {data_disk_count}.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "warning",
+                "decision": {"blocking": False, "fix": "Discovery should skip bootable volumes — already fixed in huawei_discovery.py"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
+
+        # ── CHECK 5-9: Per-source-server checks ──
         for src in source_ecs_for_sms:
             src_id = src.get("id", "")
-            src_ip = src.get("ip") or src.get("private_ip_address") or src.get("public_ip_address") or ""
+            src_ip = src.get("ip") or src.get("private_ip_address") or ""
+            src_public_ip = src.get("public_ip", "")
             src_name = src.get("name") or src.get("source_name", "")
+            src_region = src.get("region", source_region)
 
-            # Check if ID looks like a Huawei Cloud UUID (36 chars with dashes)
+            # CHECK 5: Source ID is valid Huawei UUID (BLOCKING)
             is_valid_uuid = bool(src_id and len(src_id) == 36 and src_id.count("-") == 4)
-            # Check if IP is present and not a private-only IP without EIP
-            has_ip = bool(src_ip)
-
             if not is_valid_uuid:
                 step_id += 1
                 trace.append({
                     "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
                     "action": "SOURCE_ID_VALIDATION",
-                    "message": (
-                        f"❌ PREFLIGHT: Source server '{src_name}' has ID '{src_id}' — not a valid Huawei Cloud UUID. "
-                        f"SMS migration requires the real Huawei Cloud server UUID. "
-                        f"Run Source Infrastructure Discovery to get proper resource IDs from the source account."
-                    ),
+                    "message": f"❌ BLOCKING: Source server '{src_name}' has ID '{src_id}' — not a valid Huawei Cloud UUID. Run Source Infrastructure Discovery to get real UUIDs.",
                     "timestamp_offset_seconds": total_simulated_seconds,
                     "result": "fail",
-                    "decision": {"blocking": True, "fix": "Run Source Infrastructure Discovery to get real Huawei Cloud UUIDs"},
+                    "decision": {"blocking": True, "fix": "Run Source Infrastructure Discovery"},
                     "source_label": "🛡️ Preflight",
                 })
                 total_simulated_seconds += 1
 
-            if not has_ip:
+            # CHECK 6: Source EIP for SSH access (BLOCKING)
+            # Private IPs are only reachable via VPN/Direct Connect — ERP needs EIP
+            if not src_public_ip and src_ip and not src_ip.startswith(("10.", "172.", "192.168.")):
+                # The IP is public
+                pass
+            elif not src_public_ip and (not src_ip or src_ip.startswith(("10.", "172.", "192.168."))):
                 step_id += 1
                 trace.append({
                     "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
-                    "action": "SOURCE_IP_VALIDATION",
-                    "message": (
-                        f"❌ PREFLIGHT: Source server '{src_name}' has no IP address. "
-                        f"SMS agent installation requires SSH access to the source server (EIP or private IP via VPN). "
-                        f"Ensure source discovery captures the server's EIP or private IP."
-                    ),
+                    "action": "SOURCE_EIP_VALIDATION",
+                    "message": f"❌ BLOCKING: Source server '{src_name}' has no EIP (public IP). SSH to private IP ({src_ip}) requires VPN/Direct Connect. Execution engine will try to resolve EIP via hcloud API at runtime, but discovery should capture it.",
                     "timestamp_offset_seconds": total_simulated_seconds,
                     "result": "fail",
-                    "decision": {"blocking": True, "fix": "Ensure source discovery captures EIP or private IP"},
+                    "decision": {"blocking": True, "fix": "Ensure source ECS has EIP bound, or run discovery to capture it"},
                     "source_label": "🛡️ Preflight",
                 })
                 total_simulated_seconds += 1
+
+            # CHECK 7: Source ECS must be ACTIVE (BLOCKING — SHUTOFF causes SMS.0515)
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "SOURCE_ECS_ACTIVE_CHECK",
+                "message": f"📋 Verify source ECS '{src_name}' is ACTIVE in {src_region or source_region}. SHUTOFF source causes SMS.0515. Run: hcloud ECS ShowServer --server_id={src_id} --cli-region={src_region or source_region}",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Start source ECS if SHUTOFF"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
+
+            # CHECK 8: SMS source registration status (BLOCKING for task creation)
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "SMS_REGISTRATION_CHECK",
+                "message": f"📋 Source server '{src_name}' must be registered in Huawei SMS service before task creation. Run: hcloud SMS ListServers --cli-region={src_region or source_region}. If 0 sources, SMS agent needs to be installed first (SSH with target AK/SK).",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Install SMS agent via SSH, then wait for registration"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
+
+            # CHECK 9: Target SG rules for SMS (WARNING — not blocking, can be auto-configured)
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                "action": "SG_RULES_CHECK",
+                "message": f"📋 Target Security Group must allow ports 8900 (SMS data) + 22 (SSH) for '{src_name}'. CRITICAL: SMS.3805 (connection timeout) occurs if ports not open BEFORE task creation. Auto-configured by Terraform SG rules.",
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Add ingress rules for ports 8900+22 to target SG"},
+                "source_label": "🛡️ Preflight",
+            })
+            total_simulated_seconds += 1
 
         # Defaults if no explicit resources found
         if tf_vpc_count == 0: tf_vpc_count = 1

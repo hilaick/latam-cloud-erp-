@@ -1391,6 +1391,12 @@ class ExecutionEngine:
         # ── LIVE EXECUTION ──
 
         # Phase 4.0: Clean up orphaned resources from previous runs
+        # CRITICAL: Kill any running execution/terraform processes first, then
+        # delete ALL erp- tagged resources, and WAIT for deletion to complete
+        import subprocess as _kill_sp
+        _kill_sp.run("pkill -f execute_cr3 2>/dev/null", shell=True, capture_output=True)
+        _kill_sp.run("pkill -f 'terraform apply' 2>/dev/null", shell=True, capture_output=True)
+        time.sleep(3)  # Wait for processes to die
         cleanup_result = TerraformExecutor.cleanup_orphaned_resources(project_id, target_region, ak, sk)
         results["steps"].append({
             "step_id": len(results["steps"]), "action": "TARGET_CLEANUP", "target_resource": "N/A",

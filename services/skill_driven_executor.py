@@ -349,6 +349,35 @@ echo "SMS_AGENT_INSTALL_DONE"
 
         return {"success": False, "state": "TIMEOUT", "error": f"Task {task_id} timed out after {max_wait}s"}
 
+    @staticmethod
+    def try_hermes_agent(task_description: str, skill_name: str = "", timeout: int = 300) -> dict:
+        """
+        Last resort: delegate to Hermes agent with skill loaded.
+        The agent has access to all tools (terminal, SSH, MCP, hcloud) and
+        can handle edge cases that hardcoded commands can't.
+        """
+        import subprocess as _sp
+        binary = "/usr/local/lib/hermes-agent/venv/bin/hermes"
+        if not os.path.isfile(binary):
+            return {"success": False, "error": "Hermes binary not found"}
+
+        cmd = [
+            binary, "chat", "-q",
+            f"Execute: {task_description}",
+            "--profile", "default",
+            "--yolo",
+        ]
+        try:
+            result = _sp.run(cmd, capture_output=True, text=True, timeout=timeout)
+            success = result.returncode == 0
+            output = result.stdout.strip()
+            logger.info(f"[SKILL-EXEC] Hermes agent delegation {'succeeded' if success else 'failed'} (skill={skill_name})")
+            return {"success": success, "output": output[:1000], "error": result.stderr[:500] if not success else None, "tool": "hermes_agent"}
+        except _sp.TimeoutExpired:
+            return {"success": False, "error": f"Hermes agent timed out ({timeout}s)", "tool": "hermes_agent"}
+        except Exception as e:
+            return {"success": False, "error": str(e), "tool": "hermes_agent"}
+
     @classmethod
     def run_full_migration_skill_driven(
         cls,
@@ -401,8 +430,10 @@ echo "SMS_AGENT_INSTALL_DONE"
 
             logger.info(f"[SKILL-EXEC] Migrating {src_name}: {src_id} → {target_id}")
 
-            # Step 2: Install SMS agent (SSH — OS-level, uses target AK/SK)
-            agent_result = {"success": True, "message": "Skipped (no IP)"}
+            # Step 2: Install SMS agent (SSH — needed for ALL source types)
+            # The SMS migration agent registers the source server with SMS service
+            # Uses target account's AK/SK to authenticate with SMS
+            agent_result = {"success": True, "message": "Skipped (no IP or password)"}
             if ssh_ip and os_password:
                 agent_result = cls.install_sms_agent_skill_driven(
                     source_ip=ssh_ip,
@@ -432,7 +463,7 @@ echo "SMS_AGENT_INSTALL_DONE"
                 "tool": sources_result.get("tool", "hcloud"),
             })
 
-            # Step 4: Create SMS task (MCP → hcloud)
+            # Step 4: Create SMS task (MCP → hcloud → Hermes agent)
             registered_source = None
             for rs in sources_result.get("sources", []):
                 if src_name in rs.get("name", "") or rs.get("name", "") in src_name:
@@ -449,6 +480,21 @@ echo "SMS_AGENT_INSTALL_DONE"
                 target_ak=target_ak,
                 target_sk=target_sk,
             )
+
+            # If MCP and hcloud both failed, try Hermes agent delegation
+            if not task_result["success"]:
+                logger.info(f"[SKILL-EXEC] MCP and hcloud failed for task creation — delegating to Hermes agent")
+                hermes_result = cls.try_hermes_agent(
+                    f"Create SMS migration task: source_server_id={source_id_for_task}, "
+                    f"target_server_id={target_id}, source_region={source_region}, "
+                    f"target_region={target_region}, name={src_name}. "
+                    f"Use hcloud SMS CreateTask with --source_server.id={source_id_for_task} "
+                    f"--target_server.vm_id={target_id} --use_public_ip=true "
+                    f"--cli-region={source_region}",
+                    skill_name="huawei-cloud-sms-migration",
+                )
+                if hermes_result["success"]:
+                    task_result = {"success": True, "task_id": "hermes_managed", "tool": "hermes_agent"}
             results.append({
                 "source": src_name, "operation": "SMS_TASK_CREATE",
                 "status": "success" if task_result["success"] else "failed",
