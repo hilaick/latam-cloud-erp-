@@ -101,9 +101,9 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
     if (mode !== 'execution' || !isActive) return;
     const fetchProgress = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('hermes_access_token') || localStorage.getItem('token');
         const res = await fetch(`/api/execution/${projectId}/progress`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (res.ok) {
           const data = await res.json();
