@@ -93,16 +93,21 @@ MIGRATION_OPERATIONS = {
     "SMS_TASK_CREATE": {
         "objective": "Create an SMS migration task and return the task_id. The task maps source server to target ECS with correct disk configuration.",
         "approach": [
-            "Get source server ID from SMS (hcloud SMS ListServers)",
-            "Get target ECS ID from Terraform state or hcloud ECS ListServersDetails",
-            "Get target disk ID: hcloud ECS ShowServer --server_id={target_server_id} | grep volumes_attached | get first volume ID",
-            "Create task with hcloud SMS CreateTask:",
+            "Search /root/.hermes/skills/ for 'SMS CreateTask' and read sms-api-cli-reference + huawei-cloud-sms-migration skills",
+            "Read /root/.hermes/skills/devops/huawei-cloud-sms-migration/scripts/configure_sms_target.py — shows correct REST API approach with HMAC-SHA256",
+            "IMPORTANT: Disk size in SMS API must be in GB (integer 80), NOT bytes (85899345920)",
+            "IMPORTANT: If a server template exists, use vm_template_id instead of manual disk config",
+            "Get source server ID from SMS: hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-target (key=source_servers)",
+            "Get target ECS EVS volume ID: hcloud ECS NovaShowServer → os-extended-volumes:volumes_attached[0].id",
+            "Get target EIP: hcloud EIP ListPublicips → match by device_id",
+            "Create task: hcloud SMS CreateTask --cli-region={source_region} --cli-profile=erp-target",
             "  --source_server.id={source_server_id} --target_server.vm_id={target_server_id}",
-            "  --use_public_ip=true --type=MIGRATE_BLOCK --os_type=LINUX",
-            "  --target_server.disks.1.name='System Disk' --target_server.disks.1.device_use='OS'",
-            "  --target_server.disks.1.disk_id=<EVS_volume_id> --target_server.disks.1.size=<bytes>",
+            "  --use_public_ip=true --migration_ip=<EIP> --type=MIGRATE_FILE --os_type=LINUX",
+            "  --target_server.disks.1.name=/dev/vda --target_server.disks.1.device_use=BOOT",
+            "  --target_server.disks.1.disk_id=<EVS_volume_id> --target_server.disks.1.size=80",
+            "  --target_server.disks.1.physical_volumes.1.name=/dev/vda1 --target_server.disks.1.physical_volumes.1.device_use=OS",
+            "  --target_server.disks.1.physical_volumes.1.mount_point=/ --target_server.disks.1.physical_volumes.1.file_system=ext4",
             "  --auto_start=false --start_target_server=true",
-            "  --cli-region={source_region} --cli-profile=erp-source",
         ],
         "troubleshooting": [
             "SMS.0202 (AK/SK auth failed): the SMS task uses the TARGET account's MASTER AK/SK. The source server's migproject must target the destination region. Update with: hcloud SMS UpdateServerName --source_id={source_server_id} --migprojectid=<migproject_id> --cli-region={source_region} --cli-profile=erp-target",
@@ -224,74 +229,87 @@ class MigrationOperationExecutor:
 
     @staticmethod
     def build_prompt(operation: str, context: dict) -> str:
-        """Build a warmed-up prompt with full troubleshooting methodology."""
+        """Build a prompt with ENFORCED SKILL-FIRST TROUBLESHOOTING LOOP."""
         op_def = MIGRATION_OPERATIONS.get(operation, {})
         
-        # Format objective with context values
-        objective = op_def.get("objective", "")
-        for field, val in context.items():
-            objective = objective.replace("{" + field + "}", str(val))
-        
-        # Format approach steps with context values
-        approach_lines = []
-        for step in op_def.get("approach", []):
-            formatted = step
+        # Format text with context values
+        def fmt(text):
             for field, val in context.items():
-                formatted = formatted.replace("{" + field + "}", str(val))
-            approach_lines.append(f"  {len(approach_lines)+1}. {formatted}")
+                text = text.replace("{" + field + "}", str(val))
+            return text
         
-        # Format troubleshooting with context values
-        trouble_lines = []
-        for item in op_def.get("troubleshooting", []):
-            formatted = item
-            for field, val in context.items():
-                formatted = formatted.replace("{" + field + "}", str(val))
-            trouble_lines.append(f"  - {formatted}")
-        
-        # Format verification with context values
-        verify_lines = []
-        for item in op_def.get("verification", []):
-            formatted = item
-            for field, val in context.items():
-                formatted = formatted.replace("{" + field + "}", str(val))
-            verify_lines.append(f"  - {formatted}")
-        
-        skill_hints = op_def.get("skill_hints", [])
+        objective = fmt(op_def.get("objective", ""))
         
         prompt_parts = [
+            f"TASK: {operation}",
             f"OBJECTIVE: {objective}",
-            f"",
-            f"Do NOT stop until the objective is verified or ALL approaches are exhausted.",
-            f"You have SSH, hcloud CLI, 68 skills, and 173 MCP servers (3552 endpoints). Use them all.",
-            f"",
-            f"APPROACH (try in order):",
+            "",
+            "═══ MANDATORY SKILL-FIRST LOOP ═══",
+            "Before ANY action AND after ANY error, you MUST:",
+            "  1. Search /root/.hermes/skills/ for this operation AND any error codes encountered",
+            "  2. Read the SKILL.md AND any scripts/templates referenced in the skill",
+            "  3. Follow the skill's exact procedure — do NOT improvise or guess",
+            "  4. If the skill covers the error code, use the skill's fix EXACTLY as written",
+            "  5. Only if NO skill covers the error, try alternatives based on tool chain",
+            "  6. After fixing, state what you learned so it can be added to the skill tree",
+            "",
+            "This loop applies at EVERY step, not just the beginning.",
+            "If you hit SMS.XXXX error, STOP → search skills for 'SMS.XXXX' → read fix → apply.",
+            "Do NOT troubleshoot from memory. Do NOT guess. ALWAYS check the skill tree first.",
+            "═════════════════════════════════",
+            "",
+            "APPROACH (follow in order, check skills at EACH step):",
         ]
-        prompt_parts.extend(approach_lines)
         
-        prompt_parts.append(f"")
-        prompt_parts.append(f"TROUBLESHOOTING (if any step fails, try these before giving up):")
-        prompt_parts.extend(trouble_lines)
+        for i, step in enumerate(op_def.get("approach", []), 1):
+            prompt_parts.append(f"  {i}. {fmt(step)}")
         
-        prompt_parts.append(f"")
-        prompt_parts.append(f"VERIFICATION (must confirm success):")
-        prompt_parts.extend(verify_lines)
+        trouble = op_def.get("troubleshooting", [])
+        if trouble:
+            prompt_parts.extend([
+                "",
+                "TROUBLESHOOTING (search skills FIRST for each error code, then apply):",
+            ])
+            for item in trouble:
+                prompt_parts.append(f"  - {fmt(item)}")
         
-        prompt_parts.append(f"")
-        prompt_parts.append(f"SKILL HINTS (search the knowledge tree for these and related skills):")
-        for hint in skill_hints:
-            prompt_parts.append(f"  - {hint}")
+        verify = op_def.get("verification", [])
+        if verify:
+            prompt_parts.extend(["", "VERIFICATION (must pass before reporting success):"])
+            for item in verify:
+                prompt_parts.append(f"  - {fmt(item)}")
         
-        prompt_parts.append(f"")
-        prompt_parts.append(f"CONTEXT:")
+        prompt_parts.extend([
+            "",
+            "PERSISTENCE: Do NOT stop until the objective is verified or ALL skill-recommended approaches exhausted.",
+            "If an error occurs, go back to the SKILL-FIRST LOOP before trying anything else.",
+            "",
+            "CONTEXT:",
+        ])
+        
         for field in op_def.get("context_fields", []):
             val = context.get(field, "")
+            if field in ("os_password", "target_sk", "source_sk"):
+                val = "***" if val else "<not provided>"
             if val:
                 prompt_parts.append(f"  {field}: {val}")
         
-        prompt_parts.append(f"")
-        prompt_parts.append(f"CRITICAL: Be proactive. If something fails, read logs, diagnose, try alternatives. "
-                           f"Do NOT report failure without trying ALL troubleshooting steps. "
-                           f"Keep working until the objective is verified.")
+        skill_hints = op_def.get("skill_hints", [])
+        if skill_hints:
+            prompt_parts.extend(["", "SKILL HINTS (search these in /root/.hermes/skills/):"])
+            for hint in skill_hints:
+                prompt_parts.append(f"  - {hint}")
+        
+        prompt_parts.extend([
+            "",
+            "ALWAYS ALSO SEARCH: sms-migration-complete-reference, sms-error-codes-troubleshooting,",
+            "sms-migration-best-practices, sms-api-cli-reference, sms-migration-execution-learned",
+            "These contain ALL learned patterns from live execution. Read them BEFORE starting",
+            "AND re-read them when troubleshooting any error.",
+            "",
+            "TOOL CHAIN: Skills Knowledge Tree → MCP → hcloud CLI → SSH → Hermes agent delegation",
+            "If a tool fails, go to the next in the chain. If ALL fail, go back to SKILL-FIRST LOOP.",
+        ])
         
         return "\n".join(prompt_parts)
 
@@ -309,7 +327,8 @@ class MigrationOperationExecutor:
             "skill_hints": op_def.get("skill_hints", []),
             "troubleshooting_count": len(op_def.get("troubleshooting", [])),
             "simulated": True,
-            "message": (f"📋 SIMULATED: {operation} would be delegated to Hermes agent with warmed-up prompt. "
+            "message": (f"📋 SIMULATED: {operation} would be delegated to Hermes agent with SKILL-FIRST LOOP prompt. "
+                       f"Agent MUST search /root/.hermes/skills/ before AND after any error. "
                        f"Objective: {objective[:100]}... "
                        f"Skills: {', '.join(op_def.get('skill_hints', [])[:3])}. "
                        f"Troubleshooting scenarios: {len(op_def.get('troubleshooting', []))}. "
