@@ -252,6 +252,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 // 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
 // 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
 function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
+    const execState = executionState || { currentPhase: 'PHASE_4_0', status: 'PENDING', pendingAction: null };
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
