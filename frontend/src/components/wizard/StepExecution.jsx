@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { formatShortDate, EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 import WaveZeroConfigModal from './WaveZeroConfigModal';
+import SpawnTreeVisualizer from './SpawnTreeVisualizer';
 
 const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
 
@@ -586,6 +587,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
                                 </div>
                             </div>
+                            {/* Live spawn tree for execution */}
+                            <SpawnTreeVisualizer
+                                projectId={project?.id}
+                                simulationTrace={[]}
+                                isActive={autoOrchestrating}
+                                mode="execution"
+                            />
                         </div>
                     ) : (
                         <div className="flex gap-3">

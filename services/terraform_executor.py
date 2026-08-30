@@ -421,7 +421,7 @@ resource "huaweicloud_compute_instance" "ecs_{ecs_count}" {{
   flavor_id         = "{flavor}"
   system_disk_type  = "SAS"
   system_disk_size  = {disk_size}
-  security_group_ids = [huaweicloud_networking_secgroup.sg_1.id]
+  security_group_ids = [huaweicloud_networking_secgroup.sg_{max(sg_count, 1)}.id]
   network {{
     uuid = huaweicloud_vpc_subnet.subnet_1.id
   }}
