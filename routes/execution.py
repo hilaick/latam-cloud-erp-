@@ -893,6 +893,16 @@ def execute_plan(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@execution_bp.route('/api/execution/<project_id>/progress', methods=['GET'])
+@jwt_required()
+def get_execution_progress(project_id):
+    """Get live execution progress including spawn tree for GUI visualization."""
+    project = ProjectData.query.get(project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    progress = project.data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
+    return jsonify({"progress": progress})
+
 @execution_bp.route('/api/execution/templates', methods=['GET'])
 def list_execution_templates():
     """List saved execution templates (Phase 4.8 Workbench)."""

@@ -26,19 +26,20 @@ logger = logging.getLogger(__name__)
 
 MIGRATION_OPERATIONS = {
     "SMS_AGENT_INSTALL": {
-        "objective": "The source server MUST appear in `hcloud SMS ListServers --cli-region={source_region}` output as a registered source with state=waiting or state=active.",
+        "objective": "The source server MUST appear in `hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-target` output as a registered source with state=waiting or state=active.",
         "approach": [
             "Read the huawei-cloud-sms-migration skill from the knowledge tree (68 skills available)",
             "SSH to the source server at {source_ip} (user={os_user}, password={os_password})",
             "Check if /tmp/SMS-Agent/ already exists from previous attempts",
             "If not: download SMS-Agent.tar.gz from https://sms-agent.obs.cn-north-1.myhuaweicloud.com/SMS-Agent.tar.gz",
             "Extract and run startup.sh — it's INTERACTIVE and asks for: EULA (y), AK, SK, sms_domain, rsync install (y), warnings (y)",
-            "The AK/SK must be the TARGET account's credentials: AK={target_ak} SK={target_sk}",
+            "The AK/SK must be the TARGET account's MASTER AK/SK: AK={target_ak} SK={target_sk}",
             "The sms_domain is: sms.{source_region}.myhuaweicloud.com",
         ],
         "troubleshooting": [
             "If startup.sh interactive prompts fail with printf piping: run linuxmain directly with: cd /tmp/SMS-Agent/agent && nohup ./linuxmain <<< '{target_ak} {target_sk} sms.{source_region}.myhuaweicloud.com' > /dev/null 2>&1 &",
             "If SMS.0306 (GET /v3/config failed): agent can't reach SMS API — verify AK/SK are correct (AK must be 20 chars, SK must be 40 chars), verify network connectivity to sms.{source_region}.myhuaweicloud.com",
+            "If SMS.0202 (AK/SK auth failed): the SMS agent MUST use the TARGET account's MASTER AK/SK, not source account. The Master AK/SK has full IAM permissions across all regions including the target region.",
             "If SMS.0515: disk info mismatch — run hcloud SMS ShowServer to get disk IDs, update with hcloud SMS UpdateDiskInfo",
             "If agent process (linuxmain) not running: check /tmp/SMS-Agent/agent/Logs/startup.log and /tmp/SMS-Agent/agent/Logs/check.log for errors",
             "If auth.cfg has no AK/SK: write directly: echo '[auth]\\nak = {target_ak}\\nsk = {target_sk}' >> /tmp/SMS-Agent/agent/config/auth.cfg",
@@ -47,7 +48,7 @@ MIGRATION_OPERATIONS = {
             "Check enterprise project selection — if prompted, enter 0 (default)",
         ],
         "verification": [
-            "Run: hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-source",
+            "Run: hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-target",
             "The source server must appear in the list with a valid ID",
             "If not listed: check if linuxmain is running (ps aux | grep linuxmain), check logs, try alternative approach",
             "Do NOT report success until the source appears in SMS console",
@@ -104,11 +105,14 @@ MIGRATION_OPERATIONS = {
             "  --cli-region={source_region} --cli-profile=erp-source",
         ],
         "troubleshooting": [
-            "SMS.0515: disk info mismatch — delete task, run hcloud SMS UpdateDiskInfo with exact source disk config, recreate task",
+            "SMS.0202 (AK/SK auth failed): the SMS task uses the TARGET account's MASTER AK/SK. The source server's migproject must target the destination region. Update with: hcloud SMS UpdateServerName --source_id={source_server_id} --migprojectid=<migproject_id> --cli-region={source_region} --cli-profile=erp-target",
+            "SMS.3805 (connection timeout): target SG must have TCP 1-65535 ingress open. Verify with: hcloud VPC ShowSecurityGroup. Use hcloud VPC CreateSecurityGroupRule/v2 with --security_group_rule.* prefix.",
+            "SMS.0515: disk mismatch — delete task, run hcloud SMS UpdateDiskInfo with exact source disk config, recreate task",
             "SMS.6602: invalid floating IP — use --use_public_ip=true and --migration_ip=<target_private_ip>",
             "SMS.6103: wrong disk ID type — use EVS Volume ID from target ECS, not SMS Disk ID from source",
             "SMS.7711: illegal task name — use simple alphanumeric name like 'MigrationTask' (no hyphens)",
             "SMS.7605: target server already in another task — delete existing task first: hcloud SMS DeleteTask --task_id=<existing>",
+            "SSL_CONFIG fails at 50%: the source server's migproject must be set to one that targets the destination region. Check with: hcloud SMS ListMigprojects --cli-region={source_region} --cli-profile=erp-target. Update source with: hcloud SMS UpdateServerName --source_id={source_server_id} --migprojectid=<correct_migproject_id>",
             "If MCP smsapi available: try CreateTask via MCP first, fall back to hcloud",
         ],
         "verification": ["hcloud SMS ShowTask --task_id=<task_id> must return the task with state=READY or state=NOT_STARTED"],
@@ -313,6 +317,9 @@ class MigrationOperationExecutor:
         prompt = MigrationOperationExecutor.build_prompt(operation, context)
         logger.info(f"[OP-EXEC] Delegating {operation} to Hermes agent (prompt: {len(prompt)} chars)")
         
+        # Emit progress to project data for GUI
+        MigrationOperationExecutor._emit_progress(operation, "started", context)
+        
         binary = "/usr/local/lib/hermes-agent/venv/bin/hermes"
         if not os.path.isfile(binary):
             return {"success": False, "error": "Hermes binary not found", "operation": operation}
@@ -332,6 +339,9 @@ class MigrationOperationExecutor:
             logger.info(f"[OP-EXEC] {operation}: {'succeeded' if success else 'failed'} (exit={result.returncode})")
             if not success and result.stderr:
                 logger.warning(f"[OP-EXEC] {operation} stderr: {result.stderr[:300]}")
+            
+            MigrationOperationExecutor._emit_progress(operation, "succeeded" if success else "failed", context, output[:200])
+            
             return {
                 "success": success,
                 "operation": operation,
@@ -340,9 +350,57 @@ class MigrationOperationExecutor:
                 "tool": "hermes_agent",
             }
         except subprocess.TimeoutExpired:
+            MigrationOperationExecutor._emit_progress(operation, "timeout", context)
             return {"success": False, "error": f"Timed out ({timeout}s)", "operation": operation, "tool": "hermes_agent"}
         except Exception as e:
+            MigrationOperationExecutor._emit_progress(operation, "error", context, str(e)[:200])
             return {"success": False, "error": str(e), "operation": operation, "tool": "hermes_agent"}
+
+    @staticmethod
+    def _emit_progress(operation: str, status: str, context: dict, detail: str = ""):
+        """Write progress to project data so GUI can show live status."""
+        try:
+            import json as _json
+            from models import ProjectData
+            from app import db
+            project_id = context.get("project_id", "1787958983942")
+            project = ProjectData.query.get(project_id)
+            if not project:
+                return
+            progress = project.data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
+            
+            # Add operation to progress
+            progress["operations"].append({
+                "operation": operation,
+                "status": status,
+                "server": context.get("source_server_name", ""),
+                "detail": detail,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            })
+            
+            # Update spawn tree
+            node_id = f"agent_{operation}_{context.get('source_server_name', 'main')}"
+            existing = [n for n in progress["spawnTree"]["nodes"] if n.get("id") == node_id]
+            if existing:
+                existing[0]["status"] = status
+            else:
+                progress["spawnTree"]["nodes"].append({
+                    "id": node_id,
+                    "label": f"{operation}",
+                    "status": status,
+                    "type": "hermes_agent",
+                    "model": "glm-5.2",
+                    "server": context.get("source_server_name", ""),
+                })
+                progress["spawnTree"]["edges"].append({
+                    "from": "main",
+                    "to": node_id,
+                })
+            
+            project.data["executionProgress"] = progress
+            db.session.commit()
+        except Exception:
+            pass  # Don't let progress tracking break execution
 
     @classmethod
     def run_sms_migration_lifecycle(cls, source_servers: list, target_servers: list,
@@ -392,6 +450,7 @@ class MigrationOperationExecutor:
                 "source_server_id": src_id,
                 "target_server_id": target_id,
                 "os_type": "LINUX",
+                "project_id": "1787958983942",
             }
             source_contexts.append((src_name, ctx))
         
