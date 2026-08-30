@@ -212,18 +212,29 @@ class SkillRegistry:
                 "ecs_create": "hcloud ECS CreateServers --server.name=\"<name>-TARGET\" --server.imageRef=<image_id> --server.flavorRef=<flavor> --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone=<az> --server.root_volume.volumetype=SAS --server.root_volume.size=<disk_gb> --server.security_groups.1.id=<sg_id> --server.adminPass=<password> --server.count=1",
                 "eip_bind": "hcloud EIP UpdatePublicip --publicip_id=<eip_id> --publicip.port_id=<ecs_port_id>",
                 "sms_show_server": "hcloud SMS ShowServer --source_id=<source_id> --cli-region=<sms_region> | jq '.disks[0].id'",
-                "sms_create_task": "hcloud SMS CreateTask --name='MigrationTask' --project_id=<project_id> --project_name=<project> --region_id=<target_region> --source_server.id=<source_id> --target_server.name=<target_name> --target_server.vm_id=<ecs_id> --type=MIGRATE_BLOCK --os_type=<os> --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip=<ecs_ip> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name='Disk 0' --target_server.disks.1.size=<size_bytes> --target_server.disks.1.disk_id=<sms_disk_id>",
+                "sms_create_task": "hcloud SMS CreateTask --name='MigrationTask01' --project_id=<project_id> --project_name=<target_region> --region_id=<target_region> --source_server.id=<source_id> --target_server.name=<target_name> --target_server.vm_id=<ecs_id> --type=MIGRATE_FILE --os_type=LINUX --auto_start=false --start_target_server=true --use_public_ip=true --migration_ip=<EIP> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name=/dev/vda --target_server.disks.1.size=<size_bytes> --target_server.disks.1.disk_id=<evs_volume_id> --target_server.disks.1.physical_volumes.1.name=/dev/vda1 --target_server.disks.1.physical_volumes.1.device_use=OS --target_server.disks.1.physical_volumes.1.mount_point=/ --target_server.disks.1.physical_volumes.1.file_system=ext4",
                 "sms_monitor": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=<sms_region> | jq '.state, .progress'",
                 "sms_0515_workaround": "hcloud SMS UpdateServerName --source_id=<source_id> --name='<name>-REFRESH' && sleep 600 && hcloud SMS CreateTask ... # or use console",
             },
             "failure_modes": [
-                "sms_0515_invalid_agency_token",
+                "sms_0202_ak_sk_auth_failed",
+                "sms_0306_get_config_failed",
                 "sms_0515_source_disk_changed",
+                "sms_0806_partition_sync_failed_disk_too_small",
+                "sms_3803_public_key_verification_failed",
+                "sms_3805_connection_timeout_sg_or_private_ip",
                 "sms_6602_invalid_floating_ip",
                 "sms_6103_missing_disk_id",
+                "sms_6517_rsync_not_installed",
+                "sms_6519_cannot_find_disk",
+                "sms_6520_source_not_available",
                 "sms_7711_illegal_task_name",
                 "ecs_created_without_eip",
                 "sms_disk_id_vs_evs_volume_id_mismatch",
+                "attach_agent_image_80_percent_fail",
+                "disk_name_mismatch_sda_vs_vda",
+                "migration_ip_private_not_eip",
+                "sg_not_associated_with_ecs",
             ],
             "avg_duration_minutes": 120,
             "skill_file": HERMES_SKILLS_DIR + "/huawei-cloud-sms-migration/SKILL.md" if HERMES_SKILLS_DIR else "skills/huawei-cloud-sms-migration/SKILL.md",
@@ -239,7 +250,7 @@ class SkillRegistry:
                 "delete_failed_task": "hcloud SMS DeleteTask --task_id=<FAILED_TASK_ID>",
                 "refresh_source_name": "hcloud SMS UpdateServerName --source_id=<SOURCE_ID> --name='<NAME>-REFRESH'",
                 "check_source_state": "hcloud SMS ShowServer --source_id=<SOURCE_ID> --cli-region=ap-southeast-3 | grep -E '\"state\"|\"migration_cycle\"'",
-                "create_task_api": "hcloud SMS CreateTask --name='<TASK_NAME>' --project_id=<PID> --project_name=<PN> --region_id=<REGION> --source_server.id=<SID> --target_server.name=<TN> --target_server.vm_id=<VID> --type=MIGRATE_BLOCK --os_type=<OS> --auto_start=true --start_target_server=true --use_public_ip=true --migration_ip=<IP> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name='Disk 0' --target_server.disks.1.size=<BYTES> --target_server.disks.1.disk_id=<DID>",
+                "create_task_api": "hcloud SMS CreateTask --name='MigrationTask01' --project_id=<PID> --project_name=<REGION> --region_id=<REGION> --source_server.id=<SID> --target_server.name=<TN> --target_server.vm_id=<VID> --type=MIGRATE_FILE --os_type=LINUX --auto_start=false --start_target_server=true --use_public_ip=true --migration_ip=<EIP> --target_server.disks.1.device_use=BOOT --target_server.disks.1.name=/dev/vda --target_server.disks.1.size=<BYTES> --target_server.disks.1.disk_id=<EVS_ID> --target_server.disks.1.physical_volumes.1.name=/dev/vda1 --target_server.disks.1.physical_volumes.1.device_use=OS --target_server.disks.1.physical_volumes.1.mount_point=/ --target_server.disks.1.physical_volumes.1.file_system=ext4",
             },
             "failure_modes": ["accidental_source_server_deletion", "sms_0515_console_vs_api", "token_region_mismatch"],
             "avg_duration_minutes": 90,
@@ -1965,31 +1976,39 @@ class SmsMigrationSimulator:
             "target": server_name,
             "message": (
                 f"[TARGET CONFIG] Creating SMS migration task for '{server_name}'. "
-                f"Using PRIVATE IP ({target_ip}) with use_public_ip=true — production SMS.6602 workaround. "
-                f"Disk ID: SMS disk ID (<sms_disk_id>), not EVS volume ID."
+                f"Using EIP ({target_ip}) with use_public_ip=true for cross-region migration. "
+                f"Disk: /dev/vda (matching source), partition /dev/vda1, EVS Volume ID as disk_id. "
+                f"Type: MIGRATE_FILE for Linux (best compatibility). "
+                f"CRITICAL: disk name must be /dev/vda (NOT /dev/sda), migration_ip must be EIP (NOT private IP)."
             ),
             "commands": [
                 {"desc": "Create SMS migration task", "cmd": (
                     f"hcloud SMS CreateTask "
-                    f"--name='MigrationTask' "
+                    f"--name='MigrationTask01' "
                     f"--project_id=<project_id> "
-                    f"--project_name='<project>' "
+                    f"--project_name='{target_region}' "
                     f"--region_id={target_region} "
                     f"--source_server.id={vm_id} "
                     f"--target_server.name='{server_name}-TARGET' "
                     f"--target_server.vm_id=<ecs_id> "
                     f"--type={'MIGRATE_FILE' if is_linux else 'MIGRATE_BLOCK'} "
                     f"--os_type={'LINUX' if is_linux else 'WINDOWS'} "
-                    f"--auto_start=true "
+                    f"--auto_start=false "
                     f"--start_target_server=true "
                     f"--use_public_ip=true "
                     f"--migration_ip={target_ip} "
                     f"--target_server.disks.1.device_use=BOOT "
-                    f"--target_server.disks.1.name='Disk 0' "
+                    f"--target_server.disks.1.name=/dev/vda "
                     f"--target_server.disks.1.size={int(disk_gb * 1073741824)} "
-                    f"--target_server.disks.1.disk_id=<sms_disk_id>"
+                    f"--target_server.disks.1.disk_id=<evs_volume_id> "
+                    f"--target_server.disks.1.physical_volumes.1.name=/dev/vda1 "
+                    f"--target_server.disks.1.physical_volumes.1.device_use=OS "
+                    f"--target_server.disks.1.physical_volumes.1.mount_point=/ "
+                    f"--target_server.disks.1.physical_volumes.1.file_system=ext4"
                 )},
-                {"desc": "Verify task state READY", "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region={sms_region} | jq '.state, .syncing'"},
+                {"desc": "Start task", "cmd": "hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=start --cli-region=ap-southeast-3 --cli-profile=erp-target"},
+                {"desc": "Monitor: SSL_CONFIG → ATTACH_AGENT_IMAGE → FORMAT_DISK → MIGRATE_LINUX_FILE", "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3 --cli-profile=erp-target"},
+                {"desc": "If ATTACH_AGENT_IMAGE fails at 80%: check EVS quota, stop ECS, try MIGRATE_BLOCK", "cmd": "hcloud EVS ListVolumes --cli-region=la-north-2 --cli-profile=erp-target | grep -c available"},
             ],
             "timestamp_offset_seconds": total_offset,
             "result": "simulated_sms_task_created",
