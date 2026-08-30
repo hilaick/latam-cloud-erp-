@@ -4462,69 +4462,111 @@ class AgenticExecutionSimulator:
                                     s_ip = ip
                                     break
 
-            # ── SIMULATED: SMS agent install (NOT real SSH) ──
+            # ── SIMULATED: SMS agent install via task-descriptive delegation ──
             step_id += 1
-            agent_installed = True  # Simulated — execution engine handles real install
-
+            try:
+                from services.migration_operation_executor import MigrationOperationExecutor
+                op_sim = MigrationOperationExecutor.simulate_operation("SMS_AGENT_INSTALL", {
+                    "source_ip": s_ip, "source_server_name": s_name,
+                    "source_region": source_region, "target_region": target_region,
+                })
+                msg = op_sim["message"]
+            except Exception:
+                msg = f"📋 SIMULATED: SMS agent install on {s_ip} via Hermes agent delegation"
+            
             trace.append({
                 "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
                 "action": "SMS_AGENT_INSTALL",
                 "target": s_name,
-                "message": f"📋 SIMULATED: SMS agent would be installed via SSH to {s_ip} using Hermes agent delegation with huawei-cloud-sms-migration skill. Agent handles EULA, AK/SK input, and registration.",
-                "commands": [{"desc": "Hermes agent installs SMS agent", "cmd": f"hermes chat --profile default --model glm-5.2 --yolo 'Install SMS agent on {s_ip} using huawei-cloud-sms-migration skill'"}],
+                "message": msg,
+                "commands": [{"desc": "Hermes agent searches knowledge tree", 
+                              "cmd": "hermes chat --profile default --model glm-5.2 --yolo '<task-descriptive prompt>'"}],
                 "timestamp_offset_seconds": 1.0,
                 "result": "simulated",
                 "decision": {"blocking": False, "fix": "Execution engine delegates to Hermes agent at runtime"},
             })
             
-            # Register source server in SMS — SIMULATED (execution engine handles real registration)
+            # SIMULATED: SMS source registration via task-descriptive delegation
             step_id += 1
+            try:
+                from services.migration_operation_executor import MigrationOperationExecutor
+                op_sim = MigrationOperationExecutor.simulate_operation("SMS_SOURCE_LIST", {
+                    "source_region": source_region, "source_server_name": s_name,
+                })
+                msg = op_sim["message"]
+            except Exception:
+                msg = f"📋 SIMULATED: SMS source list for {s_name} via Hermes agent"
             trace.append({
                 "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
                 "action": "SMS_SOURCE_REGISTRATION",
                 "target": s_name,
-                "message": f"📋 SIMULATED: Source server '{s_name}' would be registered in SMS service via Hermes agent. Agent installs SMS migration agent on source, which auto-registers with SMS console. Verify with: hcloud SMS ListServers --cli-region={source_region}",
+                "message": msg,
                 "timestamp_offset_seconds": 1.0,
                 "result": "simulated",
                 "decision": {"blocking": False, "fix": "Execution engine delegates to Hermes agent at runtime"},
             })
             total_simulated_seconds += 1
 
-            # SIMULATED disk mapping — execution engine queries real disk info at runtime
+            # SIMULATED: SMS disk mapping via task-descriptive delegation
             step_id += 1
+            try:
+                from services.migration_operation_executor import MigrationOperationExecutor
+                op_sim = MigrationOperationExecutor.simulate_operation("SMS_DISK_MAPPING", {
+                    "source_server_id": s.get("id", ""), "source_region": source_region,
+                })
+                msg = op_sim["message"]
+            except Exception:
+                msg = f"📋 SIMULATED: SMS disk mapping for {s_name} via Hermes agent"
             trace.append({
                 "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
                 "action": "SMS_DISK_MAPPING",
                 "target": s_name,
-                "message": f"📋 SIMULATED: Disk mapping would be queried from source server via hcloud SMS ShowServer. System disk (device_use=OS) mapped to target ECS root_volume. Data disks mapped to target EVS volumes.",
+                "message": msg,
                 "timestamp_offset_seconds": 1.0,
                 "result": "simulated",
                 "decision": {"blocking": False, "fix": "Execution engine queries disk info at runtime"},
             })
             total_simulated_seconds += 1
 
-            # SIMULATED: SMS task creation and sync monitoring
+            # SIMULATED: SMS task creation via task-descriptive delegation
             step_id += 1
+            try:
+                from services.migration_operation_executor import MigrationOperationExecutor
+                op_sim = MigrationOperationExecutor.simulate_operation("SMS_TASK_CREATE", {
+                    "source_server_name": s_name, "source_region": source_region, "target_region": target_region,
+                })
+                msg = op_sim["message"]
+            except Exception:
+                msg = f"📋 SIMULATED: SMS task creation for {s_name} via Hermes agent"
             trace.append({
                 "id": step_id, "phase": "PHASE_4_2", "agent": f"SMSAgent-{s_name}",
                 "action": "SMS_TASK_CREATION",
                 "target": s_name,
-                "message": f"📋 SIMULATED: SMS migration task would be created for '{s_name}' → target ECS. Uses hcloud SMS CreateTask with source_server.id, target_server.vm_id, use_public_ip=true. Disk mapping: system disk (device_use=OS). Hermes agent delegates with huawei-cloud-sms-migration-exact-disk-config skill.",
+                "message": msg,
                 "timestamp_offset_seconds": 2.0,
                 "result": "simulated",
-                "decision": {"blocking": False, "fix": "Execution engine creates task at runtime via MCP → hcloud → Hermes agent"},
+                "decision": {"blocking": False, "fix": "Execution engine creates task at runtime via Hermes agent"},
             })
             total_simulated_seconds += 2
 
+            # SIMULATED: SMS sync monitor via task-descriptive delegation
             step_id += 1
+            try:
+                from services.migration_operation_executor import MigrationOperationExecutor
+                op_sim = MigrationOperationExecutor.simulate_operation("SMS_SYNC_MONITOR", {
+                    "source_region": source_region, "source_server_name": s_name,
+                })
+                msg = op_sim["message"]
+            except Exception:
+                msg = f"📋 SIMULATED: SMS sync monitoring for {s_name} via Hermes agent"
             trace.append({
                 "id": step_id, "phase": "PHASE_4_2", "agent": f"SMSAgent-{s_name}",
                 "action": "SMS_SYNC_MONITOR",
                 "target": s_name,
-                "message": f"📋 SIMULATED: SMS sync would be monitored until complete. States: waiting → setting → READY → RUNNING → SUCCESS. Hermes agent monitors via hcloud SMS ShowTask.",
+                "message": msg,
                 "timestamp_offset_seconds": 1.0,
                 "result": "simulated",
-                "decision": {"blocking": False, "fix": "Execution engine monitors at runtime"},
+                "decision": {"blocking": False, "fix": "Execution engine monitors at runtime via Hermes agent"},
             })
             total_simulated_seconds += 1
 

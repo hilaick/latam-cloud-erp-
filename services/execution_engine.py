@@ -1515,10 +1515,10 @@ class ExecutionEngine:
             # Terraform succeeded — read state for target ECS IDs
             target_ecs = [r for r in created if "compute_instance" in r.get("type", "")]
 
-        # Phase 4.3-4.5: SMS Migration Runtime Operations (Skill-Driven)
-        # Uses the Skills Knowledge Tree (68 skills) to determine HOW to execute
-        # Tool order: Skills → MCP → hcloud CLI → SSH
-        from services.skill_driven_executor import SkillDrivenExecutor
+        # Phase 4.3-4.5: SMS Migration via task-descriptive Hermes agent delegation
+        # Each operation is delegated to Hermes agent with task description + skill hints
+        # Agent searches the 68 skills + 173 MCPs in the knowledge tree
+        from services.migration_operation_executor import MigrationOperationExecutor
 
         # Get target ECS from Terraform state (if TF succeeded) or from hcloud result (if fallback)
         if tf_apply_result["success"]:
@@ -1554,11 +1554,11 @@ class ExecutionEngine:
                         "public_ip": r.get("public_ip_address", ""),
                     })
 
-        logger.info(f"[EXECUTE] Phase 4.3: Skill-driven SMS migration — {len(source_ecs)} source → {len(target_ecs)} target")
+        logger.info(f"[EXECUTE] Phase 4.3: SMS migration via Hermes agent delegation — {len(source_ecs)} source → {len(target_ecs)} target")
 
-        # Run the full skill-driven migration
+        # Run the full SMS migration lifecycle via task-descriptive delegation
         if source_ecs and target_ecs:
-            migration_results = SkillDrivenExecutor.run_full_migration_skill_driven(
+            migration_results = MigrationOperationExecutor.run_sms_migration_lifecycle(
                 source_servers=source_ecs,
                 target_servers=target_ecs,
                 source_region=source_region or target_region,
@@ -1578,13 +1578,12 @@ class ExecutionEngine:
                     "action": mr.get("operation", "SMS_MIGRATION"),
                     "target_resource": mr.get("source", ""),
                     "pillar": "PHASE_4.3" if "INSTALL" in mr.get("operation", "") else "PHASE_4.5",
-                    "tool_source": mr.get("tool", "skill"),
-                    "tool_name": mr.get("skill", "sms_migration"),
+                    "tool_source": mr.get("tool", "hermes_agent"),
+                    "tool_name": "migration_operation_executor",
                     "status": mr.get("status", "unknown"),
                     "message": mr.get("message", ""),
                     "error": mr.get("error"),
                     "server_id": mr.get("source", ""),
-                    "task_id": mr.get("task_id", ""),
                     "started_at": datetime.datetime.utcnow().isoformat() + "Z",
                     "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
                 })
