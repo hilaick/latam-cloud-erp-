@@ -148,59 +148,51 @@ class SkillDrivenExecutor:
         target_region: str = "",
     ) -> dict:
         """
-        Install SMS agent using the skill's exact commands.
+        Install SMS agent by delegating to the ERP's Hermes agent with
+        the huawei-cloud-sms-migration skill loaded.
         
-        From huawei-cloud-sms-migration skill:
-        - Download SMS agent from OBS
-        - Extract and run setup with AK/SK passed via printf
-        - The agent uses the TARGET account's Master AK/SK
+        The agent has the skill's exact commands, can handle interactive
+        prompts (EULA, AK/SK), and can use SSH/terminal/hcloud/MCP.
         
-        Tool order: SSH (agent install is OS-level, can't be done via MCP/hcloud)
+        Tool order: Hermes agent (with skill loaded)
         """
-        logger.info(f"[SKILL-EXEC] Installing SMS agent on {source_ip} using skill commands")
+        logger.info(f"[SKILL-EXEC] Delegating SMS agent install on {source_ip} to Hermes agent")
 
-        # Skill command: download, extract, and configure agent with AK/SK
-        # The SMS agent startup.sh is interactive — it asks for:
-        # 1. EULA agreement (y/n)
-        # 2. AK (target account access key)
-        # 3. SK (target account secret key)
-        # 4. Region (optional, may auto-detect)
-        # Use printf to pipe all inputs non-interactively
-        install_cmd = f"""
-cd /tmp
-wget -q https://sms-agent.obs.cn-north-1.myhuaweicloud.com/SMS-Agent.tar.gz -O SMS-Agent.tar.gz 2>/dev/null
-tar xzf SMS-Agent.tar.gz 2>/dev/null
-cd SMS-Agent
-# Kill any existing screen sessions from previous attempts
-screen -ls 2>/dev/null | grep sms_agent | cut -d. -f1 | awk '{{print $1}}' | xargs -I{{}} screen -S {{}} -X quit 2>/dev/null
-# Feed all interactive inputs: y (EULA) + AK + SK + region
-printf 'y\\n{target_ak}\\n{target_sk}\\n{target_region}\\n' | ./startup.sh
-echo "SMS_AGENT_INSTALL_EXIT=$?"
-"""
+        prompt = (
+            f"Install the Huawei Cloud SMS migration agent on source server {source_ip}.\n"
+            f"SSH credentials: user={os_user}, password={os_password}\n"
+            f"Use the TARGET account AK/SK for SMS registration:\n"
+            f"  AK={target_ak}\n"
+            f"  SK={target_sk}\n"
+            f"Target region: {target_region}\n"
+            f"Source region: {source_region}\n\n"
+            f"Follow the huawei-cloud-sms-migration skill exactly.\n"
+            f"The agent startup.sh is interactive — it asks for EULA agreement (y), "
+            f"AK, SK, and possibly region. Handle all prompts.\n"
+            f"After install, verify the source server appears in SMS console by running: "
+            f"hcloud SMS ListServers --cli-region={source_region}\n"
+            f"Return: whether the source server is registered in SMS."
+        )
 
-        result = cls.try_ssh(source_ip, install_cmd, username=os_user, password=os_password, timeout=120)
-        
-        if result["success"] and "SMS_AGENT_INSTALL_EXIT=" in result.get("stdout", ""):
-            exit_code = result["stdout"].split("SMS_AGENT_INSTALL_EXIT=")[-1].split("\n")[0].strip()
-            if exit_code == "0":
-                return {
-                    "success": True,
-                    "message": f"SMS agent installed on {source_ip} with target AK/SK (EULA accepted)",
-                    "tool": "ssh",
-                    "skill": "huawei-cloud-sms-migration",
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": f"SMS agent install exited with code {exit_code} on {source_ip}",
-                    "error": f"Exit code: {exit_code}",
-                    "tool": "ssh",
-                }
+        result = cls.try_hermes_agent(
+            task_description=prompt,
+            skill_name="huawei-cloud-sms-migration",
+            timeout=300,
+        )
+
+        if result["success"]:
+            return {
+                "success": True,
+                "message": f"SMS agent installed on {source_ip} via Hermes agent (skill: huawei-cloud-sms-migration)",
+                "tool": "hermes_agent",
+                "skill": "huawei-cloud-sms-migration",
+                "agent_output": result.get("output", "")[:500],
+            }
         return {
             "success": False,
-            "message": f"SMS agent install failed on {source_ip}: {result.get('error', result.get('stderr', ''))}",
+            "message": f"SMS agent install failed on {source_ip}: {result.get('error', '')}",
             "error": result.get("error", ""),
-            "tool": "ssh",
+            "tool": "hermes_agent",
         }
 
     @classmethod
@@ -375,18 +367,26 @@ echo "SMS_AGENT_INSTALL_EXIT=$?"
         if not os.path.isfile(binary):
             return {"success": False, "error": "Hermes binary not found"}
 
+        # Build the prompt with skill context
+        full_prompt = task_description
+        if skill_name:
+            full_prompt = f"Use skill: {skill_name}\n\n{task_description}"
+
         cmd = [
             binary, "chat", "-q",
-            f"Execute: {task_description}",
+            full_prompt,
             "--profile", "default",
+            "--model", "glm-5.2",
             "--yolo",
         ]
         try:
             result = _sp.run(cmd, capture_output=True, text=True, timeout=timeout)
             success = result.returncode == 0
             output = result.stdout.strip()
-            logger.info(f"[SKILL-EXEC] Hermes agent delegation {'succeeded' if success else 'failed'} (skill={skill_name})")
-            return {"success": success, "output": output[:1000], "error": result.stderr[:500] if not success else None, "tool": "hermes_agent"}
+            logger.info(f"[SKILL-EXEC] Hermes agent delegation {'succeeded' if success else 'failed'} (skill={skill_name}, exit={result.returncode})")
+            if not success and result.stderr:
+                logger.warning(f"[SKILL-EXEC] Hermes stderr: {result.stderr[:300]}")
+            return {"success": success, "output": output[:2000], "error": result.stderr[:500] if not success else None, "tool": "hermes_agent"}
         except _sp.TimeoutExpired:
             return {"success": False, "error": f"Hermes agent timed out ({timeout}s)", "tool": "hermes_agent"}
         except Exception as e:
