@@ -160,28 +160,42 @@ class SkillDrivenExecutor:
         logger.info(f"[SKILL-EXEC] Installing SMS agent on {source_ip} using skill commands")
 
         # Skill command: download, extract, and configure agent with AK/SK
-        # The SMS agent setup.sh is interactive — it asks for AK/SK
-        # Use printf to pipe credentials non-interactively
+        # The SMS agent startup.sh is interactive — it asks for:
+        # 1. EULA agreement (y/n)
+        # 2. AK (target account access key)
+        # 3. SK (target account secret key)
+        # 4. Region (optional, may auto-detect)
+        # Use printf to pipe all inputs non-interactively
         install_cmd = f"""
 cd /tmp
 wget -q https://sms-agent.obs.cn-north-1.myhuaweicloud.com/SMS-Agent.tar.gz -O SMS-Agent.tar.gz 2>/dev/null
 tar xzf SMS-Agent.tar.gz 2>/dev/null
 cd SMS-Agent
-# Pass target AK/SK to the interactive setup via printf
-# The agent needs the TARGET account's Master AK/SK to register with SMS service
-printf '{target_ak}\\n{target_sk}\\n' | screen -dmS sms_agent ./startup.sh 2>/dev/null || printf '{target_ak}\\n{target_sk}\\n' | ./setup.sh 2>/dev/null
-echo "SMS_AGENT_INSTALL_DONE"
+# Kill any existing screen sessions from previous attempts
+screen -ls 2>/dev/null | grep sms_agent | cut -d. -f1 | awk '{{print $1}}' | xargs -I{{}} screen -S {{}} -X quit 2>/dev/null
+# Feed all interactive inputs: y (EULA) + AK + SK + region
+printf 'y\\n{target_ak}\\n{target_sk}\\n{target_region}\\n' | ./startup.sh
+echo "SMS_AGENT_INSTALL_EXIT=$?"
 """
 
         result = cls.try_ssh(source_ip, install_cmd, username=os_user, password=os_password, timeout=120)
         
-        if result["success"] and "SMS_AGENT_INSTALL_DONE" in result.get("stdout", ""):
-            return {
-                "success": True,
-                "message": f"SMS agent installed on {source_ip} with target AK/SK",
-                "tool": "ssh",
-                "skill": "huawei-cloud-sms-migration",
-            }
+        if result["success"] and "SMS_AGENT_INSTALL_EXIT=" in result.get("stdout", ""):
+            exit_code = result["stdout"].split("SMS_AGENT_INSTALL_EXIT=")[-1].split("\n")[0].strip()
+            if exit_code == "0":
+                return {
+                    "success": True,
+                    "message": f"SMS agent installed on {source_ip} with target AK/SK (EULA accepted)",
+                    "tool": "ssh",
+                    "skill": "huawei-cloud-sms-migration",
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"SMS agent install exited with code {exit_code} on {source_ip}",
+                    "error": f"Exit code: {exit_code}",
+                    "tool": "ssh",
+                }
         return {
             "success": False,
             "message": f"SMS agent install failed on {source_ip}: {result.get('error', result.get('stderr', ''))}",
