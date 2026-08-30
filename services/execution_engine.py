@@ -507,12 +507,35 @@ class ExecutionEngine:
         ta_network = ta.get("network", []) or []
 
         plan_resources = []
+        # Build a lookup of source disk sizes from raw_inventory
+        source_disk_sizes = {}
+        raw_inv = plan.get("mgcData", {}).get("raw_inventory", {})
+        if raw_inv and raw_inv.get("compute"):
+            for srv in raw_inv.get("compute", []):
+                srv_name = srv.get("name", "")
+                # Source disk size — check root_volume.size (in GB) or OS-EXT-SRV-ATTR
+                root_vol = srv.get("root_volume", {})
+                disk_gb = root_vol.get("size") if root_vol else None
+                if not disk_gb:
+                    # Check volumes_attached for size
+                    vols = srv.get("os-extended-volumes:volumes_attached", [])
+                    if vols:
+                        disk_gb = vols[0].get("size")
+                if disk_gb:
+                    source_disk_sizes[srv_name] = int(disk_gb)
+        
         for r in ta_compute:
+            r_name = r.get("name") or r.get("source_name") or r.get("id", "")
+            # Use source disk size if available, otherwise from target arch, default 40
+            disk_size = r.get("disk_size") or r.get("size")
+            if not disk_size and r_name in source_disk_sizes:
+                disk_size = source_disk_sizes[r_name]
+                logger.info(f"[BUILD_PLAN] Using source disk size {disk_size}GB for {r_name}")
             plan_resources.append({
-                "type": "ECS", "name": r.get("name") or r.get("source_name") or r.get("id", ""),
+                "type": "ECS", "name": r_name,
                 "flavor": r.get("flavor") or r.get("specification", ""),
                 "os_image": r.get("os_image") or r.get("image_id", ""),
-                "disk_size": r.get("disk_size") or r.get("size", 40),
+                "disk_size": int(disk_size) if disk_size else 40,
             })
         for r in ta_database:
             plan_resources.append({"type": "RDS", "name": r.get("name") or r.get("source_name", "")})

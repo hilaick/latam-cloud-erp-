@@ -5466,6 +5466,35 @@ class AgenticExecutionSimulator:
             })
             total_simulated_seconds += 1
 
+            # CHECK 10: Target disk size >= source disk size (BLOCKING — prevents SMS.0806)
+            src_disk_size = src.get("disk_size") or 0
+            # Source disk size from raw_inventory (in bytes from SMS API, convert to GB)
+            if not src_disk_size and raw_inventory and raw_inventory.get("compute"):
+                for srv in raw_inventory.get("compute", []):
+                    if srv.get("name") == src_name:
+                        root_vol = srv.get("root_volume", {})
+                        if root_vol and root_vol.get("size"):
+                            src_disk_size = int(root_vol.get("size"))
+                        break
+            # Target disk size — check if target arch has disk size
+            target_disk_size = 40  # Default
+            for mn in mapper_nodes:
+                if (mn.get("name") or mn.get("source_name")) == src_name:
+                    target_disk_size = int(mn.get("disk_size") or mn.get("size") or 40)
+                    break
+            if src_disk_size and target_disk_size and src_disk_size > target_disk_size:
+                step_id += 1
+                trace.append({
+                    "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
+                    "action": "DISK_SIZE_VALIDATION",
+                    "message": f"❌ BLOCKING: Source disk size ({src_disk_size}GB) > Target disk size ({target_disk_size}GB) for '{src_name}'. SMS.0806 will fail — target disk too small. Terraform must provision target disk >= source disk size.",
+                    "timestamp_offset_seconds": total_simulated_seconds,
+                    "result": "fail",
+                    "decision": {"blocking": True, "fix": f"Set target disk_size={src_disk_size} in Terraform/compute.tf"},
+                    "source_label": "🛡️ Preflight",
+                })
+                total_simulated_seconds += 1
+
         # Defaults if no explicit resources found
         if tf_vpc_count == 0: tf_vpc_count = 1
         if tf_subnet_count == 0: tf_subnet_count = 1

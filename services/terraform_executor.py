@@ -400,7 +400,22 @@ resource "huaweicloud_networking_secgroup_rule" "sg_{sg_count}_ingress_icmp" {{
                 ecs_count += 1
                 flavor = r.get("flavor") or r.get("specification") or "s6.large.2"
                 image_name = r.get("os_image") or r.get("image_id") or "Ubuntu 22.04 server 64bit"
-                disk_size = int(r.get("disk_size") or r.get("size") or 40)
+                # Disk size: use source disk size if available, otherwise default to 40
+                # Source disk size comes from mgcData.raw_inventory (in bytes) or mapperNodes (in GB)
+                disk_size_gb = r.get("disk_size") or r.get("size")
+                if not disk_size_gb:
+                    # Try to get from raw_inventory — disk size is in bytes, convert to GB
+                    raw_inv = r.get("_raw_inventory", {})
+                    src_disk = raw_inv.get("os-extended-volumes:volumes_attached", [{}])[0] if raw_inv else {}
+                    if not src_disk:
+                        # Check root_volume size
+                        root_vol = raw_inv.get("root_volume", {}) if raw_inv else {}
+                        disk_size_gb = root_vol.get("size")
+                    else:
+                        disk_size_gb = src_disk.get("size")
+                disk_size = int(disk_size_gb) if disk_size_gb else 40
+                # Ensure minimum 40GB
+                disk_size = max(disk_size, 40)
 
                 # Use image name — Terraform data source will resolve it
                 # If image_name looks like a UUID, use it directly; otherwise use data source
