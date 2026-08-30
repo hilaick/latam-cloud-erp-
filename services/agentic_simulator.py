@@ -5483,20 +5483,20 @@ class AgenticExecutionSimulator:
                 })
                 total_simulated_seconds += 1
 
-            # CHECK 6: Source EIP for SSH access (BLOCKING)
+            # CHECK 6: Source EIP for SSH access (WARNING — runtime fallback exists)
             # Private IPs are only reachable via VPN/Direct Connect — ERP needs EIP
+            # But execution engine resolves EIPs at runtime via hcloud API
             if not src_public_ip and src_ip and not src_ip.startswith(("10.", "172.", "192.168.")):
-                # The IP is public
-                pass
+                pass  # IP is public
             elif not src_public_ip and (not src_ip or src_ip.startswith(("10.", "172.", "192.168."))):
                 step_id += 1
                 trace.append({
                     "id": step_id, "phase": "PHASE_4_0", "agent": "Preflight",
                     "action": "SOURCE_EIP_VALIDATION",
-                    "message": f"❌ BLOCKING: Source server '{src_name}' has no EIP (public IP). SSH to private IP ({src_ip}) requires VPN/Direct Connect. Execution engine will try to resolve EIP via hcloud API at runtime, but discovery should capture it.",
+                    "message": f"⚠️ WARNING: Source server '{src_name}' has no EIP in discovery data (private IP={src_ip}). Execution engine will resolve EIP at runtime via hcloud EIP ListPublicips API (matching by device_id). If no EIP is bound, SSH will fail.",
                     "timestamp_offset_seconds": total_simulated_seconds,
-                    "result": "fail",
-                    "decision": {"blocking": True, "fix": "Ensure source ECS has EIP bound, or run discovery to capture it"},
+                    "result": "warning",
+                    "decision": {"blocking": False, "fix": "Ensure source ECS has EIP bound. Runtime resolution via hcloud API will handle it."},
                     "source_label": "🛡️ Preflight",
                 })
                 total_simulated_seconds += 1
