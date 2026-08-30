@@ -900,8 +900,58 @@ def get_execution_progress(project_id):
     project = ProjectData.query.get(project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
-    progress = project.data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
+    data = project.data if isinstance(project.data, dict) else json.loads(project.data or "{}")
+    progress = data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
     return jsonify({"progress": progress})
+
+@execution_bp.route('/api/execution/<project_id>/progress', methods=['POST'])
+def post_execution_progress(project_id):
+    """Push execution progress from external scripts (SSH-spawned agents, etc). No JWT — internal API."""
+    project = ProjectData.query.get(project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    body = request.get_json(force=True, silent=True) or {}
+    data = project.data if isinstance(project.data, dict) else json.loads(project.data or "{}")
+    progress = data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
+    
+    # Append operation
+    if body.get("operation"):
+        progress["operations"].append({
+            "operation": body.get("operation"),
+            "status": body.get("status", "started"),
+            "server": body.get("server", ""),
+            "detail": body.get("detail", ""),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    
+    # Update spawn tree
+    if body.get("agent_id"):
+        node_id = body["agent_id"]
+        existing = [n for n in progress["spawnTree"]["nodes"] if n.get("id") == node_id]
+        if existing:
+            existing[0]["status"] = body.get("status", "running")
+        else:
+            if not any(n.get("id") == "main" for n in progress["spawnTree"]["nodes"]):
+                progress["spawnTree"]["nodes"].insert(0, {
+                    "id": "main", "label": "Main Orchestrator", "status": "running",
+                    "type": "orchestrator", "model": "glm-5.2",
+                })
+            progress["spawnTree"]["nodes"].append({
+                "id": node_id,
+                "label": body.get("label", body.get("operation", "")),
+                "status": body.get("status", "started"),
+                "type": body.get("type", "hermes_agent"),
+                "model": body.get("model", "glm-5.2"),
+                "server": body.get("server", ""),
+            })
+            parent = body.get("parent", "main")
+            progress["spawnTree"]["edges"].append({"from": parent, "to": node_id})
+    
+    data["executionProgress"] = progress
+    project.data = data
+    db.session.commit()
+    return jsonify({"success": True, "progress": progress})
+
 
 @execution_bp.route('/api/execution/templates', methods=['GET'])
 def list_execution_templates():

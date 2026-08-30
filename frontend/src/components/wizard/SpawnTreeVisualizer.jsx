@@ -173,13 +173,21 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
     <div style={{ background: '#0f172a', borderRadius: '12px', padding: '16px', border: '1px solid #1e293b' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h3 style={{ color: '#e0e7ff', fontSize: '13px', fontWeight: 700, margin: 0 }}>
-          🌳 Agent Spawn Tree {mode === 'simulation' && '(Simulation)'}
+          🌳 Agent Spawn Tree {mode === 'simulation' && '(Simulation)'} {mode === 'execution' && '(Execution)'}
         </h3>
-        {isActive && (
+        {isActive && (operations.length > 0 || tree) && (
           <span style={{ fontSize: '9px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '6px', height: '6px', background: '#f59e0b', borderRadius: '50%', animation: 'pulse 1.5s infinite' }} />
-            LIVE
+            {mode === 'simulation' ? 'REPLAY' : 'LIVE'}
           </span>
+        )}
+        {isActive && !operations.length && !tree && (
+          <span style={{ fontSize: '9px', color: '#6b7280' }}>
+            {mode === 'simulation' ? 'WAITING FOR SIMULATION...' : 'WAITING FOR EXECUTION...'}
+          </span>
+        )}
+        {!isActive && operations.length > 0 && (
+          <span style={{ fontSize: '9px', color: '#10b981' }}>✓ COMPLETED</span>
         )}
       </div>
 
