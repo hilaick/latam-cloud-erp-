@@ -587,13 +587,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
                                 </div>
                             </div>
-                            {/* Live spawn tree for execution */}
-                            <SpawnTreeVisualizer
-                                projectId={project?.id}
-                                simulationTrace={[]}
-                                isActive={autoOrchestrating}
-                                mode="execution"
-                            />
                         </div>
                     ) : (
                         <div className="flex gap-3">
@@ -1742,6 +1735,16 @@ function CommandCenterView({ project, executionState, executionMode }) {
                         </table>
                     </div>
                 )}
+            </div>
+
+            {/* Live Agent Spawn Tree — always visible, polls execution progress */}
+            <div className="mt-4">
+                <SpawnTreeVisualizer
+                    projectId={project?.id}
+                    simulationTrace={[]}
+                    isActive={true}
+                    mode="execution"
+                />
             </div>
 
             {/* 🚨 QUICK REFERENCE: Pipeline Phase Map */}
