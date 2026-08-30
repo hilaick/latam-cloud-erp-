@@ -1740,14 +1740,7 @@ function CommandCenterView({ project, executionState, executionMode }) {
             </div>
 
             {/* Live Agent Spawn Tree — always visible, polls execution progress */}
-            <div className="mt-4">
-                <SpawnTreeVisualizer
-                    projectId={project?.id}
-                    simulationTrace={[]}
-                    isActive={true}
-                    mode="execution"
-                />
-            </div>
+            {/* Moved to parent StepExecution component where execState is available */}
 
             {/* 🚨 QUICK REFERENCE: Pipeline Phase Map */}
             {isAgentic && hasDelegates && (
