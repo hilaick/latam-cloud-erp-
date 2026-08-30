@@ -173,7 +173,7 @@ class MigrationOperationExecutor:
         }
 
     @staticmethod
-    def execute_operation(operation: str, context: dict, timeout: int = 300) -> dict:
+    def execute_operation(operation: str, context: dict, timeout: int = 600) -> dict:
         """
         Execute an operation by delegating to the ERP's Hermes agent.
         The agent searches the knowledge tree and uses the tier chain.
@@ -262,9 +262,10 @@ class MigrationOperationExecutor:
                 "os_type": "LINUX",
             }
             
-            # Operation 1: SMS Agent Install
+            # Operation 1: SMS Agent Install (longer timeout — complex interactive task)
             logger.info(f"[OP-EXEC] {src_name}: SMS_AGENT_INSTALL")
-            r1 = cls.execute_operation("SMS_AGENT_INSTALL", base_ctx, timeout=300)
+            r1 = cls.execute_operation("SMS_AGENT_INSTALL", base_ctx, timeout=600)
+            logger.info(f"[OP-EXEC] {src_name}: SMS_AGENT_INSTALL {'succeeded' if r1['success'] else 'failed'}: {r1.get('output', '')[:200]}")
             results.append({"source": src_name, "operation": "SMS_AGENT_INSTALL",
                            "status": "success" if r1["success"] else "failed",
                            "message": r1.get("output", "")[:300], "error": r1.get("error"),
