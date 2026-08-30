@@ -159,7 +159,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     const isIndividual = executionMode === 'individual';
     const pipelineComplete = execState.currentPhase === 'COMPLETED';
     // Workbench unlocked when: pipeline complete OR individual prereqs passed OR manual mode past Phase 4.2 (infra deployed)
-    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated) || (executionMode === 'manual' && execState.currentPhase > 'PHASE_4_2');
+    const workbenchUnlocked = pipelineComplete || (isIndividual && project?.prereqsValidated) || (executionMode === 'manual' && execState.currentPhase > 'PHASE_4_2') || (project?.data?.executionProgress?.operations?.length > 0);
 
     return (
         <div className="animate-fade-in pb-12 flex flex-col h-full">
@@ -1740,8 +1740,15 @@ function CommandCenterView({ project, executionState, executionMode }) {
                 )}
             </div>
 
-            {/* Live Agent Spawn Tree — always visible, polls execution progress */}
-            {/* Moved to parent StepExecution component where execState is available */}
+            {/* Live Agent Spawn Tree — polls execution progress from API */}
+            <div className="mt-4">
+                <SpawnTreeVisualizer
+                    projectId={project?.id}
+                    simulationTrace={[]}
+                    isActive={true}
+                    mode="execution"
+                />
+            </div>
 
             {/* 🚨 QUICK REFERENCE: Pipeline Phase Map */}
             {isAgentic && hasDelegates && (
