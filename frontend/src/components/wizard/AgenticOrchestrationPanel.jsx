@@ -681,6 +681,7 @@ export function computeConstellationLayout(data) {
 
 /* SimulationConstellation moved to SimulationConstellation3D.jsx (Three.js 3D) */
 import SimulationConstellation from './SimulationConstellation3D.jsx';
+import SpawnTreeVisualizer from './SpawnTreeVisualizer.jsx';
 
 /* ── Main Component ── */
 export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
@@ -1704,6 +1705,16 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               onReplaySpeedChange={setReplaySpeed}
             />
           )}
+
+          {/* Agent Spawn Tree — shows during simulation and execution */}
+          <div style={{ marginTop: '12px' }}>
+            <SpawnTreeVisualizer
+              projectId={project?.id}
+              simulationTrace={result?.trace || []}
+              isActive={!!result || isSimulating}
+              mode={result ? 'simulation' : 'execution'}
+            />
+          </div>
 
           {/* Fullscreen constellation modal */}
           {constellationFullscreen && (
