@@ -4426,30 +4426,18 @@ class AgenticExecutionSimulator:
         })
 
         # Step 3: Update migration project use_public_ip=false (SMS.6602 prevention)
+        # SIMULATION ONLY — do NOT make real API calls
         step_id += 1
-        try:
-            # List migration projects and update use_public_ip
-            list_cmd = f"hcloud SMS ListMigprojects --cli-profile=agent-test --cli-region={source_region} 2>/dev/null"
-            result = _subproc.run(list_cmd, shell=True, capture_output=True, text=True, timeout=15)
-            if result.returncode == 0:
-                import json as _j
-                mig_projects = _j.loads(result.stdout).get("migprojects", [])
-                for mp in mig_projects:
-                    mp_id = mp.get("id", "")
-                    if mp_id:
-                        update_cmd = f"hcloud SMS UpdateMigproject --mig_project_id={mp_id} --use_public_ip=false --cli-profile=agent-test --cli-region={source_region} 2>/dev/null"
-                        _subproc.run(update_cmd, shell=True, capture_output=True, text=True, timeout=15)
-        except Exception:
-            pass
-
         trace.append({
-            "id": step_id, "phase": "PHASE_4_0", "agent": "PreflightAgent",
-            "action": "LIVE_MIGRATION_PROJECT_CONFIG",
-            "message": "Migration project use_public_ip set to false. SMS.6602 prevention.",
-            "commands": [{"desc": "Update migration project", "cmd": f"hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=false --cli-profile=agent-test --cli-region={source_region}"}],
-            "timestamp_offset_seconds": 0.5,
-            "rollback_action": {"cmd": "hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=true", "label": "Reset use_public_ip"},
+            "id": step_id, "phase": "PHASE_4_1", "agent": "SMSAgent",
+            "action": "SMS_MIGPROJECT_UPDATE",
+            "message": f"📋 SIMULATED: Would update SMS migration project use_public_ip=false to prevent SMS.6602. Command: hcloud SMS UpdateMigproject --use_public_ip=false --cli-region={source_region}",
+            "timestamp_offset_seconds": total_simulated_seconds,
+            "result": "simulated",
+            "decision": {"blocking": False, "fix": "Execution engine will make this call at runtime"},
+            "source_label": "🔄 SMS Agent",
         })
+        total_simulated_seconds += 1
 
         # === PHASE 4.1: SMS Agent Deployment ===
         step_id += 1
@@ -4474,187 +4462,83 @@ class AgenticExecutionSimulator:
                                     s_ip = ip
                                     break
 
-            # ── LIVE SSH: Install SMS agent on source VM ──
+            # ── SIMULATED: SMS agent install (NOT real SSH) ──
             step_id += 1
-            agent_installed = False
-            source_ak = decrypted_creds.get("source_ak", ak)
-            source_sk = decrypted_creds.get("source_sk", sk)
-            os_user = decrypted_creds.get("os_user", "root")
-            os_password = decrypted_creds.get("os_password", "")
-
-            try:
-                ssh_cmd = (
-                    f"sshpass -p '{os_password}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@{s_ip} "
-                    f"'cd /opt && "
-                    f"wget -q https://sms-resource-intl-{source_region}.obs.{source_region}.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && "
-                    f"tar xzf /tmp/SMS-Agent.tar.gz -C /opt/ 2>/dev/null; "
-                    f"screen -dmS sms_agent bash -c "
-                    f"\"printf \\\"y\\\\n{source_ak}\\\\n{source_sk}\\\\nsms.{source_region}.myhuaweicloud.com\\\\n\\\\n\\\\ny\\\\ny\\\\nn\\\\n\\\" | bash /opt/SMS-Agent/startup.sh\"'"
-                )
-                ssh_result = _subproc_ssh.run(ssh_cmd, shell=True, capture_output=True, text=True, timeout=60)
-                agent_installed = (ssh_result.returncode == 0)
-            except Exception as ssh_err:
-                agent_installed = False
+            agent_installed = True  # Simulated — execution engine handles real install
 
             trace.append({
                 "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
-                "action": "LIVE_SMS_AGENT_INSTALL",
+                "action": "SMS_AGENT_INSTALL",
                 "target": s_name,
-                "message": f"SMS agent install via SSH to {s_ip}: {'INSTALLED' if agent_installed else 'FAILED (manual install required)'}.",
-                "commands": [{"desc": "Install SMS agent via SSH", "cmd": f"ssh root@{s_ip} 'wget SMS-Agent.tar.gz && screen -dmS sms_agent bash startup.sh'"}],
+                "message": f"📋 SIMULATED: SMS agent would be installed via SSH to {s_ip} using Hermes agent delegation with huawei-cloud-sms-migration skill. Agent handles EULA, AK/SK input, and registration.",
+                "commands": [{"desc": "Hermes agent installs SMS agent", "cmd": f"hermes chat --profile default --model glm-5.2 --yolo 'Install SMS agent on {s_ip} using huawei-cloud-sms-migration skill'"}],
                 "timestamp_offset_seconds": 1.0,
-                "live_data": {"agent_installed": agent_installed, "source_ip": s_ip},
-                "rollback_action": {"cmd": f"ssh root@{s_ip} 'bash /opt/SMS-Agent/uninstall.sh'", "label": "Uninstall SMS agent"},
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Execution engine delegates to Hermes agent at runtime"},
             })
             
-            # Register source server in SMS
-            try:
-                if source_project_id and s_ip:
-                    # Step 0: Check if source is already registered (agents auto-register on startup)
-                    # If a matching source already exists, reuse it instead of creating a duplicate.
-                    src_id = ""
-                    list_url = (
-                        f"https://sms.{source_region}.myhuaweicloud.com/v3/sources?name={s_name}"
-                    )
-                    list_resp = _sign("GET", list_url, ak, sk, timeout=30)
-                    existing_sources = list_resp.get("sources", [])
-                    for existing in existing_sources:
-                        if existing.get("name") == s_name:
-                            src_id = existing.get("id", "")
-                            print(f"  Source '{s_name}' already registered as {src_id}, skipping registration")
-                            break
+            # Register source server in SMS — SIMULATED (execution engine handles real registration)
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
+                "action": "SMS_SOURCE_REGISTRATION",
+                "target": s_name,
+                "message": f"📋 SIMULATED: Source server '{s_name}' would be registered in SMS service via Hermes agent. Agent installs SMS migration agent on source, which auto-registers with SMS console. Verify with: hcloud SMS ListServers --cli-region={source_region}",
+                "timestamp_offset_seconds": 1.0,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Execution engine delegates to Hermes agent at runtime"},
+            })
+            total_simulated_seconds += 1
 
-                    # Step 1: Register source server in SMS (only if not already registered)
-                    if not src_id:
-                        reg_url = (
-                            f"https://sms.{source_region}.myhuaweicloud.com/v3/sources"
-                        )
-                        reg_body = json_lib.dumps({
-                            "name": s_name,
-                            "ip": s_ip,
-                            "os_type": "LINUX",
-                            "region": source_region,
-                        })
-                        reg_resp = _sign("POST", reg_url, ak, sk, body=reg_body, timeout=30)
-                        src_id = reg_resp.get("id", "")
-                    
-                    if src_id:
-                        # Step 2a: Query ShowServer to discover SMS disk IDs and sizes
-                        show_url = (
-                            f"https://sms.{source_region}.myhuaweicloud.com/v3/sources/{src_id}"
-                        )
-                        show_resp = _sign("GET", show_url, ak, sk, timeout=15)
-                        show_disks = show_resp.get("disks", [])
-                        # Build disk mapping from source server metadata
-                        # Each disk entry: {"id": <sms_disk_id>, "size": <bytes>, "device_use": "BOOT"|"DATA"}
-                        disk_list = []
-                        for d in show_disks:
-                            disk_id_val = d.get("id", "auto")
-                            disk_size = d.get("size", 0)
-                            disk_use = d.get("device_use", "DATA")
-                            disk_list.append({
-                                "disk_id": disk_id_val,
-                                "size": disk_size,
-                                "device_use": disk_use,
-                            })
-                        # Fallback: if ShowServer returned no disks, use minimal BOOT disk
-                        if not disk_list:
-                            disk_list = [
-                                {"disk_id": "auto", "size": 42949672960, "device_use": "BOOT"},
-                            ]
+            # SIMULATED disk mapping — execution engine queries real disk info at runtime
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_1", "agent": f"SMSAgent-{s_name}",
+                "action": "SMS_DISK_MAPPING",
+                "target": s_name,
+                "message": f"📋 SIMULATED: Disk mapping would be queried from source server via hcloud SMS ShowServer. System disk (device_use=OS) mapped to target ECS root_volume. Data disks mapped to target EVS volumes.",
+                "timestamp_offset_seconds": 1.0,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Execution engine queries disk info at runtime"},
+            })
+            total_simulated_seconds += 1
 
-                        # Step 2b: Build target_server disks from discovered source disks
-                        target_disks = disk_list  # 1:1 disk mapping from source
+            # SIMULATED: SMS task creation and sync monitoring
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_2", "agent": f"SMSAgent-{s_name}",
+                "action": "SMS_TASK_CREATION",
+                "target": s_name,
+                "message": f"📋 SIMULATED: SMS migration task would be created for '{s_name}' → target ECS. Uses hcloud SMS CreateTask with source_server.id, target_server.vm_id, use_public_ip=true. Disk mapping: system disk (device_use=OS). Hermes agent delegates with huawei-cloud-sms-migration-exact-disk-config skill.",
+                "timestamp_offset_seconds": 2.0,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Execution engine creates task at runtime via MCP → hcloud → Hermes agent"},
+            })
+            total_simulated_seconds += 2
 
-                        # Step 2c: Create migration task
-                        task_url = (
-                            f"https://sms.{source_region}.myhuaweicloud.com/v3/"
-                            f"{source_project_id}/tasks"
-                        )
-                        # Sanitize task name: only [a-zA-Z0-9-] allowed
-                        safe_name = re.sub(r"[^a-zA-Z0-9-]", "-", s_name)
-                        task_body = json_lib.dumps({
-                            "name": f"migrate-{safe_name}",
-                            "type": "MIGRATE_FILE",
-                            "os_type": "LINUX",
-                            "project_id": source_project_id,
-                            "project_name": region,
-                            "region_id": region,
-                            "region_name": region,
-                            "source_server": {
-                                "id": src_id,
-                            },
-                            "target_server": {
-                                "name": f"target-{safe_name}",
-                                "vm_id": "",
-                                "disks": target_disks,
-                            },
-                            "migration_ip": s_ip,
-                            "use_public_ip": True,
-                            "start_target_server": True,
-                        })
-                        task_resp = _sign("POST", task_url, ak, sk, body=task_body, timeout=30)
-                        task_id = task_resp.get("id", "")
-                        sms_results.append({
-                            "server": s_name, "ip": s_ip,
-                            "src_id": src_id[:12] if src_id else "N/A",
-                            "task_id": task_id[:12] if task_id else "N/A",
-                            "status": "task_created" if task_id else "registered_no_task"
-                        })
-                    else:
-                        sms_results.append({
-                            "server": s_name, "ip": s_ip,
-                            "status": "registration_failed"
-                        })
-                else:
-                    sms_results.append({
-                        "server": s_name, "ip": s_ip or "unknown",
-                        "status": f"skipped (no {'project_id' if not source_project_id else 'ip'})"
-                    })
-            except Exception as se:
-                err_str = str(se)
-                # Detect SMS.6303 (old agent) or SMS.0515 (agent unresponsive) and provide actionable status
-                if "6303" in err_str or "too old" in err_str:
-                    sms_results.append({
-                        "server": s_name, "ip": s_ip or "unknown",
-                        "status": "agent_outdated",
-                        "action_required": (
-                            "SMS.6303: Agent version too old. "
-                            "SSH to source VM as root, download latest from SMS Console, and run: "
-                            "wget https://sms-agent.obs.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/agent.tar.gz && "
-                            "tar xzf /tmp/agent.tar.gz && cd SMS-Agent/SMS-Agent && printf 'y\\n<AK>\\n<SK>\\nsms.ap-southeast-3.myhuaweicloud.com\\n\\n' | bash startup.sh"
-                        )
-                    })
-                elif "0515" in err_str or "agent is not started" in err_str.lower():
-                    sms_results.append({
-                        "server": s_name, "ip": s_ip or "unknown",
-                        "status": "agent_unresponsive_0515",
-                        "action_required": (
-                            "SMS.0515: SMS agent is stopped or unresponsive. "
-                            "1) SSH to source VM as root. "
-                            "2) Restart the agent: systemctl restart SMS-Agent  OR  /opt/SMS-Agent/startup.sh. "
-                            "3) Wait ~30s for agent to reach 'Waiting' state. "
-                            "4) Retry task creation from the SMS Console or this script."
-                        )
-                    })
-                else:
-                    sms_results.append({
-                        "server": s_name, "ip": s_ip or "unknown",
-                        "status": f"api_error: {err_str[:150]}"
-                    })
-        
-        sms_submitted = sum(1 for r in sms_results if r["status"] not in ("skipped (no project/server ID)", "skipped (no ip)"))
-        sms_succeeded = sum(1 for r in sms_results if "task_created" in r["status"])
+            step_id += 1
+            trace.append({
+                "id": step_id, "phase": "PHASE_4_2", "agent": f"SMSAgent-{s_name}",
+                "action": "SMS_SYNC_MONITOR",
+                "target": s_name,
+                "message": f"📋 SIMULATED: SMS sync would be monitored until complete. States: waiting → setting → READY → RUNNING → SUCCESS. Hermes agent monitors via hcloud SMS ShowTask.",
+                "timestamp_offset_seconds": 1.0,
+                "result": "simulated",
+                "decision": {"blocking": False, "fix": "Execution engine monitors at runtime"},
+            })
+            total_simulated_seconds += 1
+
+        sms_submitted = len(source_ecs_for_sms)
+        sms_succeeded = len(source_ecs_for_sms)  # All simulated as successful
         
         trace.append({
             "id": step_id, "phase": "PHASE_4_1", "agent": "SMSAgent",
             "action": "LIVE_SMS_DEPLOY",
             "message": (
-                f"SMS Agent: {sms_succeeded}/{len(source_servers)} servers submitted/registered. "
-                + "; ".join(f"{r['server']}: {r['status']}" for r in sms_results)
+                f"SMS Agent: {sms_succeeded}/{len(source_ecs_for_sms)} servers submitted/registered (simulated). "
             ),
             "timestamp_offset_seconds": len(source_servers) * 1.5,
-            "live_data": {"sms_results": sms_results, "submitted": sms_submitted, "succeeded": sms_succeeded},
+            "live_data": {"submitted": sms_submitted, "succeeded": sms_succeeded},
         })
 
         # ---------------------------------------------------------------------------
@@ -4688,7 +4572,7 @@ class AgenticExecutionSimulator:
         sync_results = []
         subtask_monitor_results = []
 
-        for r in sms_results:
+        for r in [{"server": s.get("name", ""), "status": "simulated"} for s in source_ecs_for_sms]:
             if "task_id" in str(r):
                 task_id = r.get("task_id", "")
                 if task_id and task_id != "N/A":
@@ -4813,7 +4697,7 @@ class AgenticExecutionSimulator:
             "sms_deployment": {
                 "servers_submitted": sms_succeeded,
                 "servers_total": len(source_servers),
-                "results": sms_results,
+                "results": [{"server": s.get("name", ""), "status": "simulated"} for s in source_ecs_for_sms],
             },
             "data_sync": {
                 "servers_syncing": syncing,
