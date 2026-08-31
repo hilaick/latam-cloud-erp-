@@ -948,8 +948,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 </div>
             )}
 
-            {/* 🚨 PIPELINE PHASES (visible in all modes, locked during agentic run) */}
-            <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-8">
+            {/* 🚨 PIPELINE PHASES — greenfield uses dark container, migration uses transparent */}
+            <div className={`${isGreenfield ? 'bg-slate-900 rounded-2xl shadow-xl border border-slate-700 overflow-hidden p-8' : ''}`}>
                 {isGreenfield ? (
                     <>
                         {/* PHASE 4.1: WAVE 0 */}
