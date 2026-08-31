@@ -1286,21 +1286,23 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
 
     return (
         <div>
-            <div className="flex gap-2 mb-4 flex-wrap">
-                {MIG_PHASES.map((ph, idx) => (
-                    <div key={ph.key} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${idx === currentPhaseIdx ? 'text-white' : idx < currentPhaseIdx ? 'text-slate-400' : 'text-slate-600'}`}
-                        style={{ background: idx === currentPhaseIdx ? ph.color : idx < currentPhaseIdx ? ph.color + '20' : '#1e293b', border: `1px solid ${idx <= currentPhaseIdx ? ph.color : '#374151'}` }}>
-                        <i className={`fas ${ph.icon} mr-1`} />{ph.label}
-                    </div>
-                ))}
-            </div>
             {isZeroTrust && <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-amber-300 text-xs font-bold"><i className="fas fa-lock mr-1" />ZERO TRUST — Agent install is customer responsibility</div>}
-            <div className="mb-3 flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase" style={{ background: isAgentic ? '#722ed130' : isIndividual ? '#f59e0b30' : '#3b82f630', color: isAgentic ? '#a78bfa' : isIndividual ? '#fbbf24' : '#60a5fa' }}>{executionMode}</span>
-                <span className="text-xs text-slate-500">Source: {sourceEnv} | Servers: {servers.length}{execPlan ? ` | Plan: ${execPlan.summary?.total_steps || 0} steps` : ''}</span>
-            </div>
+            {isManual && <>
+                <div className="flex gap-2 mb-4 flex-wrap">
+                    {MIG_PHASES.map((ph, idx) => (
+                        <div key={ph.key} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${idx === currentPhaseIdx ? 'text-white' : idx < currentPhaseIdx ? 'text-slate-400' : 'text-slate-600'}`}
+                            style={{ background: idx === currentPhaseIdx ? ph.color : idx < currentPhaseIdx ? ph.color + '20' : '#1e293b', border: `1px solid ${idx <= currentPhaseIdx ? ph.color : '#374151'}` }}>
+                            <i className={`fas ${ph.icon} mr-1`} />{ph.label}
+                        </div>
+                    ))}
+                </div>
+                <div className="mb-3 flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase" style={{ background: '#3b82f630', color: '#60a5fa' }}>{executionMode}</span>
+                    <span className="text-xs text-slate-500">Source: {sourceEnv} | Servers: {servers.length}{execPlan ? ` | Plan: ${execPlan.summary?.total_steps || 0} steps` : ''}</span>
+                </div>
+            </>}
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
-            {isAgentic && <MigrationAgenticView execPlan={execPlan} executing={executing} executeAll={executeAll} execLog={execLog} execResult={execResult} />}
+            {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
             {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} />}
 
             {/* Spawn Tree + Telemetry — inline in Execution Pipeline */}
