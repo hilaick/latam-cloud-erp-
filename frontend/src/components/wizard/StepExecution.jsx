@@ -364,7 +364,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         updatePhase(st.current_phase, 'FAILED');
                     }
                 }
-                // running_external stays polling — the external process is still alive
+                // running_external and orphaned_external: keep polling.
+                // For orphaned, the data is static but we keep the dashboard visible.
             } catch (err) {
                 // Network blip — keep polling
             }
@@ -393,7 +394,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
                 const st = data.status || {};
                 // If pipeline is running (either via orchestration engine or external), sync state and poll
-                if (st.status === 'running' || st.status === 'running_external') {
+                if (st.status === 'running' || st.status === 'running_external' || st.status === 'orphaned_external') {
                     setAutoOrchestrating(true);
                     // Sync log from backend
                     if (st.log) setOrchestrationLog(st.log);
@@ -562,7 +563,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="flex items-center gap-3 text-[10px] font-bold">
                                         <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.messages} msgs</span>
                                         <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.tool_calls} tools</span>
-                                        <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full animate-pulse">● LIVE</span>
+                                        {externalExecutions && externalExecutions[0]?.pid > 0 ? (
+                                            <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full animate-pulse">● LIVE</span>
+                                        ) : (
+                                            <span className="bg-rose-200 text-rose-800 px-2 py-1 rounded-full">⚠ Process Ended</span>
+                                        )}
                                     </div>
                                 )}
                             </div>

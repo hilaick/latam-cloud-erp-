@@ -1136,103 +1136,162 @@ def orchestration_status(project_id):
         except Exception:
             pass
 
+        # ── Pull live data from Hermes sessions (running or orphaned) ──
+        def _pull_session_data(sid, sessions_list):
+            """Pull live feed, inferred phase, and last tool call from a Hermes session."""
+            hermes_db = _os.path.expanduser('~/.hermes/state.db')
+            if not _os.path.exists(hermes_db):
+                return
+            msg_result = _sp.run(
+                ['sqlite3', hermes_db,
+                 f"SELECT role, tool_name, substr(content, 1, 300) FROM messages WHERE session_id = '{sid}' ORDER BY id DESC LIMIT 15;"],
+                capture_output=True, text=True, timeout=5
+            )
+            live_feed = []
+            phase_inferred = 'PHASE_4_1'
+            all_text = msg_result.stdout
+            if 'SUCCESS' in all_text and ('ShowTask' in all_text or 'cutover' in all_text.lower()):
+                phase_inferred = 'PHASE_4_6'
+            elif 'ShowTask' in all_text or 'UpdateTaskStatus' in all_text:
+                phase_inferred = 'PHASE_4_5'
+            elif 'CreateTask' in all_text:
+                phase_inferred = 'PHASE_4_4'
+            elif 'CreateTemplate' in all_text or 'CreateServers' in all_text:
+                phase_inferred = 'PHASE_4_3'
+            elif 'ListServers' in all_text or 'agent' in all_text.lower() or 'linuxmain' in all_text:
+                phase_inferred = 'PHASE_4_2'
+            elif 'ListVpcs' in all_text or 'CreateVpc' in all_text or 'Subnet' in all_text:
+                phase_inferred = 'PHASE_4_1'
+            for line in msg_result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                cols = line.split('|', 2)
+                if len(cols) >= 3:
+                    role = cols[0]
+                    tool_name = cols[1] if cols[1] else None
+                    content = cols[2]
+                    msg_type = 'info'
+                    if role == 'tool':
+                        msg_type = 'tool'
+                        if '"exit_code": 255' in content or '"error":' in content:
+                            msg_type = 'error'
+                        elif '"exit_code": 0' in content:
+                            msg_type = 'success'
+                    elif role == 'assistant':
+                        msg_type = 'agent'
+                    live_feed.append({'role': role, 'tool': tool_name, 'content': content[:200], 'type': msg_type})
+            live_feed.reverse()
+            tool_detail_result = _sp.run(
+                ['sqlite3', hermes_db,
+                 f"SELECT tool_name, substr(content, 1, 500) FROM messages WHERE session_id = '{sid}' AND role = 'tool' ORDER BY id DESC LIMIT 1;"],
+                capture_output=True, text=True, timeout=5
+            )
+            last_tool = None
+            if tool_detail_result.stdout.strip():
+                tcols = tool_detail_result.stdout.strip().split('|', 1)
+                last_tool = {'name': tcols[0] if tcols[0] else 'unknown', 'output': tcols[1][:300] if len(tcols) > 1 else ''}
+            best = next((s for s in sessions_list if s['session_id'] == sid), {})
+            status['live_feed'] = live_feed
+            status['inferred_phase'] = phase_inferred
+            status['last_tool_call'] = last_tool
+            status['session_stats'] = {
+                'messages': best.get('messages', 0), 'tool_calls': best.get('tool_calls', 0),
+                'title': best.get('title', ''), 'session_id': sid,
+            }
+
+        def _match_project_in_text(text, pdata):
+            """Check if any project data (server names, IPs, source IDs) appears in text."""
+            ta = pdata.get('targetArchitecture', {})
+            for s in (ta.get('compute', []) + ta.get('database', [])):
+                sname = s.get('name', s.get('source_name', ''))
+                if sname and sname in text:
+                    return f'server {sname}'
+            for mn in pdata.get('mapperNodes', []):
+                mn_ip = mn.get('ip', '')
+                mn_name = mn.get('name', '')
+                if mn_ip and mn_ip in text:
+                    return f'mapperNode IP {mn_ip}'
+                if mn_name and mn_name in text:
+                    return f'mapperNode name {mn_name}'
+            plan = pdata.get('executionPlan', {})
+            for step in (plan.get('steps', []) if isinstance(plan, dict) else []):
+                tr = step.get('target_resource', '')
+                if tr and tr in text:
+                    return f'exec step {tr}'
+            mgc = pdata.get('mgcData', {}).get('raw_inventory', {})
+            for n in mgc.get('network', []):
+                pub_ip = n.get('public_ip_address', '')
+                if pub_ip and pub_ip in text:
+                    return f'source EIP {pub_ip}'
+            for s in ta.get('compute', []):
+                sid = s.get('source_id', '')
+                if sid and sid in text:
+                    return f'source_id {sid}'
+            return None
+
         if external_procs:
             status['external_executions'] = external_procs
             status['active_hermes_sessions'] = active_sessions
-            # If the orchestration engine isn't tracking anything but there are external procs,
-            # report status as 'running_external' so the GUI knows
             if status.get('status') in ('idle', None):
                 status['status'] = 'running_external'
-
-            # ── Pull live data from the most active Hermes session ──
-            # Get recent messages and tool calls to show in the GUI
             try:
-                hermes_db = _os.path.expanduser('~/.hermes/state.db')
-                if _os.path.exists(hermes_db) and active_sessions:
-                    # Pick the session with the most messages (most active)
+                if active_sessions:
                     best_session = max(active_sessions, key=lambda s: s.get('messages', 0))
-                    sid = best_session['session_id']
-
-                    # Get last 15 messages with role, tool_name, content preview
-                    msg_result = _sp.run(
-                        ['sqlite3', hermes_db,
-                         f"SELECT role, tool_name, substr(content, 1, 300) FROM messages WHERE session_id = '{sid}' ORDER BY id DESC LIMIT 15;"],
-                        capture_output=True, text=True, timeout=5
-                    )
-
-                    live_feed = []
-                    phase_inferred = 'PHASE_4_1'  # default
-                    all_text = msg_result.stdout
-
-                    # Infer current phase from recent activity
-                    if 'SUCCESS' in all_text and ('ShowTask' in all_text or 'cutover' in all_text.lower()):
-                        phase_inferred = 'PHASE_4_6'
-                    elif 'ShowTask' in all_text or 'UpdateTaskStatus' in all_text:
-                        phase_inferred = 'PHASE_4_5'
-                    elif 'CreateTask' in all_text:
-                        phase_inferred = 'PHASE_4_4'
-                    elif 'CreateTemplate' in all_text or 'CreateServers' in all_text:
-                        phase_inferred = 'PHASE_4_3'
-                    elif 'ListServers' in all_text or 'agent' in all_text.lower() or 'linuxmain' in all_text:
-                        phase_inferred = 'PHASE_4_2'
-                    elif 'ListVpcs' in all_text or 'CreateVpc' in all_text or 'Subnet' in all_text:
-                        phase_inferred = 'PHASE_4_1'
-
-                    # Parse messages into structured feed
-                    for line in msg_result.stdout.strip().split('\n'):
-                        if not line:
-                            continue
-                        cols = line.split('|', 2)
-                        if len(cols) >= 3:
-                            role = cols[0]
-                            tool_name = cols[1] if cols[1] else None
-                            content = cols[2]
-                            # Determine message type for styling
-                            msg_type = 'info'
-                            if role == 'tool':
-                                msg_type = 'tool'
-                                # Check for errors
-                                if '"exit_code": 255' in content or '"error":' in content:
-                                    msg_type = 'error'
-                                elif '"exit_code": 0' in content:
-                                    msg_type = 'success'
-                            elif role == 'assistant':
-                                msg_type = 'agent'
-
-                            live_feed.append({
-                                'role': role,
-                                'tool': tool_name,
-                                'content': content[:200],
-                                'type': msg_type,
-                            })
-
-                    live_feed.reverse()  # chronological order (newest last)
-
-                    # Get last tool call details
-                    tool_detail_result = _sp.run(
-                        ['sqlite3', hermes_db,
-                         f"SELECT tool_name, substr(content, 1, 500) FROM messages WHERE session_id = '{sid}' AND role = 'tool' ORDER BY id DESC LIMIT 1;"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    last_tool = None
-                    if tool_detail_result.stdout.strip():
-                        tcols = tool_detail_result.stdout.strip().split('|', 1)
-                        last_tool = {
-                            'name': tcols[0] if tcols[0] else 'unknown',
-                            'output': tcols[1][:300] if len(tcols) > 1 else '',
-                        }
-
-                    status['live_feed'] = live_feed
-                    status['inferred_phase'] = phase_inferred
-                    status['last_tool_call'] = last_tool
-                    status['session_stats'] = {
-                        'messages': best_session.get('messages', 0),
-                        'tool_calls': best_session.get('tool_calls', 0),
-                        'title': best_session.get('title', ''),
-                        'session_id': sid,
-                    }
+                    _pull_session_data(best_session['session_id'], active_sessions)
             except Exception as e:
                 logger.warning(f"Failed to pull live session data: {e}")
+
+        else:
+            # No running process — check for orphaned sessions (process died, session has no ended_at)
+            try:
+                hermes_db = _os.path.expanduser('~/.hermes/state.db')
+                if _os.path.exists(hermes_db):
+                    orphan_result = _sp.run(
+                        ['sqlite3', hermes_db,
+                         "SELECT id, title, message_count, tool_call_count FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 10;"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    orphan_sessions = []
+                    for line in orphan_result.stdout.strip().split('\n'):
+                        if not line:
+                            continue
+                        cols = line.split('|')
+                        if len(cols) >= 4:
+                            orphan_sessions.append({
+                                'session_id': cols[0], 'title': cols[1],
+                                'messages': int(cols[2]) if cols[2].isdigit() else 0,
+                                'tool_calls': int(cols[3]) if cols[3].isdigit() else 0,
+                            })
+
+                    if orphan_sessions and status.get('status') in ('idle', None):
+                        project = ProjectData.query.get(project_id)
+                        if project:
+                            import json as _json
+                            pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+                            for sess in orphan_sessions:
+                                sid = sess['session_id']
+                                # Check early messages for project data
+                                early_msgs = _sp.run(
+                                    ['sqlite3', hermes_db,
+                                     f"SELECT substr(content, 1, 500) FROM messages WHERE session_id = '{sid}' ORDER BY id LIMIT 10;"],
+                                    capture_output=True, text=True, timeout=5
+                                )
+                                reason = _match_project_in_text(early_msgs.stdout, pdata)
+                                if reason:
+                                    # Found an orphaned session for this project
+                                    status['status'] = 'orphaned_external'
+                                    status['external_executions'] = [{
+                                        'pid': 0,
+                                        'cmd_preview': f'Process ended. Session: {sess["title"]}',
+                                        'started': 'orphaned',
+                                        'match_reason': f'{reason} (process ended)',
+                                    }]
+                                    status['active_hermes_sessions'] = [sess]
+                                    _pull_session_data(sid, [sess])
+                                    logger.info(f"Found orphaned session {sid} for project {project_id}: {reason}")
+                                    break
+            except Exception as e:
+                logger.warning(f"Failed to check orphaned sessions: {e}")
 
     except Exception as e:
         logger.warning(f"Failed to detect external processes: {e}")
