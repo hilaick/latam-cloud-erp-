@@ -334,9 +334,31 @@ def _run_pipeline_thread(project_id, start_from, app):
             if sim_trace:
                 log(f'[simulator] Using dry-run simulation ({len(sim_trace)} trace entries) as context.')
 
+            # ── Build dynamic pipeline from execution plan ──
+            from services.phase_content_generator import generate_phase_content
+            plan = pdata.get('executionPlan', {})
+            dynamic_phases = generate_phase_content(plan)
+
+            if dynamic_phases:
+                # Use dynamic phases from the execution plan
+                pipeline = []
+                for phase_key in ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7']:
+                    content = dynamic_phases.get(phase_key)
+                    if content:
+                        pipeline.append({
+                            'phase': phase_key,
+                            'label': content['label'],
+                            'goal': content['goal'],
+                        })
+                log(f'[plan] Dynamic pipeline: {len(pipeline)} phases from execution plan ({len(plan.get("steps", []))} steps).')
+            else:
+                # Fallback to hardcoded phases
+                pipeline = PIPELINE_PHASES
+                log('[plan] No execution plan found — using default 7-phase pipeline.')
+
             # ── Run each phase ──
-            for i in range(start_from, len(PIPELINE_PHASES)):
-                step = PIPELINE_PHASES[i]
+            for i in range(start_from, len(pipeline)):
+                step = pipeline[i]
                 phase_key = step['phase']
 
                 # Skip already completed

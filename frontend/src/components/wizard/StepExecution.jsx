@@ -261,6 +261,19 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [inferredPhase, setInferredPhase] = useState(null);
     const [sessionStats, setSessionStats] = useState(null);
     const [lastToolCall, setLastToolCall] = useState(null);
+    const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
+
+    // 🚨 FETCH PHASE CONTENT: Load dynamic phase descriptions from execution plan
+    useEffect(() => {
+        if (!project?.id) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        fetch(`/api/execution/${project.id}/phase-content`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        })
+            .then(r => r.json())
+            .then(data => { if (data.success && data.phases) setPhaseContent(data.phases); })
+            .catch(() => {});
+    }, [project?.id]);
 
     const isAgentic = executionMode === 'agentic';
     const isIndividual = executionMode === 'individual';
@@ -591,14 +604,15 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     )}
                                 </svg>
                                 {/* Phase nodes */}
+                                {/* Phase nodes — dynamic from execution plan */}
                                 {[
-                                    { n: 1, label: 'Network', icon: 'fa-network-wired', color: '#3b82f6', desc: 'Wave 0 VPC, subnets, SG' },
-                                    { n: 2, label: 'Source Prep', icon: 'fa-download', color: '#f59e0b', desc: 'OS pre-flight, agent install' },
-                                    { n: 3, label: 'Target ECS', icon: 'fa-server', color: '#8b5cf6', desc: 'Provision target instances' },
-                                    { n: 4, label: 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', desc: 'SMS/DRS replication' },
-                                    { n: 5, label: 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', desc: 'Cold cutover, VPC promotion' },
-                                    { n: 6, label: 'Harden', icon: 'fa-shield-alt', color: '#06b6d4', desc: 'Security, backup, monitoring' },
-                                    { n: 7, label: 'Test', icon: 'fa-vial', color: '#84cc16', desc: 'UAT, teardown transient' },
+                                    { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: phaseContent?.PHASE_4_1?.icon || 'fa-network-wired', color: '#3b82f6', desc: phaseContent?.PHASE_4_1?.desc || 'Wave 0 VPC, subnets, SG' },
+                                    { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', icon: phaseContent?.PHASE_4_2?.icon || 'fa-download', color: '#f59e0b', desc: phaseContent?.PHASE_4_2?.desc || 'OS pre-flight, agent install' },
+                                    { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', icon: phaseContent?.PHASE_4_3?.icon || 'fa-server', color: '#8b5cf6', desc: phaseContent?.PHASE_4_3?.desc || 'Provision target instances' },
+                                    { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: phaseContent?.PHASE_4_4?.icon || 'fa-sync-alt', color: '#10b981', desc: phaseContent?.PHASE_4_4?.desc || 'SMS/DRS/OMS replication' },
+                                    { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: phaseContent?.PHASE_4_5?.icon || 'fa-chart-line', color: '#06b6d4', desc: phaseContent?.PHASE_4_5?.desc || 'Sync progress monitoring' },
+                                    { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: phaseContent?.PHASE_4_6?.icon || 'fa-exchange-alt', color: '#ef4444', desc: phaseContent?.PHASE_4_6?.desc || 'Cold cutover, VPC promotion' },
+                                    { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: phaseContent?.PHASE_4_7?.icon || 'fa-trash-alt', color: '#84cc16', desc: phaseContent?.PHASE_4_7?.desc || 'Cleanup, smoke tests' },
                                 ].map((ph, idx) => {
                                     const angle = (idx / 7) * 2 * Math.PI - Math.PI / 2;
                                     const x = 190 + 155 * Math.cos(angle);
@@ -644,13 +658,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">What Will Happen — 7 Sequential Phases</div>
                         <div className="space-y-2">
                             {[
-                                { n: 1, label: 'Wave 0: Network & Identity Foundation', desc: 'Provision isolated Transit VPC, subnets, security groups, identity foundation via Terraform.' },
-                                { n: 2, label: 'Vector-Aware OS Pre-Flight', desc: 'Validate source OS against target cloud availability. Check quoted flavors are in stock.' },
-                                { n: 3, label: 'Build App Landing Zone', desc: 'Deploy target VPC, ECS instances, empty PaaS databases matching approved architecture.' },
-                                { n: 4, label: 'Deploy Data Plane Agents', desc: 'Deploy SMS and DRS migration agents. Verify health and connectivity.' },
-                                { n: 5, label: 'Continuous Sync Monitor', desc: 'Monitor byte-by-byte replication. Report sync percentages and ETA to cutover.' },
-                                { n: 6, label: 'Cold Cutover & VPC Promotion', desc: 'Sever on-prem connections, promote target VPC, validate app reachability.' },
-                                { n: 7, label: 'Teardown & Garbage Collection', desc: 'Destroy transient resources. Confirm PPU costs drop to baseline.' },
+                                { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', desc: phaseContent?.PHASE_4_1?.desc || 'Provision isolated Transit VPC, subnets, security groups, identity foundation via Terraform.' },
+                                { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', desc: phaseContent?.PHASE_4_2?.desc || 'Validate source OS against target cloud availability. Check quoted flavors are in stock.' },
+                                { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', desc: phaseContent?.PHASE_4_3?.desc || 'Deploy target VPC, ECS instances, empty PaaS databases matching approved architecture.' },
+                                { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', desc: phaseContent?.PHASE_4_4?.desc || 'Deploy SMS and DRS migration agents. Verify health and connectivity.' },
+                                { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', desc: phaseContent?.PHASE_4_5?.desc || 'Monitor byte-by-byte replication. Report sync percentages and ETA to cutover.' },
+                                { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', desc: phaseContent?.PHASE_4_6?.desc || 'Sever on-prem connections, promote target VPC, validate app reachability.' },
+                                { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', desc: phaseContent?.PHASE_4_7?.desc || 'Destroy transient resources. Confirm PPU costs drop to baseline.' },
                             ].map(ph => {
                                 const phaseKey = `PHASE_4_${ph.n}`;
                                 let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');

@@ -1364,6 +1364,31 @@ def orchestration_rollback(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@execution_bp.route('/api/execution/<project_id>/phase-content', methods=['GET'])
+@jwt_required()
+def get_phase_content(project_id):
+    """Return dynamic phase labels, descriptions, and goals generated from the execution plan."""
+    try:
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        import json as _json
+        pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+        plan = pdata.get('executionPlan', {})
+
+        from services.phase_content_generator import generate_phase_content
+        content = generate_phase_content(plan)
+
+        if not content:
+            # Return defaults
+            return jsonify({"success": True, "phases": None})
+
+        return jsonify({"success": True, "phases": content})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ── Playbook Suggestion: query past learnings for similar resource profiles ──
 @execution_bp.route('/api/playbooks/suggest', methods=['POST'])
 @jwt_required()
