@@ -1016,10 +1016,107 @@ def start_orchestration(project_id):
 @execution_bp.route('/api/execution/<project_id>/orchestrate/status', methods=['GET'])
 @jwt_required()
 def orchestration_status(project_id):
-    """Poll live pipeline status for a project. No side effects."""
+    """Poll live pipeline status for a project. No side effects.
+
+    Checks two sources:
+    1. The orchestration engine's in-memory registry (pipelines started via /orchestrate)
+    2. Running Hermes CLI processes + active Hermes sessions (external executions)
+    """
     from services.orchestration_engine import get_pipeline_status
+    import subprocess as _sp, re as _re, os as _os
 
     status = get_pipeline_status(project_id)
+
+    # ── Also detect external Hermes processes running for this project ──
+    try:
+        ps = _sp.run(['ps', 'aux'], capture_output=True, text=True, timeout=10)
+        external_procs = []
+        for line in ps.stdout.split('\n'):
+            if 'hermes' not in line or 'chat' not in line or 'grep' in line:
+                continue
+            parts = line.split(None, 10)
+            if len(parts) < 11:
+                continue
+            pid = parts[1]
+            cmd = parts[10]
+            started = parts[8] if len(parts) > 8 else '?'
+
+            # Match to this project: look for project_id or server names in the command
+            project = ProjectData.query.get(project_id)
+            matched = False
+            match_reason = ''
+            if project_id in cmd:
+                matched = True
+                match_reason = 'project_id in command'
+            elif project:
+                import json as _json
+                pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+                # Check server names
+                ta = pdata.get('targetArchitecture', {})
+                for s in (ta.get('compute', []) + ta.get('database', [])):
+                    sname = s.get('name', s.get('source_name', ''))
+                    if sname and sname in cmd:
+                        matched = True
+                        match_reason = f'server {sname} in command'
+                        break
+                # Check source IPs
+                for ip_field in ['sourceIPs', 'source_ips']:
+                    ips = pdata.get(ip_field, [])
+                    if isinstance(ips, list):
+                        for ip in ips:
+                            if str(ip) in cmd:
+                                matched = True
+                                match_reason = f'source IP {ip} in command'
+                                break
+                # Check region
+                region = pdata.get('region', '')
+                if region and region in cmd and 'migration' in cmd.lower():
+                    # Weak match — only if no other process matched
+                    pass
+
+            if matched:
+                external_procs.append({
+                    'pid': int(pid),
+                    'cmd_preview': cmd[:200],
+                    'started': started,
+                    'match_reason': match_reason,
+                })
+
+        # Query active Hermes sessions from state.db
+        active_sessions = []
+        try:
+            hermes_db = _os.path.expanduser('~/.hermes/state.db')
+            if _os.path.exists(hermes_db):
+                sess_result = _sp.run(
+                    ['sqlite3', hermes_db,
+                     "SELECT id, title, message_count, tool_call_count FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 10;"],
+                    capture_output=True, text=True, timeout=5
+                )
+                for line in sess_result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    cols = line.split('|')
+                    if len(cols) >= 4:
+                        active_sessions.append({
+                            'session_id': cols[0],
+                            'title': cols[1],
+                            'messages': int(cols[2]) if cols[2].isdigit() else 0,
+                            'tool_calls': int(cols[3]) if cols[3].isdigit() else 0,
+                        })
+        except Exception:
+            pass
+
+        if external_procs:
+            status['external_executions'] = external_procs
+            status['active_hermes_sessions'] = active_sessions
+            # If the orchestration engine isn't tracking anything but there are external procs,
+            # report status as 'running_external' so the GUI knows
+            if status.get('status') in ('idle', None):
+                status['status'] = 'running_external'
+
+    except Exception as e:
+        logger.warning(f"Failed to detect external processes: {e}")
+
     return jsonify({'success': True, 'status': status})
 
 

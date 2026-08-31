@@ -255,6 +255,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [dryRunResult, setDryRunResult] = useState(null);
     const [showDryRunModal, setShowDryRunModal] = useState(false);
     const [dryRunLoading, setDryRunLoading] = useState(false);
+    const [externalExecutions, setExternalExecutions] = useState(null);
+    const [activeHermesSessions, setActiveHermesSessions] = useState(null);
 
     const isAgentic = executionMode === 'agentic';
     const isIndividual = executionMode === 'individual';
@@ -336,15 +338,24 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     });
                 }
 
+                // Update external execution info
+                if (st.external_executions) setExternalExecutions(st.external_executions);
+                else setExternalExecutions(null);
+                if (st.active_hermes_sessions) setActiveHermesSessions(st.active_hermes_sessions);
+                else setActiveHermesSessions(null);
+
                 // Check if pipeline finished
                 if (st.status === 'completed' || st.status === 'halted' || st.status === 'crashed' || st.status === 'idle') {
                     setAutoOrchestrating(false);
+                    setExternalExecutions(null);
+                    setActiveHermesSessions(null);
                     if (st.status === 'completed') {
                         updatePhase('COMPLETED', 'DONE');
                     } else if (st.status === 'halted' && st.current_phase) {
                         updatePhase(st.current_phase, 'FAILED');
                     }
                 }
+                // running_external stays polling — the external process is still alive
             } catch (err) {
                 // Network blip — keep polling
             }
@@ -372,22 +383,23 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (cancelled) return;
 
                 const st = data.status || {};
-                // If pipeline is running, sync state immediately and start polling
-                if (st.status === 'running') {
+                // If pipeline is running (either via orchestration engine or external), sync state and poll
+                if (st.status === 'running' || st.status === 'running_external') {
                     setAutoOrchestrating(true);
-                    // Sync log from backend (replace, not append — we're catching up)
+                    // Sync log from backend
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     setFailedOrchPhaseIdx(st.failed_phase ?? null);
+                    // Store external execution info for display
+                    if (st.external_executions) setExternalExecutions(st.external_executions);
+                    if (st.active_hermes_sessions) setActiveHermesSessions(st.active_hermes_sessions);
                 } else if (st.status === 'halted') {
-                    // Pipeline was running and failed — show the failure state
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     setFailedOrchPhaseIdx(st.failed_phase ?? null);
                 } else if (st.status === 'completed') {
-                    // Pipeline finished while we were away
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     if (st.phase_status) setPhaseStatus(st.phase_status);
                     updatePhase('COMPLETED', 'DONE');
@@ -519,6 +531,48 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     <p className="text-xs text-slate-500 mb-5">
                         The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
                     </p>
+
+                    {/* External execution detected — show banner */}
+                    {externalExecutions && externalExecutions.length > 0 && (
+                        <div className="mb-5 bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white">
+                                    <i className="fas fa-bolt text-sm"></i>
+                                </div>
+                                <div>
+                                    <div className="font-black text-amber-800 text-sm uppercase tracking-widest">External Execution In Progress</div>
+                                    <div className="text-[10px] text-amber-600 font-medium">A Hermes agent is running outside the orchestration engine — triggered by a delegated agent, CLI, or API call.</div>
+                                </div>
+                            </div>
+                            {externalExecutions.map((ex, i) => (
+                                <div key={i} className="bg-white rounded-lg p-3 border border-amber-200 mb-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-xs font-bold text-slate-700">PID {ex.pid}</span>
+                                        <span className="text-[10px] text-amber-600 font-bold uppercase">Started: {ex.started}</span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 mb-1">Match: {ex.match_reason}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono bg-slate-50 rounded p-2 max-h-20 overflow-y-auto">{ex.cmd_preview}</div>
+                                </div>
+                            ))}
+                            {/* Active Hermes sessions */}
+                            {activeHermesSessions && activeHermesSessions.length > 0 && (
+                                <div className="mt-3">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2">Active Hermes Sessions</div>
+                                    <div className="space-y-1">
+                                        {activeHermesSessions.map((s, i) => (
+                                            <div key={i} className="flex items-center gap-3 text-xs bg-white rounded-lg p-2 border border-amber-100">
+                                                <i className="fas fa-circle text-amber-400 text-[8px] animate-pulse"></i>
+                                                <span className="font-mono text-slate-600 text-[10px]">{s.session_id}</span>
+                                                <span className="font-bold text-slate-700 flex-1 truncate">{s.title}</span>
+                                                <span className="text-slate-500 text-[10px]">{s.messages} msgs</span>
+                                                <span className="text-slate-500 text-[10px]">{s.tool_calls} tools</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Context strip — key variables at a glance */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
