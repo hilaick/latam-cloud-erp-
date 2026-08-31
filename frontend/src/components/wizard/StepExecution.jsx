@@ -546,110 +546,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
                     </p>
 
-                    {/* External execution detected — show live dashboard */}
-                    {externalExecutions && externalExecutions.length > 0 && (
-                        <div className="mb-5 bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white animate-pulse">
-                                        <i className="fas fa-bolt text-sm"></i>
-                                    </div>
-                                    <div>
-                                        <div className="font-black text-amber-800 text-sm uppercase tracking-widest">External Execution In Progress</div>
-                                        <div className="text-[10px] text-amber-600 font-medium">Hermes agent running outside the orchestration engine — live data from session DB</div>
-                                    </div>
-                                </div>
-                                {sessionStats && (
-                                    <div className="flex items-center gap-3 text-[10px] font-bold">
-                                        <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.messages} msgs</span>
-                                        <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.tool_calls} tools</span>
-                                        {externalExecutions && externalExecutions[0]?.pid > 0 ? (
-                                            <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full animate-pulse">● LIVE</span>
-                                        ) : (
-                                            <span className="bg-rose-200 text-rose-800 px-2 py-1 rounded-full">⚠ Process Ended</span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Inferred phase indicator */}
-                            {inferredPhase && (
-                                <div className="mb-3 bg-white rounded-lg p-3 border border-amber-200">
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Inferred Phase</div>
-                                        <div className="px-3 py-1 rounded-full bg-purple-100 border border-purple-300 text-purple-700 text-xs font-black">
-                                            {inferredPhase.replace('PHASE_4_', '4.')}
-                                        </div>
-                                        <div className="text-[10px] text-slate-500">
-                                            {inferredPhase === 'PHASE_4_1' ? 'Network & Identity Foundation' :
-                                             inferredPhase === 'PHASE_4_2' ? 'Source Prep & Agent Install' :
-                                             inferredPhase === 'PHASE_4_3' ? 'Target ECS Landing Zone' :
-                                             inferredPhase === 'PHASE_4_4' ? 'Data Sync Setup' :
-                                             inferredPhase === 'PHASE_4_5' ? 'Sync Monitor / Cutover' :
-                                             inferredPhase === 'PHASE_4_6' ? 'Cutover Complete' : 'Unknown'}
-                                        </div>
-                                        <i className="fas fa-spinner fa-spin text-amber-500 ml-auto"></i>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Last tool call */}
-                            {lastToolCall && (
-                                <div className="mb-3 bg-slate-900 rounded-lg p-3 border border-slate-700">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <i className="fas fa-terminal text-emerald-400 text-xs"></i>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">{lastToolCall.name}</span>
-                                    </div>
-                                    <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">{lastToolCall.output}</pre>
-                                </div>
-                            )}
-
-                            {/* Live activity feed */}
-                            {liveFeed && liveFeed.length > 0 && (
-                                <div className="bg-slate-900 rounded-lg p-3 border border-slate-700 max-h-64 overflow-y-auto">
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Live Activity Feed</div>
-                                    <div className="space-y-1">
-                                        {liveFeed.map((msg, i) => (
-                                            <div key={i} className={`text-[10px] font-mono flex items-start gap-2 ${
-                                                msg.type === 'error' ? 'text-rose-400' :
-                                                msg.type === 'success' ? 'text-emerald-400' :
-                                                msg.type === 'agent' ? 'text-blue-300' :
-                                                msg.type === 'tool' ? 'text-amber-300' : 'text-slate-400'
-                                            }`}>
-                                                <span className="shrink-0">
-                                                    {msg.type === 'error' ? '✗' :
-                                                     msg.type === 'success' ? '✓' :
-                                                     msg.type === 'agent' ? '🤖' :
-                                                     msg.type === 'tool' ? '⚙' : '·'}
-                                                </span>
-                                                <span className="shrink-0 text-slate-600 w-14">{msg.role}</span>
-                                                {msg.tool && <span className="shrink-0 text-purple-400 font-bold">[{msg.tool}]</span>}
-                                                <span className="truncate">{msg.content}</span>
-                                            </div>
-                                        ))}
-                                        <div className="text-amber-400 text-[10px] animate-pulse pt-1">
-                                            <i className="fas fa-spinner fa-spin mr-1"></i> Agent working...
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Process details */}
-                            <div className="mt-3 space-y-1">
-                                {externalExecutions.map((ex, i) => (
-                                    <div key={i} className="flex items-center gap-2 text-[10px] text-amber-700">
-                                        <i className="fas fa-server"></i>
-                                        <span className="font-bold">PID {ex.pid}</span>
-                                        <span>·</span>
-                                        <span>Started {ex.started}</span>
-                                        <span>·</span>
-                                        <span className="text-amber-600">{ex.match_reason}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
                     {/* Context strip — key variables at a glance */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
                         <div className="text-center">
@@ -679,15 +575,15 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex flex-col items-center justify-center text-white shadow-xl z-10">
                                     <i className="fas fa-robot text-2xl mb-1"></i>
                                     <div className="text-[9px] font-black uppercase tracking-widest">7 Phases</div>
-                                    <div className="text-[8px] text-purple-200 mt-0.5">{completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` : 'Ready'}</div>
+                                    <div className="text-[8px] text-purple-200 mt-0.5">{completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` : inferredPhase ? `${inferredPhase.replace('PHASE_4_', '4.')} active` : 'Ready'}</div>
                                 </div>
                                 {/* SVG connecting circle */}
                                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 380 380">
                                     <circle cx="190" cy="190" r="155" fill="none" stroke="#e2e8f0" strokeWidth="2" strokeDasharray="4 4" />
                                     {/* Animated progress arc */}
-                                    {completedOrchPhases.size > 0 && (
+                                    {(completedOrchPhases.size > 0 || inferredPhase) && (
                                         <circle cx="190" cy="190" r="155" fill="none" stroke={failedOrchPhaseIdx !== null ? '#f59e0b' : '#10b981'} strokeWidth="3"
-                                            strokeDasharray={`${(completedOrchPhases.size / 7) * 974} 974`}
+                                            strokeDasharray={`${((completedOrchPhases.size || (inferredPhase ? parseInt(inferredPhase.replace('PHASE_4_','')) - 1 : 0)) / 7) * 974} 974`}
                                             transform="rotate(-90 190 190)"
                                             strokeLinecap="round"
                                             className="transition-all duration-700"
@@ -709,9 +605,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     const y = 190 + 155 * Math.sin(angle);
                                     const phaseKey = `PHASE_4_${ph.n}`;
                                     let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
-                                    // If external execution inferred this phase as current, show it as running
                                     if (status === 'pending' && inferredPhase === phaseKey) status = 'running';
-                                    // If external execution inferred a later phase, mark earlier ones as completed
                                     if (status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
                                     const bgColor = status === 'completed' ? '#10b981' : status === 'running' ? '#8b5cf6' : status === 'failed' ? '#ef4444' : '#fff';
                                     const txtColor = status === 'pending' ? ph.color : '#fff';
@@ -782,6 +676,122 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     </div>
 
+                    {/* External execution live dashboard — AFTER lifecycle graph */}
+                    {externalExecutions && externalExecutions.length > 0 && (
+                        <div className="mb-5 bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${externalExecutions[0]?.pid > 0 ? 'bg-amber-500 animate-pulse' : 'bg-rose-400'}`}>
+                                        <i className={`fas ${externalExecutions[0]?.pid > 0 ? 'fa-bolt' : 'fa-exclamation-triangle'} text-sm`}></i>
+                                    </div>
+                                    <div>
+                                        <div className="font-black text-amber-800 text-sm uppercase tracking-widest">
+                                            {externalExecutions[0]?.pid > 0 ? 'External Execution In Progress' : 'External Execution — Process Ended'}
+                                        </div>
+                                        <div className="text-[10px] text-amber-600 font-medium">
+                                            {externalExecutions[0]?.pid > 0
+                                                ? 'Hermes agent running outside the orchestration engine — live data from session DB'
+                                                : 'Hermes agent process ended — showing last known session data'}
+                                        </div>
+                                    </div>
+                                </div>
+                                {sessionStats && (
+                                    <div className="flex items-center gap-2 text-[10px] font-bold">
+                                        <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.messages} msgs</span>
+                                        <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.tool_calls} tools</span>
+                                        {externalExecutions[0]?.pid > 0 ? (
+                                            <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full animate-pulse">● LIVE</span>
+                                        ) : (
+                                            <span className="bg-rose-200 text-rose-800 px-2 py-1 rounded-full">⚠ Ended</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Inferred phase indicator */}
+                            {inferredPhase && (
+                                <div className="mb-3 bg-white rounded-lg p-3 border border-amber-200">
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Inferred Phase</div>
+                                        <div className="px-3 py-1 rounded-full bg-purple-100 border border-purple-300 text-purple-700 text-xs font-black">
+                                            {inferredPhase.replace('PHASE_4_', '4.')}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500">
+                                            {inferredPhase === 'PHASE_4_1' ? 'Network & Identity Foundation' :
+                                             inferredPhase === 'PHASE_4_2' ? 'Source Prep & Agent Install' :
+                                             inferredPhase === 'PHASE_4_3' ? 'Target ECS Landing Zone' :
+                                             inferredPhase === 'PHASE_4_4' ? 'Data Sync Setup' :
+                                             inferredPhase === 'PHASE_4_5' ? 'Sync Monitor / Cutover' :
+                                             inferredPhase === 'PHASE_4_6' ? 'Cutover Complete' : 'Unknown'}
+                                        </div>
+                                        {externalExecutions[0]?.pid > 0 && <i className="fas fa-spinner fa-spin text-amber-500 ml-auto"></i>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Live activity feed — replaces the old "Orchestration in progress" section */}
+                            {liveFeed && liveFeed.length > 0 && (
+                                <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">Live Agent Activity</div>
+                                        {sessionStats && <div className="text-[9px] text-slate-500 font-mono truncate max-w-[200px]">{sessionStats.title}</div>}
+                                    </div>
+                                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                                        {liveFeed.map((msg, i) => (
+                                            <div key={i} className={`text-[10px] font-mono flex items-start gap-2 ${
+                                                msg.type === 'error' ? 'text-rose-400' :
+                                                msg.type === 'success' ? 'text-emerald-400' :
+                                                msg.type === 'agent' ? 'text-blue-300' :
+                                                msg.type === 'tool' ? 'text-amber-300' : 'text-slate-400'
+                                            }`}>
+                                                <span className="shrink-0">
+                                                    {msg.type === 'error' ? '✗' :
+                                                     msg.type === 'success' ? '✓' :
+                                                     msg.type === 'agent' ? '🤖' :
+                                                     msg.type === 'tool' ? '⚙' : '·'}
+                                                </span>
+                                                <span className="shrink-0 text-slate-600 w-14">{msg.role}</span>
+                                                {msg.tool && <span className="shrink-0 text-purple-400 font-bold">[{msg.tool}]</span>}
+                                                <span className="truncate">{msg.content}</span>
+                                            </div>
+                                        ))}
+                                        {externalExecutions[0]?.pid > 0 && (
+                                            <div className="text-amber-400 text-[10px] animate-pulse pt-1">
+                                                <i className="fas fa-spinner fa-spin mr-1"></i> Agent working...
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Last tool call output */}
+                            {lastToolCall && (
+                                <div className="mt-3 bg-slate-900 rounded-lg p-3 border border-slate-700">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <i className="fas fa-terminal text-emerald-400 text-xs"></i>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">{lastToolCall.name}</span>
+                                        <span className="text-[9px] text-slate-500 ml-auto">last tool output</span>
+                                    </div>
+                                    <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">{lastToolCall.output}</pre>
+                                </div>
+                            )}
+
+                            {/* Process details */}
+                            <div className="mt-3 space-y-1">
+                                {externalExecutions.map((ex, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-[10px] text-amber-700">
+                                        <i className="fas fa-server"></i>
+                                        {ex.pid > 0 ? <span className="font-bold">PID {ex.pid}</span> : <span className="font-bold">No process</span>}
+                                        <span>·</span>
+                                        <span>{ex.started}</span>
+                                        <span>·</span>
+                                        <span className="text-amber-600">{ex.match_reason}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Phase progress bar (shown when there's progress) */}
                     {completedOrchPhases.size > 0 && (
                         <div className="mb-4">
@@ -813,20 +823,27 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     )}
 
+                    {/* Orchestration log / live status — shows orchestration engine log OR external live feed */}
                     {autoOrchestrating ? (
                         <div className="space-y-2">
-                            <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
-                                <i className="fas fa-spinner fa-spin text-xl"></i>
-                                Orchestration in progress...
-                            </div>
-                            <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] text-emerald-400 border border-slate-700 shadow-inner">
-                                {orchestrationLog.map((line, i) => (
-                                    <div key={i} className={line.includes('✓') ? 'text-emerald-400' : 'text-purple-300'}>{line}</div>
-                                ))}
-                                <div className="text-amber-400 animate-pulse mt-2">
-                                    <i className="fas fa-spinner fa-spin mr-2"></i> Agent working...
+                            {/* Orchestration engine log (from /orchestrate pipeline) */}
+                            {orchestrationLog.length > 0 && (
+                                <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner">
+                                    {orchestrationLog.map((line, i) => (
+                                        <div key={i} className={line.includes('✓') ? 'text-emerald-400' : line.includes('✗') ? 'text-rose-400' : 'text-purple-300'}>{line}</div>
+                                    ))}
+                                    <div className="text-amber-400 animate-pulse mt-2">
+                                        <i className="fas fa-spinner fa-spin mr-2"></i> {externalExecutions && externalExecutions[0]?.pid > 0 ? 'External agent working...' : 'Pipeline running...'}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+                            {/* If no orchestration log but external live feed exists, it's shown above in the dashboard */}
+                            {orchestrationLog.length === 0 && !externalExecutions && (
+                                <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
+                                    <i className="fas fa-spinner fa-spin text-xl"></i>
+                                    Pipeline starting...
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="flex gap-3">
