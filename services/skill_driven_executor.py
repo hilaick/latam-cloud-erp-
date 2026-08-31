@@ -393,6 +393,136 @@ class SkillDrivenExecutor:
             return {"success": False, "error": str(e), "tool": "hermes_agent"}
 
     @classmethod
+    def verify_sg_preflight(
+        cls,
+        target_server_id: str,
+        target_region: str,
+        target_ak: str,
+        target_sk: str,
+        os_type: str = "Linux",
+    ) -> dict:
+        """
+        BLOCKING preflight: Verify target ECS has SG with correct ports (22, 8900, 8899).
+        
+        Returns {"success": True} if SG is properly configured.
+        Returns {"success": False, "error": "..."} if SG is missing/misconfigured.
+        """
+        import subprocess as _sp
+        
+        is_linux = os_type.lower() == "linux"
+        required_ports = [22, 8900] if is_linux else [22, 8899, 8900]
+        
+        try:
+            # 1. Get ECS port IDs
+            port_cmd = (
+                f"hcloud VPC ListPorts --cli-region={target_region} --cli-profile=erp-target 2>&1"
+            )
+            port_result = _sp.run(port_cmd, shell=True, capture_output=True, text=True, timeout=30)
+            import json as _json
+            port_out = port_result.stdout
+            idx = port_out.find("{")
+            if idx < 0:
+                return {"success": False, "error": "VPC ListPorts returned no JSON", "tool": "hcloud"}
+            
+            ports_data = _json.loads(port_out[idx:])
+            compute_ports = [
+                p for p in ports_data.get("ports", [])
+                if "compute" in p.get("device_owner", "") and p.get("device_id") == target_server_id
+            ]
+            
+            if not compute_ports:
+                return {
+                    "success": False,
+                    "error": f"No compute port found for ECS {target_server_id}. ECS may not exist or has no network interface.",
+                    "tool": "hcloud",
+                }
+            
+            # 2. Check SG associations on the port
+            port = compute_ports[0]
+            port_id = port.get("id", "")
+            sgs = port.get("security_groups", [])
+            sg_ids = [s.get("id", "") for s in sgs]
+            
+            if not sg_ids:
+                return {
+                    "success": False,
+                    "error": f"ECS {target_server_id} has NO security groups associated. "
+                             f"Create SG with ports {required_ports} and associate via "
+                             f"hcloud VPC UpdatePort --port_id={port_id} --port.security_groups.1=<sg_id>",
+                    "tool": "hcloud",
+                }
+            
+            # 3. Check SG rules for required ports
+            sg_id = sg_ids[0]
+            rules_cmd = (
+                f"hcloud VPC ShowSecurityGroup --security_group_id={sg_id} "
+                f"--cli-region={target_region} --cli-profile=erp-target 2>&1"
+            )
+            rules_result = _sp.run(rules_cmd, shell=True, capture_output=True, text=True, timeout=30)
+            rules_out = rules_result.stdout
+            idx2 = rules_out.find("{")
+            if idx2 < 0:
+                return {
+                    "success": False,
+                    "error": f"Cannot read SG {sg_id} rules",
+                    "tool": "hcloud",
+                }
+            
+            sg_data = _json.loads(rules_out[idx2:])
+            sg = sg_data.get("security_group", {})
+            rules = sg.get("security_group_rules", [])
+            
+            # Find ingress TCP rules with required ports
+            open_ports = set()
+            for rule in rules:
+                if rule.get("direction") == "ingress" and rule.get("protocol") == "tcp":
+                    multiport = rule.get("multiport", "")
+                    pmin = rule.get("port_range_min")
+                    pmax = rule.get("port_range_max")
+                    if multiport:
+                        # Parse multiport (e.g. "22" or "22,8900" or "1-65535")
+                        for part in multiport.split(","):
+                            part = part.strip()
+                            if "-" in part:
+                                lo, hi = part.split("-")
+                                for p in range(int(lo), int(hi) + 1):
+                                    open_ports.add(p)
+                            elif part.isdigit():
+                                open_ports.add(int(part))
+                    elif pmin and pmax:
+                        for p in range(pmin, pmax + 1):
+                            open_ports.add(p)
+            
+            missing_ports = [p for p in required_ports if p not in open_ports]
+            
+            if missing_ports:
+                return {
+                    "success": False,
+                    "error": f"SG {sg_id} missing ingress TCP ports {missing_ports}. "
+                             f"Open ports: {sorted(open_ports)}. Required: {required_ports}. "
+                             f"Add rules: hcloud VPC CreateSecurityGroupRule "
+                             f"--security_group_rule.direction=ingress "
+                             f"--security_group_rule.security_group_id={sg_id} "
+                             f"--security_group_rule.protocol=tcp "
+                             f"--security_group_rule.multiport={','.join(str(p) for p in missing_ports)} "
+                             f"--security_group_rule.remote_ip_prefix=0.0.0.0/0",
+                    "tool": "hcloud",
+                    "sg_id": sg_id,
+                    "missing_ports": missing_ports,
+                }
+            
+            return {
+                "success": True,
+                "message": f"SG {sg_id} OK — ports {required_ports} open, associated with ECS {target_server_id}",
+                "tool": "hcloud",
+                "sg_id": sg_id,
+                "open_ports": sorted(open_ports),
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": f"SG preflight error: {e}", "tool": "hcloud"}
+
+    @classmethod
     def run_full_migration_skill_driven(
         cls,
         source_servers: list,
@@ -476,6 +606,32 @@ class SkillDrivenExecutor:
                 "message": f"Found {len(sources_result.get('sources', []))} registered sources",
                 "tool": sources_result.get("tool", "hcloud"),
             })
+
+            # Step 3.5: PREFLIGHT — Verify SG rules on target ECS (SMS.3805 prevention)
+            # This is a BLOCKING check — if SG is missing or not associated, migration WILL fail
+            sg_result = cls.verify_sg_preflight(
+                target_server_id=target_id,
+                target_region=target_region,
+                target_ak=target_ak,
+                target_sk=target_sk,
+                os_type=src.get("os_type", "Linux"),
+            )
+            results.append({
+                "source": src_name, "operation": "PREFLIGHT_SG_VERIFY",
+                "status": "success" if sg_result["success"] else "BLOCKING",
+                "message": sg_result.get("message", ""),
+                "error": sg_result.get("error"),
+                "tool": sg_result.get("tool", "hcloud"),
+                "blocking": not sg_result["success"],
+            })
+            if not sg_result["success"]:
+                logger.error(f"[SKILL-EXEC] BLOCKING: SG preflight failed for {src_name} — {sg_result.get('error')}")
+                results.append({
+                    "source": src_name, "operation": "SMS_TASK_CREATE",
+                    "status": "skipped (SG preflight failed)",
+                    "message": "Cannot create SMS task — target SG missing or not associated",
+                })
+                continue
 
             # Step 4: Create SMS task (MCP → hcloud → Hermes agent)
             registered_source = None

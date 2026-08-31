@@ -1789,26 +1789,39 @@ class SmsMigrationSimulator:
             "action": "PREFLIGHT_SG_RULES",
             "target": server_name,
             "message": (
-                f"[PREFLIGHT] Configuring target Security Group rules for SMS migration. "
+                f"[PREFLIGHT-BLOCKING] Verifying target Security Group rules for SMS migration. "
                 f"Required ports ({'Linux' if is_linux else 'Windows'}): {port_desc}. "
-                f"CRITICAL: SMS.3805 (connection timeout) occurs if these ports are not open BEFORE task creation."
+                f"CRITICAL: SMS.3805 (connection timeout) occurs if these ports are not open AND associated with target ECS BEFORE task creation. "
+                f"This preflight is BLOCKING — execution will not proceed if SG is missing or not associated."
             ),
             "commands": [
-                {"desc": f"Add SG ingress TCP {port_desc} from source IP", "cmd": (
-                    f"hcloud VPC CreateSecurityGroupRule "
-                    f"--security_group_id=<target_sg_id> "
-                    f"--direction=ingress --protocol=tcp "
-                    f"--port_range_min={required_ports[0]} --port_range_max={required_ports[-1]} "
-                    f"--remote_ip_prefix=0.0.0.0/0"
+                {"desc": f"Check SG exists and has ports {port_desc}", "cmd": (
+                    f"hcloud VPC ShowSecurityGroup --security_group_id=<target_sg_id> "
+                    f"--cli-region={target_region} --cli-profile=erp-target"
                 )},
-                {"desc": "Add SG ingress ICMP", "cmd": "hcloud VPC CreateSecurityGroupRule --security_group_id=<target_sg_id> --direction=ingress --protocol=icmp --remote_ip_prefix=0.0.0.0/0"},
-                {"desc": "Add SG egress all TCP", "cmd": "hcloud VPC CreateSecurityGroupRule --security_group_id=<target_sg_id> --direction=egress --protocol=tcp --port_range_min=1 --port_range_max=65535 --remote_ip_prefix=0.0.0.0/0"},
+                {"desc": "Verify SG associated with target ECS port", "cmd": (
+                    f"hcloud VPC ListPorts --cli-region={target_region} --cli-profile=erp-target "
+                    f"| grep <target_ecs_id> | grep <target_sg_id>"
+                )},
+                {"desc": "If missing: Add SG ingress TCP 22+8900", "cmd": (
+                    f"hcloud VPC CreateSecurityGroupRule "
+                    f"--security_group_rule.direction=ingress "
+                    f"--security_group_rule.security_group_id=<target_sg_id> "
+                    f"--security_group_rule.protocol=tcp "
+                    f"--security_group_rule.multiport=22,8900 "
+                    f"--security_group_rule.remote_ip_prefix=0.0.0.0/0"
+                )},
+                {"desc": "If missing: Associate SG with ECS port", "cmd": (
+                    f"hcloud VPC UpdatePort --port_id=<target_port_id> "
+                    f"--port.security_groups.1=<target_sg_id>"
+                )},
                 {"desc": "Verify SSH reachable to target", "cmd": f"ssh -o ConnectTimeout=10 root@<target_eip> (should connect, not timeout)"},
             ],
             "preflight_check": True,
+            "blocking": True,
             "timestamp_offset_seconds": total_offset,
-            "result": "simulated_sg_rules_configured",
-            "error_prevention": {"code": "SMS.3805", "ports": required_ports, "os_type": "Linux" if is_linux else "Windows"},
+            "result": "simulated_sg_verified",
+            "error_prevention": {"code": "SMS.3805", "ports": required_ports, "os_type": "Linux" if is_linux else "Windows", "blocking": True},
             "source_label": "🔧 Skilled (huawei-sms-cross-region-migration)",
             "rollback_action": {"cmd": "hcloud VPC DeleteSecurityGroupRule --security_group_rule_id=<sg_rule_id> (for each rule added)", "label": "Delete SMS SG ingress/egress rules"},
         })
