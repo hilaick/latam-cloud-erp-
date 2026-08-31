@@ -1232,7 +1232,7 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [execLog, setExecLog] = useState([]);
     const [selectedServer, setSelectedServer] = useState(null);
     const [serverStatus, setServerStatus] = useState({});
-    const [showSpawnTree, setShowSpawnTree] = useState(false);
+    // showSpawnTree removed — telemetry now in OrchestratorView's external execution dashboard
 
     const targetArch = project?.targetArchitecture || {};
     const servers = [
@@ -1304,96 +1304,6 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
             {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} />}
-
-            {/* Spawn Tree + Telemetry — inline in Execution Pipeline */}
-            <div className="mt-6 border-t border-slate-200 pt-4">
-                <button
-                    onClick={() => setShowSpawnTree(!showSpawnTree)}
-                    className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600 hover:text-indigo-600 transition-colors mb-3"
-                >
-                    <i className={`fas fa-chevron-${showSpawnTree ? 'down' : 'right'} text-[10px]`}></i>
-                    <i className="fas fa-project-diagram text-indigo-500"></i> Live Execution Telemetry
-                </button>
-                {showSpawnTree && (
-                    <>
-                        {/* Delegate task summary */}
-                        <div className="grid grid-cols-3 gap-3 mb-4">
-                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${isAgentic ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
-                                    <i className={`fas ${isAgentic ? 'fa-robot' : 'fa-tasks'}`}></i>
-                                </div>
-                                <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Mode</div>
-                                    <div className="font-black text-xs text-slate-800">{executionMode?.toUpperCase() || 'MANUAL'}</div>
-                                </div>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${executionState?.currentPhase === 'COMPLETED' ? 'bg-emerald-100 text-emerald-600' : executionState?.currentPhase && executionState.currentPhase !== 'PHASE_4_0' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    <i className={`fas ${executionState?.currentPhase === 'COMPLETED' ? 'fa-check-circle' : 'fa-spinner fa-spin'}`}></i>
-                                </div>
-                                <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status</div>
-                                    <div className="font-black text-xs text-slate-800">{executionState?.currentPhase === 'COMPLETED' ? 'COMPLETED' : (executionState?.currentPhase || 'IDLE').replace('PHASE_4_', '4.')}</div>
-                                </div>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${(project?.delegateTasks?.length || 0) > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    <i className="fas fa-network-wired"></i>
-                                </div>
-                                <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Delegates</div>
-                                    <div className="font-black text-xs text-slate-800">{project?.delegateTasks?.length || 0} active</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Delegate task table */}
-                        {(project?.delegateTasks?.length || 0) > 0 && (
-                            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-[9px] uppercase font-black text-slate-500">
-                                        <tr>
-                                            <th className="p-3">Target</th>
-                                            <th className="p-3">Phase / Job</th>
-                                            <th className="p-3">Model</th>
-                                            <th className="p-3 text-center">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {(project.delegateTasks || []).map((task, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 font-bold text-slate-800 text-xs">{task.target || 'N/A'}</td>
-                                                <td className="p-3 text-xs font-mono text-slate-500">{task.phase || task.goal || '—'}</td>
-                                                <td className="p-3 text-xs text-slate-500">{task.model || task.profile || 'exec'}</td>
-                                                <td className="p-3 text-center">
-                                                    <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
-                                                        task.status === 'RUNNING' ? 'bg-blue-100 text-blue-700' :
-                                                        task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
-                                                        task.status === 'FAILED' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
-                                                    }`}>
-                                                        {task.status === 'RUNNING' && <i className="fas fa-spinner fa-spin mr-1"></i>}
-                                                        {task.status === 'COMPLETED' && <i className="fas fa-check mr-1"></i>}
-                                                        {task.status === 'FAILED' && <i className="fas fa-times mr-1"></i>}
-                                                        {task.status || 'UNKNOWN'}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* Spawn tree visualizer */}
-                        <SpawnTreeVisualizer
-                            projectId={project?.id}
-                            simulationTrace={[]}
-                            isActive={true}
-                            mode="execution"
-                        />
-                    </>
-                )}
-            </div>
         </div>
     );
 }
