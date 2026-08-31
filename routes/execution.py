@@ -1041,7 +1041,7 @@ def orchestration_status(project_id):
             cmd = parts[10]
             started = parts[8] if len(parts) > 8 else '?'
 
-            # Match to this project: look for project_id or server names in the command
+            # Match to this project: look for project_id, server names, or IPs in the command
             project = ProjectData.query.get(project_id)
             matched = False
             match_reason = ''
@@ -1051,7 +1051,8 @@ def orchestration_status(project_id):
             elif project:
                 import json as _json
                 pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
-                # Check server names
+
+                # Check server names from targetArchitecture
                 ta = pdata.get('targetArchitecture', {})
                 for s in (ta.get('compute', []) + ta.get('database', [])):
                     sname = s.get('name', s.get('source_name', ''))
@@ -1059,20 +1060,49 @@ def orchestration_status(project_id):
                         matched = True
                         match_reason = f'server {sname} in command'
                         break
-                # Check source IPs
-                for ip_field in ['sourceIPs', 'source_ips']:
-                    ips = pdata.get(ip_field, [])
-                    if isinstance(ips, list):
-                        for ip in ips:
-                            if str(ip) in cmd:
-                                matched = True
-                                match_reason = f'source IP {ip} in command'
-                                break
-                # Check region
-                region = pdata.get('region', '')
-                if region and region in cmd and 'migration' in cmd.lower():
-                    # Weak match — only if no other process matched
-                    pass
+
+                # Check IPs from mapperNodes
+                if not matched:
+                    for mn in pdata.get('mapperNodes', []):
+                        mn_ip = mn.get('ip', '')
+                        mn_name = mn.get('name', '')
+                        if mn_ip and mn_ip in cmd:
+                            matched = True
+                            match_reason = f'mapperNode IP {mn_ip} in command'
+                            break
+                        if mn_name and mn_name in cmd:
+                            matched = True
+                            match_reason = f'mapperNode name {mn_name} in command'
+                            break
+
+                # Check target_resource from executionPlan steps
+                if not matched:
+                    plan = pdata.get('executionPlan', {})
+                    for step in (plan.get('steps', []) if isinstance(plan, dict) else []):
+                        tr = step.get('target_resource', '')
+                        if tr and tr in cmd:
+                            matched = True
+                            match_reason = f'execution step target {tr} in command'
+                            break
+
+                # Check source IPs from raw_inventory
+                if not matched:
+                    mgc = pdata.get('mgcData', {}).get('raw_inventory', {})
+                    for n in mgc.get('network', []):
+                        pub_ip = n.get('public_ip_address', '')
+                        if pub_ip and pub_ip in cmd:
+                            matched = True
+                            match_reason = f'source EIP {pub_ip} in command'
+                            break
+
+                # Check source_name from targetArchitecture compute (source server IDs)
+                if not matched:
+                    for s in ta.get('compute', []):
+                        sid = s.get('source_id', '')
+                        if sid and sid in cmd:
+                            matched = True
+                            match_reason = f'source_id {sid} in command'
+                            break
 
             if matched:
                 external_procs.append({
