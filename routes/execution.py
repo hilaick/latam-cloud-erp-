@@ -984,6 +984,110 @@ def adapt_execution_template(template_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Background Orchestration Engine — fire-and-poll 7-phase pipeline
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@execution_bp.route('/api/execution/<project_id>/orchestrate', methods=['POST'])
+@jwt_required()
+def start_orchestration(project_id):
+    """Start the 7-phase migration pipeline in a background thread.
+
+    Returns immediately with initial status. Frontend polls /orchestrate/status.
+    Per-project lock prevents duplicate concurrent runs.
+    """
+    from services.orchestration_engine import start_pipeline, is_pipeline_running, get_pipeline_status
+
+    if is_pipeline_running(project_id):
+        return jsonify({
+            'success': False,
+            'error': 'Pipeline already running for this project.',
+            'status': get_pipeline_status(project_id),
+        }), 409
+
+    data = request.get_json(silent=True) or {}
+    start_from = data.get('start_from', 0)
+
+    result = start_pipeline(project_id, start_from=start_from)
+    code = 200 if result.get('success') else 409
+    return jsonify(result), code
+
+
+@execution_bp.route('/api/execution/<project_id>/orchestrate/status', methods=['GET'])
+@jwt_required()
+def orchestration_status(project_id):
+    """Poll live pipeline status for a project. No side effects."""
+    from services.orchestration_engine import get_pipeline_status
+
+    status = get_pipeline_status(project_id)
+    return jsonify({'success': True, 'status': status})
+
+
+@execution_bp.route('/api/execution/<project_id>/orchestrate/resume', methods=['POST'])
+@jwt_required()
+def orchestration_resume(project_id):
+    """Resume pipeline from the failed phase."""
+    from services.orchestration_engine import resume_pipeline, is_pipeline_running
+
+    if is_pipeline_running(project_id):
+        return jsonify({'success': False, 'error': 'Pipeline already running.'}), 409
+
+    result = resume_pipeline(project_id)
+    code = 200 if result.get('success') else 400
+    return jsonify(result), code
+
+
+@execution_bp.route('/api/execution/<project_id>/orchestrate/rollback', methods=['POST'])
+@jwt_required()
+def orchestration_rollback(project_id):
+    """Rollback: destroy provisioned infrastructure and reset pipeline state."""
+    from services.orchestration_engine import _running_pipelines, get_pipeline_status
+    from models import ExecutionState
+
+    # Don't rollback while pipeline is running
+    if get_pipeline_status(project_id).get('status') == 'running':
+        return jsonify({'success': False, 'error': 'Cannot rollback while pipeline is running.'}), 409
+
+    # Call existing rollback endpoint logic
+    try:
+        project_record = ProjectData.query.get(project_id)
+        if not project_record:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        try:
+            ephemeral_keys = ensure_valid_sts_token(project_record)
+        except Exception as auth_err:
+            return jsonify({"success": False, "error": str(auth_err)}), 403
+
+        project_data = json.loads(project_record.data)
+        region = project_data.get('region', 'la-south-2')
+
+        rfs_result = ExecutionOrchestrator.rollback_rfs_stack(
+            ak=ephemeral_keys.get('ak'), sk=ephemeral_keys.get('sk'),
+            security_token=ephemeral_keys.get('security_token'),
+            region=region, project_id=project_id
+        )
+
+        if rfs_result.get("success"):
+            # Reset execution state
+            ExecutionState.query.filter_by(project_id=project_id).update({
+                'current_phase': 'PHASE_4_0', 'status': 'PENDING'
+            })
+            project_record.delegate_tasks = '[]'
+            db.session.commit()
+
+            # Clear in-memory pipeline state
+            if project_id in _running_pipelines:
+                _running_pipelines[project_id] = {
+                    'status': 'idle', 'completed_phases': [], 'failed_phase': None,
+                    'log': [], 'phase_status': {},
+                }
+
+        return jsonify(rfs_result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ── Playbook Suggestion: query past learnings for similar resource profiles ──
 @execution_bp.route('/api/playbooks/suggest', methods=['POST'])
 @jwt_required()

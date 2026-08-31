@@ -278,197 +278,137 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         }
     };
 
-    // 🚨 AGENTIC: Orchestrate pipeline via real Hermes delegate-task API (Fix #4: phase-level resume)
-    // INTEGRATED with dry-run simulator: passes simulation trace as context to each Hermes agent
+    // 🚨 AGENTIC: Fire-and-poll orchestration via background engine
+    // POST /api/execution/<id>/orchestrate starts the pipeline in a background thread.
+    // useEffect polls /orchestrate/status every 3s and updates the UI.
     const handleOrchestrateAll = async (startFrom = 0) => {
-        // Build completed-set from backend delegateTasks on first run
-        if (startFrom === 0 && project?.delegateTasks?.length) {
-            const done = new Set();
-            let firstFail = null;
-            project.delegateTasks.forEach((t, i) => {
-                if (t.status === 'COMPLETED') done.add(t.phase);
-                if (t.status === 'FAILED' && firstFail === null) firstFail = i;
-            });
-            setCompletedOrchPhases(done);
-            if (firstFail !== null) setFailedOrchPhaseIdx(firstFail);
-        }
-
-        setAutoOrchestrating(true);
-        setOrchestrationLog([]);
-        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
-
         const token = sessionStorage.getItem('hermes_access_token');
+        setAutoOrchestrating(true);
+        setOrchestrationLog(prev => [...prev, '[start] Requesting backend to start 7-phase pipeline...']);
 
-        // ── Read dry-run simulation result for rich phase context ──
-        const simResult = project?.agenticDryRun;
-        const simTrace = simResult?.trace || [];
-        const simSummary = simResult?.summary || {};
+        try {
+            const res = await fetch(`/api/execution/${project?.id}/orchestrate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ start_from: startFrom }),
+            });
+            const data = await res.json();
 
-        const chain = [
-            { phase: 'PHASE_4_1', label: 'Wave 0: Network & Identity Foundation', goal: 'Validate and prepare the Wave 0 network fabric: provision isolated Transit VPC, subnets, security groups, and identity foundation via Terraform. Confirm all prerequisites for the migration landing zone.' },
-            { phase: 'PHASE_4_2', label: 'Vector-Aware OS Pre-Flight', goal: 'Run OS pre-flight diagnostics: validate source OS constraints against target cloud availability. Check that quoted flavors are in stock and flag any mismatches requiring Change Requests.' },
-            { phase: 'PHASE_4_3', label: 'Build App Landing Zone', goal: 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.' },
-            { phase: 'PHASE_4_4', label: 'Deploy Data Plane Agents', goal: 'Deploy SMS and DRS migration agents across the established Wave 0 network. Verify agent health, connectivity to source and target, and prepare for data synchronization.' },
-            { phase: 'PHASE_4_5', label: 'Continuous Sync Monitor', goal: 'Monitor data synchronization progress. Confirm byte-by-byte replication is complete for all volumes. Report sync percentages and estimated time to cutover readiness.' },
-            { phase: 'PHASE_4_6', label: 'Cold Cutover & VPC Promotion', goal: 'Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure.' },
-            { phase: 'PHASE_4_7', label: 'Teardown & Garbage Collection', goal: 'Destroy transient migration resources: factory VMs, staging EIPs, and temporary disks. Confirm PPU costs drop to quoted baseline. Verify no orphaned resources remain.' },
-        ];
-
-        // ── Pre-compute phase context from simulation traces ──
-        const buildPhaseContext = (phaseKey) => {
-            if (!simTrace.length) return null;
-            const phaseSteps = simTrace.filter(t => t.phase === phaseKey || t.phase_group === phaseKey);
-            if (!phaseSteps.length) return null;
-
-            const commands = phaseSteps
-                .filter(t => Array.isArray(t.commands) && t.commands.length > 0)
-                .flatMap(t => t.commands.map(c => c.cmd || c.command || ''))
-                .filter(Boolean);
-            const serverNames = [...new Set(phaseSteps
-                .filter(t => t.target || (t.decision && t.decision.server_name))
-                .map(t => t.target || t.decision.server_name))];
-            const resourceSpecs = phaseSteps
-                .filter(t => t.network_spec || t.resourceSpec || (t.decision && t.decision.resource_spec))
-                .map(t => t.network_spec || t.resourceSpec || t.decision.resource_spec);
-
-            return {
-                phaseSteps: phaseSteps.length,
-                commands: commands.slice(0, 20),
-                serverNames: serverNames.slice(0, 10),
-                resourceSpecs: resourceSpecs.slice(0, 3),
-                estimatedDurationDays: simSummary.estimated_wall_clock_days,
-                serversProcessed: simSummary.servers_processed,
-                totalWaves: simSummary.total_waves,
-            };
-        };
-
-        if (simTrace.length > 0) {
-            log(`[simulator] Using dry-run simulation (${simTrace.length} trace entries) as context for orchestration.`);
+            if (data.success) {
+                setOrchestrationLog(prev => [...prev, '[start] ✓ Pipeline started in background. Polling status...']);
+                // The polling useEffect will pick it up from here.
+            } else {
+                setOrchestrationLog(prev => [...prev, `[start] ✗ ${data.error || 'Failed to start pipeline.'}`]);
+                setAutoOrchestrating(false);
+            }
+        } catch (err) {
+            setOrchestrationLog(prev => [...prev, `[start] ✗ Network error: ${err.message}`]);
+            setAutoOrchestrating(false);
         }
+    };
 
-        for (let i = startFrom; i < chain.length; i++) {
-            const step = chain[i];
+    // 🚨 POLL: Poll backend for pipeline status every 3s while orchestrating
+    useEffect(() => {
+        if (!autoOrchestrating || !project?.id) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        let cancelled = false;
 
-            // Skip phases already completed (from prior run or resume state)
-            if (completedOrchPhases.has(step.phase)) {
-                log(`[agentic ✓] ${step.label} — already completed (skipping).`);
-                updatePhase(step.phase, 'COMPLETED');
-                continue;
-            }
-
-            log(`[agentic] Phase ${step.phase}: ${step.label} — spawning Hermes agent...`);
-            updatePhase(step.phase, 'IN_PROGRESS');
-            setPhaseStatus(prev => ({ ...prev, [step.phase]: 'running' }));
-
-            // ── Build enriched context using simulation trace ──
-            const phaseCtx = buildPhaseContext(step.phase);
-            let enrichedContext = `ERP Migration Project ID: ${project?.id || 'N/A'}. Current pipeline phase: ${step.phase}. Customer: ${project?.customerName || 'N/A'}. Target region: ${project?.region || 'la-south-2'}. Execution mode: agentic orchestration.`;
-            if (phaseCtx) {
-                enrichedContext += `\n\n=== SIMULATION CONTEXT for ${step.phase} ===`;
-                enrichedContext += `\nSimulated steps in this phase: ${phaseCtx.phaseSteps}`;
-                if (phaseCtx.commands.length > 0) {
-                    enrichedContext += `\nSimulated CLI commands for this phase:\n  ` + phaseCtx.commands.map((c, j) => `${j+1}. ${c}`).join('\n  ');
-                }
-                if (phaseCtx.serverNames.length > 0) {
-                    enrichedContext += `\nTarget servers: ${phaseCtx.serverNames.join(', ')}`;
-                }
-                enrichedContext += `\n\n=== END SIMULATION CONTEXT ===`;
-            }
-
+        const poll = async () => {
             try {
-                const res = await fetch('/api/hermes-cli/delegate-task', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                            goal: step.goal,
-                            context: enrichedContext,
-                            profile: 'exec',
-                            project_id: project?.id || ''
-                        })
+                const res = await fetch(`/api/execution/${project.id}/orchestrate/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
                 });
-
                 const data = await res.json();
+                if (cancelled) return;
 
-                if (data.success) {
-                    log(`[agentic ✓] ${step.label} — agent completed successfully.`);
-                    log(`[agentic 📝] ${data.response?.substring(0, 300)}${(data.response?.length > 300) ? '...' : ''}`);
-                    setCompletedOrchPhases(prev => new Set([...prev, step.phase]));
-                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'completed' }));
-                    updatePhase(step.phase, 'COMPLETED');
-                } else {
-                    log(`[agentic ✗] ${step.label} — agent returned error: ${data.error}`);
-                    log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Remaining phases not executed.`);
-                    setFailedOrchPhaseIdx(i);
-                    setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
-                    updatePhase(step.phase, 'FAILED');
+                const st = data.status || {};
+                // Update phase status map
+                if (st.phase_status) setPhaseStatus(st.phase_status);
+                // Update completed phases
+                if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                // Update failed phase
+                setFailedOrchPhaseIdx(st.failed_phase ?? null);
+                // Update log — only append new lines
+                if (st.log && st.log.length > 0) {
+                    setOrchestrationLog(prev => {
+                        const newLines = st.log.slice(prev.length);
+                        return newLines.length > 0 ? [...prev, ...newLines] : prev;
+                    });
+                }
+
+                // Check if pipeline finished
+                if (st.status === 'completed' || st.status === 'halted' || st.status === 'crashed' || st.status === 'idle') {
                     setAutoOrchestrating(false);
-                    return; // Stop the chain on failure
+                    if (st.status === 'completed') {
+                        updatePhase('COMPLETED', 'DONE');
+                    } else if (st.status === 'halted' && st.current_phase) {
+                        updatePhase(st.current_phase, 'FAILED');
+                    }
                 }
             } catch (err) {
-                log(`[agentic ✗] ${step.label} — network/connection error: ${err.message}`);
-                log(`[agentic ⏸] Pipeline halted at Phase ${step.phase}. Check server connectivity.`);
-                setFailedOrchPhaseIdx(i);
-                setPhaseStatus(prev => ({ ...prev, [step.phase]: 'failed' }));
-                updatePhase(step.phase, 'FAILED');
-                setAutoOrchestrating(false);
-                return; // Stop the chain on failure
+                // Network blip — keep polling
             }
-        }
+        };
 
-        // All phases completed
-        setFailedOrchPhaseIdx(null);
-        updatePhase('COMPLETED', 'DONE');
-        log('[agentic ✓] All 7 phases completed. Pipeline finished.');
-        setAutoOrchestrating(false);
-    };
+        poll(); // immediate first poll
+        const interval = setInterval(poll, 3000);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, [autoOrchestrating, project?.id]);
 
     // 🚨 RESUME: Continue from failed phase
-    const handleResumePipeline = () => {
+    const handleResumePipeline = async () => {
         if (failedOrchPhaseIdx === null) return;
         setPhaseStatus({});
-        handleOrchestrateAll(failedOrchPhaseIdx);
+        const token = sessionStorage.getItem('hermes_access_token');
+        setAutoOrchestrating(true);
+        setOrchestrationLog(prev => [...prev, `[resume] Requesting resume from phase ${failedOrchPhaseIdx + 1}...`]);
+        try {
+            const res = await fetch(`/api/execution/${project?.id}/orchestrate/resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (!data.success) {
+                setOrchestrationLog(prev => [...prev, `[resume] ✗ ${data.error}`]);
+                setAutoOrchestrating(false);
+            }
+        } catch (err) {
+            setOrchestrationLog(prev => [...prev, `[resume] ✗ ${err.message}`]);
+            setAutoOrchestrating(false);
+        }
     };
 
-    // 🚨 ROLLBACK: Destroy all provisioned infrastructure (Fix #5)
+    // 🚨 ROLLBACK: Destroy all provisioned infrastructure
     const handleRollback = async () => {
         if (!confirm('⚠️ ROLLBACK: This will destroy ALL provisioned infrastructure (VPCs, subnets, ECS instances, EIPs). This cannot be undone. Continue?')) return;
         setAutoOrchestrating(true);
-        setOrchestrationLog([]);
-        const log = (msg) => setOrchestrationLog(prev => [...prev, msg]);
-        log('[rollback] Initiating infrastructure rollback...');
-        
+        setOrchestrationLog(prev => [...prev, '[rollback] Initiating infrastructure rollback...']);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
-            const res = await fetch(`/api/projects/${project?.id}/rollback`, {
+            const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             });
             const data = await res.json();
             if (data.success) {
-                log(`[rollback ✓] ${data.message}`);
+                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${data.message || 'Infrastructure destroyed.'}`]);
                 setCompletedOrchPhases(new Set());
                 setPhaseStatus({});
                 setFailedOrchPhaseIdx(null);
                 updatePhase('PHASE_4_0', 'PENDING');
             } else {
-                log(`[rollback ✗] Failed: ${data.error}`);
+                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${data.error}`]);
             }
         } catch (err) {
-            log(`[rollback ✗] Network error: ${err.message}`);
+            setOrchestrationLog(prev => [...prev, `[rollback ✗] ${err.message}`]);
         }
         setAutoOrchestrating(false);
     };
 
     // 🚨 INDIVIDUAL: Validate minimum prerequisites for ad-hoc task execution
     const handleCheckPrereqs = () => {
-        // Check: Wave 0 (PHASE_4_1) must be done for network fabric
         const wave0Done = (executionState?.currentPhase || 'PHASE_4_0') > 'PHASE_4_1' || executionState?.currentPhase === 'COMPLETED';
-        // Check: Agents (PHASE_4_4) must be deployed for migration tooling
         const agentsDone = (executionState?.currentPhase || 'PHASE_4_0') > 'PHASE_4_4' || executionState?.currentPhase === 'COMPLETED';
-
         setPrereqChecked(true);
         if (wave0Done && agentsDone) {
             setPrereqPassed(true);
