@@ -894,9 +894,8 @@ def execute_plan(project_id):
 
 
 @execution_bp.route('/api/execution/<project_id>/progress', methods=['GET'])
-@jwt_required()
 def get_execution_progress(project_id):
-    """Get live execution progress including spawn tree for GUI visualization."""
+    """Get live execution progress including spawn tree for GUI visualization. No JWT — GUI polls this."""
     project = ProjectData.query.get(project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
@@ -948,7 +947,7 @@ def post_execution_progress(project_id):
             progress["spawnTree"]["edges"].append({"from": parent, "to": node_id})
     
     data["executionProgress"] = progress
-    project.data = data
+    project.data = json.dumps(data)
     db.session.commit()
     return jsonify({"success": True, "progress": progress})
 
