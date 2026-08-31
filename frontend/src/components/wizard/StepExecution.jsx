@@ -534,7 +534,133 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
                     </p>
 
-                    {/* Phase progress bar */}
+                    {/* Context strip — key variables at a glance */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <div className="text-center">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Source</div>
+                            <div className="text-xs font-bold text-slate-700">{project?.sourceEnvironment || project?.presales?.sourceEnvironment || 'Unknown'}</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Servers</div>
+                            <div className="text-xs font-bold text-slate-700">{(() => { const ta = project?.targetArchitecture || {}; return [...(ta.compute||[]),...(ta.database||[]),...(ta.storage||[])].filter(s=>s.name).length; })()} target resources</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Region</div>
+                            <div className="text-xs font-bold text-slate-700">{project?.region || project?.data?.region || 'la-south-2'}</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Zero Trust</div>
+                            <div className="text-xs font-bold text-slate-700">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const zt = Array.isArray(al) ? al.some(a=>String(a).includes('Read-Only')) : String(al).includes('Read-Only'); return zt ? '🔒 Yes' : '🔓 No'; })()}</div>
+                        </div>
+                    </div>
+
+                    {/* Lifecycle Circle Chart — 7 phases as circular nodes */}
+                    <div className="mb-6">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 text-center">Migration Lifecycle</div>
+                        <div className="flex items-center justify-center">
+                            <div className="relative" style={{ width: '380px', height: '380px' }}>
+                                {/* Center circle */}
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex flex-col items-center justify-center text-white shadow-xl z-10">
+                                    <i className="fas fa-robot text-2xl mb-1"></i>
+                                    <div className="text-[9px] font-black uppercase tracking-widest">7 Phases</div>
+                                    <div className="text-[8px] text-purple-200 mt-0.5">{completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` : 'Ready'}</div>
+                                </div>
+                                {/* SVG connecting circle */}
+                                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 380 380">
+                                    <circle cx="190" cy="190" r="155" fill="none" stroke="#e2e8f0" strokeWidth="2" strokeDasharray="4 4" />
+                                    {/* Animated progress arc */}
+                                    {completedOrchPhases.size > 0 && (
+                                        <circle cx="190" cy="190" r="155" fill="none" stroke={failedOrchPhaseIdx !== null ? '#f59e0b' : '#10b981'} strokeWidth="3"
+                                            strokeDasharray={`${(completedOrchPhases.size / 7) * 974} 974`}
+                                            transform="rotate(-90 190 190)"
+                                            strokeLinecap="round"
+                                            className="transition-all duration-700"
+                                        />
+                                    )}
+                                </svg>
+                                {/* Phase nodes */}
+                                {[
+                                    { n: 1, label: 'Network', icon: 'fa-network-wired', color: '#3b82f6', desc: 'Wave 0 VPC, subnets, SG' },
+                                    { n: 2, label: 'Source Prep', icon: 'fa-download', color: '#f59e0b', desc: 'OS pre-flight, agent install' },
+                                    { n: 3, label: 'Target ECS', icon: 'fa-server', color: '#8b5cf6', desc: 'Provision target instances' },
+                                    { n: 4, label: 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', desc: 'SMS/DRS replication' },
+                                    { n: 5, label: 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', desc: 'Cold cutover, VPC promotion' },
+                                    { n: 6, label: 'Harden', icon: 'fa-shield-alt', color: '#06b6d4', desc: 'Security, backup, monitoring' },
+                                    { n: 7, label: 'Test', icon: 'fa-vial', color: '#84cc16', desc: 'UAT, teardown transient' },
+                                ].map((ph, idx) => {
+                                    const angle = (idx / 7) * 2 * Math.PI - Math.PI / 2;
+                                    const x = 190 + 155 * Math.cos(angle);
+                                    const y = 190 + 155 * Math.sin(angle);
+                                    const phaseKey = `PHASE_4_${ph.n}`;
+                                    const status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
+                                    const bgColor = status === 'completed' ? '#10b981' : status === 'running' ? '#8b5cf6' : status === 'failed' ? '#ef4444' : '#fff';
+                                    const txtColor = status === 'pending' ? ph.color : '#fff';
+                                    const ringClass = status === 'running' ? 'animate-pulse' : '';
+                                    return (
+                                        <div key={ph.n}
+                                            className={`absolute -translate-x-1/2 -translate-y-1/2 ${ringClass}`}
+                                            style={{ left: `${x}px`, top: `${y}px` }}
+                                        >
+                                            <div className="group relative cursor-help">
+                                                <div className="w-14 h-14 rounded-full flex flex-col items-center justify-center shadow-lg border-2 transition-all"
+                                                    style={{ background: bgColor, borderColor: ph.color, color: txtColor }}>
+                                                    <i className={`fas ${ph.icon} text-sm`}></i>
+                                                    <div className="text-[7px] font-black uppercase mt-0.5">{ph.label}</div>
+                                                </div>
+                                                {/* Tooltip */}
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
+                                                    <div className="font-bold">Phase 4.{ph.n}: {ph.label}</div>
+                                                    <div className="text-slate-300">{ph.desc}</div>
+                                                    <div className="text-purple-300 mt-0.5">{status.toUpperCase()}</div>
+                                                </div>
+                                                {/* Phase number badge */}
+                                                <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-800 text-white text-[8px] font-black flex items-center justify-center border border-white shadow">
+                                                    {ph.n}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Phase legend / what will happen */}
+                    <div className="mb-5 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">What Will Happen — 7 Sequential Phases</div>
+                        <div className="space-y-2">
+                            {[
+                                { n: 1, label: 'Wave 0: Network & Identity Foundation', desc: 'Provision isolated Transit VPC, subnets, security groups, identity foundation via Terraform.' },
+                                { n: 2, label: 'Vector-Aware OS Pre-Flight', desc: 'Validate source OS against target cloud availability. Check quoted flavors are in stock.' },
+                                { n: 3, label: 'Build App Landing Zone', desc: 'Deploy target VPC, ECS instances, empty PaaS databases matching approved architecture.' },
+                                { n: 4, label: 'Deploy Data Plane Agents', desc: 'Deploy SMS and DRS migration agents. Verify health and connectivity.' },
+                                { n: 5, label: 'Continuous Sync Monitor', desc: 'Monitor byte-by-byte replication. Report sync percentages and ETA to cutover.' },
+                                { n: 6, label: 'Cold Cutover & VPC Promotion', desc: 'Sever on-prem connections, promote target VPC, validate app reachability.' },
+                                { n: 7, label: 'Teardown & Garbage Collection', desc: 'Destroy transient resources. Confirm PPU costs drop to baseline.' },
+                            ].map(ph => {
+                                const phaseKey = `PHASE_4_${ph.n}`;
+                                const status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
+                                return (
+                                    <div key={ph.n} className="flex items-start gap-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
+                                            status === 'completed' ? 'bg-emerald-500 text-white' :
+                                            status === 'running' ? 'bg-purple-500 text-white animate-pulse' :
+                                            status === 'failed' ? 'bg-rose-500 text-white' :
+                                            'bg-slate-200 text-slate-500'
+                                        }`}>
+                                            {status === 'completed' ? <i className="fas fa-check"></i> : status === 'running' ? <i className="fas fa-spinner fa-spin"></i> : ph.n}
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-xs font-bold text-slate-700">4.{ph.n} {ph.label}</div>
+                                            <div className="text-[10px] text-slate-500">{ph.desc}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Phase progress bar (shown when there's progress) */}
                     {completedOrchPhases.size > 0 && (
                         <div className="mb-4">
                             <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
@@ -582,9 +708,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     ) : (
                         <div className="flex gap-3">
-                            {/* Primary: Orchestrate All */}
+                            {/* Primary: Orchestrate All — with confirmation */}
                             <button
-                                onClick={() => handleOrchestrateAll(0)}
+                                onClick={() => {
+                                    if (completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') {
+                                        if (!confirm(`This will execute the migration pipeline from the beginning.\n\n${completedOrchPhases.size > 0 ? `${completedOrchPhases.size} phases already completed — they will be skipped.\n` : ''}The backend execution engine will chain all 7 phases sequentially:\n\n  4.1 Network & Identity Foundation\n  4.2 OS Pre-Flight\n  4.3 Target ECS Landing Zone\n  4.4 Data Plane Agents\n  4.5 Sync Monitor\n  4.6 Cold Cutover\n  4.7 Teardown\n\nIndividual phase controls are locked during execution.\n\nProceed?`)) return;
+                                    }
+                                    handleOrchestrateAll(0);
+                                }}
                                 disabled={executionState?.currentPhase === 'COMPLETED'}
                                 className={`flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
                                     executionState?.currentPhase === 'COMPLETED'
