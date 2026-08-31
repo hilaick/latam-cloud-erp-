@@ -147,7 +147,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
         { id: 'orchestrator', num: '4.1-4.7', icon: 'fa-cogs', label: 'Execution Pipeline' },
         { id: 'workbench', num: '4.8', icon: 'fa-tools', label: 'Engineering Workbench' },
-        { id: 'hub', num: '4.9', icon: 'fa-satellite-dish', label: 'Delivery Command Center' },
         { id: 'tam', num: '4.10', icon: 'fa-clipboard-check', label: 'TAM Service Governance' }
     ];
 
@@ -187,7 +186,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             key={item.id}
                             onClick={() => { 
                                 if (isLocked && item.id !== 'readiness') return alert("Please complete the 4.0 Readiness Gateway to unlock Execution."); 
-                                if ((item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked) 
+                                if (item.id === 'workbench' && !workbenchUnlocked) 
                                     return alert(isIndividual 
                                         ? "Validate prerequisites in the Orchestrator tab first to unlock Workbench & Command Center." 
                                         : executionMode === 'agentic'
@@ -197,20 +196,20 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                             }}
                             className={`w-full text-left px-4 py-3.5 rounded-xl transition-all duration-200 border flex items-center justify-between group ${
                                 isLocked && item.id !== 'readiness' ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' : 
-                                (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
+                                item.id === 'workbench' && !workbenchUnlocked ? 'opacity-50 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400' :
                                 subTab === item.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
                             }`}
                         >
                             <div className="flex items-center gap-3">
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] ${
                                     isLocked && item.id !== 'readiness' ? 'bg-slate-200 text-slate-400' : 
-                                    (item.id === 'workbench' || item.id === 'hub') && !workbenchUnlocked ? 'bg-slate-200 text-slate-400' :
+                                    item.id === 'workbench' && !workbenchUnlocked ? 'bg-slate-200 text-slate-400' :
                                     subTab === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
                                 }`}>{item.num}</div>
                                 <span className="font-black text-[10px] uppercase tracking-wider">{item.label}</span>
                             </div>
                             {isLocked && item.id !== 'readiness' && <i className="fas fa-lock text-slate-300"></i>}
-                            {(item.id === 'workbench' || item.id === 'hub') && !isLocked && !workbenchUnlocked && <i className="fas fa-lock text-slate-300"></i>}
+                            {item.id === 'workbench' && !isLocked && !workbenchUnlocked && <i className="fas fa-lock text-slate-300"></i>}
                         </button>
                     ))}
                     
@@ -220,18 +219,9 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                                 Go to Post-Live Phase <i className="fas fa-arrow-right"></i>
                             </button>
                         ) : (
-                            <div className="flex gap-2">
-                                <button disabled className="flex-1 px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
-                                    <i className="fas fa-lock"></i> Post-Live Locked
-                                </button>
-                                <button 
-                                    onClick={() => updatePhase('COMPLETED', 'DONE')}
-                                    className="px-4 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-transform active:scale-95 flex items-center justify-center gap-2"
-                                    title="Debug: Mark execution as complete"
-                                >
-                                    <i className="fas fa-wrench"></i> Debug Complete
-                                </button>
-                            </div>
+                            <button disabled className="w-full px-4 py-3.5 bg-slate-200 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded-xl cursor-not-allowed flex items-center justify-center gap-2">
+                                <i className="fas fa-lock"></i> Post-Live Locked
+                            </button>
                         )}
                     </div>
                 </div>
@@ -241,7 +231,6 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
                     {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
                     {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
                     {subTab === 'workbench' && <WorkbenchView project={project} />}
-                    {subTab === 'hub' && <CommandCenterView project={project} executionState={executionState} executionMode={executionMode} />}
                     {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
                 </div>
             </div>
@@ -973,6 +962,7 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [execLog, setExecLog] = useState([]);
     const [selectedServer, setSelectedServer] = useState(null);
     const [serverStatus, setServerStatus] = useState({});
+    const [showSpawnTree, setShowSpawnTree] = useState(false);
 
     const targetArch = project?.targetArchitecture || {};
     const servers = [
@@ -1042,6 +1032,96 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {isAgentic && <MigrationAgenticView execPlan={execPlan} executing={executing} executeAll={executeAll} execLog={execLog} execResult={execResult} />}
             {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} />}
+
+            {/* Spawn Tree + Telemetry — inline in Execution Pipeline */}
+            <div className="mt-6 border-t border-slate-200 pt-4">
+                <button
+                    onClick={() => setShowSpawnTree(!showSpawnTree)}
+                    className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600 hover:text-indigo-600 transition-colors mb-3"
+                >
+                    <i className={`fas fa-chevron-${showSpawnTree ? 'down' : 'right'} text-[10px]`}></i>
+                    <i className="fas fa-project-diagram text-indigo-500"></i> Live Execution Telemetry
+                </button>
+                {showSpawnTree && (
+                    <>
+                        {/* Delegate task summary */}
+                        <div className="grid grid-cols-3 gap-3 mb-4">
+                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${isAgentic ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                                    <i className={`fas ${isAgentic ? 'fa-robot' : 'fa-tasks'}`}></i>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Mode</div>
+                                    <div className="font-black text-xs text-slate-800">{executionMode?.toUpperCase() || 'MANUAL'}</div>
+                                </div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${executionState?.currentPhase === 'COMPLETED' ? 'bg-emerald-100 text-emerald-600' : executionState?.currentPhase && executionState.currentPhase !== 'PHASE_4_0' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    <i className={`fas ${executionState?.currentPhase === 'COMPLETED' ? 'fa-check-circle' : 'fa-spinner fa-spin'}`}></i>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status</div>
+                                    <div className="font-black text-xs text-slate-800">{executionState?.currentPhase === 'COMPLETED' ? 'COMPLETED' : (executionState?.currentPhase || 'IDLE').replace('PHASE_4_', '4.')}</div>
+                                </div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm ${(project?.delegateTasks?.length || 0) > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    <i className="fas fa-network-wired"></i>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Delegates</div>
+                                    <div className="font-black text-xs text-slate-800">{project?.delegateTasks?.length || 0} active</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Delegate task table */}
+                        {(project?.delegateTasks?.length || 0) > 0 && (
+                            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-[9px] uppercase font-black text-slate-500">
+                                        <tr>
+                                            <th className="p-3">Target</th>
+                                            <th className="p-3">Phase / Job</th>
+                                            <th className="p-3">Model</th>
+                                            <th className="p-3 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {(project.delegateTasks || []).map((task, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="p-3 font-bold text-slate-800 text-xs">{task.target || 'N/A'}</td>
+                                                <td className="p-3 text-xs font-mono text-slate-500">{task.phase || task.goal || '—'}</td>
+                                                <td className="p-3 text-xs text-slate-500">{task.model || task.profile || 'exec'}</td>
+                                                <td className="p-3 text-center">
+                                                    <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
+                                                        task.status === 'RUNNING' ? 'bg-blue-100 text-blue-700' :
+                                                        task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                                                        task.status === 'FAILED' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+                                                    }`}>
+                                                        {task.status === 'RUNNING' && <i className="fas fa-spinner fa-spin mr-1"></i>}
+                                                        {task.status === 'COMPLETED' && <i className="fas fa-check mr-1"></i>}
+                                                        {task.status === 'FAILED' && <i className="fas fa-times mr-1"></i>}
+                                                        {task.status || 'UNKNOWN'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Spawn tree visualizer */}
+                        <SpawnTreeVisualizer
+                            projectId={project?.id}
+                            simulationTrace={[]}
+                            isActive={true}
+                            mode="execution"
+                        />
+                    </>
+                )}
+            </div>
         </div>
     );
 }
@@ -1078,14 +1158,12 @@ function MigrationManualView({ servers, execPlan, executeStep, serverStatus, set
 function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execResult }) {
     return (
         <div>
-            <div className="flex items-center gap-3 mb-3">
-                <button onClick={executeAll} disabled={executing} className={`px-6 py-3 rounded-lg text-sm font-black uppercase ${executing ? 'bg-slate-600 text-slate-400' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
-                    {executing ? <><i className="fas fa-spinner fa-spin mr-2" />Executing...</> : <><i className="fas fa-robot mr-2" />Execute Migration</>}
-                </button>
-                {execResult?.summary && <span className="text-emerald-400 text-xs">{execResult.summary.succeeded}/{execResult.summary.total_steps} succeeded</span>}
+            <div className="mb-3 px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700 font-medium">
+                <i className="fas fa-info-circle mr-1"></i> Use "Orchestrate All 7 Phases" above to execute the full pipeline via the backend execution engine. The plan below shows what will run.
             </div>
+            {execResult?.summary && <div className="mb-3 text-emerald-600 text-xs font-bold"><i className="fas fa-check-circle mr-1"></i>{execResult.summary.succeeded}/{execResult.summary.total_steps} steps succeeded</div>}
             {execLog.length > 0 && <div className="bg-black/40 rounded-lg p-3 max-h-64 overflow-y-auto font-mono text-xs">{execLog.map((e, i) => <div key={i} className={e.type === 'success' ? 'text-emerald-400' : e.type === 'error' ? 'text-red-400' : 'text-slate-300'}>{e.msg || e}</div>)}</div>}
-            {execPlan && !execResult && <div className="mt-3"><div className="text-xs text-slate-400 mb-1">Plan ({execPlan.summary?.total_steps || 0} steps):</div><div className="bg-black/30 rounded p-2 max-h-48 overflow-y-auto">{execPlan.steps?.slice(0, 15).map(s => <div key={s.step_id} className="text-xs py-0.5 flex gap-2"><span className="text-slate-600 w-6">{s.step_id}.</span><span className="text-slate-500 w-20">[{(s.phase || '').replace('PHASE_4_', '4.')}]</span><span className="text-slate-300 w-36">{s.action}</span><span className="text-slate-500">{s.target_resource}</span><span className="text-slate-600">{s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : 'CLI'}</span></div>)}</div></div>}
+            {execPlan && <div className="mt-3"><div className="text-xs text-slate-400 mb-1">Plan ({execPlan.summary?.total_steps || 0} steps):</div><div className="bg-black/30 rounded p-2 max-h-48 overflow-y-auto">{execPlan.steps?.slice(0, 15).map(s => <div key={s.step_id} className="text-xs py-0.5 flex gap-2"><span className="text-slate-600 w-6">{s.step_id}.</span><span className="text-slate-500 w-20">[{(s.phase || '').replace('PHASE_4_', '4.')}]</span><span className="text-slate-300 w-36">{s.action}</span><span className="text-slate-500">{s.target_resource}</span><span className="text-slate-600">{s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : 'CLI'}</span></div>)}</div></div>}
         </div>
     );
 }

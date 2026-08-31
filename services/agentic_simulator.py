@@ -989,6 +989,192 @@ class ExecutionHistoryStore:
             },
         })
         
+        # ═══ LIVE EXECUTION PATTERNS (CR-3, 2026-08-31) ═══
+        # These are from actual live SMS migration attempts on the ERP server.
+        # Each pattern encodes a specific failure → root cause → fix that was
+        # discovered through live execution with Hermes agent delegation.
+        
+        # Pattern 4: ATTACH_AGENT_IMAGE 80% — SG not associated with ECS
+        cls._history.append({
+            "project": "CR-3",
+            "server_name": "ecs-49be-e903-20d3-12d0-0001",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "huawei",
+            "role": "web",
+            "disk_gb": 80,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "partial_success",
+            "sync_hours": 0,
+            "issues_encountered": [
+                "ATTACH_AGENT_IMAGE failed at 80% repeatedly",
+                "SMS agent error log: BrokenPipeError in scapy sr1() during _connect_target_test",
+                "Port 22 open but ports 8900/8899 refused from source to target",
+            ],
+            "resolutions": [
+                "SG rules created (22, 8900, 8899) but NOT associated with ECS network port",
+                "VPC UpdatePort hcloud parameter format wrong for V3 API",
+                "Correct command: hcloud ECS NovaAssociateSecurityGroup --server_id=<ecs_id> --security_group.1.id=<sg_id>",
+                "Do NOT use VPC UpdatePort — use NovaAssociateSecurityGroup (ECS API)",
+            ],
+            "commands_used": [
+                "hcloud VPC CreateSecurityGroup --security_group.name=erp-sms-migration-sg --cli-region=la-north-2 --cli-profile=erp-target",
+                "hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=tcp --security_group_rule.multiport=22,8900,8899 --security_group_rule.remote_ip_prefix=0.0.0.0/0 --cli-region=la-north-2 --cli-profile=erp-target",
+                "hcloud ECS NovaAssociateSecurityGroup --server_id=<ecs_id> --security_group.1.id=<sg_id> --cli-region=la-north-2 --cli-profile=erp-target",
+                "hcloud ECS NovaListServerSecurityGroups --server_id=<ecs_id> --cli-region=la-north-2 --cli-profile=erp-target",
+                "nc -zv -w5 <target_eip> 22 && nc -zv -w5 <target_eip> 8900 (verify from source)",
+            ],
+            "learnings": {
+                "sg_must_be_associated_with_ecs_port": True,
+                "use_nova_associate_security_group_not_vpc_updateport": True,
+                "vpc_updateport_param_format_wrong_for_v3": True,
+                "verify_ports_from_source_before_task_creation": True,
+                "sg_association_is_blocking_preflight": True,
+            },
+        })
+        
+        # Pattern 5: SMS.0806 at MIGRATE_LINUX_FILE — /proc/kcore 128TB virtual file
+        cls._history.append({
+            "project": "CR-3",
+            "server_name": "ecs-49be-e903-20d3-12d0-0001",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "huawei",
+            "role": "web",
+            "disk_gb": 80,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "partial_success",
+            "sync_hours": 0,
+            "issues_encountered": [
+                "SMS.0806 at MIGRATE_LINUX_FILE 0% — temp staging area /mnt/vdb1 overflows",
+                "Even with MIGRATE_BLOCK, Linux still uses file_migrate internally (agent error log: migrate_linux_by_file.py)",
+                "/proc/kcore is 128TB virtual file — SMS agent tries to stream it and overflows 2-4GB temp allocation",
+            ],
+            "resolutions": [
+                "Edit /tmp/SMS-Agent/agent/config/check-property.cfg on source server",
+                "Set exclude.item.before=/proc,/sys,/dev,/run,/tmp,/var/tmp in ALL subtask sections",
+                "Use sed: sed -i 's/exclude.item.before =$/exclude.item.before = \\/proc,\\/sys,\\/dev,\\/run,\\/tmp,\\/var\\/tmp/g' /tmp/SMS-Agent/agent/config/check-property.cfg",
+                "Restart SMS agent after editing config",
+                "MIGRATE_BLOCK does NOT bypass file staging for Linux — still uses file_migrate.py",
+            ],
+            "commands_used": [
+                "sed -i 's/exclude.item.before =$/exclude.item.before = \\/proc,\\/sys,\\/dev,\\/run,\\/tmp,\\/var\\/tmp/g' /tmp/SMS-Agent/agent/config/check-property.cfg",
+                "pkill -f linuxmain; cd /tmp/SMS-Agent/agent && echo 'AK SK sms.ap-southeast-3.myhuaweicloud.com' | ./x64/linuxmain &",
+                "tail -20 /tmp/SMS-Agent/agent/Logs/SmsAgent_Error.log",
+            ],
+            "learnings": {
+                "exclude_proc_sys_dev_from_migration": True,
+                "proc_kcore_is_128tb_virtual_file": True,
+                "check_property_cfg_has_exclude_sections": True,
+                "migrate_block_still_uses_file_migrate_for_linux": True,
+                "exclude_paths_are_empty_by_default": True,
+            },
+        })
+        
+        # Pattern 6: EIP must be bound to ECS before SMS task creation
+        cls._history.append({
+            "project": "CR-3",
+            "server_name": "ecs-49be-e903-20d3-12d0-0002",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "huawei",
+            "role": "app",
+            "disk_gb": 80,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "partial_success",
+            "sync_hours": 0,
+            "issues_encountered": [
+                "ECS created without EIP — SMS agent cannot reach target for ATTACH_AGENT_IMAGE",
+                "SMS.6602: Invalid floating IP address if EIP added after ECS creation",
+            ],
+            "resolutions": [
+                "ECS must be created WITH --server.publicip.eip.iptype=5_bgp from the start",
+                "Do NOT add floating IP after ECS creation — use eip field in CreateServers",
+                "If ECS already created: bind EIP via hcloud EIP and verify with EIP ListPublicips",
+                "migration_ip in CreateTask must be the EIP (public IP), NOT private IP",
+            ],
+            "commands_used": [
+                "hcloud ECS CreateServers --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.publicip.eip.bandwidth.sharetype=PER --server.publicip.eip.bandwidth.chargemode=traffic",
+                "hcloud EIP ListPublicips --cli-region=la-north-2 --cli-profile=erp-target",
+                "hcloud SMS CreateTask --use_public_ip=true --migration_ip=<EIP>",
+            ],
+            "learnings": {
+                "eip_must_be_created_with_ecs_not_after": True,
+                "migration_ip_must_be_eip_not_private": True,
+                "use_public_ip_true_for_cross_region": True,
+                "verify_eip_bound_before_task_creation": True,
+            },
+        })
+        
+        # Pattern 7: SMS agent install — correct path and auth flow
+        cls._history.append({
+            "project": "CR-3",
+            "server_name": "ecs-49be-e903-20d3-12d0-0001",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "huawei",
+            "role": "web",
+            "disk_gb": 80,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "success",
+            "sync_hours": 0,
+            "issues_encountered": [],
+            "resolutions": [
+                "Download from https://sms-agent.obs.myhuaweicloud.com/SMS-Agent.tar.gz",
+                "Extract: tar -zxf SMS-Agent.tar.gz",
+                "Binary at /tmp/SMS-Agent/agent/x64/linuxmain (NOT /tmp/SMS-Agent/agent/linuxmain)",
+                "Write auth.cfg with TARGET MASTER AK/SK (not source AK/SK)",
+                "Start: echo 'AK SK sms.ap-southeast-3.myhuaweicloud.com' | ./x64/linuxmain &",
+            ],
+            "commands_used": [
+                "cd /tmp && wget https://sms-agent.obs.myhuaweicloud.com/SMS-Agent.tar.gz",
+                "tar -zxf SMS-Agent.tar.gz",
+                "cat > /tmp/SMS-Agent/agent/config/auth.cfg << 'EOF'\n[proxy-config]\nenable = false\n[auth]\nak = <TARGET_AK>\nsk = <TARGET_SK>\nEOF",
+                "cd /tmp/SMS-Agent/agent && echo '<AK> <SK> sms.ap-southeast-3.myhuaweicloud.com' | nohup ./x64/linuxmain > /dev/null 2>&1 &",
+            ],
+            "learnings": {
+                "agent_binary_at_x64_linuxmain": True,
+                "use_target_master_ak_sk_not_source": True,
+                "sms_domain_format_sms_region_myhuaweicloud_com": True,
+                "agent_download_url_sms_agent_obs_myhuaweicloud_com": True,
+            },
+        })
+        
+        # Pattern 8: Disk size in GB not bytes, disk name /dev/vda not /dev/sda
+        cls._history.append({
+            "project": "CR-3",
+            "server_name": "ecs-49be-e903-20d3-12d0-0001",
+            "os": "ubuntu",
+            "os_version": "22.04",
+            "source_cloud": "huawei",
+            "role": "web",
+            "disk_gb": 80,
+            "strategy_used": "sms_with_agent_push",
+            "outcome": "success",
+            "sync_hours": 0,
+            "issues_encountered": [
+                "SMS.0515 disk mismatch when disk size passed as bytes (85899345920) instead of GB (80)",
+                "SMS.0806 when disk name is /dev/sda instead of /dev/vda",
+            ],
+            "resolutions": [
+                "Disk size in CreateTask: use GB integer (80), NOT bytes (85899345920)",
+                "Disk name: /dev/vda (NOT /dev/sda) for Huawei Cloud ECS",
+                "Always include physical_volumes: /dev/vda1, device_use=OS, mount=/, fs=ext4",
+                "Run hcloud SMS UpdateDiskInfo before creating task if disk info is wrong",
+            ],
+            "commands_used": [
+                "--target_server.disks.1.name=/dev/vda --target_server.disks.1.size=80 --target_server.disks.1.device_use=BOOT",
+                "--target_server.disks.1.physical_volumes.1.name=/dev/vda1 --target_server.disks.1.physical_volumes.1.device_use=OS --target_server.disks.1.physical_volumes.1.mount_point=/ --target_server.disks.1.physical_volumes.1.file_system=ext4",
+                "hcloud SMS UpdateDiskInfo --source_id=<id> --disks.1.name=/dev/vda --disks.1.device_use=BOOT --disks.1.size=85899345920 --disks.1.os_disk=true",
+            ],
+            "learnings": {
+                "disk_size_in_gb_not_bytes": True,
+                "disk_name_dev_vda_not_dev_sda": True,
+                "always_include_physical_volumes": True,
+                "update_disk_info_before_task_creation": True,
+            },
+        })
+        
         cls._initialized = True
     
     @classmethod
