@@ -1144,6 +1144,96 @@ def orchestration_status(project_id):
             if status.get('status') in ('idle', None):
                 status['status'] = 'running_external'
 
+            # ── Pull live data from the most active Hermes session ──
+            # Get recent messages and tool calls to show in the GUI
+            try:
+                hermes_db = _os.path.expanduser('~/.hermes/state.db')
+                if _os.path.exists(hermes_db) and active_sessions:
+                    # Pick the session with the most messages (most active)
+                    best_session = max(active_sessions, key=lambda s: s.get('messages', 0))
+                    sid = best_session['session_id']
+
+                    # Get last 15 messages with role, tool_name, content preview
+                    msg_result = _sp.run(
+                        ['sqlite3', hermes_db,
+                         f"SELECT role, tool_name, substr(content, 1, 300) FROM messages WHERE session_id = '{sid}' ORDER BY id DESC LIMIT 15;"],
+                        capture_output=True, text=True, timeout=5
+                    )
+
+                    live_feed = []
+                    phase_inferred = 'PHASE_4_1'  # default
+                    all_text = msg_result.stdout
+
+                    # Infer current phase from recent activity
+                    if 'SUCCESS' in all_text and ('ShowTask' in all_text or 'cutover' in all_text.lower()):
+                        phase_inferred = 'PHASE_4_6'
+                    elif 'ShowTask' in all_text or 'UpdateTaskStatus' in all_text:
+                        phase_inferred = 'PHASE_4_5'
+                    elif 'CreateTask' in all_text:
+                        phase_inferred = 'PHASE_4_4'
+                    elif 'CreateTemplate' in all_text or 'CreateServers' in all_text:
+                        phase_inferred = 'PHASE_4_3'
+                    elif 'ListServers' in all_text or 'agent' in all_text.lower() or 'linuxmain' in all_text:
+                        phase_inferred = 'PHASE_4_2'
+                    elif 'ListVpcs' in all_text or 'CreateVpc' in all_text or 'Subnet' in all_text:
+                        phase_inferred = 'PHASE_4_1'
+
+                    # Parse messages into structured feed
+                    for line in msg_result.stdout.strip().split('\n'):
+                        if not line:
+                            continue
+                        cols = line.split('|', 2)
+                        if len(cols) >= 3:
+                            role = cols[0]
+                            tool_name = cols[1] if cols[1] else None
+                            content = cols[2]
+                            # Determine message type for styling
+                            msg_type = 'info'
+                            if role == 'tool':
+                                msg_type = 'tool'
+                                # Check for errors
+                                if '"exit_code": 255' in content or '"error":' in content:
+                                    msg_type = 'error'
+                                elif '"exit_code": 0' in content:
+                                    msg_type = 'success'
+                            elif role == 'assistant':
+                                msg_type = 'agent'
+
+                            live_feed.append({
+                                'role': role,
+                                'tool': tool_name,
+                                'content': content[:200],
+                                'type': msg_type,
+                            })
+
+                    live_feed.reverse()  # chronological order (newest last)
+
+                    # Get last tool call details
+                    tool_detail_result = _sp.run(
+                        ['sqlite3', hermes_db,
+                         f"SELECT tool_name, substr(content, 1, 500) FROM messages WHERE session_id = '{sid}' AND role = 'tool' ORDER BY id DESC LIMIT 1;"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    last_tool = None
+                    if tool_detail_result.stdout.strip():
+                        tcols = tool_detail_result.stdout.strip().split('|', 1)
+                        last_tool = {
+                            'name': tcols[0] if tcols[0] else 'unknown',
+                            'output': tcols[1][:300] if len(tcols) > 1 else '',
+                        }
+
+                    status['live_feed'] = live_feed
+                    status['inferred_phase'] = phase_inferred
+                    status['last_tool_call'] = last_tool
+                    status['session_stats'] = {
+                        'messages': best_session.get('messages', 0),
+                        'tool_calls': best_session.get('tool_calls', 0),
+                        'title': best_session.get('title', ''),
+                        'session_id': sid,
+                    }
+            except Exception as e:
+                logger.warning(f"Failed to pull live session data: {e}")
+
     except Exception as e:
         logger.warning(f"Failed to detect external processes: {e}")
 
