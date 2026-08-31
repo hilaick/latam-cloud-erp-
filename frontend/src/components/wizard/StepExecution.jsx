@@ -355,6 +355,52 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         return () => { cancelled = true; clearInterval(interval); };
     }, [autoOrchestrating, project?.id]);
 
+    // 🚨 MOUNT-CHECK: On mount or project switch, check if a pipeline is already running.
+    // If so, set autoOrchestrating=true so the polling useEffect picks it up.
+    // This handles the case where the API was called directly (delegated agent, curl, another session).
+    useEffect(() => {
+        if (!project?.id) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        let cancelled = false;
+
+        const checkRunning = async () => {
+            try {
+                const res = await fetch(`/api/execution/${project.id}/orchestrate/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const data = await res.json();
+                if (cancelled) return;
+
+                const st = data.status || {};
+                // If pipeline is running, sync state immediately and start polling
+                if (st.status === 'running') {
+                    setAutoOrchestrating(true);
+                    // Sync log from backend (replace, not append — we're catching up)
+                    if (st.log) setOrchestrationLog(st.log);
+                    if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                    setFailedOrchPhaseIdx(st.failed_phase ?? null);
+                } else if (st.status === 'halted') {
+                    // Pipeline was running and failed — show the failure state
+                    if (st.log) setOrchestrationLog(st.log);
+                    if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                    setFailedOrchPhaseIdx(st.failed_phase ?? null);
+                } else if (st.status === 'completed') {
+                    // Pipeline finished while we were away
+                    if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                    if (st.phase_status) setPhaseStatus(st.phase_status);
+                    updatePhase('COMPLETED', 'DONE');
+                }
+            } catch (err) {
+                // Silent — might not have auth yet
+            }
+        };
+
+        checkRunning();
+        return () => { cancelled = true; };
+    }, [project?.id]);
+
     // 🚨 RESUME: Continue from failed phase
     const handleResumePipeline = async () => {
         if (failedOrchPhaseIdx === null) return;
