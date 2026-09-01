@@ -771,7 +771,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                      msg.type === 'agent' ? '🤖' :
                                                      msg.type === 'tool' ? '⚙' : '·'}
                                                 </span>
-                                                {msg.ts && <span className="shrink-0 text-slate-500 text-[9px] w-16">{msg.ts}</span>}
+                                                {msg.ts && <span className="shrink-0 text-slate-500 text-[9px] w-24">{msg.ts}</span>}
                                                 <span className="shrink-0 text-slate-600 w-14">{msg.role}</span>
                                                 {msg.tool && <span className="shrink-0 text-purple-400 font-bold">[{msg.tool}]</span>}
                                                 <span className="truncate">{msg.content}</span>

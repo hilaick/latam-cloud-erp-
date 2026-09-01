@@ -1176,7 +1176,7 @@ def orchestration_status(project_id):
                     if ts_raw and ts_raw.replace('.', '').isdigit():
                         try:
                             from datetime import datetime as _dt, timezone as _tz
-                            msg_ts = _dt.fromtimestamp(float(ts_raw), tz=_tz.utc).strftime('%H:%M:%S')
+                            msg_ts = _dt.fromtimestamp(float(ts_raw), tz=_tz.utc).strftime('%m-%d %H:%M:%S')
                         except Exception:
                             msg_ts = ''
                     msg_type = 'info'
@@ -1212,7 +1212,7 @@ def orchestration_status(project_id):
             }
             # Add current poll time so frontend knows data is fresh
             from datetime import datetime as _dt, timezone as _tz
-            status['polled_at'] = _dt.now(_tz.utc).strftime('%H:%M:%S')
+            status['polled_at'] = _dt.now(_tz.utc).strftime('%m-%d %H:%M:%S')
 
         def _match_project_in_text(text, pdata):
             """Check if any project data (server names, IPs, source IDs) appears in text."""
