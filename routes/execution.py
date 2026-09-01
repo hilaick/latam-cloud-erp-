@@ -1027,12 +1027,49 @@ def orchestration_status(project_id):
 
     status = get_pipeline_status(project_id)
 
-    # ── Also detect external Hermes processes running for this project ──
+    # ── Also detect external execution processes running for this project ──
+    # Catches: hermes chat, sms_migration_engine.py, hcloud SMS, any migration script
+    def _match_project_in_text(text, pdata):
+        """Check if any project data (server names, IPs, source IDs) appears in text."""
+        ta = pdata.get('targetArchitecture', {})
+        for s in (ta.get('compute', []) + ta.get('database', [])):
+            sname = s.get('name', s.get('source_name', ''))
+            if sname and sname in text:
+                return f'server {sname}'
+        for mn in pdata.get('mapperNodes', []):
+            mn_ip = mn.get('ip', '')
+            mn_name = mn.get('name', '')
+            if mn_ip and mn_ip in text:
+                return f'mapperNode IP {mn_ip}'
+            if mn_name and mn_name in text:
+                return f'mapperNode name {mn_name}'
+        plan = pdata.get('executionPlan', {})
+        for step in (plan.get('steps', []) if isinstance(plan, dict) else []):
+            tr = step.get('target_resource', '')
+            if tr and tr in text:
+                return f'exec step {tr}'
+        mgc = pdata.get('mgcData', {}).get('raw_inventory', {})
+        for n in mgc.get('network', []):
+            pub_ip = n.get('public_ip_address', '')
+            if pub_ip and pub_ip in text:
+                return f'source EIP {pub_ip}'
+        for s in ta.get('compute', []):
+            sid = s.get('source_id', '')
+            if sid and sid in text:
+                return f'source_id {sid}'
+        return None
+
     try:
         ps = _sp.run(['ps', 'aux'], capture_output=True, text=True, timeout=10)
         external_procs = []
         for line in ps.stdout.split('\n'):
-            if 'hermes' not in line or 'chat' not in line or 'grep' in line:
+            if 'grep' in line:
+                continue
+            # Match hermes chat OR migration-related Python scripts OR hcloud SMS
+            is_hermes = 'hermes' in line and 'chat' in line
+            is_migration_script = 'migration' in line.lower() and 'python' in line and 'app.py' not in line
+            is_hcloud_sms = 'hcloud' in line and 'SMS' in line
+            if not (is_hermes or is_migration_script or is_hcloud_sms):
                 continue
             parts = line.split(None, 10)
             if len(parts) < 11:
@@ -1103,6 +1140,26 @@ def orchestration_status(project_id):
                             matched = True
                             match_reason = f'source_id {sid} in command'
                             break
+
+                # For migration scripts, also try reading the script file for project data
+                if not matched and 'migration' in cmd.lower():
+                    try:
+                        # Extract script path from command
+                        script_path = None
+                        for part in cmd.split():
+                            if part.endswith('.py') and os.path.exists(part):
+                                script_path = part
+                                break
+                        if script_path:
+                            with open(script_path, 'r') as f:
+                                script_content = f.read()[:5000]
+                            # Check if project data appears in the script
+                            reason = _match_project_in_text(script_content, pdata)
+                            if reason:
+                                matched = True
+                                match_reason = f'{reason} in script file'
+                    except Exception:
+                        pass
 
             if matched:
                 external_procs.append({
@@ -1213,36 +1270,6 @@ def orchestration_status(project_id):
             # Add current poll time so frontend knows data is fresh
             from datetime import datetime as _dt, timezone as _tz
             status['polled_at'] = _dt.now(_tz.utc).strftime('%m-%d %H:%M:%S')
-
-        def _match_project_in_text(text, pdata):
-            """Check if any project data (server names, IPs, source IDs) appears in text."""
-            ta = pdata.get('targetArchitecture', {})
-            for s in (ta.get('compute', []) + ta.get('database', [])):
-                sname = s.get('name', s.get('source_name', ''))
-                if sname and sname in text:
-                    return f'server {sname}'
-            for mn in pdata.get('mapperNodes', []):
-                mn_ip = mn.get('ip', '')
-                mn_name = mn.get('name', '')
-                if mn_ip and mn_ip in text:
-                    return f'mapperNode IP {mn_ip}'
-                if mn_name and mn_name in text:
-                    return f'mapperNode name {mn_name}'
-            plan = pdata.get('executionPlan', {})
-            for step in (plan.get('steps', []) if isinstance(plan, dict) else []):
-                tr = step.get('target_resource', '')
-                if tr and tr in text:
-                    return f'exec step {tr}'
-            mgc = pdata.get('mgcData', {}).get('raw_inventory', {})
-            for n in mgc.get('network', []):
-                pub_ip = n.get('public_ip_address', '')
-                if pub_ip and pub_ip in text:
-                    return f'source EIP {pub_ip}'
-            for s in ta.get('compute', []):
-                sid = s.get('source_id', '')
-                if sid and sid in text:
-                    return f'source_id {sid}'
-            return None
 
         if external_procs:
             status['external_executions'] = external_procs
