@@ -1263,7 +1263,7 @@ def orchestration_status(project_id):
                 if _os.path.exists(hermes_db):
                     orphan_result = _sp.run(
                         ['sqlite3', hermes_db,
-                         "SELECT id, title, message_count, tool_call_count FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 10;"],
+                         "SELECT s.id, s.title, s.message_count, s.tool_call_count, CAST(MAX(m.timestamp) AS INTEGER) as last_msg FROM sessions s LEFT JOIN messages m ON m.session_id = s.id WHERE s.ended_at IS NULL GROUP BY s.id HAVING last_msg > CAST(strftime('%s','now') AS INTEGER) - 7200 ORDER BY last_msg DESC LIMIT 10;"],
                         capture_output=True, text=True, timeout=5
                     )
                     orphan_sessions = []
@@ -1272,11 +1272,19 @@ def orchestration_status(project_id):
                             continue
                         cols = line.split('|')
                         if len(cols) >= 4:
-                            orphan_sessions.append({
+                            sess = {
                                 'session_id': cols[0], 'title': cols[1],
                                 'messages': int(cols[2]) if cols[2].isdigit() else 0,
                                 'tool_calls': int(cols[3]) if cols[3].isdigit() else 0,
-                            })
+                            }
+                            # Parse last message timestamp if present (5th column)
+                            if len(cols) > 4 and cols[4].replace('.', '').isdigit():
+                                try:
+                                    from datetime import datetime as _dt, timezone as _tz
+                                    sess['last_msg_ts'] = _dt.fromtimestamp(float(cols[4]), tz=_tz.utc).strftime('%m-%d %H:%M:%S')
+                                except Exception:
+                                    pass
+                            orphan_sessions.append(sess)
 
                     if orphan_sessions and status.get('status') in ('idle', None):
                         project = ProjectData.query.get(project_id)
