@@ -1144,7 +1144,7 @@ def orchestration_status(project_id):
                 return
             msg_result = _sp.run(
                 ['sqlite3', hermes_db,
-                 f"SELECT role, tool_name, substr(content, 1, 300) FROM messages WHERE session_id = '{sid}' ORDER BY id DESC LIMIT 15;"],
+                 f"SELECT role, tool_name, substr(content, 1, 300), printf('%.0f', timestamp) FROM messages WHERE session_id = '{sid}' ORDER BY id DESC LIMIT 15;"],
                 capture_output=True, text=True, timeout=5
             )
             live_feed = []
@@ -1165,11 +1165,20 @@ def orchestration_status(project_id):
             for line in msg_result.stdout.strip().split('\n'):
                 if not line:
                     continue
-                cols = line.split('|', 2)
+                cols = line.split('|', 3)
                 if len(cols) >= 3:
                     role = cols[0]
                     tool_name = cols[1] if cols[1] else None
                     content = cols[2]
+                    ts_raw = cols[3] if len(cols) > 3 else ''
+                    # Convert epoch seconds to ISO format for the frontend
+                    msg_ts = ''
+                    if ts_raw and ts_raw.replace('.', '').isdigit():
+                        try:
+                            from datetime import datetime as _dt, timezone as _tz
+                            msg_ts = _dt.fromtimestamp(float(ts_raw), tz=_tz.utc).strftime('%H:%M:%S')
+                        except Exception:
+                            msg_ts = ''
                     msg_type = 'info'
                     if role == 'tool':
                         msg_type = 'tool'
@@ -1179,7 +1188,7 @@ def orchestration_status(project_id):
                             msg_type = 'success'
                     elif role == 'assistant':
                         msg_type = 'agent'
-                    live_feed.append({'role': role, 'tool': tool_name, 'content': content[:200], 'type': msg_type})
+                    live_feed.append({'role': role, 'tool': tool_name, 'content': content[:200], 'type': msg_type, 'ts': msg_ts})
             live_feed.reverse()
             tool_detail_result = _sp.run(
                 ['sqlite3', hermes_db,
@@ -1194,10 +1203,16 @@ def orchestration_status(project_id):
             status['live_feed'] = live_feed
             status['inferred_phase'] = phase_inferred
             status['last_tool_call'] = last_tool
+            # Get last message timestamp from the feed
+            last_msg_ts = live_feed[-1]['ts'] if live_feed else ''
             status['session_stats'] = {
                 'messages': best.get('messages', 0), 'tool_calls': best.get('tool_calls', 0),
                 'title': best.get('title', ''), 'session_id': sid,
+                'last_activity': last_msg_ts,
             }
+            # Add current poll time so frontend knows data is fresh
+            from datetime import datetime as _dt, timezone as _tz
+            status['polled_at'] = _dt.now(_tz.utc).strftime('%H:%M:%S')
 
         def _match_project_in_text(text, pdata):
             """Check if any project data (server names, IPs, source IDs) appears in text."""

@@ -262,6 +262,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [sessionStats, setSessionStats] = useState(null);
     const [lastToolCall, setLastToolCall] = useState(null);
     const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
+    const [polledAt, setPolledAt] = useState(null); // last poll timestamp
 
     // 🚨 FETCH PHASE CONTENT: Load dynamic phase descriptions from execution plan
     useEffect(() => {
@@ -365,6 +366,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (st.inferred_phase) setInferredPhase(st.inferred_phase);
                 if (st.session_stats) setSessionStats(st.session_stats);
                 if (st.last_tool_call) setLastToolCall(st.last_tool_call);
+                if (st.polled_at) setPolledAt(st.polled_at);
 
                 // Check if pipeline finished
                 if (st.status === 'completed' || st.status === 'halted' || st.status === 'crashed' || st.status === 'idle') {
@@ -421,6 +423,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     if (st.inferred_phase) setInferredPhase(st.inferred_phase);
                     if (st.session_stats) setSessionStats(st.session_stats);
                     if (st.last_tool_call) setLastToolCall(st.last_tool_call);
+                    if (st.polled_at) setPolledAt(st.polled_at);
                 } else if (st.status === 'halted') {
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
@@ -713,6 +716,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="flex items-center gap-2 text-[10px] font-bold">
                                         <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.messages} msgs</span>
                                         <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full">{sessionStats.tool_calls} tools</span>
+                                        {sessionStats.last_activity && <span className="text-amber-600 text-[9px]">last: {sessionStats.last_activity}</span>}
                                         {externalExecutions[0]?.pid > 0 ? (
                                             <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded-full animate-pulse">● LIVE</span>
                                         ) : (
@@ -748,7 +752,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">Live Agent Activity</div>
-                                        {sessionStats && <div className="text-[9px] text-slate-500 font-mono truncate max-w-[200px]">{sessionStats.title}</div>}
+                                        <div className="flex items-center gap-2">
+                                            {sessionStats && <div className="text-[9px] text-slate-500 font-mono truncate max-w-[200px]">{sessionStats.title}</div>}
+                                            {polledAt && <span className="text-[8px] text-emerald-400/60 font-mono">↻ {polledAt}</span>}
+                                        </div>
                                     </div>
                                     <div className="space-y-1 max-h-64 overflow-y-auto">
                                         {liveFeed.map((msg, i) => (
@@ -764,6 +771,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                      msg.type === 'agent' ? '🤖' :
                                                      msg.type === 'tool' ? '⚙' : '·'}
                                                 </span>
+                                                {msg.ts && <span className="shrink-0 text-slate-500 text-[9px] w-16">{msg.ts}</span>}
                                                 <span className="shrink-0 text-slate-600 w-14">{msg.role}</span>
                                                 {msg.tool && <span className="shrink-0 text-purple-400 font-bold">[{msg.tool}]</span>}
                                                 <span className="truncate">{msg.content}</span>
