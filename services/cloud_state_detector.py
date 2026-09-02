@@ -8,7 +8,7 @@ From the cloud resources that exist, it infers which migration phase is active.
 Called by: GET /api/execution/<id>/cloud-state
 Polled by: frontend every 5s alongside /orchestrate/status
 """
-import json, os, subprocess, time, hashlib, hmac, base64, datetime
+import json, os, subprocess, time, hashlib, hmac, base64, datetime, sys
 import urllib.request, urllib.error
 
 def _sign_request(method, url, ak, sk, body=''):
@@ -44,18 +44,15 @@ def _sign_request(method, url, ak, sk, body=''):
     }
 
 
-def _api_call(method, url, ak, sk, timeout=10):
+def _api_call(method, url, ak, sk, timeout=10, project_id=None):
     """Make a signed Huawei Cloud API call and return JSON."""
-    headers = _sign_request(method, url, ak, sk)
-    req = urllib.request.Request(url, method=method, headers=headers, data=b'' if method == 'POST' else None)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        try:
-            return json.loads(e.read().decode())
-        except:
-            return {'_error': f'HTTP {e.code}'}
+        sys.path.insert(0, '/home/huawei-cloud/latam-cloud-erp-')
+        from services.huawei_api_signer import sign_and_request
+        headers = {}
+        if project_id:
+            headers['X-Project-Id'] = project_id
+        return sign_and_request(method, url, ak, sk, timeout=timeout, headers=headers if headers else None)
     except Exception as e:
         return {'_error': str(e)[:200]}
 
@@ -118,6 +115,17 @@ def detect_cloud_state(project_data, customer_data=None):
     if not source_region:
         source_region = 'ap-southeast-3'
     
+    # If no project IDs found, try extracting from mgcData raw_inventory
+    if not source_project_id and raw_inv:
+        for srv in (raw_inv.get('compute', []) or []):
+            pid = srv.get('enterprise_project_id', '') or srv.get('project_id', '')
+            if pid and len(pid) > 20:
+                source_project_id = pid
+                break
+    # Target project ID is often the same account (cross-region migration)
+    if not target_project_id:
+        target_project_id = source_project_id
+    
     result = {
         'inferred_phase': 'PHASE_4_1',
         'phase_reason': 'No cloud resources detected yet',
@@ -137,7 +145,7 @@ def detect_cloud_state(project_data, customer_data=None):
         if not target_project_id:
             # Try without project_id in path (use query param)
             vpc_url = f'https://vpc.{target_region}.myhuaweicloud.com/v1/vpcs?limit=50'
-        vpc_data = _api_call('GET', vpc_url, ak, sk)
+        vpc_data = _api_call('GET', vpc_url, ak, sk, project_id=target_project_id)
         vpcs = vpc_data.get('vpcs', [])
         result['resources']['vpcs'] = [{'name': v.get('name'), 'id': v.get('id', '')[:12], 'status': v.get('status')} for v in vpcs[:10]]
         result['vpc_count'] = len(vpcs)
@@ -150,7 +158,7 @@ def detect_cloud_state(project_data, customer_data=None):
         ecs_url = f'https://ecs.{target_region}.myhuaweicloud.com/v1/{target_project_id or ""}/cloudservers?limit=50'
         if not target_project_id:
             ecs_url = f'https://ecs.{target_region}.myhuaweicloud.com/v1/cloudservers/detail?limit=50'
-        ecs_data = _api_call('GET', ecs_url, ak, sk)
+        ecs_data = _api_call('GET', ecs_url, ak, sk, project_id=target_project_id)
         servers = ecs_data.get('servers', [])
         result['resources']['ecs_instances'] = [
             {'name': s.get('name'), 'id': s.get('id', '')[:12], 'status': s.get('status'),
@@ -165,7 +173,7 @@ def detect_cloud_state(project_data, customer_data=None):
     # 3. Check SMS source servers (Phase 4.2 — Source Prep)
     try:
         sms_url = f'https://sms.{source_region}.myhuaweicloud.com/v3/sources?limit=50'
-        sms_data = _api_call('GET', sms_url, ak, sk)
+        sms_data = _api_call('GET', sms_url, ak, sk, project_id=source_project_id)
         sources = sms_data.get('sources', [])
         result['resources']['sms_sources'] = [
             {'name': s.get('name', ''), 'id': s.get('id', '')[:12], 'ip': s.get('ip', ''),
@@ -181,7 +189,7 @@ def detect_cloud_state(project_data, customer_data=None):
     # 4. Check SMS tasks (Phase 4.4/4.5 — Data Sync/Monitor)
     try:
         task_url = f'https://sms.{source_region}.myhuaweicloud.com/v1/{source_project_id or target_project_id or ""}/tasks?limit=50'
-        task_data = _api_call('GET', task_url, ak, sk)
+        task_data = _api_call('GET', task_url, ak, sk, project_id=source_project_id)
         tasks = task_data.get('tasks', [])
         result['resources']['sms_tasks'] = [
             {'name': t.get('name', ''), 'id': t.get('id', '')[:12], 'state': t.get('state', ''),
