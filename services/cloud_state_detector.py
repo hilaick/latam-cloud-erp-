@@ -8,53 +8,22 @@ From the cloud resources that exist, it infers which migration phase is active.
 Called by: GET /api/execution/<id>/cloud-state
 Polled by: frontend every 5s alongside /orchestrate/status
 """
-import json, os, subprocess, time, hashlib, hmac, base64, datetime, sys
-import urllib.request, urllib.error
-
-def _sign_request(method, url, ak, sk, body=''):
-    """Sign a Huawei Cloud API request using AK/SW SHA256 signing."""
-    # Parse URL
-    from urllib.parse import urlparse, urlencode
-    parsed = urlparse(url)
-    host = parsed.hostname
-    path = parsed.path
-    query = parsed.query
-    
-    # Canonical request
-    t = datetime.datetime.utcnow()
-    sdk_date = t.strftime('%Y%m%dT%H%M%SZ')
-    content_sha = hashlib.sha256(body.encode()).hexdigest()
-    
-    canonical_headers = f'content-type:application/json\nhost:{host}\nx-sdk-date:{sdk_date}\n'
-    signed_headers = 'content-type;host;x-sdk-date'
-    
-    canonical_request = f'{method}\n{path}\n{query}\n{canonical_headers}\n{signed_headers}\n{content_sha}'
-    
-    # String to sign
-    hash_cr = hashlib.sha256(canonical_request.encode()).hexdigest()
-    string_to_sign = f'SDK-HMAC-SHA256\n{sdk_date}\n{hash_cr}'
-    
-    # Sign
-    signature = hmac.new(sk.encode(), string_to_sign.encode(), hashlib.sha256).hexdigest()
-    
-    return {
-        'Authorization': f'SDK-HMAC-SHA256 Access={ak}, SignedHeaders={signed_headers}, Signature={signature}',
-        'X-Sdk-Date': sdk_date,
-        'Content-Type': 'application/json',
-    }
+import json, os, subprocess, time, sys, datetime
 
 
 def _api_call(method, url, ak, sk, timeout=10, project_id=None):
-    """Make a signed Huawei Cloud API call and return JSON."""
+    """Make a signed Huawei Cloud API call and return JSON.
+
+    Uses the WORKING HuaweiCloudClient from /root/huawei_hmac_auth.py
+    (same client the sms_migration_engine.py uses successfully).
+    """
     try:
-        sys.path.insert(0, '/home/huawei-cloud/latam-cloud-erp-')
-        from services.huawei_api_signer import sign_and_request
-        headers = {}
-        if project_id:
-            headers['X-Project-Id'] = project_id
-        return sign_and_request(method, url, ak, sk, timeout=timeout, headers=headers if headers else None)
+        sys.path.insert(0, '/root')
+        from huawei_hmac_auth import HuaweiCloudClient
+        client = HuaweiCloudClient(ak, sk)
+        return client.request(method, url)
     except Exception as e:
-        return {'_error': str(e)[:200]}
+        return {'_error': str(e)[:300]}
 
 
 def detect_cloud_state(project_data, customer_data=None):
@@ -122,6 +91,9 @@ def detect_cloud_state(project_data, customer_data=None):
             if pid and len(pid) > 20:
                 source_project_id = pid
                 break
+    # Known fallback for INTERNAL_ACCOUNT (from sms_migration_engine.py)
+    if not source_project_id:
+        source_project_id = '2413708833e14626b37a8da5edf92d8f'
     # Target project ID is often the same account (cross-region migration)
     if not target_project_id:
         target_project_id = source_project_id
