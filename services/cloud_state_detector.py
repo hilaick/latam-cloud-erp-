@@ -127,9 +127,7 @@ def detect_cloud_state(project_data, customer_data=None):
     
     # 2. Check ECS instances in target region (Phase 4.3 — Target)
     try:
-        ecs_url = f'https://ecs.{target_region}.myhuaweicloud.com/v1/{target_project_id or ""}/cloudservers?limit=50'
-        if not target_project_id:
-            ecs_url = f'https://ecs.{target_region}.myhuaweicloud.com/v1/cloudservers/detail?limit=50'
+        ecs_url = f'https://ecs.{target_region}.myhuaweicloud.com/v1/{target_project_id}/cloudservers/detail?limit=50'
         ecs_data = _api_call('GET', ecs_url, ak, sk, project_id=target_project_id)
         servers = ecs_data.get('servers', [])
         result['resources']['ecs_instances'] = [
@@ -142,49 +140,59 @@ def detect_cloud_state(project_data, customer_data=None):
         result['resources']['ecs_instances'] = []
         result['ecs_count'] = 0
     
-    # 3. Check SMS source servers (Phase 4.2 — Source Prep)
-    try:
-        sms_url = f'https://sms.{source_region}.myhuaweicloud.com/v3/sources?limit=50'
-        sms_data = _api_call('GET', sms_url, ak, sk, project_id=source_project_id)
-        sources = sms_data.get('sources', [])
-        result['resources']['sms_sources'] = [
-            {'name': s.get('name', ''), 'id': s.get('id', '')[:12], 'ip': s.get('ip', ''),
-             'state': s.get('state', ''), 'connected': s.get('connected', False)}
-            for s in sources[:10]
-        ]
-        result['sms_source_count'] = len(sources)
-        result['sms_sources_connected'] = sum(1 for s in sources if s.get('connected'))
-    except Exception as e:
-        result['resources']['sms_sources'] = []
-        result['sms_source_count'] = 0
-    
-    # 4. Check SMS tasks (Phase 4.4/4.5 — Data Sync/Monitor)
-    try:
-        task_url = f'https://sms.{source_region}.myhuaweicloud.com/v1/{source_project_id or target_project_id or ""}/tasks?limit=50'
-        task_data = _api_call('GET', task_url, ak, sk, project_id=source_project_id)
-        tasks = task_data.get('tasks', [])
-        result['resources']['sms_tasks'] = [
-            {'name': t.get('name', ''), 'id': t.get('id', '')[:12], 'state': t.get('state', ''),
-             'priority': t.get('priority', ''), 'type': t.get('type', '')}
-            for t in tasks[:10]
-        ]
+    # 3. Check SMS source servers AND tasks in BOTH source and target regions
+    # (SMS can operate in either region depending on migration direction)
+    for region_key, region_name, region_pid in [
+        ('source', source_region, source_project_id),
+        ('target', target_region, target_project_id),
+    ]:
+        # SMS Sources
+        try:
+            sms_url = f'https://sms.{region_name}.myhuaweicloud.com/v3/sources?limit=50'
+            sms_data = _api_call('GET', sms_url, ak, sk, project_id=region_pid)
+            sources = sms_data.get('sources', [])
+            if sources:
+                result['resources']['sms_sources'] = [
+                    {'name': s.get('name', ''), 'id': s.get('id', '')[:12], 'ip': s.get('ip', ''),
+                     'state': s.get('state', ''), 'connected': s.get('connected', False), 'region': region_name}
+                    for s in sources[:10]
+                ]
+                result['sms_source_count'] = len(sources)
+                result['sms_sources_connected'] = sum(1 for s in sources if s.get('connected'))
+                result['sms_region'] = region_name
+        except Exception:
+            pass
         
-        # Count by state
-        states = {}
-        for t in tasks:
-            st = t.get('state', 'unknown')
-            states[st] = states.get(st, 0) + 1
-        result['sms_progress'] = {
-            'total': len(tasks),
-            'by_state': states,
-            'running': states.get('RUNNING', 0) + states.get('SYNCING', 0),
-            'success': states.get('SUCCESS', 0),
-            'failed': states.get('FAIL', 0) + states.get('ERROR', 0),
-            'waiting': states.get('WAITING', 0) + states.get('READY', 0),
-        }
-    except Exception as e:
-        result['resources']['sms_tasks'] = []
-        result['sms_progress'] = {}
+        # SMS Tasks
+        try:
+            task_url = f'https://sms.{region_name}.myhuaweicloud.com/v1/{region_pid}/tasks?limit=50'
+            task_data = _api_call('GET', task_url, ak, sk, project_id=region_pid)
+            tasks = task_data.get('tasks', [])
+            if tasks:
+                result['resources']['sms_tasks'] = [
+                    {'name': t.get('name', ''), 'id': t.get('id', '')[:12], 'state': t.get('state', ''),
+                     'priority': t.get('priority', ''), 'type': t.get('type', '')}
+                    for t in tasks[:10]
+                ]
+                states = {}
+                for t in tasks:
+                    st = t.get('state', 'unknown')
+                    states[st] = states.get(st, 0) + 1
+                result['sms_progress'] = {
+                    'total': len(tasks),
+                    'by_state': states,
+                    'running': states.get('RUNNING', 0) + states.get('SYNCING', 0),
+                    'success': states.get('SUCCESS', 0),
+                    'failed': states.get('FAIL', 0) + states.get('ERROR', 0),
+                    'waiting': states.get('WAITING', 0) + states.get('READY', 0),
+                }
+                result['sms_task_region'] = region_name
+        except Exception:
+            pass
+        
+        # Stop if we found resources in either region
+        if result.get('sms_source_count', 0) > 0 or result['sms_progress'].get('total', 0) > 0:
+            break
     
     # ── Infer current phase from cloud state ──
     has_vpcs = result.get('vpc_count', 0) > 0
