@@ -1453,37 +1453,60 @@ def get_cloud_state(project_id):
         import json as _json
         pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
         
-        # Try to get customer credentials
-        customer_data = None
+        # Try to get customer credentials from the Customer model (encrypted vault)
+        customer_data = {}
         customer_id = pdata.get('customerId') or pdata.get('customer_id')
         if customer_id:
             try:
                 from models import Customer
                 customer = Customer.query.get(customer_id)
                 if customer:
-                    customer_data = _json.loads(customer.data) if isinstance(customer.data, str) else (customer.data or {})
+                    # Decrypt credentials using the same logic as Readiness Gateway
+                    import os as _os
+                    master_pw = _os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+                    try:
+                        from services.credential_manager import CredentialManager
+                        cm = CredentialManager(master_pw)
+                        
+                        # Decrypt source Huawei credentials (for SMS API calls)
+                        def _dec_pair(ak_field, sk_field):
+                            """Decrypt a credential pair from Customer model."""
+                            ak_raw = getattr(customer, ak_field, None)
+                            sk_raw = getattr(customer, sk_field, None)
+                            if not ak_raw:
+                                return None, None
+                            # If it's encrypted JSON
+                            if isinstance(ak_raw, str) and ak_raw.startswith('{'):
+                                import json as _j
+                                enc = _j.loads(ak_raw)
+                                if 'encrypted_ak' in enc:
+                                    return cm.decrypt_credentials(enc)
+                            # If it's a plain string (boolean True means "set but use same as ak")
+                            if ak_raw is True or ak_raw == 'true':
+                                return None, None
+                            return ak_raw, sk_raw
+                        
+                        # Try source Huawei credentials first (for SMS API in source region)
+                        src_ak, src_sk = _dec_pair('source_huawei_ak', 'source_huawei_sk')
+                        if src_ak and src_sk:
+                            customer_data['accessKey'] = src_ak
+                            customer_data['secretKey'] = src_sk
+                            customer_data['source_region'] = getattr(customer, 'source_huawei_region', None) or 'ap-southeast-3'
+                            customer_data['source_project_id'] = getattr(customer, 'source_huawei_project_id', None)
+                        
+                        # Fall back to main AK/SK
+                        if not customer_data.get('accessKey'):
+                            main_ak, main_sk = _dec_pair('ak', 'sk')
+                            if main_ak and main_sk:
+                                customer_data['accessKey'] = main_ak
+                                customer_data['secretKey'] = main_sk
+                        
+                        customer_data['region'] = customer.region or 'la-north-2'
+                    except Exception as e:
+                        # If decryption fails, try raw fields
+                        pass
             except Exception:
                 pass
-        
-        # Also check for credentials stored in project data (from Readiness Gateway)
-        # Try mgcData, executionPlan, or direct fields
-        if not customer_data:
-            customer_data = {}
-        # Merge any AK/SK from project data
-        for key in ['accessKey', 'access_key', 'ak', 'huaweiAK']:
-            if key in pdata and not customer_data.get('accessKey'):
-                customer_data['accessKey'] = pdata[key]
-        for key in ['secretKey', 'secret_key', 'sk', 'huaweiSK']:
-            if key in pdata and not customer_data.get('secretKey'):
-                customer_data['secretKey'] = pdata[key]
-        
-        # Check gateway credentials (stored after Readiness Gateway validation)
-        gateway_creds = pdata.get('gatewayCredentials', {})
-        if gateway_creds:
-            if not customer_data.get('accessKey') and gateway_creds.get('accessKey'):
-                customer_data['accessKey'] = gateway_creds.get('accessKey')
-            if not customer_data.get('secretKey') and gateway_creds.get('secretKey'):
-                customer_data['secretKey'] = gateway_creds.get('secretKey')
         
         from services.cloud_state_detector import detect_cloud_state
         result = detect_cloud_state(pdata, customer_data)
