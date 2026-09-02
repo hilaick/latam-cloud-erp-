@@ -263,6 +263,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [lastToolCall, setLastToolCall] = useState(null);
     const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
     const [polledAt, setPolledAt] = useState(null); // last poll timestamp
+    const [cloudState, setCloudState] = useState(null); // live cloud resource state
 
     // 🚨 FETCH PHASE CONTENT: Load dynamic phase descriptions from execution plan
     useEffect(() => {
@@ -276,7 +277,29 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             .catch(() => {});
     }, [project?.id]);
 
-    const isAgentic = executionMode === 'agentic';
+    // 🚨 CLOUD STATE: Poll actual Huawei Cloud resources every 5s to detect migration progress
+    // This works regardless of where the execution is triggered (GUI, external agent, CLI)
+    // because it reads the REAL cloud state, not process lists
+    const _isAgentic = executionMode === 'agentic';
+    useEffect(() => {
+        if (!project?.id || !_isAgentic) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        let active = true;
+        const poll = () => {
+            if (!active) return;
+            fetch(`/api/execution/${project.id}/cloud-state`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            })
+                .then(r => r.json())
+                .then(data => { if (active && data.success) setCloudState(data); })
+                .catch(() => {});
+        };
+        poll(); // immediate
+        const interval = setInterval(poll, 5000);
+        return () => { active = false; clearInterval(interval); };
+    }, [project?.id, _isAgentic]);
+
+    const isAgentic = _isAgentic;
     const isIndividual = executionMode === 'individual';
     const isManual = !isAgentic && !isIndividual;
 
@@ -562,7 +585,76 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
                     </p>
 
-                    {/* Context strip — key variables at a glance */}
+                    {/* 🚨 CLOUD STATE: Live Huawei Cloud resource detection */}
+                    {isAgentic && cloudState && (
+                        <div className="mb-5 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <i className="fas fa-cloud text-blue-600"></i>
+                                    <h4 className="font-black text-blue-900 text-sm uppercase tracking-widest">Live Cloud State</h4>
+                                    <span className="text-[8px] text-blue-500 font-mono">↻ {cloudState.timestamp}</span>
+                                </div>
+                                <div className="text-[10px] font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+                                    {cloudState.phase_reason}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {/* VPCs */}
+                                <div className="bg-white rounded-lg p-3 border border-blue-100">
+                                    <div className="text-[9px] font-black uppercase text-blue-400 mb-1">VPCs</div>
+                                    <div className="text-2xl font-black text-blue-900">{cloudState.vpc_count || 0}</div>
+                                    {cloudState.resources?.vpcs?.length > 0 && (
+                                        <div className="text-[8px] text-blue-500 mt-1 truncate">
+                                            {cloudState.resources.vpcs.map(v => v.name).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* SMS Sources */}
+                                <div className="bg-white rounded-lg p-3 border border-amber-100">
+                                    <div className="text-[9px] font-black uppercase text-amber-400 mb-1">SMS Sources</div>
+                                    <div className="text-2xl font-black text-amber-900">
+                                        {cloudState.sms_source_count || 0}
+                                        {cloudState.sms_sources_connected > 0 && (
+                                            <span className="text-[10px] text-green-600 ml-1">●{cloudState.sms_sources_connected}</span>
+                                        )}
+                                    </div>
+                                    {cloudState.resources?.sms_sources?.length > 0 && (
+                                        <div className="text-[8px] text-amber-500 mt-1 truncate">
+                                            {cloudState.resources.sms_sources.map(s => `${s.name}:${s.state}`).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* ECS Instances */}
+                                <div className="bg-white rounded-lg p-3 border border-purple-100">
+                                    <div className="text-[9px] font-black uppercase text-purple-400 mb-1">Target ECS</div>
+                                    <div className="text-2xl font-black text-purple-900">{cloudState.ecs_count || 0}</div>
+                                    {cloudState.resources?.ecs_instances?.length > 0 && (
+                                        <div className="text-[8px] text-purple-500 mt-1 truncate">
+                                            {cloudState.resources.ecs_instances.map(e => `${e.name}:${e.status}`).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* SMS Tasks */}
+                                <div className="bg-white rounded-lg p-3 border border-emerald-100">
+                                    <div className="text-[9px] font-black uppercase text-emerald-400 mb-1">SMS Tasks</div>
+                                    <div className="text-2xl font-black text-emerald-900">{cloudState.sms_progress?.total || 0}</div>
+                                    {cloudState.sms_progress?.total > 0 && (
+                                        <div className="text-[8px] text-emerald-500 mt-1">
+                                            {cloudState.sms_progress.running > 0 && <span className="text-blue-600 font-bold">⚡{cloudState.sms_progress.running} </span>}
+                                            {cloudState.sms_progress.success > 0 && <span className="text-green-600 font-bold">✓{cloudState.sms_progress.success} </span>}
+                                            {cloudState.sms_progress.failed > 0 && <span className="text-red-600 font-bold">✗{cloudState.sms_progress.failed} </span>}
+                                            {cloudState.sms_progress.waiting > 0 && <span className="text-amber-600">⏳{cloudState.sms_progress.waiting}</span>}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {!cloudState.credentials_found && (
+                                <div className="mt-2 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
+                                    ⚠ No Huawei Cloud credentials found — cannot query cloud state. Run Readiness Gateway (Phase 4.0) first.
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Source</div>
@@ -591,7 +683,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex flex-col items-center justify-center text-white shadow-xl z-10">
                                     <i className="fas fa-robot text-2xl mb-1"></i>
                                     <div className="text-[9px] font-black uppercase tracking-widest">7 Phases</div>
-                                    <div className="text-[8px] text-purple-200 mt-0.5">{completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` : inferredPhase ? `${inferredPhase.replace('PHASE_4_', '4.')} active` : 'Ready'}</div>
+                                    <div className="text-[8px] text-purple-200 mt-0.5">{
+                                        completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` :
+                                        inferredPhase ? `${inferredPhase.replace('PHASE_4_', '4.')} active` :
+                                        cloudState?.inferred_phase ? `${cloudState.inferred_phase.replace('PHASE_4_', '4.')} active` : 'Ready'
+                                    }</div>
                                 </div>
                                 {/* SVG connecting circle */}
                                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 380 380">
@@ -624,6 +720,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
                                     if (status === 'pending' && inferredPhase === phaseKey) status = 'running';
                                     if (status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
+                                    // Cloud state inference — overrides when no orchestration engine data
+                                    if (cloudState?.inferred_phase) {
+                                        if (status === 'pending' && cloudState.inferred_phase === phaseKey) status = 'running';
+                                        if (status === 'pending' && cloudState.inferred_phase > phaseKey) status = 'completed';
+                                    }
                                     const bgColor = status === 'completed' ? '#10b981' : status === 'running' ? '#8b5cf6' : status === 'failed' ? '#ef4444' : '#fff';
                                     const txtColor = status === 'pending' ? ph.color : '#fff';
                                     const ringClass = status === 'running' ? 'animate-pulse' : '';
@@ -673,6 +774,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
                                 if (status === 'pending' && inferredPhase === phaseKey) status = 'running';
                                 if (status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
+                                if (cloudState?.inferred_phase) {
+                                    if (status === 'pending' && cloudState.inferred_phase === phaseKey) status = 'running';
+                                    if (status === 'pending' && cloudState.inferred_phase > phaseKey) status = 'completed';
+                                }
                                 return (
                                     <div key={ph.n} className="flex items-start gap-3">
                                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${

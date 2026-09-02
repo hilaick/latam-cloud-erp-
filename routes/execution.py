@@ -1439,6 +1439,61 @@ def get_phase_content(project_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ── Cloud State Detection: query actual Huawei Cloud resources to infer migration phase ──
+
+@execution_bp.route('/api/execution/<project_id>/cloud-state', methods=['GET'])
+@jwt_required()
+def get_cloud_state(project_id):
+    """Query Huawei Cloud APIs to detect actual migration progress from cloud resources."""
+    try:
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+        
+        import json as _json
+        pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+        
+        # Try to get customer credentials
+        customer_data = None
+        customer_id = pdata.get('customerId') or pdata.get('customer_id')
+        if customer_id:
+            try:
+                from models import Customer
+                customer = Customer.query.get(customer_id)
+                if customer:
+                    customer_data = _json.loads(customer.data) if isinstance(customer.data, str) else (customer.data or {})
+            except Exception:
+                pass
+        
+        # Also check for credentials stored in project data (from Readiness Gateway)
+        # Try mgcData, executionPlan, or direct fields
+        if not customer_data:
+            customer_data = {}
+        # Merge any AK/SK from project data
+        for key in ['accessKey', 'access_key', 'ak', 'huaweiAK']:
+            if key in pdata and not customer_data.get('accessKey'):
+                customer_data['accessKey'] = pdata[key]
+        for key in ['secretKey', 'secret_key', 'sk', 'huaweiSK']:
+            if key in pdata and not customer_data.get('secretKey'):
+                customer_data['secretKey'] = pdata[key]
+        
+        # Check gateway credentials (stored after Readiness Gateway validation)
+        gateway_creds = pdata.get('gatewayCredentials', {})
+        if gateway_creds:
+            if not customer_data.get('accessKey') and gateway_creds.get('accessKey'):
+                customer_data['accessKey'] = gateway_creds.get('accessKey')
+            if not customer_data.get('secretKey') and gateway_creds.get('secretKey'):
+                customer_data['secretKey'] = gateway_creds.get('secretKey')
+        
+        from services.cloud_state_detector import detect_cloud_state
+        result = detect_cloud_state(pdata, customer_data)
+        
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()[-200:]}), 500
+
+
 # ── Playbook Suggestion: query past learnings for similar resource profiles ──
 @execution_bp.route('/api/playbooks/suggest', methods=['POST'])
 @jwt_required()
