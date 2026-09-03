@@ -618,17 +618,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     {cloudState.phase_reason}
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {/* VPCs */}
-                                <div className="bg-white rounded-lg p-3 border border-blue-100">
-                                    <div className="text-[9px] font-black uppercase text-blue-400 mb-1">VPCs</div>
-                                    <div className="text-2xl font-black text-blue-900">{cloudState.vpc_count || 0}</div>
-                                    {cloudState.resources?.vpcs?.length > 0 && (
-                                        <div className="text-[8px] text-blue-500 mt-1 truncate">
-                                            {cloudState.resources.vpcs.map(v => v.name).join(', ')}
-                                        </div>
-                                    )}
-                                </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                 {/* SMS Sources */}
                                 <div className="bg-white rounded-lg p-3 border border-amber-100">
                                     <div className="text-[9px] font-black uppercase text-amber-400 mb-1">SMS Sources</div>
@@ -679,23 +669,24 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Source</div>
                             <div className="text-xs font-bold text-slate-700">{project?.sourceEnvironment || project?.presales?.sourceEnvironment || 'Unknown'}</div>
+                            {(() => { const sr = project?.sourceRegion || project?.source_region || project?.data?.sourceRegion || project?.data?.source_region; return sr ? <div className="text-[9px] text-slate-400 font-medium">{sr}</div> : null; })()}
                         </div>
                         <div className="text-center">
-                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Servers</div>
-                            <div className="text-xs font-bold text-slate-700">{(() => { const ta = project?.targetArchitecture || {}; return [...(ta.compute||[]),...(ta.database||[]),...(ta.storage||[])].filter(s=>s.name).length; })()} target resources</div>
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Resources</div>
+                            <div className="text-xs font-bold text-slate-700">{(() => { const ta = project?.targetArchitecture || {}; const all = [...(ta.compute||[]),...(ta.database||[]),...(ta.storage||[])].filter(s=>s.name || s.source_name); return `${all.length} migrating`; })()}</div>
                         </div>
                         <div className="text-center">
-                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Region</div>
-                            <div className="text-xs font-bold text-slate-700">{project?.region || project?.data?.region || 'la-south-2'}</div>
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Target Region</div>
+                            <div className="text-xs font-bold text-slate-700">{project?.region || project?.data?.region || 'la-north-2'}</div>
                         </div>
                         <div className="text-center">
-                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Zero Trust</div>
-                            <div className="text-xs font-bold text-slate-700">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const zt = Array.isArray(al) ? al.some(a=>String(a).includes('Read-Only')) : String(al).includes('Read-Only'); return zt ? '🔒 Yes' : '🔓 No'; })()}</div>
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Delivery Posture</div>
+                            <div className="text-xs font-bold text-slate-700" title="Read-Only auth level = customer installs agents (Zero Trust). Partner Managed = ERP performs all operations.">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const zt = Array.isArray(al) ? al.some(a=>String(a).includes('Read-Only')) : String(al).includes('Read-Only'); return zt ? '🔒 Zero Trust (customer installs agents)' : '🔓 Partner Managed (ERP performs ops)'; })()}</div>
                         </div>
                     </div>
 
                     {/* Service Switch — filter lifecycle by migration type */}
-                    {isAgentic && services && services.length > 1 && (
+                    {isAgentic && services && services.length > 0 && (services.length > 1 || services.some(s => s.count > 1)) && (
                         <div className="mb-4">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <button
