@@ -442,7 +442,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (st.polled_at) setPolledAt(st.polled_at);
 
                 // Check if pipeline finished
-                if (st.status === 'completed' || st.status === 'halted' || st.status === 'crashed' || st.status === 'idle') {
+                if (st.status === 'completed' || st.status === 'halted' || st.status === 'idle') {
                     setAutoOrchestrating(false);
                     setExternalExecutions(null);
                     setActiveHermesSessions(null);
@@ -451,6 +451,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     } else if (st.status === 'halted' && st.current_phase) {
                         updatePhase(st.current_phase, 'FAILED');
                     }
+                } else if (st.status === 'crashed') {
+                    setAutoOrchestrating(false);
+                    setCollapsedSections(prev => ({...prev, logs: false}));
+                    if (st.log) setOrchestrationLog(st.log);
                 }
                 // running_external and orphaned_external: keep polling.
                 // For orphaned, the data is static but we keep the dashboard visible.
@@ -497,6 +501,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     if (st.session_stats) setSessionStats(st.session_stats);
                     if (st.last_tool_call) setLastToolCall(st.last_tool_call);
                     if (st.polled_at) setPolledAt(st.polled_at);
+                } else if (st.status === 'crashed') {
+                    if (st.log) setOrchestrationLog(st.log);
+                    if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                    setFailedOrchPhaseIdx(st.failed_phase ?? null);
+                    setCollapsedSections(prev => ({...prev, logs: false}));
                 } else if (st.status === 'halted') {
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
@@ -622,7 +632,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <span className={`w-2 h-2 rounded-full ${
                                 completedOrchPhases.size > 0 ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'
                             }`}></span>
-                            {cloudState.inferred_phase.replace('PHASE_4_', 'Phase 4.')} · {cloudState.phase_reason || cloudState.sms_progress?.running > 0 ? `${cloudState.sms_progress.running} task${cloudState.sms_progress.running > 1 ? 's' : ''} syncing` : 'Ready'}
+                            {cloudState.inferred_phase.replace('PHASE_4_', 'Phase 4.')} · {
+  cloudState.error ? <span className="text-red-500 font-bold">Crashed: {cloudState.error}</span> :
+  cloudState.phase_reason ? cloudState.phase_reason :
+  cloudState.sms_progress?.running > 0 ? `${cloudState.sms_progress.running} task${cloudState.sms_progress.running > 1 ? 's' : ''} syncing` :
+  'Ready'
+}
                             <span className="text-[8px] text-slate-400 font-mono">↻ {cloudState.timestamp}</span>
                         </div>
                     )}
