@@ -593,62 +593,95 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         setAutoOrchestrating(false);
     };
 
+    // Collapsible section state
+    const [collapsedSections, setCollapsedSections] = useState({
+        cloudState: false,
+        lifecycle: false,
+        runbook: false,
+        logs: true
+    });
+
+    // Toggle function
+    const toggleSection = (section) => {
+        setCollapsedSections(prev => ({...prev, [section]: !prev[section]}));
+    };
+
     return (
-        <div className="space-y-6 animate-fade-in">
-            {/* 🚨 MODE BANNER */}
-            <div className={`p-4 rounded-xl border-2 flex items-center justify-between ${
-                isAgentic ? 'bg-purple-50 border-purple-300' :
-                isIndividual ? 'bg-emerald-50 border-emerald-300' :
-                'bg-blue-50 border-blue-300'
-            }`}>
-                <div className="flex items-center gap-3">
-                    <i className={`fas ${isAgentic ? 'fa-robot text-purple-600 text-xl' : isIndividual ? 'fa-cube text-emerald-600 text-xl' : 'fa-tasks text-blue-600 text-xl'}`}></i>
-                    <div>
-                        <div className={`font-black text-sm uppercase tracking-widest ${
-                            isAgentic ? 'text-purple-800' : isIndividual ? 'text-emerald-800' : 'text-blue-800'
-                        }`}>
-                            {isAgentic ? 'Agentic Orchestration Active' : isIndividual ? 'Individual Tasks Mode' : 'Manual Pipeline Mode'}
-                        </div>
-                        <p className="text-[10px] font-medium text-slate-500">
-                            {isAgentic ? 'Hermes will autonomously execute all 7 phases. Lock individual controls during run.' :
-                             isIndividual ? 'Validate minimum prerequisites, then use Workbench for ad-hoc migration tasks.' :
-                             'Standard step-by-step Kanban execution. Team triggers each phase manually.'}
-                        </p>
+        <div className="space-y-4 animate-fade-in">
+            {/* 🚨 STICKY SUMMARY BAR */}
+            <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-2 border-indigo-100 rounded-2xl shadow-md p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                    <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 shrink-0 ${
+                        isAgentic ? 'bg-indigo-100 text-indigo-700' : isIndividual ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                        <i className={`fas ${isAgentic ? 'fa-robot' : isIndividual ? 'fa-cube' : 'fa-tasks'}`}></i>
+                        {isAgentic ? 'Auto' : isIndividual ? 'Tasks' : 'Manual'}
                     </div>
+                    {cloudState?.inferred_phase && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-700">
+                            <span className={`w-2 h-2 rounded-full ${
+                                completedOrchPhases.size > 0 ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'
+                            }`}></span>
+                            {cloudState.inferred_phase.replace('PHASE_4_', 'Phase 4.')} · {cloudState.phase_reason || cloudState.sms_progress?.running > 0 ? `${cloudState.sms_progress.running} task${cloudState.sms_progress.running > 1 ? 's' : ''} syncing` : 'Ready'}
+                            <span className="text-[8px] text-slate-400 font-mono">↻ {cloudState.timestamp}</span>
+                        </div>
+                    )}
+                    {!cloudState && (
+                        <div className="text-[10px] font-medium text-slate-500">Loading cloud state...</div>
+                    )}
                 </div>
-                <span className={`px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest ${
-                    isAgentic ? 'bg-purple-200 text-purple-700 border border-purple-300' :
-                    isIndividual ? 'bg-emerald-200 text-emerald-700 border border-emerald-300' :
-                    'bg-blue-200 text-blue-700 border border-blue-300'
-                }`}>
-                    {executionMode.toUpperCase()}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                    {!autoOrchestrating && !executionState?.currentPhase === 'COMPLETED' && (
+                        <button
+                            onClick={() => handleOrchestrateAll(0)}
+                            disabled={autoOrchestrating}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors disabled:opacity-40"
+                        >
+                            <i className="fas fa-play mr-1"></i> Run Pipeline
+                        </button>
+                    )}
+                    <button
+                        onClick={() => toggleSection('logs')}
+                        className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
+                            !collapsedSections.logs ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'
+                        }`}
+                    >
+                        <i className="fas fa-terminal mr-1"></i> Logs {!collapsedSections.logs ? '▲' : '▼'}
+                    </button>
+                    {failedOrchPhaseIdx !== null && (
+                        <button onClick={handleResumePipeline} className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors">
+                            <i className="fas fa-forward mr-1"></i> Resume
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* 🚨 AGENTIC: Orchestrate All button */}
             {isAgentic && (
-                <div className="bg-white border-2 border-purple-200 rounded-2xl shadow-lg p-6">
-                    <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest mb-3">
-                        <i className="fas fa-robot mr-2"></i> Autonomous Pipeline Execution
-                    </h4>
-                    <p className="text-xs text-slate-500 mb-5">
-                        The orchestration engine will chain all 7 phases sequentially. Individual phase controls are locked during execution.
-                    </p>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sm:p-5">
 
-                    {/* 🚨 CLOUD STATE: Live Huawei Cloud resource detection */}
+                    {/* 🚨 CLOUD STATE SECTION — collapsible */}
                     {isAgentic && cloudState && (
-                        <div className="mb-5 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-3">
+                        <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl">
+                            <button
+                                onClick={() => toggleSection('cloudState')}
+                                className="w-full flex items-center justify-between p-3 cursor-pointer"
+                            >
                                 <div className="flex items-center gap-2">
-                                    <i className="fas fa-cloud text-blue-600"></i>
-                                    <h4 className="font-black text-blue-900 text-sm uppercase tracking-widest">Live Cloud State</h4>
-                                    <span className="text-[8px] text-blue-500 font-mono">↻ {cloudState.timestamp}</span>
+                                    <i className="fas fa-cloud text-indigo-500"></i>
+                                    <h4 className="font-black text-slate-700 text-xs uppercase tracking-widest">Live Cloud State</h4>
+                                    <span className="text-[8px] text-slate-400 font-mono">↻ {cloudState.timestamp}</span>
                                 </div>
-                                <div className="text-[10px] font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
-                                    {cloudState.phase_reason}
+                                <div className="flex items-center gap-2">
+                                    <div className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full hidden sm:block">
+                                        {cloudState.phase_reason}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.cloudState ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            </button>
+                            {!collapsedSections.cloudState && (
+                            <div className="px-3 pb-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                                 {/* SMS Sources */}
                                 <div className="bg-white rounded-lg p-3 border border-amber-100">
                                     <div className="text-[9px] font-black uppercase text-amber-400 mb-1">SMS Sources</div>
@@ -693,9 +726,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     ⚠ No Huawei Cloud credentials found — cannot query cloud state. Run Readiness Gateway (Phase 4.0) first.
                                 </div>
                             )}
+                            </div>
+                            )}
                         </div>
                     )}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-6 bg-slate-50 rounded-xl p-3 sm:p-4 border border-slate-100">
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Source</div>
                             <div className="text-xs font-bold text-slate-700">{project?.sourceEnvironment || project?.presales?.sourceEnvironment || 'Unknown'}</div>
@@ -711,7 +746,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Delivery Posture</div>
-                            <div className="text-xs font-bold text-slate-700" title="Read-Only auth = customer installs agents (Zero Trust). Full Admin/Partner Managed = ERP performs all operations.">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const authStr = Array.isArray(al) ? al.join(', ') : String(al); const isZeroTrust = authStr.includes('Read-Only'); const isFullAdmin = authStr.includes('Full Admin') || authStr.includes('Partner Managed'); return isZeroTrust ? '🔒 Zero Trust (customer installs agents)' : isFullAdmin ? '🔓 Full Admin (ERP performs ops)' : '🔐 Mixed (' + authStr.slice(0, 30) + ')'; })()}</div>
+                            <div className="text-xs font-bold text-slate-700 leading-tight" title="Read-Only auth = customer installs agents (Zero Trust). Full Admin/Partner Managed = ERP performs all operations.">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const authStr = Array.isArray(al) ? al.join(', ') : String(al); const isZeroTrust = authStr.includes('Read-Only'); const isFullAdmin = authStr.includes('Full Admin') || authStr.includes('Partner Managed'); return isZeroTrust ? '🔒 Zero Trust (customer installs agents)' : isFullAdmin ? '🔓 Full Admin (ERP performs ops)' : '🔐 Mixed (' + authStr.slice(0, 30) + ')'; })()}</div>
                         </div>
                     </div>
 
@@ -754,11 +789,22 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             )}
                         </div>
                     )}
-                    {/* Lifecycle Circle Chart — 7 phases as circular nodes */}
-                    <div className="mb-6">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 text-center">Migration Lifecycle</div>
-                        <div className="flex items-center justify-center">
-                            <div className="relative" style={{ width: '380px', height: '380px' }}>
+                    {/* Lifecycle Circle Chart — 7 phases as circular nodes (collapsible) */}
+                    <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                        <button
+                            onClick={() => toggleSection('lifecycle')}
+                            className="w-full flex items-center justify-between p-3 cursor-pointer"
+                        >
+                            <div className="flex items-center gap-2">
+                                <i className="fas fa-sync-alt text-indigo-500"></i>
+                                <h4 className="font-black text-slate-700 text-xs uppercase tracking-widest">Migration Lifecycle</h4>
+                            </div>
+                            <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.lifecycle ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
+                        </button>
+                        {!collapsedSections.lifecycle && (
+                        <div className="px-2 pb-4">
+                        <div className="flex items-center justify-center overflow-x-auto">
+                            <div className="relative shrink-0" style={{ width: 'min(380px, 88vw)', height: 'min(380px, 88vw)' }}>
                                 {/* Center circle */}
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex flex-col items-center justify-center text-white shadow-xl z-10">
                                     <i className="fas fa-robot text-2xl mb-1"></i>
@@ -830,12 +876,23 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 })}
                             </div>
                         </div>
-                    </div>
+                        </div>
+                        )}
+                        </div>
 
-                    {/* What Will Happen — Phase Legend */}
-                    <div className="mb-5 bg-white border-2 border-slate-200 rounded-2xl p-5">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">What Will Happen — 7 Sequential Phases</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* What Will Happen — Phase Legend (collapsible) */}
+                    <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                        <div className="p-3 flex items-center justify-between border-b border-slate-100">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                <i className="fas fa-list-ul text-indigo-500 mr-2"></i>What Will Happen — 7 Sequential Phases
+                            </div>
+                            <button onClick={() => toggleSection('runbook')} className="text-[10px] text-slate-400 cursor-pointer">
+                                <i className={`fas ${collapsedSections.runbook ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i>
+                            </button>
+                        </div>
+                        {!collapsedSections.runbook && (
+                        <div className="p-3 sm:p-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {[
                                 { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', desc: phaseContent?.PHASE_4_1?.desc || 'Provision isolated Transit VPC, subnets, security groups, identity foundation.' },
                                 { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', desc: phaseContent?.PHASE_4_2?.desc || 'Validate source OS against target cloud availability. Check quoted flavors in stock.' },
@@ -870,12 +927,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </div>
                                  );
                              })}
-                         </div>
-                    </div>
+                             </div>
+                             </div>
+                             )}
+                             </div>
 
-                    {/* External execution live dashboard — AFTER lifecycle graph */}
+                             {/* External execution live dashboard — AFTER lifecycle graph */}
                     {externalExecutions && externalExecutions.length > 0 && (
-                        <div className="mb-5 bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${externalExecutions[0]?.pid > 0 ? 'bg-amber-500 animate-pulse' : 'bg-rose-400'}`}>
@@ -1049,14 +1108,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     ) : (
                         <div>
-                            {/* Per-phase runbook — detailed, see what happens before committing */}
+                            {/* Per-phase runbook — detailed, see what happens before committing (collapsible) */}
                             {!autoOrchestrating && (
-                                <div className="mb-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                                            <i className="fas fa-clipboard-list mr-1"></i> Phase Runbook — individual execution
+                                <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                                    <div className="p-3 flex items-center justify-between cursor-pointer" onClick={() => toggleSection('runbook')}>
+                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                                            <i className="fas fa-clipboard-list text-indigo-500 mr-1"></i> Phase Runbook — individual execution
                                         </div>
+                                        <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.runbook ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
                                     </div>
+                                    {!collapsedSections.runbook && (
+                                    <div className="p-3">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                                         {[
                                             { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: 'fa-network-wired', color: '#3b82f6', done: completedOrchPhases.has('PHASE_4_1') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_1') },
@@ -1090,10 +1152,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                             </div>
                                         ))}
                                     </div>
+                                    </div>
+                                    )}
                                 </div>
                             )}
 
-                            <div className="flex gap-3">
+                            <div className="flex flex-col sm:flex-row gap-3">
                                 {/* Primary: Full Pipeline (smaller, secondary to per-phase) */}
                                 <button
                                     onClick={() => {
@@ -1103,7 +1167,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         handleOrchestrateAll(0);
                                     }}
                                     disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
-                                    className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md transition-all ${
+                                    className={`flex-1 px-6 py-2.5 rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-md transition-all ${
                                         executionState?.currentPhase === 'COMPLETED'
                                             ? 'bg-emerald-500 text-white cursor-default'
                                             : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
@@ -1118,7 +1182,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 {failedOrchPhaseIdx !== null && (
                                     <button
                                         onClick={handleResumePipeline}
-                                        className="px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
+                                        className="flex-1 px-5 py-2.5 rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-md bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
                                     >
                                         <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
                                     </button>
@@ -1127,7 +1191,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
                                     <button
                                         onClick={handleRollback}
-                                        className="px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
+                                        className="flex-1 px-4 py-2.5 rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-md bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
                                         title="Destroy all provisioned infrastructure"
                                     >
                                         <i className="fas fa-undo mr-1"></i> Rollback
