@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 mcp_bp = Blueprint('mcp', __name__, url_prefix='/api/mcp')
 
 # MCP server base path — matches mcp_inventory.py
-MCP_BASE_PATH = '/tmp/mcp-update/iaas-mcp-server-main/huaweicloud_services_server'
+MCP_BASE_PATH = '/home/huawei-cloud/iaas-mcp-server/huaweicloud_services_server'
 MCP_REPO_URL = 'https://github.com/huaweicloud-samples/iaas-mcp-server'
 
 
@@ -116,7 +116,7 @@ def inventory_summary():
 def sync_from_github():
     """Git pull the latest from the MCP server repository."""
     try:
-        repo_root = '/tmp/mcp-update/iaas-mcp-server-main'
+        repo_root = '/home/huawei-cloud/iaas-mcp-server'
         if not os.path.exists(repo_root):
             return jsonify({'success': False, 'error': f'MCP repo not found at {repo_root}'}), 404
 

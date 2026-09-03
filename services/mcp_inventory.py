@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # MCP server base directory
-MCP_BASE = "/tmp/mcp-update/iaas-mcp-server-main/huaweicloud_services_server"
+MCP_BASE = "/home/huawei-cloud/iaas-mcp-server/huaweicloud_services_server"
 
 # Pillar → MCP service mapping (which services handle which migration pillar)
 PILLAR_SERVICES = {

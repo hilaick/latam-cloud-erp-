@@ -686,7 +686,7 @@ import SpawnTreeVisualizer from './SpawnTreeVisualizer.jsx';
 /* ── Main Component ── */
 export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(project?.agenticDryRun || null);
+  const [result, setResult] = useState(project?.retroactiveSimulation || project?.agenticDryRun || null);
   const [error, setError] = useState(null);
   const [expandedSteps, setExpandedSteps] = useState({});
   const [expandedPhases, setExpandedPhases] = useState({
@@ -1035,6 +1035,9 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
       setReplayMode(true);
       setReplayIndex(0);
       setIsPlaying(true);
+      if (onUpdateProject) {
+        onUpdateProject(project.id, { agenticDryRun: data, retroactiveSimulation: data });
+      }
     } catch (err) {
       setError(err.message);
     } finally {
