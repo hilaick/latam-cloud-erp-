@@ -268,14 +268,27 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
     // Detect migration services active for this project from targetArchitecture
     // Categories match Phase 3.4a Strategic Tooling:
-    //   Compute Migration → SMS (Server Migration Service)
+    //   Compute Migration → SMS (Server Migration Service) — includes EVS volumes of servers
     //   Database Migration → DRS & UGO
-    //   Storage Migration → OMS (Object) and CDM (Data)
+    //   Storage Migration → OMS (Object) and CDM (Data) — ONLY standalone OBS/SFS, NOT EVS
     const services = useMemo(() => {
         const ta = project?.targetArchitecture || {};
-        const computeN = [...(ta.compute || [])].filter(s => s.name || s.source_name).length;
+        // Compute: ECS/VM servers
+        const computeItems = [...(ta.compute || [])].filter(s => s.name || s.source_name);
+        const computeN = computeItems.length;
+        // Database: RDS/DDS/DCS/DMS
         const dbN = [...(ta.database || [])].filter(s => s.name || s.source_name).length;
-        const storageN = [...(ta.storage || [])].filter(s => s.name || s.source_name).length;
+        // Storage: ONLY standalone object/file storage (OBS/SFS), EXCLUDE EVS volumes
+        // (EVS volumes travel with their server via SMS — part of Compute Migration)
+        const storageN = [...(ta.storage || [])].filter(s => {
+            const nm = s.name || s.source_name || '';
+            const t = String(s.type || '').toUpperCase();
+            if (t.includes('EVS') || t.includes('VOLUME')) return false; // server volume → SMS
+            if (t.includes('OBS') || t.includes('SFS') || t.includes('BUCKET')) return true;
+            // Fallback by name: volume-XXXX pattern = EVS attached to server
+            if (/volume/i.test(nm) || /-v\d+$/i.test(nm)) return false;
+            return (s.name || s.source_name) ? true : false;
+        }).length;
         // Also scan execution plan for service markers
         const plan = project?.data?.executionPlan || {};
         const steps = Array.isArray(plan) ? plan : (plan.steps || []);
@@ -285,7 +298,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         const svcs = [];
         if (computeN > 0 || hasSMS) svcs.push({
             id: 'sms', label: 'Compute Migration', tool: 'SMS', icon: 'fa-server', count: computeN,
-            color: '#f59e0b', desc: 'Server Migration Service — block-level Windows/Linux sync'
+            color: '#f59e0b', desc: 'Server Migration Service — block-level Windows/Linux sync (+ attached EVS volumes)'
         });
         if (dbN > 0 || hasDRS) svcs.push({
             id: 'drs', label: 'Database Migration', tool: 'DRS & UGO', icon: 'fa-database', count: dbN,
@@ -638,7 +651,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="text-2xl font-black text-amber-900">
                                         {cloudState.sms_source_count || 0}
                                         {cloudState.sms_sources_connected > 0 && (
-                                            <span className="text-[10px] text-green-600 ml-1">●{cloudState.sms_sources_connected}</span>
+                                            <span className="text-[10px] text-green-600 ml-1" title="connected sources">●{cloudState.sms_sources_connected} active</span>
                                         )}
                                     </div>
                                     {cloudState.resources?.sms_sources?.length > 0 && (
