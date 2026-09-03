@@ -705,6 +705,7 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [showComparison, setShowComparison] = useState(true);
   const [showTrace, setShowTrace] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [retroLoading, setRetroLoading] = useState(false);
   const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
   const [showServerSelect, setShowServerSelect] = useState(false);
 
@@ -1016,6 +1017,31 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
     }
   };
 
+  const handleRetroactiveSim = async () => {
+    setRetroLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/retroactive-simulate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        },
+        body: JSON.stringify({ retroactive: true }),
+      });
+      if (!res.ok) throw new Error('API ' + res.status + ': ' + await res.text());
+      const data = await res.json();
+      setResult(data);
+      setReplayMode(true);
+      setReplayIndex(0);
+      setIsPlaying(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRetroLoading(false);
+    }
+  };
+
   const clearResults = () => {
     setResult(null);
     setReplayMode(false);
@@ -1213,6 +1239,15 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
                 style={{ background: '#722ed1', borderColor: '#722ed1' }}
               >
                 {loading ? 'Simulating...' : result ? 'Re-run Simulation' : 'Run Simulation'}
+              </Button>
+              <Button
+                type="dashed"
+                icon={<i className="fas fa-history" style={{ fontSize: 12 }} />}
+                onClick={handleRetroactiveSim}
+                disabled={retroLoading}
+                style={{ borderColor: '#08979c', color: '#08979c' }}
+              >
+                {retroLoading ? 'Loading...' : 'Retroactive Sim'}
               </Button>
               <Tooltip title="Force mig_worker deployment even if auto-triggers don't fire. Useful for cross-cloud, resilience, or manual agent install scenarios.">
                 <Button

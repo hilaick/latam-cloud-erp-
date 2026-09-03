@@ -220,6 +220,49 @@ def sync_knowledge():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@execution_bp.route('/api/knowledge/search', methods=['GET'])
+def search_knowledge():
+    """Search knowledge entries by name, description, and tags (case-insensitive substring).
+    Returns matching entries from all 3 sources.
+    """
+    try:
+        from services.knowledge_provider import KnowledgeProvider, ExternalKnowledgeStore
+
+        q = (request.args.get('q') or '').strip()
+        if not q:
+            return jsonify({"success": True, "results": [], "count": 0})
+
+        ExternalKnowledgeStore.initialize()
+        result = KnowledgeProvider.query_all()
+        entries = result["entries"]
+        q_lower = q.lower()
+
+        matched = []
+        for entry in entries:
+            name = (entry.get("trigger") or entry.get("name") or entry.get("server_name") or "").lower()
+            desc = (entry.get("description") or entry.get("purpose") or "").lower()
+            tags = " ".join(entry.get("tags", []) or []).lower()
+            strategy = (entry.get("strategy") or "").lower()
+            service = (entry.get("service") or "").lower()
+            if q_lower in name or q_lower in desc or q_lower in tags or q_lower in strategy or q_lower in service:
+                matched.append({
+                    "id": entry.get("id") or entry.get("name") or f"e-{hash(str(entry)) % 10000}",
+                    "name": entry.get("trigger") or entry.get("name") or entry.get("server_name") or "Unknown",
+                    "description": entry.get("description") or entry.get("purpose") or "",
+                    "source": entry.get("source", "unknown"),
+                    "category": entry.get("category") or entry.get("migration_type") or entry.get("strategy") or "General",
+                    "confidence": entry.get("confidence", 0.5),
+                    "usage_count": entry.get("usage_count", 0),
+                    "tags": entry.get("tags", []) or [],
+                })
+
+        matched.sort(key=lambda e: -(e.get("confidence") or 0))
+        return jsonify({"success": True, "results": matched, "count": len(matched)})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def build_knowledge_tree(entries):
     """Build hierarchical tree from flat knowledge dict entries."""
     categories = {}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Input } from 'antd';
 
 /**
  * KnowledgeTreePanel — Hierarchical skill tree with metrics.
@@ -7,6 +8,10 @@ import React, { useState, useEffect } from 'react';
  * Lives in IAM → Hermes AI Configuration.
  */
 export default function KnowledgeTreePanel() {
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+
     const [tree, setTree] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -99,6 +104,23 @@ export default function KnowledgeTreePanel() {
             external: 'bg-blue-100 text-blue-700 border-blue-200',
             history: 'bg-emerald-100 text-emerald-700 border-emerald-200',
         };
+  const handleSearch = async (q) => {
+    const query = (q || '').trim();
+    setSearchQ(query);
+    if (!query) { setSearchResults(null); return; }
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/knowledge/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setSearchResults(data.results || []);
+    } catch (err) {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+
         return (
             <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${styles[source] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                 {source}
@@ -112,7 +134,39 @@ export default function KnowledgeTreePanel() {
         const indent = depth * 16;
 
         return (
-            <div key={node.id}>
+            <div
+        <div style={{ padding: '0 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 8 }}>
+          <Input.Search
+            placeholder="Search Resources Kit (skills, docs, MCP…)"
+            allowClear
+            loading={searching}
+            onSearch={handleSearch}
+            onChange={(e) => { if (!e.target.value) handleSearch(''); }}
+            style={{ maxWidth: 420 }}
+          />
+          {searchResults !== null && (
+            <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                {searching ? 'Searching…' : `${searchResults.length} result(s)`}
+              </div>
+              {searchResults.map((r) => (
+                <div key={r.id} style={{
+                  padding: '6px 8px', marginBottom: 4, borderRadius: 6,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#7dd3fc' }}>{r.name}</div>
+                  <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
+                    {r.category} · {r.source} {r.confidence ? `· conf ${(r.confidence * 100).toFixed(0)}%` : ''}
+                  </div>
+                  {r.description && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{r.description.slice(0, 120)}{r.description.length > 120 ? '…' : ''}</div>}
+                </div>
+              ))}
+              {!searching && searchResults.length === 0 && (
+                <div style={{ fontSize: 11, color: '#888' }}>No matches — try another term.</div>
+              )}
+            </div>
+          )}
+        </div> key={node.id}>
                 <div
                     className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors group"
                     style={{ paddingLeft: 12 + indent }}

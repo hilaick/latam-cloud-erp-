@@ -7928,3 +7928,118 @@ def register_agentic_dry_run_routes(execution_bp):
         })
 
     execution_bp.route("/api/projects/<project_id>/generate-runbook", methods=["POST"])(_handle_generate_runbook)
+
+# ── Retroactive Simulation for Phase-5 projects ──
+    def _handle_retroactive_simulation(project_id):
+        """Run simulation retroactively for projects already in Phase 5 or later.
+        
+        Uses achieved resources (migration results, current-state mapped nodes)
+        as the 'source' to simulate what the migration flow would have looked like.
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            project_record = ProjectData.query.get(str(project_id))
+            if not project_record:
+                return jsonify({"success": False, "error": "Project not found"}), 404
+
+            project_data = json.loads(project_record.data) if isinstance(project_record.data, str) else project_record.data
+            if isinstance(project_data, str):
+                project_data = json.loads(project_data)
+
+            # Detect Phase 5 — use achieved resources if available
+            lifecycle = (project_data.get("lifecycleState") or "").lower()
+            if "phase_5" not in lifecycle and "go-live" not in lifecycle and "post" not in lifecycle:
+                # Not in Phase 5 — still build retroactive from current mapper nodes
+                logger.info(f"Retroactive: project not in Phase 5 (lifecycle={lifecycle}), using current-state resources")
+
+            # Build source from achieved resources (if available) or current mapperNodes
+            from services.knowledge_provider import KnowledgeProvider, ExternalKnowledgeStore
+            ExternalKnowledgeStore.initialize()
+            knowledge = KnowledgeProvider.query_all()
+
+            # Use project's current mapper nodes + any achieved migration results
+            mapper_nodes = project_data.get("mapperNodes", [])
+            # If project has migration_tasks or achieved_servers, those are the Phase-5 state
+            achieved = project_data.get("migrationTasks", project_data.get("achievedResources", []))
+            # Merge achieved resources into mapper_nodes for a complete picture
+            if achieved:
+                for a in achieved:
+                    # Deduplicate by id or name
+                    exists = any(
+                        (n.get("id") == a.get("id") or n.get("name") == a.get("name"))
+                        for n in mapper_nodes if n
+                    )
+                    if not exists:
+                        mapper_nodes.append({
+                            "id": a.get("id", f"achieved-{len(mapper_nodes)}"),
+                            "name": a.get("name", a.get("server_name", f"achieved-{len(mapper_nodes)}")),
+                            "type": a.get("type", "ECS"),
+                            "os": a.get("os_type", a.get("os", "LINUX")),
+                            "source_region": a.get("source_region", "ap-southeast-3"),
+                            "target_info": a.get("target_info", {}),
+                            "migrated": True,
+                        })
+
+            target_region = project_data.get("region", "la-south-2")
+            customer_id = project_data.get("customerId")
+            if customer_id:
+                from models import Customer
+                customer_for_region = Customer.query.get(customer_id)
+                if customer_for_region and customer_for_region.region:
+                    target_region = customer_for_region.region
+
+            contract = {
+                "projectName": project_data.get("name", "UNNAMED"),
+                "region": target_region,
+                "mapperNodes": mapper_nodes,
+                "dataSource": "RETROACTIVE",
+                "retroactive": True,
+                "waves": project_data.get("waves", []),
+                "physics": {
+                    "bandwidthMbps": project_data.get("physics", {}).get("bandwidthMbps", 500),
+                    "effective_throughput_mbps": project_data.get("physics", {}).get("effective_throughput_mbps", 300),
+                },
+                "finops": {
+                    "budget": project_data.get("budget", 10000),
+                    "financials": project_data.get("financials", {}),
+                },
+                "toolAssignments": project_data.get("toolAssignments", project_data.get("recommendations", [])),
+                "executionMode": "agentic",
+                "lifecycleState": lifecycle,
+                "targetArchitecture": project_data.get("targetArchitecture", {}),
+                "source_region": project_data.get("sourceRegion", "ap-southeast-3"),
+                "presales": {"achieved": True, "retroactive_pass": True},
+            }
+
+            sim_result = AgenticExecutionSimulator.simulate(contract)
+            trace = sim_result.get("trace", [])
+            summary = sim_result.get("summary", {})
+
+            # Tag each trace step as 'retroactive'
+            for step in trace:
+                step["retroactive"] = True
+                step["retroactive_note"] = "Simulated from achieved/current-state resources"
+
+            # Save to project
+            project_data["retroactiveSimulation"] = {
+                "trace": trace,
+                "summary": summary,
+                "knowledge_entries": len(knowledge.get("entries", [])),
+            }
+            project_record.data = json.dumps(project_data)
+            from models import db
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "trace": trace,
+                "summary": summary,
+                "note": "Retroactive simulation from achieved resources",
+            })
+
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # Register retroactive sim route
+    execution_bp.route("/api/projects/<project_id>/retroactive-simulate", methods=["POST"])(_handle_retroactive_simulation)
