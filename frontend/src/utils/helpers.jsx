@@ -170,10 +170,11 @@ export function PreSalesQualificationMatrix({ triage, setTriage }) {
     ];
 
     const auths = [
-        { id: 'Cloud Admin API', label: 'Cloud API', icon: 'fa-cloud' },
-        { id: 'Active Directory', label: 'AD / GPO', icon: 'fa-sitemap' },
-        { id: 'Local OS Admin', label: 'OS Admin', icon: 'fa-terminal' },
-        { id: 'Read-Only (Customer Managed)', label: 'Zero-Trust', icon: 'fa-user-shield' }
+        { id: 'Full Admin (Partner Managed)', label: 'Full Admin', icon: 'fa-user-cog', desc: 'Partner has full access, ERP performs ops' },
+        { id: 'Cloud Admin API', label: 'Cloud API', icon: 'fa-cloud', desc: 'API-level access' },
+        { id: 'Active Directory', label: 'AD / GPO', icon: 'fa-sitemap', desc: 'Domain-level access' },
+        { id: 'Local OS Admin', label: 'OS Admin', icon: 'fa-terminal', desc: 'Local credentials' },
+        { id: 'Read-Only (Customer Managed)', label: 'Zero-Trust', icon: 'fa-user-shield', desc: 'Customer installs agents' }
     ];
 
     // 🚨 5th Column: Expanded Delivery Scopes

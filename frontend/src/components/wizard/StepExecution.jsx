@@ -711,7 +711,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Delivery Posture</div>
-                            <div className="text-xs font-bold text-slate-700" title="Read-Only auth level = customer installs agents (Zero Trust). Partner Managed = ERP performs all operations.">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const zt = Array.isArray(al) ? al.some(a=>String(a).includes('Read-Only')) : String(al).includes('Read-Only'); return zt ? '🔒 Zero Trust (customer installs agents)' : '🔓 Partner Managed (ERP performs ops)'; })()}</div>
+                            <div className="text-xs font-bold text-slate-700" title="Read-Only auth = customer installs agents (Zero Trust). Full Admin/Partner Managed = ERP performs all operations.">{(() => { const al = project?.authLevel || project?.presales?.authLevel || []; const authStr = Array.isArray(al) ? al.join(', ') : String(al); const isZeroTrust = authStr.includes('Read-Only'); const isFullAdmin = authStr.includes('Full Admin') || authStr.includes('Partner Managed'); return isZeroTrust ? '🔒 Zero Trust (customer installs agents)' : isFullAdmin ? '🔓 Full Admin (ERP performs ops)' : '🔐 Mixed (' + authStr.slice(0, 30) + ')'; })()}</div>
                         </div>
                     </div>
 
