@@ -9,6 +9,7 @@ from services.huawei_iam import HuaweiIAMClient
 from services.huawei_eps import HuaweiEPSClient
 import logging
 import os
+import sys
 
 gateway_bp = Blueprint('gateway', __name__, url_prefix='/api/gateway')
 logger = logging.getLogger(__name__)
@@ -520,19 +521,45 @@ def full_readiness_check():
     overall_ready = True
     requires_action = []
 
-    # 1. Master AK/SK — check EXISTENCE only (decryption happens at execution)
+    # 1. Master AK/SK — validate LIVE by calling IAM test endpoint
+    # (Don't rely on stored master_creds_validated field which may not exist)
     has_ak = bool(customer.ak and len(str(customer.ak)) > 10)
     has_sk = bool(customer.sk and len(str(customer.sk)) > 10)
-    has_validated = bool(getattr(customer, 'master_creds_validated', False))
-
-    if not has_ak or not has_sk:
+    if has_ak and has_sk:
+        try:
+            # Try to decrypt and validate
+            from services.credential_manager import CredentialManager
+            master_pw = os.environ.get("VAULT_MASTER_PASSWORD", "LatamCloudAdmin2026!")
+            cm = CredentialManager(master_pw)
+            ak_raw = str(customer.ak)
+            sk_raw = str(customer.sk)
+            if ak_raw.startswith('{'):
+                import json as json_lib2
+                enc = json_lib2.loads(ak_raw)
+                if 'encrypted_ak' in enc:
+                    decrypted_ak, decrypted_sk = cm.decrypt_credentials(enc)
+                else:
+                    decrypted_ak, decrypted_sk = ak_raw, sk_raw
+            else:
+                decrypted_ak, decrypted_sk = ak_raw, sk_raw
+            
+            # Test by calling IAM list projects
+            sys.path.insert(0, '/root')
+            from huawei_hmac_auth import HuaweiCloudClient
+            hc = HuaweiCloudClient(decrypted_ak, decrypted_sk)
+            test_result = hc.request('GET', 'https://iam.myhuaweicloud.com/v3/auth/projects') if customer.region else {'_error': 'no region'}
+            if '_error' in test_result and '401' in str(test_result):
+                checks['master_credentials'] = {'status': 'invalid', 'message': f'Master AK/SK validation failed: IAM rejected the credentials'}
+                overall_ready = False
+                requires_action.append('Re-enter correct Master AK/SK in Customer Directory.')
+            else:
+                checks['master_credentials'] = {'status': 'valid', 'message': 'Master AK/SK configured and validated (IAM access confirmed).'}
+        except Exception as e:
+            checks['master_credentials'] = {'status': 'configured', 'message': f'Master AK/SK present but validation failed: {str(e)[:80]}'}
+    else:
         checks['master_credentials'] = {'status': 'blocked', 'message': 'Master AK/SK required.'}
         overall_ready = False
         requires_action.append('Configure Master AK/SK in Customer Directory.')
-    elif has_validated:
-        checks['master_credentials'] = {'status': 'valid', 'message': 'Master AK/SK configured and validated.'}
-    else:
-        checks['master_credentials'] = {'status': 'configured', 'message': 'Master AK/SK present. Validation pending (tested at execution time).'}
 
     # 2. Real-name auth — check stored status only (no API call at readiness gate)
     realname_status = getattr(customer, 'realname_auth_status', None)

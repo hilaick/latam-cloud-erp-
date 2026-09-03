@@ -692,7 +692,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 {/* SVG connecting circle */}
                                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 380 380">
                                     <circle cx="190" cy="190" r="155" fill="none" stroke="#e2e8f0" strokeWidth="2" strokeDasharray="4 4" />
-                                    {/* Animated progress arc */}
                                     {(completedOrchPhases.size > 0 || inferredPhase) && (
                                         <circle cx="190" cy="190" r="155" fill="none" stroke={failedOrchPhaseIdx !== null ? '#f59e0b' : '#10b981'} strokeWidth="3"
                                             strokeDasharray={`${((completedOrchPhases.size || (inferredPhase ? parseInt(inferredPhase.replace('PHASE_4_','')) - 1 : 0)) / 7) * 974} 974`}
@@ -702,7 +701,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         />
                                     )}
                                 </svg>
-                                {/* Phase nodes */}
                                 {/* Phase nodes — dynamic from execution plan */}
                                 {[
                                     { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: phaseContent?.PHASE_4_1?.icon || 'fa-network-wired', color: '#3b82f6', desc: phaseContent?.PHASE_4_1?.desc || 'Wave 0 VPC, subnets, SG' },
@@ -720,7 +718,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
                                     if (status === 'pending' && inferredPhase === phaseKey) status = 'running';
                                     if (status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
-                                    // Cloud state inference — overrides when no orchestration engine data
                                     if (cloudState?.inferred_phase) {
                                         if (status === 'pending' && cloudState.inferred_phase === phaseKey) status = 'running';
                                         if (status === 'pending' && cloudState.inferred_phase > phaseKey) status = 'completed';
@@ -739,13 +736,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     <i className={`fas ${ph.icon} text-sm`}></i>
                                                     <div className="text-[7px] font-black uppercase mt-0.5">{ph.label}</div>
                                                 </div>
-                                                {/* Tooltip */}
                                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
                                                     <div className="font-bold">Phase 4.{ph.n}: {ph.label}</div>
                                                     <div className="text-slate-300">{ph.desc}</div>
                                                     <div className="text-purple-300 mt-0.5">{status.toUpperCase()}</div>
                                                 </div>
-                                                {/* Phase number badge */}
                                                 <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-800 text-white text-[8px] font-black flex items-center justify-center border border-white shadow">
                                                     {ph.n}
                                                 </div>
@@ -757,13 +752,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     </div>
 
-                    {/* Phase legend / what will happen */}
-                    <div className="mb-5 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    {/* What Will Happen — Phase Legend */}
+                    <div className="mb-5 bg-white border-2 border-slate-200 rounded-2xl p-5">
                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">What Will Happen — 7 Sequential Phases</div>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
-                                { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', desc: phaseContent?.PHASE_4_1?.desc || 'Provision isolated Transit VPC, subnets, security groups, identity foundation via Terraform.' },
-                                { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', desc: phaseContent?.PHASE_4_2?.desc || 'Validate source OS against target cloud availability. Check quoted flavors are in stock.' },
+                                { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', desc: phaseContent?.PHASE_4_1?.desc || 'Provision isolated Transit VPC, subnets, security groups, identity foundation.' },
+                                { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', desc: phaseContent?.PHASE_4_2?.desc || 'Validate source OS against target cloud availability. Check quoted flavors in stock.' },
                                 { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', desc: phaseContent?.PHASE_4_3?.desc || 'Deploy target VPC, ECS instances, empty PaaS databases matching approved architecture.' },
                                 { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', desc: phaseContent?.PHASE_4_4?.desc || 'Deploy SMS and DRS migration agents. Verify health and connectivity.' },
                                 { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', desc: phaseContent?.PHASE_4_5?.desc || 'Monitor byte-by-byte replication. Report sync percentages and ETA to cutover.' },
@@ -781,21 +776,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 return (
                                     <div key={ph.n} className="flex items-start gap-3">
                                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
-                                            status === 'completed' ? 'bg-emerald-500 text-white' :
-                                            status === 'running' ? 'bg-purple-500 text-white animate-pulse' :
-                                            status === 'failed' ? 'bg-rose-500 text-white' :
-                                            'bg-slate-200 text-slate-500'
+                                            status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
+                                            status === 'running' ? 'bg-purple-100 text-purple-600 animate-pulse' :
+                                            status === 'failed' ? 'bg-rose-100 text-rose-600' :
+                                            'bg-slate-100 text-slate-500'
                                         }`}>
-                                            {status === 'completed' ? <i className="fas fa-check"></i> : status === 'running' ? <i className="fas fa-spinner fa-spin"></i> : ph.n}
+                                            {status === 'completed' ? <i className="fas fa-check"></i> : status === 'running' ? <i className="fas fa-spinner fa-spin"></i> : status === 'failed' ? <i className="fas fa-times"></i> : ph.n}
                                         </div>
-                                        <div className="flex-1">
+                                        <div className="flex-1 min-w-0">
                                             <div className="text-xs font-bold text-slate-700">4.{ph.n} {ph.label}</div>
-                                            <div className="text-[10px] text-slate-500">{ph.desc}</div>
+                                            <div className="text-[10px] text-slate-500 line-clamp-2">{ph.desc}</div>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
+                                 );
+                             })}
+                         </div>
                     </div>
 
                     {/* External execution live dashboard — AFTER lifecycle graph */}
@@ -973,46 +968,92 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             )}
                         </div>
                     ) : (
-                        <div className="flex gap-3">
-                            {/* Primary: Orchestrate All — with confirmation */}
-                            <button
-                                onClick={() => {
-                                    if (completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') {
-                                        if (!confirm(`This will execute the migration pipeline from the beginning.\n\n${completedOrchPhases.size > 0 ? `${completedOrchPhases.size} phases already completed — they will be skipped.\n` : ''}The backend execution engine will chain all 7 phases sequentially:\n\n  4.1 Network & Identity Foundation\n  4.2 OS Pre-Flight\n  4.3 Target ECS Landing Zone\n  4.4 Data Plane Agents\n  4.5 Sync Monitor\n  4.6 Cold Cutover\n  4.7 Teardown\n\nIndividual phase controls are locked during execution.\n\nProceed?`)) return;
+                        <div>
+                            {/* Per-phase runbook — detailed, see what happens before committing */}
+                            {!autoOrchestrating && (
+                                <div className="mb-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                            <i className="fas fa-clipboard-list mr-1"></i> Phase Runbook — individual execution
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                        {[
+                                            { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: 'fa-network-wired', color: '#3b82f6', done: completedOrchPhases.has('PHASE_4_1') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_1') },
+                                            { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', icon: 'fa-download', color: '#f59e0b', done: completedOrchPhases.has('PHASE_4_2') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_2') },
+                                            { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', icon: 'fa-server', color: '#8b5cf6', done: completedOrchPhases.has('PHASE_4_3') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_3') },
+                                            { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', done: completedOrchPhases.has('PHASE_4_4') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_4') },
+                                            { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: 'fa-chart-line', color: '#06b6d4', done: completedOrchPhases.has('PHASE_4_5') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_5') },
+                                            { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', done: completedOrchPhases.has('PHASE_4_6') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_6') },
+                                            { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: 'fa-trash-alt', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_7') },
+                                        ].map(ph => (
+                                            <div key={ph.n} className={`rounded-lg border-2 p-3 flex items-center justify-between transition-all ${ph.done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0" style={{ background: ph.done ? '#10b981' : ph.color }}>
+                                                        {ph.done ? <i className="fas fa-check text-[8px]"></i> : ph.n}
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="text-[9px] font-black text-slate-600 truncate">4.{ph.n} {ph.label}</div>
+                                                    </div>
+                                                </div>
+                                                {ph.done ? (
+                                                    <span className="text-[8px] font-black uppercase text-emerald-600 shrink-0">Done</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleOrchestrateAll(ph.n - 1)}
+                                                        disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
+                                                        className="text-[8px] font-black uppercase text-purple-600 hover:text-purple-800 shrink-0 hover:underline disabled:opacity-40"
+                                                    >
+                                                        Run
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex gap-3">
+                                {/* Primary: Full Pipeline (smaller, secondary to per-phase) */}
+                                <button
+                                    onClick={() => {
+                                        if (completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') {
+                                            if (!confirm(`This will execute the migration pipeline from the beginning.\n\n${completedOrchPhases.size > 0 ? `${completedOrchPhases.size} phases already completed — they will be skipped.\n` : ''}The backend execution engine will chain all 7 phases sequentially:\n\n  4.1 Network & Identity Foundation\n  4.2 OS Pre-Flight\n  4.3 Target ECS Landing Zone\n  4.4 Data Plane Agents\n  4.5 Sync Monitor\n  4.6 Cold Cutover\n  4.7 Teardown\n\nIndividual phase controls are locked during execution.\n\nProceed?`)) return;
+                                        }
+                                        handleOrchestrateAll(0);
+                                    }}
+                                    disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
+                                    className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md transition-all ${
+                                        executionState?.currentPhase === 'COMPLETED'
+                                            ? 'bg-emerald-500 text-white cursor-default'
+                                            : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
+                                    } ${autoOrchestrating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    {executionState?.currentPhase === 'COMPLETED'
+                                        ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
+                                        : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Run Full 7-Phase Pipeline'}</>
                                     }
-                                    handleOrchestrateAll(0);
-                                }}
-                                disabled={executionState?.currentPhase === 'COMPLETED'}
-                                className={`flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all ${
-                                    executionState?.currentPhase === 'COMPLETED'
-                                        ? 'bg-emerald-500 text-white cursor-default'
-                                        : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
-                                }`}
-                            >
-                                {executionState?.currentPhase === 'COMPLETED'
-                                    ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
-                                    : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Orchestrate All 7 Phases'}</>
-                                }
-                            </button>
-                            {/* Resume button (only when failed phase exists) */}
-                            {failedOrchPhaseIdx !== null && (
-                                <button
-                                    onClick={handleResumePipeline}
-                                    className="flex-1 py-3.5 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
-                                >
-                                    <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
                                 </button>
-                            )}
-                            {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
-                            {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
-                                <button
-                                    onClick={handleRollback}
-                                    className="py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
-                                    title="Destroy all provisioned infrastructure"
-                                >
-                                    <i className="fas fa-undo mr-1"></i> Rollback
-                                </button>
-                            )}
+                                {/* Resume button (only when failed phase exists) */}
+                                {failedOrchPhaseIdx !== null && (
+                                    <button
+                                        onClick={handleResumePipeline}
+                                        className="px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md bg-amber-500 hover:bg-amber-600 text-white active:scale-95 transition-all"
+                                    >
+                                        <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
+                                    </button>
+                                )}
+                                {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
+                                {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
+                                    <button
+                                        onClick={handleRollback}
+                                        className="px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-md bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
+                                        title="Destroy all provisioned infrastructure"
+                                    >
+                                        <i className="fas fa-undo mr-1"></i> Rollback
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
