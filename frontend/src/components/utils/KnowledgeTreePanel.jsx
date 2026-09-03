@@ -88,22 +88,6 @@ export default function KnowledgeTreePanel() {
 
     const collapseAll = () => setExpandedNodes(new Set());
 
-    // ── Render helpers ──
-    const sourceIcon = (source) => {
-        const icons = {
-            skill: 'fa-crown text-amber-500',
-            external: 'fa-code-branch text-blue-500',
-            history: 'fa-clock-rotate-left text-emerald-500',
-        };
-        return icons[source] || 'fa-circle text-slate-400';
-    };
-
-    const sourceBadge = (source) => {
-        const styles = {
-            skill: 'bg-amber-100 text-amber-700 border-amber-200',
-            external: 'bg-blue-100 text-blue-700 border-blue-200',
-            history: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-        };
   const handleSearch = async (q) => {
     const query = (q || '').trim();
     setSearchQ(query);
@@ -120,6 +104,22 @@ export default function KnowledgeTreePanel() {
     }
   };
 
+    // ── Render helpers ──
+    const sourceIcon = (source) => {
+        const icons = {
+            skill: 'fa-crown text-amber-500',
+            external: 'fa-code-branch text-blue-500',
+            history: 'fa-clock-rotate-left text-emerald-500',
+        };
+        return icons[source] || 'fa-circle text-slate-400';
+    };
+
+    const sourceBadge = (source) => {
+        const styles = {
+            skill: 'bg-amber-100 text-amber-700 border-amber-200',
+            external: 'bg-blue-100 text-blue-700 border-blue-200',
+            history: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        };
 
         return (
             <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${styles[source] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -134,39 +134,7 @@ export default function KnowledgeTreePanel() {
         const indent = depth * 16;
 
         return (
-            <div
-        <div style={{ padding: '0 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 8 }}>
-          <Input.Search
-            placeholder="Search Resources Kit (skills, docs, MCP…)"
-            allowClear
-            loading={searching}
-            onSearch={handleSearch}
-            onChange={(e) => { if (!e.target.value) handleSearch(''); }}
-            style={{ maxWidth: 420 }}
-          />
-          {searchResults !== null && (
-            <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-                {searching ? 'Searching…' : `${searchResults.length} result(s)`}
-              </div>
-              {searchResults.map((r) => (
-                <div key={r.id} style={{
-                  padding: '6px 8px', marginBottom: 4, borderRadius: 6,
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)'
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#7dd3fc' }}>{r.name}</div>
-                  <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
-                    {r.category} · {r.source} {r.confidence ? `· conf ${(r.confidence * 100).toFixed(0)}%` : ''}
-                  </div>
-                  {r.description && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{r.description.slice(0, 120)}{r.description.length > 120 ? '…' : ''}</div>}
-                </div>
-              ))}
-              {!searching && searchResults.length === 0 && (
-                <div style={{ fontSize: 11, color: '#888' }}>No matches — try another term.</div>
-              )}
-            </div>
-          )}
-        </div> key={node.id}>
+            <div key={node.id}>
                 <div
                     className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors group"
                     style={{ paddingLeft: 12 + indent }}
@@ -250,6 +218,39 @@ export default function KnowledgeTreePanel() {
     // ── Full tree ──
     return (
         <div>
+            {/* Resources Kit Search */}
+            <div style={{ padding: '0 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 8 }}>
+              <Input.Search
+                placeholder="Search Resources Kit (skills, docs, MCP…)"
+                allowClear
+                loading={searching}
+                onSearch={handleSearch}
+                onChange={(e) => { if (!e.target.value) handleSearch(''); }}
+                style={{ maxWidth: 420 }}
+              />
+              {searchResults !== null && (
+                <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                    {searching ? 'Searching…' : `${searchResults.length} result(s)`}
+                  </div>
+                  {searchResults.map((r) => (
+                    <div key={r.id} style={{
+                      padding: '6px 8px', marginBottom: 4, borderRadius: 6,
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#7dd3fc' }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
+                        {r.category} · {r.source} {r.confidence ? `· conf ${(r.confidence * 100).toFixed(0)}%` : ''}
+                      </div>
+                      {r.description && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{r.description.slice(0, 120)}{r.description.length > 120 ? '…' : ''}</div>}
+                    </div>
+                  ))}
+                  {!searching && searchResults.length === 0 && (
+                    <div style={{ fontSize: 11, color: '#888' }}>No matches — try another term.</div>
+                  )}
+                </div>
+              )}
+            </div>
             {/* Metrics Summary Bar */}
             <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-200">
