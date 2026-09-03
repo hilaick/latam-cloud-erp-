@@ -32,9 +32,48 @@ Six sessions produced the evidence, the design decisions, and the known gaps. Th
 | **Single account, multi-region** | Master AK/SK + per-region Keystone `project_id` resolution; cross-region discovery works when each API endpoint is called with ITS region's project scoping | Session: `20260813_101956_e02074`, `20260820_080656_8d3d77` |
 | **Credential storage** | Plain AK/SK fields on `Customer` model (`ak/sk`, `tier1/2/3`, `source_huawei_*`, `aws_*`, `azure_*`, `os_domain/user/pw`) | `models.py` |
 | **Credential tiers** | Master / Source / OS Data Plane / Multi-cloud defined; **Tier 1 & Tier 3 roles undefined**; Tier 2 = sandbox EPS Admin | Session: `20260801_143125_97bb4b` |
-| **Readiness Gateway** | 4.0 gateway decision tree with Paths A/B/C (no EPS → direct master; real-name ✓ no Tier2 → EPS via master; full ladder) — frontend currently a stub | Session: `20260801_143125_97bb4b` |
+| **Readiness Gateway** | 4.0 gateway decision tree with Paths A/B/C (no EPS → direct master; real-name ✓ no Tier2 → EPS via master; full ladder) — **3 overlapping implementations** (see §2.1) | Session: `20260801_143125_97bb4b` and live server audit Aug 29, 2026 |
 | **Target region source** | `Reconcile Scope` reads `customer.region`, **not** `project.region` (Guided Wizard already collects region per project, Section A field 8 — it's just ignored) | Session: `bg_131630_f81250` |
 | **Credential intake** | Presales radar fields 20–24: Master AK/SK, Source Huawei creds (+region), Multi-cloud, OS Data Plane, real-name status | Session: `20260803_150122_9bf149` |
+
+### 2.1 Known dupes — the 3 overlapping Readiness Gateway implementations
+
+A live server audit (Aug 29) revealed the gateway was built in **three separate iterations**, each adding more surface area without removing the prior version:
+
+```mermaid
+flowchart LR
+  subgraph "Implementation A — Main API gateway"
+    A1[gateway.py<br>959 lines, 11 endpoints]
+    A2[huawei_iam.py<br>118 lines — stub client]
+    A3[huawei_eps.py<br>78 lines — stub client]
+  end
+  subgraph "Implementation B — Plan builder"
+    B[execution_engine.py<br>PHASE_4_0 block<br>in build_plan()]
+  end
+  subgraph "Implementation C — Simulation"
+    C[agentic_simulator.py<br>PHASE_4_0 steps<br>~30 ReadinessGateway nodes]
+  end
+  A1 -- frontend calls --> FE[ReadinessGatewayView in<br>StepExecution.jsx<br>calls /api/gateway/full-check]
+  B -- via --> execRoute[routes/execution.py<br>imports ExecutionEngine]
+```
+
+| # | File | Type | Endpoints / Surface | Status | Serves |
+|---|---|---|---|---|---|
+| **A** | `routes/gateway.py` | **Flask Blueprint** (`/api/gateway/*`) | 11 endpoints: `validate-master`, `check-realname-auth`, `provision-eps`, `validate-tier2`, `validate-tier3`, `test-os-cred`, `validate-credential`, `full-check`, `create-tier2-credentials`, `generate-n8n-workflow`, `deploy-n8n-workflow` | ✅ **Active** — frontend calls `/api/gateway/full-check` on mount | Live IAM validation via `HuaweiIAMClient.ping()` (creates temp hcloud profile) + regex-based real-name & tier checks |
+| **A-backing** | `services/huawei_iam.py` | **IAM stub client** | `ping()` (hcloud subprocess), `check_realname_auth()` (REST direct — bypasses `HuaweiCloudClient` pattern) | ⚠️ **Active but fragile** — uses `X-Auth-AK`/`X-Auth-SK`/`X-Project-Id` custom headers instead of proper SDK v3 signing. `check_realname_auth()` first tries `/v5.0/realname-authentication/status` (likely non-existent API) then falls back to `/v3.0/OS-USER/users`. Both bypass the proven `HuaweiCloudClient` signer. | Individual gateway endpoint calls |
+| **A-backing** | `services/huawei_eps.py` | **EPS stub client** | `list_eps()`, `create_enterprise_project()`, `list_resources()` — also uses `X-Auth-AK`/`X-Auth-SK` direct headers | ⚠️ **Active but untested** — likely encounters `Common.0013` cross-region signing mismatch. Does NOT use the proven `HuaweiCloudClient` path. | EPS provisioning in gateway |
+| **B** | `services/execution_engine.py` | **Plan-building engine** | `build_plan()` generates PHASE_4_0 steps: `CREDENTIAL_VALIDATION`, `PROJECT_ID_DISCOVERY`, `EPS_PROVISIONING` (Path A/B), `EPS_VERIFICATION_REQUIRED` etc. | ❌ **Dead code path** — `execution_engine.py` is imported by `routes/execution.py` at lines 774/836/959/969/979 but never fired in practice. The frontend calls `/api/gateway/full-check` directly, not the execution engine's build_plan(). | Planned replacement for the API gateway — not reached in practice |
+| **C** | `services/agentic_simulator.py` | **Simulation orchestrator** | ~30 `PHASE_4_0` / `ReadinessGateway` agent nodes generating mock gateway results during simulation runs | ✅ **Active but simulation-only** — these are mock steps for the agentic simulation engine, not real API calls. Not a blocker — they correctly simulate gateway passes during dry-run mode. | Simulation/dry-run only |
+
+#### Key concerns
+
+1. **`huawei_iam.py` and `huawei_eps.py` bypass the proven signing path** — they construct their own `X-Auth-AK`/`X-Auth-SK` headers instead of using `HuaweiCloudClient` from `/root/huawei_hmac_auth.py`. The `Common.0013` cross-region bug (proven in production) likely means these have never successfully called a non-default-region API.
+
+2. **`gateway.py`'s `full-readiness-check` does NOT route through `execution_engine.py`** — there are two independent gateway implementations living side-by-side, both claiming to serve Phase 4.0, but the execution engine path is effectively dead code.
+
+3. **`execution_engine.py` includes its own PHASE_4_0 logic** that duplicates all gateway checks (credential validation, project discovery, EPS provisioning). It uses skills knowledge tree resolution + MCP endpoints, which is architecturally superior. If the execution engine ever goes live, the /api/gateway endpoints would be redundant.
+
+4. **n8n worklow generation endpoints** (`generate-n8n-workflow`, `deploy-n8n-workflow`) are baked into `gateway.py` — they don't belong in a credential validation gateway. They were an early-phase experiment that should be extracted or removed.
 
 ### Known bugs & blockers (proven in production)
 
@@ -121,6 +160,15 @@ Priority labels: 🔴 P0 (blockers / security) · 🟡 P1 (core feature) · 🟢
 - [ ] Show per-project credential coverage matrix (Master / Tier1 / Tier2 / Tier3 / Source / OS / Multi-cloud) with Path A/B/C outcome
 - **Acceptance:** one screen answers "can this project execute?" for every tier.
 
+### Epic H — 🔴 P0 · Consolidate Readiness Gateway implementations (SINGLE SOURCE OF TRUTH)
+**Status:** 🔴 Audit done Aug 29, 2026 — 3 overlapping implementations live side-by-side (see §2.1). The user's directive: **"update the commit and handle all together. later we can remove whats not needed or that breaks the ERP system's current functionality."**
+- [ ] **Decide the survivor:** keep A (`routes/gateway.py` — what frontend actually calls) as the READ endpoint; treat B (`execution_engine.py` PHASE_4_0) as the future replacement but gate its adoption behind a live test
+- [ ] **Route all signing through one path:** `huawei_iam.py` + `huawei_eps.py` must use `HuaweiCloudClient` (`/root/huawei_hmac_auth.py`) — the proven signer — instead of custom `X-Auth-AK`/`X-Auth-SK` headers. Fix applies Epic B scope guard to every call in gateway.py
+- [ ] **Extract n8n endpoints** (`generate-n8n-workflow`, `deploy-n8n-workflow`) out of gateway.py into their own blueprint (`routes/n8n.py`) — they are not credential validation
+- [ ] **Deprecate clearly:** docstring banner on `huawei_iam.py`/`huawei_eps.py` pointing to `HuaweiCloudClient`; remove dead imports from `routes/execution.py` only after B is proven or deleted
+- [ ] Keep C (`agentic_simulator.py` PHASE_4_0 mock nodes) as-is — simulation must not call real APIs
+- **Acceptance:** ONE code path validates credentials for Phase 4.0 in live mode; `/api/gateway/*` and the execution engine agree on readiness; no endpoint calls Huawei APIs with non-`HuaweiCloudClient` signing; simulation unchanged.
+
 ---
 
 ## 5. Sequencing & dependencies
@@ -128,16 +176,17 @@ Priority labels: 🔴 P0 (blockers / security) · 🟡 P1 (core feature) · 🟢
 ```
 Now (P0)          Epic A  vault persistence        ← blocks everything else
                   Epic B  cross-region signing     ← hardens live SMS runs
+                  Epic H  gateway consolidation    ← SINGLE SOURCE OF TRUTH
 
 Next (P1)         Epic C  per-project override     ← needs A (credential save is reliable)
                   Epic D  tier definitions         ← independent; unblocks E
-                  Epic E  auth-tier gating         ← needs D
+                  Epic E  auth-tier gating         ← needs D + H
 
 Later (P2)        Epic F  CSMS backend             ← needs C (per-project secret refs)
-                  Epic G  gateway dashboard        ← needs D + E
+                  Epic G  gateway dashboard        ← needs D + E + H
 ```
 
-**Dependency chain:** A → C → F · D → E → G · B independent throughout.
+**Dependency chain:** A → C → F · D → E → G · H gates E,G · B independent throughout.
 
 ---
 
@@ -152,6 +201,7 @@ Later (P2)        Epic F  CSMS backend             ← needs C (per-project secr
 | D5 | Cross-region calls require **per-region project scoping**; fail fast on mismatch | `Common.0013` proven in production | `20260820_080656_8d3d77`, `20260813_101956_e02074` |
 | D6 | Execution endpoints gate on **credential tier presence** before running | Prevent half-run phases on under-privileged creds | `20260803_150122_9bf149` |
 | D7 | SMS flow uses `sms_v9.py`/`sms_v10.py` pattern; agent restart creates a NEW source id | Established SMS execution pattern — do not reinvent | ERP skill tree |
+| D8 | `routes/gateway.py` is the **live** Readiness Gateway (frontend calls it); `execution_engine.py` PHASE_4_0 is a **planned replacement** (skills+MCP-driven) but unproven; `agentic_simulator.py` PHASE_4_0 is **simulation-only** | Live server audit Aug 29, 2026 found 3 overlapping implementations — consolidate to ONE code path (§2.1, Epic H) | Live server audit + user directive, `20260829` |
 
 ---
 
