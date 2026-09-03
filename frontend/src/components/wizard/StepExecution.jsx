@@ -267,21 +267,34 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
 
     // Detect migration services active for this project from targetArchitecture
+    // Categories match Phase 3.4a Strategic Tooling:
+    //   Compute Migration → SMS (Server Migration Service)
+    //   Database Migration → DRS & UGO
+    //   Storage Migration → OMS (Object) and CDM (Data)
     const services = useMemo(() => {
         const ta = project?.targetArchitecture || {};
-        const computeN = [...(ta.compute || [])].filter(s => s.name).length;
-        const dbN = [...(ta.database || [])].filter(s => s.name).length;
-        const storageN = [...(ta.storage || [])].filter(s => s.name).length;
+        const computeN = [...(ta.compute || [])].filter(s => s.name || s.source_name).length;
+        const dbN = [...(ta.database || [])].filter(s => s.name || s.source_name).length;
+        const storageN = [...(ta.storage || [])].filter(s => s.name || s.source_name).length;
         // Also scan execution plan for service markers
         const plan = project?.data?.executionPlan || {};
         const steps = Array.isArray(plan) ? plan : (plan.steps || []);
         const hasSMS = steps.some(s => String(s.action || '').startsWith('SMS_'));
-        const hasDRS = steps.some(s => String(s.action || '').startsWith('DRS_'));
-        const hasOMS = steps.some(s => String(s.action || '').startsWith('OMS_'));
+        const hasDRS = steps.some(s => String(s.action || '').startsWith('DRS_') || String(s.action || '').startsWith('UGO_'));
+        const hasOMS = steps.some(s => String(s.action || '').startsWith('OMS_') || String(s.action || '').startsWith('CDM_'));
         const svcs = [];
-        if (computeN > 0 || hasSMS) svcs.push({ id: 'sms', label: 'SMS', icon: 'fa-server', count: computeN, color: '#f59e0b', desc: 'Server migration (ECS)' });
-        if (dbN > 0 || hasDRS) svcs.push({ id: 'drs', label: 'DRS', icon: 'fa-database', count: dbN, color: '#06b6d4', desc: 'Database replication (RDS/DDS/DCS)' });
-        if (storageN > 0 || hasOMS) svcs.push({ id: 'oms', label: 'OMS', icon: 'fa-archive', count: storageN, color: '#8b5cf6', desc: 'Object storage sync (OBS)' });
+        if (computeN > 0 || hasSMS) svcs.push({
+            id: 'sms', label: 'Compute Migration', tool: 'SMS', icon: 'fa-server', count: computeN,
+            color: '#f59e0b', desc: 'Server Migration Service — block-level Windows/Linux sync'
+        });
+        if (dbN > 0 || hasDRS) svcs.push({
+            id: 'drs', label: 'Database Migration', tool: 'DRS & UGO', icon: 'fa-database', count: dbN,
+            color: '#06b6d4', desc: 'Zero-downtime logical replication and schema conversion'
+        });
+        if (storageN > 0 || hasOMS) svcs.push({
+            id: 'oms', label: 'Storage Migration', tool: 'OMS / CDM', icon: 'fa-archive', count: storageN,
+            color: '#8b5cf6', desc: 'Object (OMS) and data (CDM) large-scale parallel volume transport'
+        });
         return svcs;
     }, [project?.targetArchitecture, project?.data?.executionPlan]);
 
@@ -712,6 +725,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     >
                                         <i className={`fas ${svc.icon} text-[10px]`}></i>
                                         {svc.label}
+                                        <span className="text-[8px] opacity-75">· {svc.tool}</span>
                                         {svc.count > 0 && <span className="text-[8px] opacity-75">({svc.count})</span>}
                                     </button>
                                 ))}
