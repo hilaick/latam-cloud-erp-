@@ -219,7 +219,12 @@ export default function RegionalMap() {
     if (typeof L === 'undefined' || !mapRef.current) return;
 
     if (!mapInstance.current) {
-      mapInstance.current = L.map(mapRef.current, { zoomControl: false, attributionControl: true, minZoom: 2 }).setView([0, -70], 3);
+      mapInstance.current = L.map(mapRef.current, {
+        zoomControl: false, attributionControl: true,
+        minZoom: 2, maxZoom: 10,
+        bounceAtZoomLimits: false, worldCopyJump: false,
+        zoomSnap: 0.5,
+      }).setView([0, -70], 3);
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16,
         attribution: 'Tiles &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS user community',
@@ -250,7 +255,7 @@ export default function RegionalMap() {
     <div className="animate-fade-in h-[calc(100vh-100px)] min-h-[700px] flex bg-slate-950 overflow-hidden">
       
       {/* ═══ LEFT PANEL ═══ */}
-      <div className={`${leftOpen ? 'w-72' : 'w-0'} transition-all duration-300 overflow-hidden bg-slate-900 border-r border-slate-800 flex flex-col shrink-0`}>
+      <div className={`${leftOpen ? 'w-72' : 'w-0'} transition-all duration-300 overflow-hidden bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 ${leftOpen ? 'absolute inset-y-0 left-0 z-[1100] sm:static sm:flex' : 'hidden sm:flex'}`}>
         <div className="p-5 space-y-5 flex-1 overflow-y-auto">
           {/* brand */}
           <div className="flex items-center gap-3 mb-2">
@@ -353,17 +358,29 @@ export default function RegionalMap() {
       </div>
 
       {/* ═══ MAP ═══ */}
-      <div className="flex-1 relative">
-        <div ref={mapRef} className="absolute inset-0 bg-slate-950"></div>
+      <div className="flex-1 relative overflow-hidden">
+        <div ref={mapRef} className="absolute inset-0 bg-slate-950" style={{ overflow: 'hidden' }}></div>
 
-        {/* floating summary pill */}
-        <div className="absolute top-4 left-4 z-[1000] bg-slate-900/90 backdrop-blur border border-slate-700 rounded-xl px-4 py-2.5 flex items-center gap-4 text-white shadow-lg">
-          <div className="text-[10px] font-black text-cyan-400">{fm(stats.totalMrr)} <span className="text-slate-500 font-normal">MRR</span></div>
-          <div className="w-px h-4 bg-slate-700"></div>
-          <div className="text-[10px] font-black text-blue-400">{stats.projectCount} <span className="text-slate-500 font-normal">Projects</span></div>
-          <div className="w-px h-4 bg-slate-700"></div>
-          <div className="text-[10px] font-black text-emerald-400">{stats.countryCount} <span className="text-slate-500 font-normal">Countries</span></div>
+        {/* floating stats — hidden on small screens, compact on mobile */}
+        <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-[1000] bg-slate-900/90 backdrop-blur border border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 sm:gap-4 text-white shadow-lg text-[8px] sm:text-[10px]">
+          <span className="font-black text-cyan-400">{fm(stats.totalMrr)} <span className="text-slate-500 font-normal hidden sm:inline">MRR</span></span>
+          <span className="w-px h-3 sm:h-4 bg-slate-700 hidden sm:block"></span>
+          <span className="font-black text-blue-400 hidden sm:inline">{stats.projectCount} <span className="text-slate-500 font-normal">Projects</span></span>
+          <span className="w-px h-3 sm:h-4 bg-slate-700 hidden sm:block"></span>
+          <span className="font-black text-emerald-400 hidden sm:inline">{stats.countryCount} <span className="text-slate-500 font-normal">Countries</span></span>
+          {/* Mobile compact stats */}
+          <span className="font-black text-blue-400 sm:hidden">{stats.projectCount}p</span>
+          <span className="font-black text-emerald-400 sm:hidden">{stats.countryCount}c</span>
         </div>
+
+        {/* mobile panel toggle (only visible on sm) */}
+        {leftOpen && (
+          <div className="absolute inset-0 bg-black/40 z-[1050] sm:hidden" onClick={() => setLeftOpen(false)}></div>
+        )}
+        <button onClick={() => setLeftOpen(!leftOpen)}
+          className="absolute bottom-4 left-4 z-[1100] sm:hidden bg-slate-900/90 backdrop-blur border border-slate-700 rounded-xl px-3 py-2 text-[9px] font-bold text-cyan-400 uppercase tracking-wider shadow-lg">
+          <i className={`fas ${leftOpen ? 'fa-times' : 'fa-bars'} mr-1`}></i> {leftOpen ? 'Close' : 'Menu'}
+        </button>
 
         {/* right panel toggle */}
         {!rightOpen && (
