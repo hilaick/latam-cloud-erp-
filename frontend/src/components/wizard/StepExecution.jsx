@@ -264,6 +264,26 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
     const [polledAt, setPolledAt] = useState(null); // last poll timestamp
     const [cloudState, setCloudState] = useState(null); // live cloud resource state
+    const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
+
+    // Detect migration services active for this project from targetArchitecture
+    const services = useMemo(() => {
+        const ta = project?.targetArchitecture || {};
+        const computeN = [...(ta.compute || [])].filter(s => s.name).length;
+        const dbN = [...(ta.database || [])].filter(s => s.name).length;
+        const storageN = [...(ta.storage || [])].filter(s => s.name).length;
+        // Also scan execution plan for service markers
+        const plan = project?.data?.executionPlan || {};
+        const steps = Array.isArray(plan) ? plan : (plan.steps || []);
+        const hasSMS = steps.some(s => String(s.action || '').startsWith('SMS_'));
+        const hasDRS = steps.some(s => String(s.action || '').startsWith('DRS_'));
+        const hasOMS = steps.some(s => String(s.action || '').startsWith('OMS_'));
+        const svcs = [];
+        if (computeN > 0 || hasSMS) svcs.push({ id: 'sms', label: 'SMS', icon: 'fa-server', count: computeN, color: '#f59e0b', desc: 'Server migration (ECS)' });
+        if (dbN > 0 || hasDRS) svcs.push({ id: 'drs', label: 'DRS', icon: 'fa-database', count: dbN, color: '#06b6d4', desc: 'Database replication (RDS/DDS/DCS)' });
+        if (storageN > 0 || hasOMS) svcs.push({ id: 'oms', label: 'OMS', icon: 'fa-archive', count: storageN, color: '#8b5cf6', desc: 'Object storage sync (OBS)' });
+        return svcs;
+    }, [project?.targetArchitecture, project?.data?.executionPlan]);
 
     // 🚨 FETCH PHASE CONTENT: Load dynamic phase descriptions from execution plan
     useEffect(() => {
@@ -674,6 +694,44 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     </div>
 
+                    {/* Service Switch — filter lifecycle by migration type */}
+                    {isAgentic && services && services.length > 1 && (
+                        <div className="mb-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                    onClick={() => setActiveService('all')}
+                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border-2 ${
+                                        activeService === 'all'
+                                            ? 'bg-purple-600 text-white border-purple-600 shadow-md'
+                                            : 'bg-white text-slate-500 border-slate-200 hover:border-purple-300'
+                                    }`}
+                                >
+                                    <i className="fas fa-layer-group mr-1"></i> All Services
+                                </button>
+                                {services.map(svc => (
+                                    <button
+                                        key={svc.id}
+                                        onClick={() => setActiveService(svc.id)}
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border-2 flex items-center gap-1.5 ${
+                                            activeService === svc.id
+                                                ? 'text-white shadow-md'
+                                                : 'bg-white text-slate-500 border-slate-200 hover:opacity-80'
+                                        }`}
+                                        style={activeService === svc.id ? { background: svc.color, borderColor: svc.color } : {}}
+                                    >
+                                        <i className={`fas ${svc.icon} text-[10px]`}></i>
+                                        {svc.label}
+                                        {svc.count > 0 && <span className="text-[8px] opacity-75">({svc.count})</span>}
+                                    </button>
+                                ))}
+                            </div>
+                            {activeService !== 'all' && services.find(s => s.id === activeService) && (
+                                <div className="mt-1 text-[9px] text-slate-500 font-medium">
+                                    Showing {services.find(s => s.id === activeService)?.desc}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {/* Lifecycle Circle Chart — 7 phases as circular nodes */}
                     <div className="mb-6">
                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 text-center">Migration Lifecycle</div>
