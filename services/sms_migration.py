@@ -166,23 +166,56 @@ cd SMS-Agent
         ak: str = "",
         sk: str = "",
         os_type: str = "LINUX",
+        evs_volume_id: str = "",
+        migration_ip: str = "",
     ) -> dict:
         """
         Create an SMS migration task mapping source → target.
 
-        Uses hcloud CLI SMS CreateTask with proper disk mapping.
+        PROVEN PATTERN (2026-09-04 live testing):
+        - --syncing=false is MANDATORY (continuous sync crashes agent with vols_map NoneType on no-LVM sources)
+        - --speed_limit=0 --over_speed_threshold=100 --priority=1 for max bandwidth
+        - start_target_server=true auto-launches target at completion
+        - Full parameter set verified in /root/.hermes/skills/devops/sms-migration-linux-pattern/SKILL.md
         """
         task_name = f"migrate-{source_server_name or source_server_id[:8]}"
+
+        # Build disk mapping if EVS volume ID provided (prevents SMS.0515/SMS.6103)
+        disk_args = ""
+        if evs_volume_id:
+            disk_args = (
+                f"--target_server.disks.1.name=/dev/vda "
+                f"--target_server.disks.1.disk_id={evs_volume_id} "
+                f"--target_server.disks.1.device_use=BOOT "
+                f"--target_server.disks.1.size=85899345920 "
+                f"--target_server.disks.1.physical_volumes.1.name=/dev/vda1 "
+                f"--target_server.disks.1.physical_volumes.1.device_use=OS "
+                f"--target_server.disks.1.physical_volumes.1.mount_point=/ "
+                f"--target_server.disks.1.physical_volumes.1.file_system=ext4 "
+                f"--target_server.disks.1.physical_volumes.1.size=85898279936 "
+            )
+
+        # Migration IP: use EIP if provided (public network), else target private IP
+        ip_args = f"--use_public_ip=true --migration_ip={migration_ip} " if migration_ip else "--use_public_ip=false "
 
         cmd = (
             f"hcloud SMS CreateTask "
             f"--name='{task_name}' "
+            f"--project_id={os.getenv('HUAWEI_PROJECT_ID', '2413708833e14626b37a8da5edf92d8f')} "
+            f"--project_name=ap-southeast-3 "
+            f"--region_id={target_region} "
+            f"--region_name={target_region} "
             f"--type=MIGRATE_FILE "
             f"--os_type={os_type} "
             f"--source_server.id={source_server_id} "
             f"--target_server.vm_id={target_server_id} "
-            f"--use_public_ip=false "
+            f"{ip_args}"
+            f"--exist_server=true "
             f"--start_target_server=true "
+            f"--auto_start=false "
+            f"--syncing=false "
+            f"--speed_limit=0 --over_speed_threshold=100 --priority=1 "
+            f"{disk_args}"
             f"--cli-region={source_region}"
         )
 
@@ -205,16 +238,26 @@ cd SMS-Agent
 
     @classmethod
     def get_task_status(cls, task_id: str, source_region: str) -> dict:
-        """Get SMS task status."""
+        """Get SMS task status — returns REAL state + per-subtask progress."""
         cmd = f"hcloud SMS ShowTask --task_id={task_id} --cli-region={source_region}"
         result = cls._hcloud(cmd)
         if result["success"] and result.get("parsed"):
-            state = result["parsed"].get("state", "UNKNOWN")
-            progress = result["parsed"].get("migrate_progress", 0)
+            d = result["parsed"]
+            state = d.get("state", "UNKNOWN")
+            # Overall progress: average of sub_tasks progress
+            sub_tasks = d.get("sub_tasks", [])
+            progress = 0
+            if sub_tasks:
+                progress = int(sum(st.get("progress", 0) for st in sub_tasks) / len(sub_tasks))
+            subtask_list = [
+                {"name": st.get("name"), "progress": st.get("progress", 0), "user_op": st.get("user_op", "")}
+                for st in sub_tasks
+            ]
             return {
                 "success": True,
                 "state": state,
                 "progress": progress,
+                "subtasks": subtask_list,
                 "task_id": task_id,
             }
         return {"success": False, "state": "UNKNOWN", "progress": 0, "error": result.get("error", "")}
@@ -222,20 +265,21 @@ cd SMS-Agent
     @classmethod
     def start_task(cls, task_id: str, source_region: str) -> dict:
         """Start an SMS migration task."""
-        cmd = f"hcloud SMS StartTask --task_id={task_id} --cli-region={source_region}"
+        # NOTE: hcloud has no `StartTask` — correct API is UpdateTaskStatus --operation=start
+        cmd = f"hcloud SMS UpdateTaskStatus --task_id={task_id} --operation=start --cli-region={source_region}"
         result = cls._hcloud(cmd)
         return {"success": result["success"], "task_id": task_id}
 
     @classmethod
     def monitor_until_complete(cls, task_id: str, source_region: str, max_wait: int = 3600) -> dict:
         """
-        Poll SMS task status until sync is complete or timeout.
+        Poll SMS task status until completion or timeout.
 
-        Returns when state is 'SYNCING_COMPLETE' or error.
+        Completion = state MIGRATE_SUCCESS (real SMS value).
         """
         logger.info(f"[SMS] Monitoring task {task_id} until complete (max {max_wait}s)...")
         start_time = time.time()
-        last_progress = 0
+        last_progress = -1
 
         while time.time() - start_time < max_wait:
             status = cls.get_task_status(task_id, source_region)
@@ -251,28 +295,29 @@ cd SMS-Agent
                 logger.info(f"[SMS] Task {task_id}: state={state}, progress={progress}%")
                 last_progress = progress
 
-            # Check completion states
-            if state in ("SYNCING_COMPLETE", "MIGRATE_SUCCESS"):
+            # Completion states (real SMS values)
+            if state == "MIGRATE_SUCCESS":
                 return {"success": True, "state": state, "progress": progress, "task_id": task_id}
 
-            # Check error states
-            if state in ("SYNC_ERR", "MIGRATE_FAILED", "ERROR"):
+            # Error states (real SMS values)
+            if state == "MIGRATE_FAIL":
                 return {"success": False, "state": state, "error": f"SMS task {task_id} entered error state: {state}"}
 
-            time.sleep(30)  # Poll every 30 seconds
+            time.sleep(30)
 
         return {"success": False, "state": "TIMEOUT", "error": f"SMS task {task_id} timed out after {max_wait}s"}
 
     @classmethod
     def cutover(cls, task_id: str, source_region: str) -> dict:
         """
-        Execute cutover — stops source, finalizes target.
-        This is a human gate — should only be called after explicit approval.
+        Execute cutover — finalize target.
+
+        Note: with syncing=false + start_target_server=true, the target auto-launches
+        at MIGRATE_SUCCESS — this operation=cutover is a safety net / manual override.
         """
         logger.info(f"[SMS] Executing cutover for task {task_id}...")
 
-        # Finalize the migration (stop sync, detach agent, start target)
-        cmd = f"hcloud SMS StopTask --task_id={task_id} --cli-region={source_region}"
+        cmd = f"hcloud SMS UpdateTaskStatus --task_id={task_id} --operation=cutover --cli-region={source_region}"
         result = cls._hcloud(cmd, timeout=120)
 
         if result["success"]:

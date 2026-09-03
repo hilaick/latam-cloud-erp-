@@ -105,3 +105,25 @@ deployments/
 # Local test files
 test_*.html
 /dist.tar
+
+# === SSOT discipline: runtime/build artifacts (2026-09-03) ===
+# Frontend build bundles (tracked copies stay; new builds ignored)
+frontend/dist/
+frontend/dist.tar.gz
+frontend.tar
+dist.tar.gz
+assets/
+# Runtime instance state (sqlite DBs, fernet salt)
+instance/
+# SMS migration venv + process artifacts
+venv-sms/
+*.pid
+# Uploaded data / generated reports
+uploads/
+# Generated migration configs
+migration-configs/
+# Reference PDFs & scratch doc downloads
+docs/*.pdf
+docs/sap_doc_links.txt
+docs/sap_ref/
+
