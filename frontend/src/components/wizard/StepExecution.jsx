@@ -278,16 +278,20 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         const computeN = computeItems.length;
         // Database: RDS/DDS/DCS/DMS
         const dbN = [...(ta.database || [])].filter(s => s.name || s.source_name).length;
-        // Storage: ONLY standalone object/file storage (OBS/SFS), EXCLUDE EVS volumes
-        // (EVS volumes travel with their server via SMS — part of Compute Migration)
+        // Storage: ONLY standalone object/file storage (OBS/SFS), EXCLUDE:
+        //  - EVS volumes (travel with their server via SMS)
+        //  - Duplicate entries of compute servers (same name as a server)
+        const computeNames = new Set(computeItems.map(s => (s.name || s.source_name).toLowerCase()));
         const storageN = [...(ta.storage || [])].filter(s => {
-            const nm = s.name || s.source_name || '';
+            const nm = (s.name || s.source_name || '').trim();
+            if (!nm) return false;
+            if (computeNames.has(nm.toLowerCase())) return false; // duplicate of a server → compute
             const t = String(s.type || '').toUpperCase();
             if (t.includes('EVS') || t.includes('VOLUME')) return false; // server volume → SMS
             if (t.includes('OBS') || t.includes('SFS') || t.includes('BUCKET')) return true;
             // Fallback by name: volume-XXXX pattern = EVS attached to server
             if (/volume/i.test(nm) || /-v\d+$/i.test(nm)) return false;
-            return (s.name || s.source_name) ? true : false;
+            return true;
         }).length;
         // Also scan execution plan for service markers
         const plan = project?.data?.executionPlan || {};
