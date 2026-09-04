@@ -1245,6 +1245,9 @@ class ExecutionHistoryStore:
                     "learnings": entry.get("learnings", {}),
                 }
                 cls._history.append(record)
+                # Persist to Postgres — self-learning feedback loop survives restarts
+                record["_persist"] = True
+                cls._pg_save(record)
         
         logger.info(f"Ingested {len(cls._history)} total execution records into history store")
     
@@ -1264,6 +1267,131 @@ class ExecutionHistoryStore:
             "strategy_distribution": strategies,
             "unique_projects": len(set(r.get("project") for r in cls._history)),
         }
+
+    @classmethod
+    def _pg_connection(cls):
+        """Lazy Postgres connection from app config (returns psycopg2 conn or None)."""
+        try:
+            import os as _os, psycopg2
+            url = _os.environ.get("DATABASE_URL") or ""
+            if not url:
+                # Read from .env
+                env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+                if os.path.exists(env_path):
+                    for line in open(env_path):
+                        if line.startswith('DATABASE_URL='):
+                            url = line.strip().split('=', 1)[1]
+                            break
+            if not url:
+                return None
+            if url.startswith('postgres://'):
+                url = url.replace('postgres://', 'postgresql://', 1)
+            return psycopg2.connect(url)
+        except Exception as _e:
+            logger.warning(f"[ExecutionHistoryStore] Postgres unavailable: {_e}")
+            return None
+
+    @classmethod
+    def _pg_ensure_table(cls):
+        """Create execution_outcomes table if missing."""
+        conn = cls._pg_connection()
+        if not conn:
+            return False
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS execution_outcomes (
+                    id SERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    project_id TEXT,
+                    profile TEXT,
+                    server_name TEXT,
+                    strategy TEXT,
+                    result TEXT,
+                    error TEXT,
+                    root_cause TEXT,
+                    fix TEXT,
+                    lesson TEXT,
+                    raw JSONB
+                )
+            """)
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.warning(f"[ExecutionHistoryStore] table ensure failed: {e}")
+            try: conn.close()
+            except Exception: pass
+            return False
+
+    @classmethod
+    def _pg_save(cls, record: dict):
+        """Persist one execution record to Postgres."""
+        try:
+            if not cls._pg_ensure_table():
+                return
+            conn = cls._pg_connection()
+            if not conn:
+                return
+            import json as _json
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO execution_outcomes
+                (project_id, profile, server_name, strategy, result, error, root_cause, fix, lesson, raw)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                str(record.get("project", "")),
+                str(record.get("profile", "")),
+                str(record.get("server_name", "")),
+                str(record.get("strategy_used", record.get("strategy", ""))),
+                str(record.get("outcome", record.get("result", "unknown"))),
+                str(record.get("error", "")),
+                str(record.get("root_cause", "")),
+                str(record.get("fix", "")),
+                str(record.get("lesson", "")),
+                _json.dumps(record, default=str),
+            ))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"[ExecutionHistoryStore] pg_save failed: {e}")
+            try: conn.close()
+            except Exception: pass
+
+    @classmethod
+    def _pg_load(cls, limit: int = 100):
+        """Load recent execution outcomes from Postgres into _history."""
+        try:
+            if not cls._pg_ensure_table():
+                return
+            conn = cls._pg_connection()
+            if not conn:
+                return
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT raw FROM execution_outcomes ORDER BY id DESC LIMIT %s
+            """, (limit,))
+            rows = cur.fetchall()
+            for (raw,) in rows:
+                if raw:
+                    try:
+                        if isinstance(raw, dict):
+                            rec = raw  # JSONB returns dict from psycopg2
+                        else:
+                            import json as _json
+                            rec = _json.loads(raw)
+                        cls._history.append(rec)
+                    except Exception:
+                        pass
+            cur.close()
+            conn.close()
+            logger.info(f"[ExecutionHistoryStore] Loaded {len(rows)} records from Postgres")
+        except Exception as e:
+            logger.warning(f"[ExecutionHistoryStore] pg_load failed: {e}")
+            try: conn.close()
+            except Exception: pass
 
     @classmethod
     def list_all(cls) -> list:

@@ -220,9 +220,10 @@ When done, report what you actually executed and the results."""
         '--profile', profile,
         '--quiet',
         '--model', delegation_model,
-        '--provider', delegation_provider,
-        '--yolo',  # auto-approve for autonomous operation
-    ]
+    ]  # No --provider flag — use Hermes config default (custom LB on localhost:8666)
+    # Auto-heal: if provider = 'custom' (the LB), don't force a provider flag.
+    # The Hermes config.yaml already points to the LB via provider: custom + base_url
+
 
     logger.info(f"[orchestration] Spawning Hermes agent for {phase}: {goal[:100]}...")
 
@@ -400,6 +401,22 @@ def _run_pipeline_thread(project_id, start_from, app):
                 )
 
                 # ── Create delegate task record ──
+                # Persist success outcome to Postgres
+                if success:
+                    try:
+                        from services.agentic_simulator import ExecutionHistoryStore
+                        ExecutionHistoryStore._pg_save({
+                            "project": project_id,
+                            "server_name": phase_key,
+                            "strategy": "auto-heal",
+                            "outcome": "success",
+                            "error": "",
+                            "root_cause": "",
+                            "fix": "",
+                            "lesson": f"Hermes agent completed {phase_key} successfully",
+                        })
+                    except Exception:
+                        pass
                 task_record = {
                     'goal': step['goal'][:200],
                     'phase': phase_key,
@@ -445,6 +462,17 @@ def _run_pipeline_thread(project_id, start_from, app):
                     log(f'[fail] {step["label"]} — {error}')
                     pipeline_info['failed_phase'] = i
                     pipeline_info['phase_status'][phase_key] = 'failed'
+                    # Postgres persist: failure outcome (auto-heal feedback)
+                    try:
+                        from services.agentic_simulator import ExecutionHistoryStore
+                        ExecutionHistoryStore._pg_save({
+                            'project': project_id, 'server_name': phase_key,
+                            'strategy': 'auto-heal', 'outcome': 'failed',
+                            'error': str(error)[:500], 'root_cause': 'orchestrator_delegation',
+                            'fix': '', 'lesson': f'Hermes agent failed for {phase_key}: {str(error)[:200]}',
+                        })
+                    except Exception:
+                        pass
                     pipeline_info['status'] = 'halted'
                     state.status = 'FAILED'
                     state.last_active_at = datetime.utcnow()
