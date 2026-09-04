@@ -1,0 +1,9 @@
+"# SESSION-LESSONS — Auto-synced from dev sessions
+_This file is appended by the erp-session-summary-sync cron job. It is the durable bridge between local Hermes sessions and the ERP's LLM context._
+
+## 2026-09-04 (initial bootstrap)
+- **Orchestration provider fix**: The ERP orchestration engine was hardcoding `--provider zai --model glm-5.2` in `_spawn_hermes_agent()`. The ERP Hermes has NO zai credentials (it uses `provider: custom` → LB on localhost:8666). Fix: removed the `--provider` flag so it uses the config default (LB). Symptom: pipeline spawned agent, failed instantly with EMPTY error, "terminal appears then disappears".
+- **Flask stale-code bug**: After deploying code changes to services/*.py, Flask continued running OLD code until restart. Symptom: fixes appear correct on disk + compile, but behavior unchanged. Fix: always `fuser -k 9119/tcp; restart` after deploying backend changes; verify process start time > file mtime.
+- **Logs not visible**: StepExecution.jsx rendered the orchestration log ONLY inside `autoOrchestrating ? (...) : (...)` — so when pipeline halted/crashed, accumulated logs were never shown. Fix: render log whenever `orchestrationLog.length > 0`, gated by the Logs toggle button.
+- **Postgres persistence**: ExecutionHistoryStore was in-memory only (lost on Flask restart). Added `execution_outcomes` table (Postgres, erp_prod_db) + `_pg_save`/`_pg_load`/`_pg_ensure_table` helpers. psycopg2 returns JSONB as DICT not str — handle both in _pg_load.
+- **Plan-sim-exec architecture**: Plan generation (LLM) → dry-run simulation (predict) → deterministic execution (no LLM per phase) → auto-heal on failure (retry → LLM diagnose → update plan). Neither plan gen nor dry-run can anticipate 100% of execution outcomes — execution is the only validator; the failure→knowledge→plan loop makes repeat scenarios deterministic.
