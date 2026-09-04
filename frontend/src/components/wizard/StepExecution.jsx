@@ -374,15 +374,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     // 🚨 AGENTIC: Fire-and-poll orchestration via background engine
     // POST /api/execution/<id>/orchestrate starts the pipeline in a background thread.
     // useEffect polls /orchestrate/status every 3s and updates the UI.
-    const handleOrchestrateAll = async (startFrom = 0) => {
+    const handleOrchestrateAll = async (startFrom = 0, explicitPhaseKey = null) => {
         const token = sessionStorage.getItem('hermes_access_token');
         setAutoOrchestrating(true);
-        // Per-phase run: force re-run of the clicked phase (4.1 Run should re-execute 4.1)
-        // Full pipeline (startFrom=0 with no phase): keep skip-completed behavior
+        // Per-phase run: caller passes explicitPhaseKey (e.g. 'PHASE_4_1') to force re-run of THAT phase.
+        // Full pipeline (no explicitPhaseKey): keep skip-completed behavior.
         const phaseKeys = ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7'];
-        const restartPhase = startFrom >= 0 && startFrom < phaseKeys.length && startFrom > 0
-            ? phaseKeys[startFrom]
-            : null; // startFrom=0 = full pipeline run, don't force
+        const restartPhase = explicitPhaseKey && phaseKeys.includes(explicitPhaseKey) ? explicitPhaseKey : null;
         setOrchestrationLog(prev => [...prev, '[start] Requesting backend to start 7-phase pipeline...']);
 
         try {
@@ -1160,7 +1158,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     <span className="text-[8px] font-black uppercase text-emerald-600 shrink-0">Done</span>
                                                 ) : (
                                                     <button
-                                                        onClick={() => handleOrchestrateAll(ph.n - 1)}
+                                                        onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}
                                                         disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
                                                         className="text-[8px] font-black uppercase text-purple-600 hover:text-purple-800 shrink-0 hover:underline disabled:opacity-40"
                                                     >
