@@ -162,6 +162,39 @@ def _spawn_hermes_agent(goal, context, project_id, phase):
     except Exception:
         pass
 
+    # ── Inject full context: session lessons + resources kit inventory + recent outcomes ──
+    session_context = ""
+    try:
+        sl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'docs', 'SESSION-LESSONS.md')
+        if os.path.exists(sl_path):
+            with open(sl_path) as _f:
+                session_context = _f.read()[:6000]  # keep bounded
+    except Exception:
+        pass
+
+    kit_context = ""
+    try:
+        inv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'docs', 'RESOURCES-KIT-INVENTORY.md')
+        if os.path.exists(inv_path):
+            with open(inv_path) as _f:
+                kit_context = _f.read()[:3000]
+    except Exception:
+        pass
+
+    # Recent outcomes from Postgres (last 10) as context
+    outcomes_context = ""
+    try:
+        from services.agentic_simulator import ExecutionHistoryStore
+        hist = ExecutionHistoryStore._history[-10:] if ExecutionHistoryStore._history else []
+        if hist:
+            outcomes_context = "\n".join([
+                f"- {r.get('project','?')} / {r.get('server_name','?')} / {r.get('outcome','?')}"
+                f"{': ' + str(r.get('error',''))[:120] if r.get('error') else ''}"
+                for r in hist
+            ])
+    except Exception:
+        pass
+
     tool_manifest = """You have access to the following tools via the terminal:
 - hcloud CLI: Huawei Cloud API calls (ECS, VPC, EIP, SMS, IMS, OBS)
 - SSH: Connect to source/target VMs via ssh/paramiko
@@ -179,6 +212,15 @@ You have FULL tool access via Hermes CLI — terminal, file operations, browser,
 
 Skills Knowledge Tree ({num_skills} skills available):
 {skill_context}
+
+=== SESSION LESSONS (recent, highest priority) ===
+{session_context}
+
+=== RESOURCES KIT INVENTORY ===
+{kit_context}
+
+=== RECENT EXECUTION OUTCOMES ===
+{outcomes_context}
 
 EXECUTION DISCIPLINE — ABSOLUTE RULES:
 1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.

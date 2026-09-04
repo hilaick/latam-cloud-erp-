@@ -14,3 +14,9 @@ _This file is appended by the erp-session-summary-sync cron job. It is the durab
 - **Verified**: LB response now shows reasoning_content (reasoning ON).
 - **Also**: default delegation model changed glm-5.2→deepseek-v4-pro (the actual LB model).
 - **Pipeline behavior confirmed**: agents DID provision real infra (VPC/SG/EIP/2 ECS/2 SMS tasks) but 4.4 failed with SMS.0202 (source agent AK/SK or stale registration). Orchestrator recorded 'timed out' wrapper error instead of root cause.
+
+## 2026-09-05 (full context injection)
+- **SESSION-LESSONS.md now injected into spawn prompt**: every pipeline agent receives today's session lessons (from docs/SESSION-LESSONS.md, 6000 chars) + Resources Kit inventory + last 10 Postgres execution outcomes. The spawn prompt in _spawn_hermes_agent reads these from disk on every spawn.
+- **5 PDFs extracted to searchable markdown**: sms-api-pdf.pdf (673p, 1.1MB), sms-faq-pdf.pdf (242p, 0.4MB), eip-api-pdf.pdf (332p, 0.4MB), eip-usermanual-pdf.pdf (107p, 0.2MB), sms-usermanual-pdf.pdf (69p, 0.1MB). Stored at docs/pdf-text-cache/*.md.
+- **pypdf installed** in ERP venv for future PDF search.
+- **LB restarted** (PID 510447, healthy, serving deepseek-v4-pro).
