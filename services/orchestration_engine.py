@@ -318,12 +318,18 @@ def _run_pipeline_thread(project_id, start_from, app):
                     return None
                 commands = []
                 for t in phase_steps:
-                    if t.get('commands'):
-                        commands.extend([c.get('cmd', c.get('command', '')) for c in t['commands']])
+                    cmds = t.get('commands') or []
+                    if isinstance(cmds, list):
+                        for c in cmds:
+                            if isinstance(c, dict):
+                                commands.append(c.get('cmd') or c.get('command') or '')
+                            elif isinstance(c, str):
+                                commands.append(c)
                 commands = [c for c in commands if c][:20]
                 server_names = list(set([
-                    t.get('target') or t.get('decision', {}).get('server_name', '')
-                    for t in phase_steps
+                    (t.get('target') or '') if not isinstance(t, dict) or not t.get('decision')
+                    else (t.get('target') or t['decision'].get('server_name', ''))
+                    for t in phase_steps if isinstance(t, dict)
                 ]))[:10]
                 return {
                     'commands': commands,

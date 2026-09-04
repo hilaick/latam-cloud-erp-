@@ -882,6 +882,7 @@ def execute_plan(project_id):
 
         data = request.get_json(silent=True) or {}
         dry_run = data.get("dry_run", False)
+        step_id = data.get("step_id")  # Individual step execution
 
         project = ProjectData.query.get(project_id)
         if not project:
@@ -918,7 +919,7 @@ def execute_plan(project_id):
             "source_project_id": getattr(customer, "source_huawei_project_id", "") or "",
         }
 
-        result = ExecutionEngine.execute(plan, credentials, dry_run=dry_run)
+        result = ExecutionEngine.execute(plan, credentials, dry_run=dry_run, step_id=step_id)
 
         # Save execution result
         pd["executionResult"] = result

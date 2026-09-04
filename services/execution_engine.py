@@ -1277,7 +1277,7 @@ class ExecutionEngine:
         return steps
 
     @staticmethod
-    def execute(plan: dict, credentials: dict, dry_run: bool = False) -> dict:
+    def execute(plan: dict, credentials: dict, dry_run: bool = False, step_id=None) -> dict:
         """
         Execute the plan using Terraform-first architecture.
 
@@ -1286,6 +1286,7 @@ class ExecutionEngine:
         Tier 3: hcloud CLI (fallback for edge cases)
 
         credentials: {ak, sk, source_ak, source_sk, os_user, os_password, source_region, source_project_id}
+        step_id: if provided, run ONLY that step (individual execution); else run full plan.
         """
         from services.terraform_executor import TerraformExecutor
 
@@ -1326,6 +1327,62 @@ class ExecutionEngine:
             results["success"] = False
             results["completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
             results["summary"] = {"total_steps": 1, "succeeded": 0, "failed": 1}
+            return results
+
+        # ── STEP_ID DISPATCH: Individual step execution (via plan step lookup) ──
+        if step_id is not None:
+            plan_steps = plan.get("steps", [])
+            step = None
+            for s in plan_steps:
+                if str(s.get("step_id")) == str(step_id):
+                    step = s
+                    break
+            if not step:
+                results["steps"].append({
+                    "step_id": 0, "action": "STEP_NOT_FOUND", "target_resource": "N/A",
+                    "pillar": "safeguard", "tool_source": "internal", "tool_name": "step_lookup",
+                    "status": "failed",
+                    "error": f"Step {step_id} not found in plan ({len(plan_steps)} total steps).",
+                    "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                })
+                results["success"] = False
+                results["summary"] = {"total_steps": 1, "succeeded": 0, "failed": 1}
+                return results
+            # Execute the single step's command
+            action = step.get("action", "UNKNOWN")
+            target = step.get("target_resource", "N/A")
+            cmd = step.get("command") or step.get("cmd") or ""
+            logger.info(f"[EXECUTE] Individual step: step_id={step_id} action={action} target={target}")
+
+            step_result = {
+                "step_id": 0, "action": action, "target_resource": target,
+                "pillar": step.get("phase", step.get("pillar", "PHASE_4.0")),
+                "tool_source": step.get("tool_source", "hcloud"),
+                "tool_name": action,
+            }
+            if cmd and not dry_run:
+                import subprocess as sp
+                try:
+                    sp_result = sp.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+                    step_result["status"] = "success" if sp_result.returncode == 0 else "failed"
+                    step_result["stdout"] = sp_result.stdout[:500]
+                    step_result["stderr"] = sp_result.stderr[:500] if sp_result.stderr else ""
+                except Exception as e:
+                    step_result["status"] = "failed"
+                    step_result["error"] = str(e)
+            else:
+                step_result["status"] = "skipped" if dry_run else "failed"
+                step_result["message"] = f"Would execute: {action} on {target}" if dry_run else f"No command defined for step {step_id}"
+
+            results["steps"] = [step_result]
+            results["success"] = step_result.get("status") == "success"
+            results["summary"] = {
+                "total_steps": 1,
+                "succeeded": 1 if results["success"] else 0,
+                "failed": 0 if results["success"] else 1,
+            }
+            results["completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
             return results
 
         # Safeguard: count resources by type and log for audit
