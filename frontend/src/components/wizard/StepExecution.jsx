@@ -377,13 +377,19 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const handleOrchestrateAll = async (startFrom = 0) => {
         const token = sessionStorage.getItem('hermes_access_token');
         setAutoOrchestrating(true);
+        // Per-phase run: force re-run of the clicked phase (4.1 Run should re-execute 4.1)
+        // Full pipeline (startFrom=0 with no phase): keep skip-completed behavior
+        const phaseKeys = ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7'];
+        const restartPhase = startFrom >= 0 && startFrom < phaseKeys.length && startFrom > 0
+            ? phaseKeys[startFrom]
+            : null; // startFrom=0 = full pipeline run, don't force
         setOrchestrationLog(prev => [...prev, '[start] Requesting backend to start 7-phase pipeline...']);
 
         try {
             const res = await fetch(`/api/execution/${project?.id}/orchestrate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ start_from: startFrom }),
+                body: JSON.stringify({ start_from: startFrom, restart_phase: restartPhase }),
             });
             const data = await res.json();
 

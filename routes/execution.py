@@ -1051,8 +1051,9 @@ def start_orchestration(project_id):
 
     data = request.get_json(silent=True) or {}
     start_from = data.get('start_from', 0)
+    restart_phase = data.get('restart_phase')  # e.g. 'PHASE_4_1' forces re-run of that phase
 
-    result = start_pipeline(project_id, start_from=start_from)
+    result = start_pipeline(project_id, start_from=start_from, restart_phase=restart_phase)
     code = 200 if result.get('success') else 409
     return jsonify(result), code
 

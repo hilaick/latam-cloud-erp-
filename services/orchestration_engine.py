@@ -295,7 +295,7 @@ When done, report what you actually executed, the verification commands you ran,
         return False, None, str(e)
 
 
-def _run_pipeline_thread(project_id, start_from, app):
+def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
     """Background thread that runs the 7-phase pipeline.
 
     Uses its own app context for DB access.
@@ -418,8 +418,12 @@ def _run_pipeline_thread(project_id, start_from, app):
                 step = pipeline[i]
                 phase_key = step['phase']
 
-                # Skip already completed
-                if phase_key in pipeline_info['completed_phases']:
+                # Skip already completed — UNLESS restart_phase forces re-run of this phase
+                if restart_phase == phase_key:
+                    log(f'[restart] {step["label"]} — forced re-run by user request.')
+                    if phase_key in pipeline_info['completed_phases']:
+                        pipeline_info['completed_phases'].remove(phase_key)
+                elif phase_key in pipeline_info['completed_phases']:
                     log(f'[skip] {step["label"]} — already completed.')
                     continue
 
@@ -549,7 +553,7 @@ def _run_pipeline_thread(project_id, start_from, app):
             lock.release()
 
 
-def start_pipeline(project_id, start_from=0):
+def start_pipeline(project_id, start_from=0, restart_phase=None):
     """Start the 7-phase pipeline in a background thread.
 
     Returns immediately with status. The actual execution runs in a daemon thread.
@@ -567,7 +571,7 @@ def start_pipeline(project_id, start_from=0):
     # Start background thread with its own app context
     thread = threading.Thread(
         target=_run_pipeline_thread,
-        args=(project_id, start_from, app),
+        args=(project_id, start_from, app, restart_phase),
         daemon=True,
         name=f'orchestrate-{project_id}',
     )
