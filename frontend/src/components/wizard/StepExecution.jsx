@@ -1099,29 +1099,26 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     )}
 
-                    {/* Orchestration log / live status — shows orchestration engine log OR external live feed */}
-                    {autoOrchestrating ? (
-                        <div className="space-y-2">
-                            {/* Orchestration engine log (from /orchestrate pipeline) */}
-                            {orchestrationLog.length > 0 && (
-                                <div className="bg-slate-900 rounded-xl p-4 max-h-48 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner">
-                                    {orchestrationLog.map((line, i) => (
-                                        <div key={i} className={line.includes('✓') ? 'text-emerald-400' : line.includes('✗') ? 'text-rose-400' : 'text-purple-300'}>{line}</div>
-                                    ))}
-                                    <div className="text-amber-400 animate-pulse mt-2">
-                                        <i className="fas fa-spinner fa-spin mr-2"></i> {externalExecutions && externalExecutions[0]?.pid > 0 ? 'External agent working...' : 'Pipeline running...'}
-                                    </div>
-                                </div>
-                            )}
-                            {/* If no orchestration log but external live feed exists, it's shown above in the dashboard */}
-                            {orchestrationLog.length === 0 && !externalExecutions && (
-                                <div className="flex items-center gap-3 text-purple-700 font-bold text-sm">
-                                    <i className="fas fa-spinner fa-spin text-xl"></i>
-                                    Pipeline starting...
+                    {/* Orchestration log / live status — ALWAYS rendered when log exists, gated by Logs toggle */}
+                    {!collapsedSections.logs && orchestrationLog.length > 0 && (
+                        <div className="bg-slate-900 rounded-xl p-4 max-h-64 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner mb-3">
+                            {orchestrationLog.map((line, i) => (
+                                <div key={i} className={line.includes('✓') ? 'text-emerald-400' : line.includes('✗') ? 'text-rose-400' : 'text-purple-300'}>{line}</div>
+                            ))}
+                            {autoOrchestrating && (
+                                <div className="text-amber-400 animate-pulse mt-2">
+                                    <i className="fas fa-spinner fa-spin mr-2"></i> {externalExecutions && externalExecutions[0]?.pid > 0 ? 'External agent working...' : 'Pipeline running...'}
                                 </div>
                             )}
                         </div>
-                    ) : (
+                    )}
+                    {!collapsedSections.logs && orchestrationLog.length === 0 && autoOrchestrating && (
+                        <div className="flex items-center gap-3 text-purple-700 font-bold text-sm mb-3">
+                            <i className="fas fa-spinner fa-spin text-xl"></i>
+                            Pipeline starting...
+                        </div>
+                    )}
+                    {autoOrchestrating ? (
                         <div>
                             {/* Per-phase runbook — detailed, see what happens before committing (collapsible) */}
                             {!autoOrchestrating && (
