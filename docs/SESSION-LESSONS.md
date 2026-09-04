@@ -20,3 +20,6 @@ _This file is appended by the erp-session-summary-sync cron job. It is the durab
 - **5 PDFs extracted to searchable markdown**: sms-api-pdf.pdf (673p, 1.1MB), sms-faq-pdf.pdf (242p, 0.4MB), eip-api-pdf.pdf (332p, 0.4MB), eip-usermanual-pdf.pdf (107p, 0.2MB), sms-usermanual-pdf.pdf (69p, 0.1MB). Stored at docs/pdf-text-cache/*.md.
 - **pypdf installed** in ERP venv for future PDF search.
 - **LB restarted** (PID 510447, healthy, serving deepseek-v4-pro).
+
+## 2026-09-05 (spawn retry)
+- **_spawn_hermes_agent now retries on transient LB failures**: 2 retries with 8s/16s backoff for any 502/503/429/rate-limit/MaxRetriesExhausted error. Previously a single LB key-cooldown spike killed the whole phase. Now the pipeline survives transient LLM provider hiccups.

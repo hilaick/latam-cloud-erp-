@@ -277,22 +277,59 @@ When done, report what you actually executed, the verification commands you ran,
 
     logger.info(f"[orchestration] Spawning Hermes agent for {phase}: {goal[:100]}...")
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=PIPELINE_TIMEOUT_SECONDS,
-            env=env,
-        )
-        if result.returncode == 0:
-            return True, result.stdout.strip(), None
-        else:
-            return False, None, f"Hermes failed: {result.stderr.strip()[:500]}"
-    except subprocess.TimeoutExpired:
-        return False, None, f"Phase timed out after {PIPELINE_TIMEOUT_SECONDS}s"
-    except Exception as e:
-        return False, None, str(e)
+    # ── Auto-heal: retry on transient LLM failures (LB 502 key-cooldown, 429 rate limit) ──
+    max_spawn_retries = 2
+    last_error = None
+    for attempt in range(max_spawn_retries + 1):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=PIPELINE_TIMEOUT_SECONDS,
+                env=env,
+            )
+            combined = f"{result.stdout[:2000]}\n{result.stderr[:1000]}"
+            # Transient-failure detection: LB key exhaustion / rate limit / 502
+            transient = any(tok in combined.lower() for tok in [
+                'all key allocation routing attempts failed',
+                '502', '503', 'rate limit', '429',
+                'max_retries_exhausted', 'internal server error',
+                'no available channel', 'modelarts',
+            ])
+            if result.returncode == 0 and not transient:
+                return True, result.stdout.strip(), None
+            if result.returncode == 0 and transient:
+                # 0 exit but LB error inside — treat as retryable
+                last_error = f"LB transient error: {combined[:300]}"
+                if attempt < max_spawn_retries:
+                    logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} hit transient LLM error, retrying...")
+                    time.sleep(8 * (attempt + 1))  # backoff: 8s, 16s
+                    continue
+                return False, None, f"Hermes failed: {combined[:500]}"
+            # Non-zero exit
+            if result.returncode != 0:
+                err_text = result.stderr.strip()[:500]
+                if attempt < max_spawn_retries:
+                    logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} rc={result.returncode}, retrying...")
+                    time.sleep(8 * (attempt + 1))
+                    continue
+                return False, None, f"Hermes failed: {err_text}"
+        except subprocess.TimeoutExpired:
+            last_error = f"Phase timed out after {PIPELINE_TIMEOUT_SECONDS}s"
+            if attempt < max_spawn_retries:
+                logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} timed out, retrying...")
+                time.sleep(8 * (attempt + 1))
+                continue
+            return False, None, last_error
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_spawn_retries:
+                logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} exception, retrying...")
+                time.sleep(8 * (attempt + 1))
+                continue
+            return False, None, last_error
+    return False, None, last_error
 
 
 def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
