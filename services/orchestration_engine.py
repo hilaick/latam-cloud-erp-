@@ -180,7 +180,14 @@ You have FULL tool access via Hermes CLI — terminal, file operations, browser,
 Skills Knowledge Tree ({num_skills} skills available):
 {skill_context}
 
-When done, report what you actually executed and the results."""
+EXECUTION DISCIPLINE — ABSOLUTE RULES:
+1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.
+2. VERIFY BEFORE REPORTING: Never claim a resource was created or a step completed unless you ran the cloud command AND saw the success output. For every provisioned resource (VPC, SG, EIP, ECS, SMS task), run the corresponding read/Show command afterwards and include its actual output in your report.
+3. EXACT PARAMETERS: Use the exact command parameters from the plan/simulation. Do not invent or "improve" them. Example: EIPs MUST be created with 300 Mbit/s traffic billing (charge_mode=traffic, size=300). SMS tasks MUST use --syncing=false with speed_limit=0.
+4. HONESTY: If a command fails, report the failure with the exact error output. Do NOT summarize, sugarcoat, or declare partial success. A failed step is a failed step.
+5. TONE: Report factually and concisely. No celebratory language, no kaomoji, no personality flourishes. State what you did, the verification output, and the result.
+
+When done, report what you actually executed, the verification commands you ran, and their outputs."""
 
     full_prompt = goal
     if context:
@@ -197,7 +204,7 @@ When done, report what you actually executed and the results."""
 
     # ── Spawn Hermes CLI subprocess ──
     binary = (hc.hermes_binary_path if hc else None) or 'hermes'
-    delegation_model = (hc.delegation_model if hc else None) or 'glm-5.2'
+    delegation_model = (hc.delegation_model if hc else None) or 'deepseek-v4-pro'
     delegation_provider = (hc.delegation_provider if hc else None) or 'zai'
     profile = 'exec'
 
@@ -220,6 +227,7 @@ When done, report what you actually executed and the results."""
         '--profile', profile,
         '--quiet',
         '--model', delegation_model,
+        '--reasoning', 'medium',
     ]  # No --provider flag — use Hermes config default (custom LB on localhost:8666)
     # Auto-heal: if provider = 'custom' (the LB), don't force a provider flag.
     # The Hermes config.yaml already points to the LB via provider: custom + base_url
