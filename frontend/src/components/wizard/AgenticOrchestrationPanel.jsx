@@ -706,6 +706,12 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const [showTrace, setShowTrace] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [retroLoading, setRetroLoading] = useState(false);
+  // Retroactive sim is ONLY meaningful for projects past execution (Phase 4.5+, or Phase 5 post-live)
+  const lifecycle = String(project?.lifecycleState || project?.data?.lifecycleState || '').toLowerCase();
+  const isPostExecution = lifecycle.includes('phase_4_5') || lifecycle.includes('phase_4_6')
+    || lifecycle.includes('phase_4_7') || lifecycle.includes('phase_5') || lifecycle.includes('5_')
+    || lifecycle.includes('postlive') || lifecycle.includes('post-live') || lifecycle.includes('cutover')
+    || lifecycle.includes('execution') || lifecycle.includes('4_execution') || lifecycle.includes('5_postlive');
   const [manualMigWorker, setManualMigWorker] = useState(project?.manualMigWorker || false);
   const [showServerSelect, setShowServerSelect] = useState(false);
 
@@ -1243,15 +1249,18 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
               >
                 {loading ? 'Simulating...' : result ? 'Re-run Simulation' : 'Run Simulation'}
               </Button>
+              {isPostExecution && (
               <Button
                 type="dashed"
                 icon={<i className="fas fa-history" style={{ fontSize: 12 }} />}
                 onClick={handleRetroactiveSim}
                 disabled={retroLoading}
+                title="Projects past execution (Phase 5 post-live) — simulate the migration as it would have looked from achieved resources"
                 style={{ borderColor: '#08979c', color: '#08979c' }}
               >
                 {retroLoading ? 'Loading...' : 'Retroactive Sim'}
               </Button>
+              )}
               <Tooltip title="Force mig_worker deployment even if auto-triggers don't fire. Useful for cross-cloud, resilience, or manual agent install scenarios.">
                 <Button
                   type={manualMigWorker ? 'primary' : 'default'}

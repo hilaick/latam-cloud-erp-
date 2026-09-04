@@ -303,7 +303,7 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
             setAssessmentRun(true);
             // Persist to project so it survives navigation
             if (onUpdateProject && result) {
-                onUpdateProject({ ...activeProject, feasibilityAssessment: result });
+                onUpdateProject(activeProject?.id, { feasibilityAssessment: result });
             }
         }, 800);
     };
@@ -313,7 +313,7 @@ export default function TechnicalFeasibility({ activeProject, onUpdateProject })
         setRunAssessment(null);
         setAssessmentRun(false);
         if (onUpdateProject) {
-            onUpdateProject({ ...activeProject, feasibilityAssessment: null });
+            onUpdateProject(activeProject?.id, { feasibilityAssessment: null });
         }
     };
 

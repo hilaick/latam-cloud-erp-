@@ -1594,8 +1594,9 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
 
     const executeStep = async (stepId) => {
         try {
-            const res = await fetch(`/api/execution/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ step_id: stepId, dry_run: true }) });
-            return await res.json();
+            const res = await fetch(`/api/execution/${project.id}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ step_id: stepId, dry_run: false }) });
+            const data = await res.json();
+            return data.result || data;
         } catch (e) { return { success: false, error: e.message }; }
     };
 
