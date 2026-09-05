@@ -17,3 +17,8 @@ _Updated 2026-09-04_
 ## Execution History (self-learning)
 - Postgres table `execution_outcomes` in erp_prod_db — auto-heal failures + successes persist here
 - `ExecutionHistoryStore` loads last 100 outcomes on init (survives Flask restarts)
+
+## 2026-08-07 Telegram session archive (52,595 messages)
+- chat_full.json.gz (3.3MB — structured JSON: date|sender|text)
+- chat_full.txt.gz (2.0MB — plaintext)
+- Source: C:/Users/h84423900/Downloads/Telegram Desktop/ChatExport_2026-08-07/ (raw HTML, 33MB)
