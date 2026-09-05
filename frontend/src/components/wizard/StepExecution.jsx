@@ -943,9 +943,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             ].map(ph => {
                                 const phaseKey = `PHASE_4_${ph.n}`;
                                 let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
-                                if (status === 'pending' && inferredPhase === phaseKey) status = 'running';
-                                if (status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
-                                if (cloudState?.inferred_phase) {
+                                // Running mark ONLY when pipeline is ACTUALLY running — cloudState.inferred_phase
+                                // defaults to PHASE_4_1 even when idle, so it must not drive the spinner.
+                                if (autoOrchestrating && status === 'pending' && inferredPhase === phaseKey) status = 'running';
+                                if (autoOrchestrating && status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
+                                if (autoOrchestrating && cloudState?.inferred_phase) {
                                     if (status === 'pending' && cloudState.inferred_phase === phaseKey) status = 'running';
                                     if (status === 'pending' && cloudState.inferred_phase > phaseKey) status = 'completed';
                                 }
