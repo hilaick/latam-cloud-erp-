@@ -549,6 +549,17 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     state.status = 'COMPLETED'
                     state.last_active_at = datetime.utcnow()
                     db.session.commit()
+
+                    # ── INDIVIDUAL RUN: stop after forced phase (no forward continuation) ──
+                    if restart_phase is not None:
+                        log(f'[stop] Individual run: {restart_phase} done. Pipeline stopped (not continuing to later phases).')
+                        pipeline_info['status'] = 'completed'
+                        pipeline_info['current_phase'] = None
+                        state.current_phase = restart_phase
+                        state.status = 'DONE'
+                        state.last_active_at = datetime.utcnow()
+                        db.session.commit()
+                        return
                 else:
                     log(f'[fail] {step["label"]} — {error}')
                     pipeline_info['failed_phase'] = i
