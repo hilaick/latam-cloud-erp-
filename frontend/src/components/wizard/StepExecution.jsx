@@ -381,6 +381,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         // Full pipeline (no explicitPhaseKey): keep skip-completed behavior.
         const phaseKeys = ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7'];
         const restartPhase = explicitPhaseKey && phaseKeys.includes(explicitPhaseKey) ? explicitPhaseKey : null;
+        // Clear stale "completed" markers: if restarting a phase, clear it AND all later phases
+        // (they may have been marked done from an earlier run — wrong to show green for them)
+        if (restartPhase) {
+            const restartIdx = phaseKeys.indexOf(restartPhase);
+            const staleCompleted = completedOrchPhases.size > 0;
+            if (staleCompleted) {
+                const cleared = new Set();
+                completedOrchPhases.forEach(p => {
+                    const idx = phaseKeys.indexOf(p);
+                    if (idx < restartIdx) cleared.add(p); // keep EARLIER completed phases
+                });
+                setCompletedOrchPhases(cleared);
+            }
+            setOrchestrationLog(prev => [...prev, `[restart] Forced re-run of ${restartPhase} — cleared stale status for this and later phases`]);
+        }
         setOrchestrationLog(prev => [...prev, '[start] Requesting backend to start 7-phase pipeline...']);
 
         try {
@@ -952,7 +967,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                              </div>
 
                              {/* External execution live dashboard — AFTER lifecycle graph */}
-                    {externalExecutions && externalExecutions.length > 0 && (
+                    {/* Only show external execution feed when a LIVE process exists (pid > 0) */}
+                    {externalExecutions && externalExecutions.length > 0 && externalExecutions[0]?.pid > 0 && (
                         <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">

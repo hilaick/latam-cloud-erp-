@@ -1316,6 +1316,38 @@ def orchestration_status(project_id):
             from datetime import datetime as _dt, timezone as _tz
             status['polled_at'] = _dt.now(_tz.utc).strftime('%m-%d %H:%M:%S')
 
+        # ── STALENESS FILTER: only show external execution if activity is RECENT (< 3 min) ──
+        # Historical sessions (from previous runs) must NOT render as "live" — confusing in the terminal panel.
+        import time as _time_mod
+        _now_epoch = _time_mod.time()
+        _recent_external = []
+        _recent_sessions = []
+        for _proc in (external_procs or []):
+            _pid = _proc.get('pid') or 0
+            if _pid <= 0:
+                continue  # ended process — not live
+            _recent_external.append(_proc)
+        for _sess in (active_sessions or []):
+            _sid = _sess.get('session_id', '')
+            if not _sid:
+                continue
+            try:
+                _sess_db = _os.path.expanduser('~/.hermes/state.db')
+                _r = _sp.run(
+                    ['sqlite3', _sess_db,
+                     f"SELECT printf('%.0f', MAX(timestamp)) FROM messages WHERE session_id = '{_sid}';"],
+                    capture_output=True, text=True, timeout=5
+                )
+                _last_ts = _r.stdout.strip()
+                if _last_ts.isdigit():
+                    _age = _now_epoch - float(_last_ts)
+                    if _age <= 180:  # < 3 minutes = active
+                        _recent_sessions.append(_sess)
+            except Exception:
+                pass
+        external_procs = _recent_external
+        active_sessions = _recent_sessions
+
         if external_procs:
             status['external_executions'] = external_procs
             status['active_hermes_sessions'] = active_sessions
