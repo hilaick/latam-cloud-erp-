@@ -23,3 +23,8 @@ _This file is appended by the erp-session-summary-sync cron job. It is the durab
 
 ## 2026-09-05 (spawn retry)
 - **_spawn_hermes_agent now retries on transient LB failures**: 2 retries with 8s/16s backoff for any 502/503/429/rate-limit/MaxRetriesExhausted error. Previously a single LB key-cooldown spike killed the whole phase. Now the pipeline survives transient LLM provider hiccups.
+
+## 2026-09-05 (session archive lesson)
+- **Session 20260731_045435 was deleted to fix 98K-token context overflow** (Telegram gateway failure: 'model provider failed after retries' = provider_stream_non_json_data with msgs=197 tokens=98,844 — context too large for deepseek-v4-pro).
+- **Lesson learned**: NEVER delete session data without archiving first. Session request dumps (10 files, 1.6MB) were preserved in docs/session-archives/20260731_045435/. Full transcript lost — recoverable value was the request dumps.
+- **Prevention**: sessions that exceed ~150 messages / ~60K tokens should be archived + reset automatically BEFORE hitting the model context limit.
