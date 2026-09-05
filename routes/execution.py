@@ -1353,6 +1353,11 @@ def orchestration_status(project_id):
             status['active_hermes_sessions'] = active_sessions
             if status.get('status') in ('idle', None):
                 status['status'] = 'running_external'
+            # Only emit inferred_phase if we actually collected session data (not the default)
+            if not (status.get('inferred_phase') and len(status.get('live_feed', [])) > 0):
+                status['inferred_phase'] = None
+                status['live_feed'] = []
+                status['session_stats'] = None
             try:
                 if active_sessions:
                     best_session = max(active_sessions, key=lambda s: s.get('messages', 0))
