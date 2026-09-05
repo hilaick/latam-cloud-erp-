@@ -505,7 +505,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
                 const st = data.status || {};
                 // If pipeline is running (either via orchestration engine or external), sync state and poll
-                if (st.status === 'running' || st.status === 'running_external' || st.status === 'orphaned_external') {
+                if (st.status === 'running' || st.status === 'running_external') {
+                    setAutoOrchestrating(true);
+                } else if (st.status === 'orphaned_external' && st.live_feed && st.live_feed.length > 0) {
+                    // Only set orphaned as running if it has recent live feed data
                     setAutoOrchestrating(true);
                     // Sync log from backend
                     if (st.log) setOrchestrationLog(st.log);
@@ -1140,7 +1143,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             Pipeline starting...
                         </div>
                     )}
-                    {autoOrchestrating ? (
+                    {autoOrchestrating && (
                         <div>
                             {/* Per-phase runbook — detailed, see what happens before committing (collapsible) */}
                             {!autoOrchestrating && (

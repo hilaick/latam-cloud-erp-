@@ -1400,8 +1400,23 @@ def orchestration_status(project_id):
                         if project:
                             import json as _json
                             pdata = _json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+                            import time as _tmod
+                            _now_orphan = _tmod.time()
                             for sess in orphan_sessions:
                                 sid = sess['session_id']
+                                # ── STALENESS FILTER: skip orphan sessions with no recent activity (> 3 min) ──
+                                try:
+                                    _sess_db = _os.path.expanduser('~/.hermes/state.db')
+                                    _r = _sp.run(
+                                        ['sqlite3', _sess_db,
+                                         f"SELECT printf('%.0f', MAX(timestamp)) FROM messages WHERE session_id = '{sid}';"],
+                                        capture_output=True, text=True, timeout=5
+                                    )
+                                    _last_ts = _r.stdout.strip()
+                                    if _last_ts.isdigit() and (_now_orphan - float(_last_ts)) > 180:
+                                        continue  # stale session > 3 min old — skip
+                                except Exception:
+                                    pass
                                 # Check early messages for project data
                                 early_msgs = _sp.run(
                                     ['sqlite3', hermes_db,
