@@ -1145,11 +1145,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             Pipeline starting...
                         </div>
                     )}
-                    {autoOrchestrating && (
-                        <div>
-                            {/* Per-phase runbook — detailed, see what happens before committing (collapsible) */}
-                            {!autoOrchestrating && (
-                                <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div>
+                        {/* Per-phase runbook — always shown (collapsible); Run buttons enabled unless busy */}
+                        <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
                                     <div className="p-3 flex items-center justify-between cursor-pointer" onClick={() => toggleSection('runbook')}>
                                         <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                                             <i className="fas fa-clipboard-list text-indigo-500 mr-1"></i> Phase Runbook — individual execution
@@ -1194,7 +1192,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </div>
                                     )}
                                 </div>
-                            )}
 
                             <div className="flex flex-col sm:flex-row gap-3">
                                 {/* Primary: Full Pipeline (smaller, secondary to per-phase) */}
@@ -1238,7 +1235,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 )}
                             </div>
                         </div>
-                    )}
                 </div>
             )}
 
