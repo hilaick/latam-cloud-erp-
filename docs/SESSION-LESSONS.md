@@ -28,3 +28,8 @@ _This file is appended by the erp-session-summary-sync cron job. It is the durab
 - **Session 20260731_045435 was deleted to fix 98K-token context overflow** (Telegram gateway failure: 'model provider failed after retries' = provider_stream_non_json_data with msgs=197 tokens=98,844 — context too large for deepseek-v4-pro).
 - **Lesson learned**: NEVER delete session data without archiving first. Session request dumps (10 files, 1.6MB) were preserved in docs/session-archives/20260731_045435/. Full transcript lost — recoverable value was the request dumps.
 - **Prevention**: sessions that exceed ~150 messages / ~60K tokens should be archived + reset automatically BEFORE hitting the model context limit.
+
+## 2026-09-05 (Telegram export mining)
+- Mined 52,603-message Telegram export (ChatExport_2026-08-07) → 6 new skills created: hcloud-cli-workarounds, huawei-cloud-eip-billing-region-pitfalls, sms-migration-automatic-retry-monitor, huawei-cloud-erp-execution-safety-architecture, huaweicloud-sdk-mcp-tradeoffs, azure-vhd-to-huawei-obs-ecs.
+- 5 duplicate topics mapped to existing skills (SMS agent install → sms-migration skills; proxy → proxy-ssh-tunnel; phases → erp-execution-orchestration; flask → huawei-cloud-flask-server; ops → huawei-cloud-operations).
+- Full chat archived at docs/session-archives/telegram-2026-08-07/ (chat_full.json.gz 3.3MB, chat_full.txt.gz 2.0MB).

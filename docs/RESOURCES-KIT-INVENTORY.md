@@ -22,3 +22,11 @@ _Updated 2026-09-04_
 - chat_full.json.gz (3.3MB — structured JSON: date|sender|text)
 - chat_full.txt.gz (2.0MB — plaintext)
 - Source: C:/Users/h84423900/Downloads/Telegram Desktop/ChatExport_2026-08-07/ (raw HTML, 33MB)
+
+## 2026-09-05 (chat-mined skills, source: Telegram export 2026-08-07)
+- hcloud-cli-workarounds
+- huawei-cloud-eip-billing-region-pitfalls
+- sms-migration-automatic-retry-monitor
+- huawei-cloud-erp-execution-safety-architecture
+- huaweicloud-sdk-mcp-tradeoffs
+- azure-vhd-to-huawei-obs-ecs
