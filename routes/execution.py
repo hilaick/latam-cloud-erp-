@@ -1252,6 +1252,12 @@ def orchestration_status(project_id):
             live_feed = []
             phase_inferred = 'PHASE_4_1'
             all_text = msg_result.stdout
+            # IMPORTANT: the word 'agent' ALWAYS appears in every spawn's system
+            # prompt ('migration execution agent', 'SMS agent install') — so it
+            # must NOT be used alone to infer PHASE_4_2. Only real SMS-side tool
+            # activity counts: linuxmain process, SMS-Agent path, ListServers API.
+            # Network patterns (4.1) are checked FIRST because a 4.1 agent's
+            # survey commands (ListVpcs/Subnet) are the ground truth of its phase.
             if 'SUCCESS' in all_text and ('ShowTask' in all_text or 'cutover' in all_text.lower()):
                 phase_inferred = 'PHASE_4_6'
             elif 'ShowTask' in all_text or 'UpdateTaskStatus' in all_text:
@@ -1260,7 +1266,7 @@ def orchestration_status(project_id):
                 phase_inferred = 'PHASE_4_4'
             elif 'CreateTemplate' in all_text or 'CreateServers' in all_text:
                 phase_inferred = 'PHASE_4_3'
-            elif 'ListServers' in all_text or 'agent' in all_text.lower() or 'linuxmain' in all_text:
+            elif 'linuxmain' in all_text or 'SMS-Agent' in all_text or 'ListServers' in all_text:
                 phase_inferred = 'PHASE_4_2'
             elif 'ListVpcs' in all_text or 'CreateVpc' in all_text or 'Subnet' in all_text:
                 phase_inferred = 'PHASE_4_1'

@@ -714,21 +714,34 @@ class ExecutionEngine:
             ntype = str(node.get("type", "")).upper()
             plan["pillars"]["network"] += 1
 
-            if ntype == "VPC":
-                action = "CREATE_VPC"
-                cmd = f"hcloud VPC CreateVpc --name={node.get('name','vpc-target')} --cidr={node.get('cidr','192.168.0.0/16')} --cli-region={target_region}"
-                rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
+            if ntype in ("VPC", "SUBNET"):
+                # VPC node → CreateVpc; a SUBNET-typed node → CreateSubnet
+                is_subnet = ntype == "SUBNET" or 'subnet' in str(node.get('name','')).lower()
+                if is_subnet:
+                    action = "CREATE_SUBNET"
+                    cmd = (f"hcloud VPC CreateSubnet --subnet.name={node.get('name','subnet-target')} "
+                           f"--subnet.cidr={node.get('cidr','192.168.1.0/24')} "
+                           f"--subnet.gateway_ip={node.get('gateway_ip','192.168.1.1')} "
+                           f"--subnet.vpc_id=<vpc_id> --cli-region={target_region}")
+                    rollback = {"cmd": "hcloud VPC DeleteSubnet --subnet_id=<subnet_id>", "label": "Delete subnet"}
+                else:
+                    action = "CREATE_VPC"
+                    cmd = f"hcloud VPC CreateVpc --vpc.name={node.get('name','vpc-target')} --vpc.cidr={node.get('cidr','192.168.0.0/16')} --cli-region={target_region}"
+                    rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
             elif ntype in ("SG", "SECURITY"):
                 action = "CREATE_SG"
-                cmd = f"hcloud VPC CreateSecurityGroup --name={node.get('name','sg-target')} --cli-region={target_region}"
+                cmd = f"hcloud VPC CreateSecurityGroup --security_group.name={node.get('name','sg-target')} --cli-region={target_region}"
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"
-                cmd = f"hcloud EIP CreatePublicip --bandwidth_size=100 --bandwidth_sharetype=PER --cli-region={target_region}"
+                cmd = (f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 "
+                       f"--bandwidth.name={node.get('name','target-eip')}-eip "
+                       f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic "
+                       f"--cli-region={target_region}")
                 rollback = {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Delete EIP"}
             elif ntype == "ELB":
                 action = "CREATE_ELB"
-                cmd = f"hcloud ELB CreateLoadBalancer --name={node.get('name','elb-target')} --cli-region={target_region}"
+                cmd = f"hcloud ELB CreateLoadBalancer --loadbalancer.name={node.get('name','elb-target')} --loadbalancer.provider=elbv3 --loadbalancer.vip_subnet_cidr_id=<subnet_id> --cli-region={target_region}"
                 rollback = {"cmd": "hcloud ELB DeleteLoadBalancer --loadbalancer_id=<elb_id>", "label": "Delete ELB"}
             elif ntype == "NAT":
                 action = "CREATE_NAT"
@@ -987,7 +1000,7 @@ class ExecutionEngine:
 
             # Step: SG rules (SMS.3805 prevention)
             sid += 1
-            ports = "8900+22" if "windows" not in os_type.lower() else "8899+8900+22"
+            ports = "22,8900,8899" if "windows" not in os_type.lower() else "8899,8900,22"
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
                 "action": "ADD_SG_RULES_SMS",
@@ -996,7 +1009,10 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": "skill",
                 "tool_name": "huawei-sms-cross-region-migration (SG preflight)",
-                "commands": [{"desc": f"Add SG ingress TCP {ports}", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_id=<sg_id> --direction=ingress --protocol=tcp --port_range_min=8900 --port_range_max=8900 --remote_ip_prefix=0.0.0.0/0 --cli-region={target_region}", "type": "hcloud"}],
+                "commands": [
+                    {"desc": f"Add SG ingress TCP {ports}", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=tcp --security_group_rule.multiport={ports} --security_group_rule.remote_ip_prefix=0.0.0.0/0 --cli-region={target_region}", "type": "hcloud"},
+                    {"desc": "Add SG ingress ICMP (ping probe)", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=icmp --security_group_rule.remote_ip_prefix=0.0.0.0/0 --cli-region={target_region}", "type": "hcloud"},
+                ],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,

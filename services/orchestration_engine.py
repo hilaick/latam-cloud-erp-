@@ -225,7 +225,7 @@ Skills Knowledge Tree ({num_skills} skills available):
 EXECUTION DISCIPLINE — ABSOLUTE RULES:
 1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.
 2. VERIFY BEFORE REPORTING: Never claim a resource was created or a step completed unless you ran the cloud command AND saw the success output. For every provisioned resource (VPC, SG, EIP, ECS, SMS task), run the corresponding read/Show command afterwards and include its actual output in your report.
-3. EXACT PARAMETERS: Use the exact command parameters from the plan/simulation. Do not invent or "improve" them. Example: EIPs MUST be created with 300 Mbit/s traffic billing (charge_mode=traffic, size=300). SMS tasks MUST use --syncing=false with speed_limit=0.
+3. EXACT PARAMETERS — READ THE PLAN: The executionPlan in the project data contains the exact commands for every step. Your SOLE job is to execute those steps in order using the exact commands listed there. Do NOT run --help, do NOT self-discover, do NOT improvise — ANY deviation from the plan is a bug. Use the exact parameters from the plan/simulation verbatim. Example: EIPs MUST be --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic. SMS tasks MUST use --syncing=false with speed_limit=0.
 4. HONESTY: If a command fails, report the failure with the exact error output. Do NOT summarize, sugarcoat, or declare partial success. A failed step is a failed step.
 5. TONE: Report factually and concisely. No celebratory language, no kaomoji, no personality flourishes. State what you did, the verification output, and the result.
 
@@ -263,22 +263,25 @@ When done, report what you actually executed, the verification commands you ran,
     except Exception:
         profile = 'default'
 
+    # Toolsets pruned to terminal+file only — agent only needs hcloud CLI + SSH + file ops.
+    # Full toolset adds ~7K tokens/turn from unused tool schemas (browser, session, vision...).
+    # The LB tool_calls chunk filter is now fixed — this is safe.
     cmd = [
         binary, 'chat', '-q',
         f"{system_prompt}\n\n---\nTask: {full_prompt}",
         '--profile', profile,
         '--quiet',
         '--model', delegation_model,
+        '--provider', 'custom',
+        '--toolsets', 'terminal,file',
         '--reasoning', 'medium',
-    ]  # No --provider flag — use Hermes config default (custom LB on localhost:8666)
-    # Auto-heal: if provider = 'custom' (the LB), don't force a provider flag.
-    # The Hermes config.yaml already points to the LB via provider: custom + base_url
+    ]
 
 
     logger.info(f"[orchestration] Spawning Hermes agent for {phase}: {goal[:100]}...")
 
     # ── Auto-heal: retry on transient LLM failures (LB 502 key-cooldown, 429 rate limit) ──
-    max_spawn_retries = 2
+    max_spawn_retries = 3
     last_error = None
     for attempt in range(max_spawn_retries + 1):
         try:
@@ -297,6 +300,18 @@ When done, report what you actually executed, the verification commands you ran,
                 'max_retries_exhausted', 'internal server error',
                 'no available channel', 'modelarts',
             ])
+            # Substantive-completion detection: the agent actually did the work.
+            # hermes chat exits rc!=0 on 'max iterations reached' even after a
+            # fully successful provision/verify run, and a successful idempotent
+            # re-run reports 'already exists / verified'. Both ARE success.
+            out_l = (result.stdout or '')
+            substantive = len(out_l.strip()) > 200 and any(tok in out_l.lower() for tok in [
+                'provisioned', 'created', 'verified', 'complete', 'completed',
+                'already exist', 'exists', 'success', 'active',
+            ])
+            if substantive and not transient:
+                logger.info(f"[orchestration:{project_id}] {phase} agent reported substantive completion (rc={result.returncode}) — treating as success.")
+                return True, result.stdout.strip(), None
             if result.returncode == 0 and not transient:
                 return True, result.stdout.strip(), None
             if result.returncode == 0 and transient:
@@ -304,10 +319,10 @@ When done, report what you actually executed, the verification commands you ran,
                 last_error = f"LB transient error: {combined[:300]}"
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} hit transient LLM error, retrying...")
-                    time.sleep(8 * (attempt + 1))  # backoff: 8s, 16s
+                    time.sleep(15 * (attempt + 1))  # backoff: 15s, 30s, 45s
                     continue
                 return False, None, f"Hermes failed: {combined[:500]}"
-            # Non-zero exit
+            # Non-zero exit (NOT substantive — real failure)
             if result.returncode != 0:
                 err_text = result.stderr.strip()[:500]
                 if attempt < max_spawn_retries:
@@ -397,32 +412,46 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 db.session.add(state)
                 db.session.commit()
 
-            # ── Build phase context from simulation traces ──
+            # ── Build phase context from THE EXECUTION PLAN (source of truth) ──
+            # The plan steps carry the PROVEN, exact hcloud commands (dot-notation).
+            # The dry-run simulation trace is derived data and may carry stale/flat
+            # syntax — it must never override plan steps. The agent executes these
+            # commands VERBATIM; no --help, no self-discovery.
+            NETWORK_ACTIONS = {'CREATE_VPC', 'CREATE_SUBNET', 'CREATE_SG', 'CREATE_EIP',
+                               'ADD_SG_RULES_SMS', 'ASSOC_SG', 'CREATE_VPC_PEERING', 'CREATE_NAT'}
+
             def build_phase_context(phase_key):
-                if not sim_trace:
-                    return None
-                phase_steps = [t for t in sim_trace if t.get('phase') == phase_key or t.get('phase_group') == phase_key]
-                if not phase_steps:
+                plan_steps = (plan.get('steps') or []) if isinstance(plan, dict) else []
+                phase_plan_steps = [s for s in plan_steps if s.get('phase') == phase_key]
+                if phase_key == 'PHASE_4_1':
+                    # Network phase: keep ONLY network-pillar steps. The plan
+                    # generator mis-buckets ECS/OBS steps under 4.1 — exclude
+                    # any action outside the Wave-0 network fabric.
+                    phase_plan_steps = [s for s in phase_plan_steps
+                                        if s.get('action') in NETWORK_ACTIONS]
+                if not phase_plan_steps:
                     return None
                 commands = []
-                for t in phase_steps:
-                    cmds = t.get('commands') or []
+                for s in phase_plan_steps:
+                    cmds = s.get('commands') or []
                     if isinstance(cmds, list):
                         for c in cmds:
                             if isinstance(c, dict):
-                                commands.append(c.get('cmd') or c.get('command') or '')
+                                cmd = c.get('cmd') or c.get('command') or ''
+                                desc = c.get('desc', '')
+                                commands.append((f"# {desc}: " if desc else "# step: ") + cmd)
                             elif isinstance(c, str):
                                 commands.append(c)
-                commands = [c for c in commands if c][:20]
+                commands = [c for c in commands if c][:25]
                 server_names = list(set([
-                    (t.get('target') or '') if not isinstance(t, dict) or not t.get('decision')
-                    else (t.get('target') or t['decision'].get('server_name', ''))
-                    for t in phase_steps if isinstance(t, dict)
+                    (s.get('target_resource') or '') for s in phase_plan_steps
+                    if isinstance(s, dict) and s.get('target_resource')
                 ]))[:10]
                 return {
                     'commands': commands,
                     'servers': server_names,
                     'estimated_days': sim_summary.get('estimated_wall_clock_days'),
+                    'source': 'executionPlan',
                 }
 
             if sim_trace:
@@ -545,21 +574,28 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         log(f'[output] {response[:200]}...' if len(response) > 200 else f'[output] {response}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
-                    state.current_phase = phase_key
-                    state.status = 'COMPLETED'
-                    state.last_active_at = datetime.utcnow()
-                    db.session.commit()
 
                     # ── INDIVIDUAL RUN: stop after forced phase (no forward continuation) ──
+                    # IMPORTANT: an individual phase run must NOT set the global
+                    # execution_states row to COMPLETED/DONE — that state belongs
+                    # ONLY to the full 7-phase completion branch below. Otherwise
+                    # the GUI shows the "Pipeline Completed / Post-Live" banner
+                    # after a single phase. Here we persist per-phase completion
+                    # and leave the pipeline status as running (the thread stops).
                     if restart_phase is not None:
+                        state.current_phase = phase_key
+                        state.status = 'RUNNING'
+                        state.last_active_at = datetime.utcnow()
+                        db.session.commit()
                         log(f'[stop] Individual run: {restart_phase} done. Pipeline stopped (not continuing to later phases).')
                         pipeline_info['status'] = 'completed'
                         pipeline_info['current_phase'] = None
-                        state.current_phase = restart_phase
-                        state.status = 'DONE'
+                        return
+                    else:
+                        state.current_phase = phase_key
+                        state.status = 'COMPLETED'
                         state.last_active_at = datetime.utcnow()
                         db.session.commit()
-                        return
                 else:
                     log(f'[fail] {step["label"]} — {error}')
                     pipeline_info['failed_phase'] = i
