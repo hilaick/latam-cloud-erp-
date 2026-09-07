@@ -732,19 +732,21 @@ class ExecutionEngine:
                 else:
                     action = "CREATE_VPC"
                     cmd = (f"hcloud VPC CreateVpc --vpc.name={node.get('name','vpc-target')} --vpc.cidr={node.get('cidr','192.168.0.0/16')} "
-              f"--vpc.tags.1={erp_tag_q} --cli-region={target_region}")
+                              f"--vpc.tags.1={erp_tag_q} --cli-region={target_region}")
                     rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
             elif ntype in ("SG", "SECURITY"):
                 action = "CREATE_SG"
                 cmd = (f"hcloud VPC CreateSecurityGroup --security_group.name={node.get('name','sg-target')} "
-              f"--security_group.tags.1={erp_tag_q} --cli-region={target_region}")
+              f"--cli-region={target_region}")
+                commands.append({"desc": f"Tag SG with {erp_tag}", "cmd": f"echo 'Tagging SG' && hcloud VPC BatchCreateSecurityGroupTags --security_group_id=<sg_id> --tags.1={erp_tag_q} --cli-region={target_region}", "type": "hcloud"})
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"
                 cmd = (f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 "
                        f"--bandwidth.name={node.get('name','target-eip')}-eip "
-                       f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --publicip.tags.1={erp_tag_q}  "
-                       f"--cli-region={{target_region}}")
+                       f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic "
+                       f"--cli-region={target_region}")
+                commands.append({"desc": f"Tag EIP with {erp_tag}", "cmd": f"echo 'Tagging EIP' && hcloud EIP BatchCreatePublicipTags --publicip_id=<eip_id> --tags.1={erp_tag_q} --cli-region={target_region}", "type": "hcloud"})
                 rollback = {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Delete EIP"}
             elif ntype == "ELB":
                 action = "CREATE_ELB"
