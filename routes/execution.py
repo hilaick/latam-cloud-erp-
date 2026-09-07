@@ -1582,37 +1582,56 @@ def orchestration_rollback(project_id):
         if not resources:
             return jsonify({'success': True, 'found': found, 'message': f"Preview: {sum(len(v) for v in found.values())} resources found"})
 
-        deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
         def should_del(item):
             if resources == 'all': return True
             return item.get('id') in resources or item.get('name') in resources or item.get('ip') in resources
 
+        deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
+        attempted = {'vpcs': 0, 'subnets': 0, 'security_groups': 0, 'eips': 0}
+        failed = []
+
+        def do_del(cmd_list, label):
+            attempted[cmd_list[0].split(None,1)[0].lower() + 's'] = attempted.get(cmd_list[0].split(None,1)[0].lower() + 's', 0) + 1
+            res, err = h(cmd_list)
+            if 'error' in res or ('code' in res and res['code'] != '200'):
+                failed.append(f"{label}: {res.get('message','')[:80] or 'unknown error'}")
+                return False
+            return True
+
         for sub in found['subnets']:
             if should_del(sub):
-                h(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region])
-                deleted['subnets'].append(sub['name'])
-        # Delete ERP-tagged SGs first (non-default)
+                do_del(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region], f"Subnet {sub['name']}")
+
+        # SG deletion: first ERP-tagged, then default SGs that still exist (block VPC deletion)
         for sg in found['security_groups']:
             if should_del(sg):
-                h(['VPC','DeleteSecurityGroup',f'--security_group_id={sg["id"]}','--cli-region='+target_region])
-                deleted['security_groups'].append(sg['name'])
-        # Then delete the DEFAULT SGs that belong to our VPCs (VPC-created default SGs block VPC deletion)
+                do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={sg["id"]}','--cli-region='+target_region], f"SG {sg['name']}")
+
         for v in found['vpcs']:
             if should_del(v):
-                # Find the default SG belonging to this VPC
-                sgs_res, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
-                for dsg in (sgs_res.get('security_groups') or []):
-                    if dsg.get('name') == 'default' and dsg.get('id') not in [s['id'] for s in found['security_groups']]:
-                        h(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region])
-                        deleted['security_groups'].append(f"default (VPC {v['name']})")
+                # Find and delete any remaining default SG in this VPC first
+                sgs_res2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+                for dsg in (sgs_res2.get('security_groups') or []):
+                    if dsg.get('name') == 'default' and dsg.get('vpc_id') == v['id']:
+                        do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"Default SG (VPC {v['name']})")
+
         for v in found['vpcs']:
             if should_del(v):
-                h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                deleted['vpcs'].append(v['name'])
+                do_del(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region], f"VPC {v['name']}")
+                # If VPC delete succeeded, note it
+                found_vpcs_after, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
+                after_names = [vv['name'] for vv in found_vpcs_after.get('vpcs',[])]
+                if v['name'] not in after_names:
+                    deleted['vpcs'].append(v['name'])
+
         for e in found['eips']:
             if should_del(e):
-                h(['EIP','DeletePublicip',f'--publicip_id={e["id"]}','--cli-region='+target_region])
-                deleted['eips'].append(e['ip'])
+                do_del(['EIP','DeletePublicip',f'--publicip_id={e["id"]}','--cli-region='+target_region], f"EIP {e['ip']}")
+
+        # Verify final state
+        final_vpcs, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
+        final_eips, _ = h(['EIP','ListPublicips/v3','--cli-region='+target_region])
+        remaining = [v['name'] for v in final_vpcs.get('vpcs',[])] + [e['public_ip_address'] for e in final_eips.get('publicips',[])]
 
         ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING'})
         project_record.delegate_tasks = '[]'
@@ -1620,8 +1639,13 @@ def orchestration_rollback(project_id):
         if project_id in _running_pipelines:
             _running_pipelines[project_id] = {'status':'idle','completed_phases':[],'failed_phase':None,'log':[],'phase_status':{}}
 
-        return jsonify({'success': True, 'found': found, 'deleted': deleted,
-                        'message': f"Rollback: {sum(len(v) for v in deleted.values())} resources removed"})
+        msg = f"Rollback: {sum(len(v) for v in deleted.values())} resources removed"
+        if remaining:
+            msg += f". {len(remaining)} resource(s) remain: {', '.join(remaining)}"
+        if failed:
+            msg += f". Failures: {'; '.join(failed[:3])}"
+        return jsonify({'success': True, 'found': found, 'deleted': deleted, 'remaining': remaining, 'failed': failed[:5],
+                        'message': msg})
 
     except Exception as e:
         logger.error(f"Rollback failed: {e}", exc_info=True)
