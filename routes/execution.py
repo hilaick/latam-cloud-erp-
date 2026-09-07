@@ -1591,10 +1591,20 @@ def orchestration_rollback(project_id):
             if should_del(sub):
                 h(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region])
                 deleted['subnets'].append(sub['name'])
+        # Delete ERP-tagged SGs first (non-default)
         for sg in found['security_groups']:
             if should_del(sg):
                 h(['VPC','DeleteSecurityGroup',f'--security_group_id={sg["id"]}','--cli-region='+target_region])
                 deleted['security_groups'].append(sg['name'])
+        # Then delete the DEFAULT SGs that belong to our VPCs (VPC-created default SGs block VPC deletion)
+        for v in found['vpcs']:
+            if should_del(v):
+                # Find the default SG belonging to this VPC
+                sgs_res, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+                for dsg in (sgs_res.get('security_groups') or []):
+                    if dsg.get('name') == 'default' and dsg.get('id') not in [s['id'] for s in found['security_groups']]:
+                        h(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region])
+                        deleted['security_groups'].append(f"default (VPC {v['name']})")
         for v in found['vpcs']:
             if should_del(v):
                 h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
