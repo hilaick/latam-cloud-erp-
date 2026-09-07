@@ -573,18 +573,52 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
     // 🚨 ROLLBACK: Destroy all provisioned infrastructure
     const handleRollback = async () => {
-        if (!confirm('⚠️ ROLLBACK: This will destroy ALL provisioned infrastructure (VPCs, subnets, ECS instances, EIPs). This cannot be undone. Continue?')) return;
+        // Step 1: Preview resources
         setAutoOrchestrating(true);
-        setOrchestrationLog(prev => [...prev, '[rollback] Initiating infrastructure rollback...']);
+        setOrchestrationLog(prev => [...prev, '[rollback] Enumerating resources...']);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
+            const preview = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({})
+            });
+            const previewData = await preview.json();
+            if (!previewData.success) {
+                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${previewData.error}`]);
+                setAutoOrchestrating(false); return;
+            }
+            const found = previewData.found || {};
+            const total = (found.vpcs?.length||0) + (found.subnets?.length||0) + (found.security_groups?.length||0) + (found.eips?.length||0);
+            const details = [
+                ...found.vpcs?.map(r => `    VPC: ${r.name} (${r.id.slice(0,8)})`) || [],
+                ...found.subnets?.map(r => `    Subnet: ${r.name}`) || [],
+                ...found.security_groups?.map(r => `    SG: ${r.name}`) || [],
+                ...found.eips?.map(r => `    EIP: ${r.ip}`) || [],
+            ].join('\\n');
+            if (total === 0) {
+                setOrchestrationLog(prev => [...prev, '[rollback] No resources to rollback.']);
+                setCompletedOrchPhases(new Set());
+                setPhaseStatus({});
+                setFailedOrchPhaseIdx(null);
+                updatePhase('PHASE_4_0', 'PENDING');
+                setAutoOrchestrating(false); return;
+            }
+            if (!confirm(`⚠️ ROLLBACK — ${total} resources found:\\n\\n${details}\\n\\nAll will be DELETED. This cannot be undone. Continue?`)) {
+                setAutoOrchestrating(false); return;
+            }
+            // Step 2: Execute deletion
+            setOrchestrationLog(prev => [...prev, '[rollback] Deleting resources...']);
             const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ resources: 'all' })
             });
             const data = await res.json();
             if (data.success) {
-                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${data.message || 'Infrastructure destroyed.'}`]);
+                const deleted = data.deleted || {};
+                const count = (deleted.vpcs?.length||0) + (deleted.subnets?.length||0) + (deleted.security_groups?.length||0) + (deleted.eips?.length||0);
+                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${count} resources deleted: ${data.message || ''}`]);
                 setCompletedOrchPhases(new Set());
                 setPhaseStatus({});
                 setFailedOrchPhaseIdx(null);
@@ -1202,14 +1236,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         }
                                         handleOrchestrateAll(0);
                                     }}
-                                    disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
+                                    disabled={autoOrchestrating || (executionState?.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7)}
                                     className={`flex-1 px-6 py-2.5 rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-md transition-all ${
-                                        executionState?.currentPhase === 'COMPLETED'
+                                        executionState?.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7
                                             ? 'bg-emerald-500 text-white cursor-default'
                                             : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
                                     } ${autoOrchestrating ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
-                                    {executionState?.currentPhase === 'COMPLETED'
+                                    {executionState?.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7
                                         ? <><i className="fas fa-check-circle mr-2"></i> Pipeline Already Completed</>
                                         : <><i className="fas fa-play mr-2"></i> {completedOrchPhases.size > 0 ? 'Re-run Full Pipeline' : 'Run Full 7-Phase Pipeline'}</>
                                     }
@@ -1531,7 +1565,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
 
                         {/* PHASE 4.7: GARBAGE COLLECTION */}
-                        <div className={`p-6 rounded-xl border-2 transition-all ${execState.currentPhase === 'PHASE_4_7' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : execState.currentPhase === 'COMPLETED' ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
+                        <div className={`p-6 rounded-xl border-2 transition-all ${execState.currentPhase === 'PHASE_4_7' ? 'border-emerald-500 bg-slate-800 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : (execState.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7) ? 'border-slate-700 bg-slate-900/50 opacity-60' : 'hidden'}`}>
                             <div className="flex justify-between items-start">
                                 <div>
                                     <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Phase 4.7</div>
@@ -1540,17 +1574,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 </div>
                                 {execState.currentPhase === 'PHASE_4_7' ? (
                                     <button onClick={handleGarbageCollection} disabled={autoOrchestrating} className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase shadow-md ${autoOrchestrating ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}><i className="fas fa-trash-alt mr-2"></i> Destroy Transient Resources</button>
-                                ) : execState.currentPhase === 'COMPLETED' ? <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
+                                ) : (execState.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7) ? <div className="text-emerald-500"><i className="fas fa-check-circle text-2xl"></i></div> : null}
                             </div>
                             {autoOrchestrating && execState.currentPhase === 'PHASE_4_7' && (
                                 <div className="mt-3 text-purple-400 text-xs font-bold animate-pulse"><i className="fas fa-robot mr-1"></i> Agentic run in progress — auto-advancing...</div>
                             )}
                         </div>
-                {execState.currentPhase === 'COMPLETED' && (
+                {execState.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7 && (
                     <div className="mt-8 bg-emerald-500/10 border border-emerald-500 p-6 rounded-xl text-center animate-fade-in">
                         <i className="fas fa-check-double text-4xl text-emerald-500 mb-3"></i>
                         <h3 className="font-black text-xl text-emerald-400">Migration Pipeline Completed</h3>
-                        <p className="text-emerald-200 mt-2 text-sm">Servers are now live and attached to the Production VPC. Transient costs eliminated. Please proceed to Post-Live.</p>
+                        <p className="text-emerald-200 mt-2 text-sm">All 7 phases completed. Servers are now live and attached to the Production VPC. Transient costs eliminated. Please proceed to Post-Live.</p>
                     </div>
                 )}
                     </>
@@ -1558,11 +1592,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     <MigrationOrchestratorView project={project} executionState={executionState} executionMode={executionMode} onUpdateProject={onUpdateProject} />
                 )}
 
-                {execState.currentPhase === 'COMPLETED' && (
+                {execState.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7 && (
                     <div className="mt-8 bg-emerald-500/10 border border-emerald-500 p-6 rounded-xl text-center animate-fade-in">
                         <i className="fas fa-check-double text-4xl text-emerald-500 mb-3"></i>
                         <h3 className="font-black text-xl text-emerald-400">Migration Pipeline Completed</h3>
-                        <p className="text-emerald-200 mt-2 text-sm">Servers are now live and attached to the Production VPC. Transient costs eliminated. Please proceed to Post-Live.</p>
+                        <p className="text-emerald-200 mt-2 text-sm">All 7 phases completed. Servers are now live and attached to the Production VPC. Transient costs eliminated. Please proceed to Post-Live.</p>
                     </div>
                 )}
             </div>
