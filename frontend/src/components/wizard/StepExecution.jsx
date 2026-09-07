@@ -573,47 +573,52 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     };
 
     // 🚨 ROLLBACK: Destroy all provisioned infrastructure
+    // 🚨 ROLLBACK: In-GUI modal (no browser confirm)
+    const [showRollbackModal, setShowRollbackModal] = useState(false);
+    const [rollbackPreview, setRollbackPreview] = useState(null);
+    const [rollbackSelected, setRollbackSelected] = useState({});
+    const [rollbackLoading, setRollbackLoading] = useState(false);
+
     const handleRollback = async () => {
-        // Step 1: Preview resources
-        setAutoOrchestrating(true);
+        setRollbackLoading(true);
         setOrchestrationLog(prev => [...prev, '[rollback] Enumerating resources...']);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
-            const preview = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
+            const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({})
             });
-            const previewData = await preview.json();
-            if (!previewData.success) {
-                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${previewData.error}`]);
-                setAutoOrchestrating(false); return;
+            const data = await res.json();
+            if (!data.success) {
+                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${data.error}`]);
+                setRollbackLoading(false); return;
             }
-            const found = previewData.found || {};
-            const total = (found.vpcs?.length||0) + (found.subnets?.length||0) + (found.security_groups?.length||0) + (found.eips?.length||0);
-            const details = [
-                ...found.vpcs?.map(r => `    VPC: ${r.name} (${r.id.slice(0,8)})`) || [],
-                ...found.subnets?.map(r => `    Subnet: ${r.name}`) || [],
-                ...found.security_groups?.map(r => `    SG: ${r.name}`) || [],
-                ...found.eips?.map(r => `    EIP: ${r.ip}`) || [],
-            ].join('\\n');
-            if (total === 0) {
-                setOrchestrationLog(prev => [...prev, '[rollback] No resources to rollback.']);
-                setCompletedOrchPhases(new Set());
-                setPhaseStatus({});
-                setFailedOrchPhaseIdx(null);
-                updatePhase('PHASE_4_0', 'PENDING');
-                setAutoOrchestrating(false); return;
+            const found = data.found || {};
+            // Pre-select all resources by default
+            const all = {};
+            for (const list of Object.values(found)) {
+                for (const r of list) all[r.id] = true;
             }
-            if (!confirm(`⚠️ ROLLBACK — ${total} resources found:\\n\\n${details}\\n\\nAll will be DELETED. This cannot be undone. Continue?`)) {
-                setAutoOrchestrating(false); return;
-            }
-            // Step 2: Execute deletion
-            setOrchestrationLog(prev => [...prev, '[rollback] Deleting resources...']);
+            setRollbackSelected(all);
+            setRollbackPreview(found);
+            setShowRollbackModal(true);
+        } catch (err) {
+            setOrchestrationLog(prev => [...prev, `[rollback ✗] ${err.message}`]);
+        }
+        setRollbackLoading(false);
+    };
+
+    const handleRollbackExecute = async () => {
+        const selected = Object.entries(rollbackSelected).filter(([_,v]) => v).map(([id]) => id);
+        setShowRollbackModal(false);
+        setOrchestrationLog(prev => [...prev, `[rollback] Deleting ${selected.length} resources...`]);
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
             const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ resources: 'all' })
+                body: JSON.stringify({ resources: selected.length > 0 ? selected : 'all' })
             });
             const data = await res.json();
             if (data.success) {
@@ -630,7 +635,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         } catch (err) {
             setOrchestrationLog(prev => [...prev, `[rollback ✗] ${err.message}`]);
         }
-        setAutoOrchestrating(false);
     };
 
     // 🚨 INDIVIDUAL: Validate minimum prerequisites for ad-hoc task execution
@@ -1288,6 +1292,82 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </button>
                             </div>
                         </div>
+                </div>
+            )}
+
+            {/* Rollback modal — in-GUI resource selection (no browser confirm) */}
+            {showRollbackModal && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowRollbackModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                            <h3 className="font-black text-rose-700 text-sm uppercase tracking-widest">
+                                <i className="fas fa-undo mr-2"></i> Rollback — Select Resources
+                            </h3>
+                            <button onClick={() => setShowRollbackModal(false)} className="text-slate-400 hover:text-slate-600">
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto flex-1">
+                            <p className="text-[10px] text-slate-500 mb-3 font-medium">
+                                Select which resources to destroy. Untouched resources remain in your account.
+                            </p>
+                            {!rollbackPreview || (Object.values(rollbackPreview).every(l => !l || l.length === 0)) ? (
+                                <div className="text-center py-8 text-slate-400 text-sm">
+                                    <i className="fas fa-check-circle text-4xl mb-3 text-emerald-400"></i>
+                                    No ERP-tagged resources found to rollback.
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {rollbackPreview.vpcs?.map(r => (
+                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
+                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
+                                            <i className="fas fa-network-wired text-rose-400 w-4"></i>
+                                            <span className="text-sm font-bold text-slate-700 flex-1">VPC · {r.name}</span>
+                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
+                                        </label>
+                                    ))}
+                                    {rollbackPreview.subnets?.map(r => (
+                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
+                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
+                                            <i className="fas fa-layer-group text-rose-400 w-4"></i>
+                                            <span className="text-sm font-bold text-slate-700 flex-1">Subnet · {r.name}</span>
+                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
+                                        </label>
+                                    ))}
+                                    {rollbackPreview.security_groups?.map(r => (
+                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
+                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
+                                            <i className="fas fa-shield-alt text-rose-400 w-4"></i>
+                                            <span className="text-sm font-bold text-slate-700 flex-1">SG · {r.name}</span>
+                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
+                                        </label>
+                                    ))}
+                                    {rollbackPreview.eips?.map(r => (
+                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
+                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
+                                            <i className="fas fa-globe text-rose-400 w-4"></i>
+                                            <span className="text-sm font-bold text-slate-700 flex-1">EIP · {r.ip}</span>
+                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
+                                        </label>
+                                    ))}
+                                    <div className="flex gap-2 pt-3 mt-2 border-t border-slate-100">
+                                        <button onClick={() => { const all = {}; for (const list of Object.values(rollbackPreview)) for (const r of list) all[r.id] = true; setRollbackSelected(all); }} className="text-[10px] text-slate-500 hover:text-slate-700 underline">Select All</button>
+                                        <button onClick={() => setRollbackSelected({})} className="text-[10px] text-slate-500 hover:text-slate-700 underline">Clear</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-200 flex justify-end gap-3">
+                            <button onClick={() => setShowRollbackModal(false)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 font-bold">Cancel</button>
+                            <button
+                                onClick={handleRollbackExecute}
+                                disabled={rollbackLoading || Object.values(rollbackPreview || {}).every(l => !l || l.length === 0)}
+                                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md disabled:opacity-40 transition-colors"
+                            >
+                                <i className="fas fa-trash-alt mr-2"></i> Destroy Selected ({Object.values(rollbackSelected).filter(v => v).length})
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
