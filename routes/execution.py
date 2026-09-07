@@ -1572,7 +1572,11 @@ def orchestration_rollback(project_id):
             if has_erp_tag(sg) or sg.get('name', '').startswith('erp-') or sg.get('name', '').startswith('latam-erp'):
                 found['security_groups'].append({'id': sg['id'], 'name': sg.get('name')})
         for e in (h(['EIP','ListPublicips/v3','--cli-region='+target_region])[0].get('publicips') or []):
-            if has_erp_tag(e):
+            # Tagged, OR carries our naming signature: bandwidth named '<ip>-eip'
+            # (the agent's create pattern), OR has erp-* name. Unbound EIPs with
+            # the -eip name suffix are overwhelmingly ours.
+            bw = (e.get('bandwidth') or {}).get('name') or ''
+            if has_erp_tag(e) or (bw.endswith('-eip') and '-' in bw and not str(e.get('public_ip_address','')).startswith('124.243')):
                 found['eips'].append({'id': e['id'], 'ip': e.get('public_ip_address')})
 
         if not resources:
