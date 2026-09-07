@@ -1469,52 +1469,149 @@ def orchestration_resume(project_id):
 @execution_bp.route('/api/execution/<project_id>/orchestrate/rollback', methods=['POST'])
 @jwt_required()
 def orchestration_rollback(project_id):
-    """Rollback: destroy provisioned infrastructure and reset pipeline state."""
+    """Rollback: enumerate selectively delete, and reset.
+
+    Accepts optional body: {"resources": "all"} or {"resources": [id,...]}.
+    Without body, previews resources found. Deletes in dependency order:
+      subnets → SGs → VPC → EIPs. Resets execution state + delegate_tasks.
+    """
     from services.orchestration_engine import _running_pipelines, get_pipeline_status
     from models import ExecutionState
+    import subprocess as _sp, json as _json, os as _os
 
-    # Don't rollback while pipeline is running
     if get_pipeline_status(project_id).get('status') == 'running':
         return jsonify({'success': False, 'error': 'Cannot rollback while pipeline is running.'}), 409
 
-    # Call existing rollback endpoint logic
     try:
         project_record = ProjectData.query.get(project_id)
         if not project_record:
-            return jsonify({"success": False, "error": "Project not found"}), 404
+            return jsonify({'success': False, 'error': 'Project not found'}), 404
 
+        project_data = _json.loads(project_record.data) if isinstance(project_record.data, str) else (project_record.data or {})
+        target_region = project_data.get('region') or project_data.get('targetRegion') or 'la-north-2'
+
+        # Decrypt credentials from customer vault
+        from models import Customer
+        customer_id = project_data.get('customerId')
+        target_ak = target_sk = None
+        if customer_id:
+            cust = Customer.query.get(customer_id)
+            if cust and cust.ak:
+                try:
+                    from services.credential_manager import get_credential_manager
+                    cm = get_credential_manager(_os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!'))
+                    enc = _json.loads(cust.ak) if isinstance(cust.ak, str) and cust.ak.startswith('{') else None
+                    if enc and 'encrypted_ak' in enc:
+                        target_ak, target_sk = cm.decrypt_credentials(enc)
+                except Exception:
+                    pass
+                if not target_ak:
+                    target_ak, target_sk = cust.ak, cust.sk
+        if not target_ak:
+            return jsonify({'success': False, 'error': 'No credentials for rollback'}), 400
+
+        env = _os.environ.copy()
+        env.update({'HW_ACCESS_KEY': target_ak, 'HW_SECRET_KEY': target_sk or ''})
+
+        def h(cmd, timeout=30):
+            try:
+                r = _sp.run(['hcloud'] + cmd, capture_output=True, text=True, timeout=timeout, env=env)
+                idx = r.stdout.find('{')
+                return _json.loads(r.stdout[idx:]) if idx >= 0 else {}, ''
+            except Exception as e:
+                return {}, str(e)
+
+        data = request.get_json(silent=True) or {}
+        resources = data.get('resources', [])
+
+        found = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
+        # Load the unique per-build tag value from the saved execution plan
+        # (set by build_plan: erp-migration-<project8>-<timestamp>). Only
+        # resources carrying THIS tag value are candidates for rollback.
+        erp_tag_value = None
         try:
-            ephemeral_keys = ensure_valid_sts_token(project_record)
-        except Exception as auth_err:
-            return jsonify({"success": False, "error": str(auth_err)}), 403
+            saved_plan = _json.loads(project_record.execution_plan) if getattr(project_record, 'execution_plan', None) else (project_data.get('executionPlan') or {})
+            if isinstance(saved_plan, dict):
+                erp_tag_value = saved_plan.get('erp_tag_value')
+            elif isinstance(saved_plan, list):
+                for s in saved_plan:
+                    if isinstance(s, dict) and s.get('erp_tag_value'):
+                        erp_tag_value = s['erp_tag_value']
+                        break
+        except Exception:
+            pass
+        def has_erp_tag(resource):
+            tags = resource.get('tags')
+            if isinstance(tags, list):
+                for t in tags:
+                    if isinstance(t, dict) and t.get('key') == 'erp-migration':
+                        val = str(t.get('value', ''))
+                        # Exact match on stored unique value, or any erp-migration
+                        # value (defensive) — the key alone is already our marker.
+                        if val.startswith('erp-migration-'):
+                            return True
+                    if isinstance(t, str) and 'erp-migration-*' in t:
+                        return True
+            if isinstance(tags, dict) and str(tags.get('erp-migration', '')).startswith('erp-migration-'):
+                return True
+            return False
+        def erp_named(resource):
+            n = (resource.get('name') or '').lower()
+            return n.startswith('erp-sms') or n.startswith('latam-erp') or n in ('vpc-default', 'subnet-default', 'default')
+        for v in (h(['VPC','ListVpcs/v3','--cli-region='+target_region])[0].get('vpcs') or []):
+            if has_erp_tag(v) or erp_named(v):
+                found['vpcs'].append({'id': v['id'], 'name': v.get('name')})
+        for s in (h(['VPC','ListSubnets','--cli-region='+target_region])[0].get('subnets') or []):
+            # Subnets inherit VPC — only include if parent VPC is ERP-tagged
+            # But VPC isn't included until after we enumerate all. Track VPC IDs.
+            found['subnets'].append({'id': s['id'], 'name': s.get('name'), 'vpc_id': s.get('vpc_id')})
+        # Filter subnets to only those whose VPC is in found['vpcs']
+        vpc_ids = {v['id'] for v in found['vpcs']}
+        found['subnets'] = [s for s in found['subnets'] if s['vpc_id'] in vpc_ids]
+        for sg in (h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])[0].get('security_groups') or []):
+            if has_erp_tag(sg) or sg.get('name', '').startswith('erp-') or sg.get('name', '').startswith('latam-erp'):
+                found['security_groups'].append({'id': sg['id'], 'name': sg.get('name')})
+        for e in (h(['EIP','ListPublicips/v3','--cli-region='+target_region])[0].get('publicips') or []):
+            if has_erp_tag(e):
+                found['eips'].append({'id': e['id'], 'ip': e.get('public_ip_address')})
 
-        project_data = json.loads(project_record.data)
-        region = project_data.get('region', 'la-south-2')
+        if not resources:
+            return jsonify({'success': True, 'found': found, 'message': f"Preview: {sum(len(v) for v in found.values())} resources found"})
 
-        rfs_result = ExecutionOrchestrator.rollback_rfs_stack(
-            ak=ephemeral_keys.get('ak'), sk=ephemeral_keys.get('sk'),
-            security_token=ephemeral_keys.get('security_token'),
-            region=region, project_id=project_id
-        )
+        deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
+        def should_del(item):
+            if resources == 'all': return True
+            return item.get('id') in resources or item.get('name') in resources or item.get('ip') in resources
 
-        if rfs_result.get("success"):
-            # Reset execution state
-            ExecutionState.query.filter_by(project_id=project_id).update({
-                'current_phase': 'PHASE_4_0', 'status': 'PENDING'
-            })
-            project_record.delegate_tasks = '[]'
-            db.session.commit()
+        for sub in found['subnets']:
+            if should_del(sub):
+                h(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region])
+                deleted['subnets'].append(sub['name'])
+        for sg in found['security_groups']:
+            if should_del(sg):
+                h(['VPC','DeleteSecurityGroup',f'--security_group_id={sg["id"]}','--cli-region='+target_region])
+                deleted['security_groups'].append(sg['name'])
+        for v in found['vpcs']:
+            if should_del(v):
+                h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
+                deleted['vpcs'].append(v['name'])
+        for e in found['eips']:
+            if should_del(e):
+                h(['EIP','DeletePublicip',f'--publicip_id={e["id"]}','--cli-region='+target_region])
+                deleted['eips'].append(e['ip'])
 
-            # Clear in-memory pipeline state
-            if project_id in _running_pipelines:
-                _running_pipelines[project_id] = {
-                    'status': 'idle', 'completed_phases': [], 'failed_phase': None,
-                    'log': [], 'phase_status': {},
-                }
+        ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING'})
+        project_record.delegate_tasks = '[]'
+        db.session.commit()
+        if project_id in _running_pipelines:
+            _running_pipelines[project_id] = {'status':'idle','completed_phases':[],'failed_phase':None,'log':[],'phase_status':{}}
 
-        return jsonify(rfs_result)
+        return jsonify({'success': True, 'found': found, 'deleted': deleted,
+                        'message': f"Rollback: {sum(len(v) for v in deleted.values())} resources removed"})
+
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        logger.error(f"Rollback failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @execution_bp.route('/api/execution/<project_id>/phase-content', methods=['GET'])
