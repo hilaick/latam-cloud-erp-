@@ -3,6 +3,7 @@ import { formatShortDate, EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 import WaveZeroConfigModal from './WaveZeroConfigModal';
 import SpawnTreeVisualizer from './SpawnTreeVisualizer';
+import PhaseSummaryCard from './PhaseSummaryCard';
 
 const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
 
@@ -1177,6 +1178,26 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         <div className="flex items-center gap-3 text-purple-700 font-bold text-sm mb-3">
                             <i className="fas fa-spinner fa-spin text-xl"></i>
                             Pipeline starting...
+                        </div>
+                    )}
+
+                    {/* Phase Summary Cards — show collapsible results for each completed phase */}
+                    {orchestrationLog.filter(l => l.includes('[done]')).length > 0 && (
+                        <div className="mb-4 space-y-2">
+                            {[1,2,3,4,5,6,7].map(n => {
+                                const phaseKey = `PHASE_4_${n}`;
+                                const phaseDone = orchestrationLog.some(l => l.includes(phaseKey) && l.includes('[done]'));
+                                if (!phaseDone) return null;
+                                return (
+                                    <PhaseSummaryCard key={phaseKey}
+                                        phase={phaseContent?.[phaseKey]}
+                                        logLines={orchestrationLog}
+                                        phaseKey={phaseKey}
+                                        projectId={project?.id}
+                                        onRollback={handleRollback}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                     <div>

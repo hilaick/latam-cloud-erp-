@@ -1,0 +1,138 @@
+import React, { useState } from 'react';
+
+// ═══ PHASE SUMMARY CARD — collapsible report from agent output ═══
+// Renders after [done] appears in orchestrationLog, shows agent's full output
+// Parses markdown tables from the report into a proper resource table
+
+export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onRollback, projectId }) {
+  const [open, setOpen] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const [rollbackPreview, setRollbackPreview] = useState(null);
+  const [rollbackSelected, setRollbackSelected] = useState({});
+
+  // Build complete resource list with type
+  const allResources = [
+    ...(rollbackPreview?.vpcs || []).map(r => ({...r, type: 'VPC'})),
+    ...(rollbackPreview?.subnets || []).map(r => ({...r, type: 'Subnet'})),
+    ...(rollbackPreview?.security_groups || []).map(r => ({...r, type: 'SG'})),
+    ...(rollbackPreview?.eips || []).map(r => ({...r, type: 'EIP'})),
+  ];
+
+  // Extract the agent output from log — everything after [output]
+  const outputIdx = logLines.findIndex(l => l.startsWith('[output]'));
+  const agentOutput = outputIdx >= 0 ? logLines.slice(outputIdx).join('\n').replace(/\[output\]\s?/g,'') : '';
+
+  // Parse markdown table rows from the agent report
+  const resourceRows = [];
+  if (agentOutput) {
+    const tableMatch = agentOutput.match(/\|.*\|/g);
+    if (tableMatch) {
+      let header = null;
+      for (const row of tableMatch) {
+        const cells = row.split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length >= 2) {
+          if (!header) header = cells;
+          else if (cells.length === header.length && !row.includes('---')) {
+            resourceRows.push(cells);
+          }
+        }
+      }
+    }
+  }
+
+  const handleRollbackClick = async () => {
+    setRollbackOpen(true);
+    setRollbackPreview(null);
+    // Preview
+    try {
+      const res = await fetch(`/api/execution/${projectId}/orchestrate/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('hermes_access_token')}` },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (data.success) setRollbackPreview(data.found || {});
+      else alert('Rollback preview failed: ' + (data.error || 'Unknown'));
+    } catch (err) {
+      alert('Rollback preview error: ' + err.message);
+    }
+  };
+
+  const found = rollbackPreview || {};
+  const total = (found.vpcs?.length||0) + (found.subnets?.length||0) + (found.security_groups?.length||0) + (found.eips?.length||0);
+
+  return (
+    <div className="mt-3 border border-emerald-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-3 bg-emerald-50 hover:bg-emerald-100 flex items-center justify-between text-sm font-black text-emerald-800 transition-colors"
+      >
+        <span><i className={`fas fa-chevron-${open ? 'down' : 'right'} mr-2 text-emerald-500`}></i> Phase Summary — {phase?.label || phaseKey}</span>
+        <span className="text-[9px] text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full font-bold">{resourceRows.length} resources</span>
+      </button>
+      {open && (
+        <div className="p-4 bg-white border-t border-emerald-100">
+          {resourceRows.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Resources Deployed</div>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    {['Resource','ID','Status','Details'].map(h => <th key={h} className="py-1 px-2 text-left text-[9px] font-black uppercase text-slate-400">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resourceRows.map((row, i) => (
+                    <tr key={i} className="border-b border-slate-100">
+                      {row.map((cell, j) => (
+                        <td key={j} className={`py-2 px-2 ${j === 0 ? 'font-bold text-slate-800' : 'text-slate-600 font-mono text-[10px]'}`}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mb-3">
+            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Agent Output</div>
+            <pre className="text-[10px] text-slate-700 font-mono bg-slate-50 p-3 rounded-lg max-h-40 overflow-y-auto whitespace-pre-wrap">{agentOutput.slice(0,2000)}</pre>
+          </div>
+          {/* Rollback section */}
+          <div className="border-t border-slate-200 pt-3 mt-3">
+            {!rollbackOpen ? (
+              <button onClick={handleRollbackClick} className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-md transition-colors">
+                <i className="fas fa-undo mr-1"></i> Rollback Phase {phaseKey.replace('PHASE_4_','4.')}
+              </button>
+            ) : (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <div className="text-[10px] font-black text-rose-700 uppercase tracking-widest mb-2">Rollback — Select Resources to Destroy</div>
+                {total === 0 ? (
+                  <p className="text-xs text-slate-500">No ERP-tagged resources found to rollback.</p>
+                ) : (
+                  <>
+                    <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
+                      {found.vpcs?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> VPC: {r.name} ({r.id.slice(0,8)})</label>)}
+                      {found.subnets?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> Subnet: {r.name}</label>)}
+                      {found.security_groups?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> SG: {r.name}</label>)}
+                      {found.eips?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> EIP: {r.ip}</label>)}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setRollbackOpen(false);
+                        onRollback && onRollback();
+                      }}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-md"
+                    >
+                      <i className="fas fa-trash-alt mr-1"></i> Destroy All
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setRollbackOpen(false)} className="ml-2 text-[10px] text-slate-400 hover:text-slate-600 underline">Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
