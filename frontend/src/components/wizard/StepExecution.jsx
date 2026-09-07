@@ -1257,16 +1257,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         <i className="fas fa-forward mr-2"></i> Resume from Phase {failedOrchPhaseIdx + 1}
                                     </button>
                                 )}
-                                {/* Rollback button (when pipeline has progressed past Phase 4.0) */}
-                                {(completedOrchPhases.size > 0 || executionState?.currentPhase > 'PHASE_4_0') && (
-                                    <button
-                                        onClick={handleRollback}
+                                {/* Rollback button — always available (enumerates resources itself) */}
+                                <button
+                                    onClick={handleRollback}
                                         className="flex-1 px-4 py-2.5 rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-md bg-rose-600 hover:bg-rose-700 text-white active:scale-95 transition-all"
                                         title="Destroy all provisioned infrastructure"
                                     >
                                         <i className="fas fa-undo mr-1"></i> Rollback
                                     </button>
-                                )}
                             </div>
                         </div>
                 </div>
