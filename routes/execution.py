@@ -1609,16 +1609,19 @@ def orchestration_rollback(project_id):
 
         for v in found['vpcs']:
             if should_del(v):
-                # Find and delete any remaining default SG in this VPC first
-                sgs_res2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
-                for dsg in (sgs_res2.get('security_groups') or []):
-                    if dsg.get('name') == 'default' and dsg.get('vpc_id') == v['id']:
-                        do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"Default SG (VPC {v['name']})")
-
-        for v in found['vpcs']:
-            if should_del(v):
-                do_del(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region], f"VPC {v['name']}")
-                # If VPC delete succeeded, note it
+                # Try deleting VPC first. If it fails with VPC.0108 (default SG in use),
+                # find and delete the default SG, then retry.
+                res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
+                if 'VPC.0108' in str(res1) or 'security group' in str(res1).lower() or 'in use' in str(res1).lower():
+                    # Default SG is blocking — find it via ListSecurityGroups
+                    sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+                    for dsg in (sgs2.get('security_groups') or []):
+                        if dsg.get('name') == 'default':
+                            do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"Default SG (VPC {v['name']})")
+                            break
+                    # Retry VPC deletion
+                    _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
+                # Verify
                 found_vpcs_after, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
                 after_names = [vv['name'] for vv in found_vpcs_after.get('vpcs',[])]
                 if v['name'] not in after_names:
