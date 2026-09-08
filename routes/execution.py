@@ -1579,7 +1579,22 @@ def orchestration_rollback(project_id):
             if has_erp_tag(e) or (bw.endswith('-eip') and '-' in bw and not str(e.get('public_ip_address','')).startswith('124.243')):
                 found['eips'].append({'id': e['id'], 'ip': e.get('public_ip_address')})
 
+        # ── Manifest-driven rollback (if project has a recorded manifest) ──
+        # The execution engine records every created resource ID in
+        # project.data['rollback_manifest'] = [{kind, id, name, ts}].
+        manifest = []
+        try:
+            man = project_data.get('rollback_manifest') or []
+            if isinstance(man, list) and man:
+                manifest = man
+        except Exception:
+            pass
+
         if not resources:
+            # Preview: show manifest items (if any) merged with cloud-found
+            if manifest:
+                return jsonify({'success': True, 'found': found, 'manifest': manifest,
+                                'message': f"Preview: {len(manifest)} manifest items + {sum(len(v) for v in found.values())} cloud resources found"})
             return jsonify({'success': True, 'found': found, 'message': f"Preview: {sum(len(v) for v in found.values())} resources found"})
 
         def should_del(item):
@@ -1598,6 +1613,58 @@ def orchestration_rollback(project_id):
                 return False
             return True
 
+        # Manifest-first: delete recorded resources in reverse creation order
+        for item in reversed(manifest):
+            kind = (item.get('kind') or '').lower()
+            rid = item.get('id')
+            rname = item.get('name') or rid
+            if not rid:
+                continue
+            if kind in ('vpc', 'vpc-default') or 'vpc' in kind:
+                do_del(['VPC','DeleteVpc',f'--vpc_id={rid}','--cli-region='+target_region], f"VPC {rname}")
+                deleted['vpcs'].append(rname)
+            elif kind in ('subnet',):
+                do_del(['VPC','DeleteSubnet',f'--subnet_id={rid}','--vpc_id=<vpc_id>','--cli-region='+target_region], f"Subnet {rname}")
+                deleted['subnets'].append(rname)
+            elif kind in ('sg', 'security_group'):
+                do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={rid}','--cli-region='+target_region], f"SG {rname}")
+                deleted['security_groups'].append(rname)
+            elif kind in ('eip', 'publicip'):
+                do_del(['EIP','DeletePublicip',f'--publicip_id={rid}','--cli-region='+target_region], f"EIP {rname}")
+                deleted['eips'].append(rname)
+            elif kind in ('ecs', 'server'):
+                do_del(['ECS','DeleteServer',f'--server_id={rid}','--cli-region='+target_region], f"ECS {rname}")
+
+        # Then cloud-enumeration fallback (existing logic) for untracked leftovers
+        # ── Plan-driven rollback (tool-agnostic) ──
+        # Read the saved execution plan and execute rollback commands in reverse step order
+        plan_rollback_done = set()
+        try:
+            saved_plan = project_data.get('executionPlan') or {}
+            if isinstance(saved_plan, dict):
+                steps = saved_plan.get('steps') or []
+            elif isinstance(saved_plan, list):
+                steps = saved_plan
+            else:
+                steps = []
+            if isinstance(steps, list) and len(steps) > 0:
+                for step in reversed(steps):
+                    rb = step.get('rollback')
+                    if rb and isinstance(rb, dict) and rb.get('cmd'):
+                        label = rb.get('label', step.get('action', '?'))
+                        plan_rollback_done.add(label)
+                        # Execute the rollback command (hcloud CLI style)
+                        rb_cmd = rb['cmd']
+                        if rb_cmd.startswith('hcloud '):
+                            parts = rb_cmd.split()
+                            svc_idx = 1  # index of service name (e.g. "VPC", "ECS", "EIP")
+                            if len(parts) >= 4:
+                                svc, operation = parts[1], parts[2]
+                                do_del([svc, operation] + parts[3:], f"Plan rollback: {label}")
+        except Exception as e:
+            pass
+
+        # Fall back to cloud enumeration for anything the plan didn't cover
         for sub in found['subnets']:
             if should_del(sub):
                 do_del(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region], f"Subnet {sub['name']}")
@@ -1612,13 +1679,12 @@ def orchestration_rollback(project_id):
                 # Try deleting VPC first. If it fails with VPC.0108 (default SG in use),
                 # find and delete the default SG, then retry.
                 res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                if 'VPC.0108' in str(res1) or 'security group' in str(res1).lower() or 'in use' in str(res1).lower():
-                    # Default SG is blocking — find it via ListSecurityGroups
+                if 'VPC.0108' in str(res1) or 'VPC.0112' in str(res1) or 'securitygrou' in str(res1).lower() or 'security group' in str(res1).lower() or 'in use' in str(res1).lower() or 'router' in str(res1).lower():
+                    # SG(s) blocking VPC deletion — delete ALL SGs in the region
+                    # (the VPC created them; they all must go before the VPC can be deleted)
                     sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
                     for dsg in (sgs2.get('security_groups') or []):
-                        if dsg.get('name') == 'default':
-                            do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"Default SG (VPC {v['name']})")
-                            break
+                        do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"SG {dsg.get('name','?')} (blocking VPC {v['name']})")
                     # Retry VPC deletion
                     _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
                 # Verify
