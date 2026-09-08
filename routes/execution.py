@@ -1072,6 +1072,53 @@ def orchestration_status(project_id):
 
     status = get_pipeline_status(project_id)
 
+    # ── DB HYDRATION: if in-memory has no log (Flask restarted or page refreshed),
+    # load the persisted pipeline log blob saved by the engine at run end.
+    if not status.get('log'):
+        try:
+            import json as _j
+            from models import ExecutionState
+            st_row = ExecutionState.query.filter_by(project_id=project_id).first()
+            if st_row:
+                status['current_phase'] = st_row.current_phase
+                if st_row.last_pipeline_log:
+                    try:
+                        plog = _j.loads(st_row.last_pipeline_log)
+                        if isinstance(plog, list):
+                            status['log'] = plog
+                    except Exception:
+                        status['log'] = []
+                completed = set()
+                for l in status.get('log', []):
+                    if l.startswith('[done]'):
+                        # Match phase by label or fallback key
+                        for n in range(1, 8):
+                            pk = f'PHASE_4_{n}'
+                            if pk in l or f'4.{n}' in l:
+                                completed.add(pk)
+                        if 'Network' in l:
+                            completed.add('PHASE_4_1')
+                        elif 'Source Prep' in l:
+                            completed.add('PHASE_4_2')
+                        elif 'Target' in l and 'PHASE_4_3' not in str(completed):
+                            completed.add('PHASE_4_3')
+                        elif 'Data Sync' in l:
+                            completed.add('PHASE_4_4')
+                        elif 'Monitor' in l or 'Sync Monitor' in l:
+                            completed.add('PHASE_4_5')
+                        elif 'Cutover' in l or 'Cold Cutover' in l:
+                            completed.add('PHASE_4_6')
+                        elif 'Teardown' in l or 'Garbage' in l:
+                            completed.add('PHASE_4_7')
+                if completed:
+                    status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
+                    status['phase_status'] = {p: 'completed' for p in completed}
+                    status['status'] = 'completed'
+                elif not status.get('status') or status.get('status') in ('idle', None):
+                    status['status'] = 'idle'
+        except Exception as e:
+            logger.warning(f"DB hydration failed: {e}")
+
     # ── Also detect external execution processes running for this project ──
     # Catches: hermes chat, sms_migration_engine.py, hcloud SMS, any migration script
     def _match_project_in_text(text, pdata):
@@ -1517,7 +1564,10 @@ def orchestration_rollback(project_id):
             try:
                 r = _sp.run(['hcloud'] + cmd, capture_output=True, text=True, timeout=timeout, env=env)
                 idx = r.stdout.find('{')
-                return _json.loads(r.stdout[idx:]) if idx >= 0 else {}, ''
+                parsed = _json.loads(r.stdout[idx:]) if idx >= 0 else {}
+                if r.returncode != 0:
+                    parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200])
+                return parsed, ''
             except Exception as e:
                 return {}, str(e)
 
@@ -1608,8 +1658,9 @@ def orchestration_rollback(project_id):
         def do_del(cmd_list, label):
             attempted[cmd_list[0].split(None,1)[0].lower() + 's'] = attempted.get(cmd_list[0].split(None,1)[0].lower() + 's', 0) + 1
             res, err = h(cmd_list)
-            if 'error' in res or ('code' in res and res['code'] != '200'):
-                failed.append(f"{label}: {res.get('message','')[:80] or 'unknown error'}")
+            if res.get('_hcloud_error') or err:
+                msg = (res.get('message') or res.get('_hcloud_error') or err)[:90]
+                failed.append(f"{label}: {msg}")
                 return False
             return True
 

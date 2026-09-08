@@ -215,6 +215,7 @@ class ExecutionState(db.Model):
     pending_action = db.Column(db.String(100))
     migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
     last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_pipeline_log = db.Column(db.Text)  # JSON list of latest orchestration log lines (survives restart)
     # Relationship to structured logs
     logs = db.relationship('ExecutionLog', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
 

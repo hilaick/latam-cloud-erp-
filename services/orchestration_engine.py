@@ -574,6 +574,15 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         log(f'[output] {response[:200]}...' if len(response) > 200 else f'[output] {response}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
+                    # Persist log for post-restart hydration
+                    try:
+                        from models import ExecutionState as _ES
+                        st2 = _ES.query.filter_by(project_id=project_id).first()
+                        if st2:
+                            st2.last_pipeline_log = json.dumps(pipeline_info.get('log', []))
+                            db.session.commit()
+                    except Exception:
+                        pass
 
                     # ── INDIVIDUAL RUN: stop after forced phase (no forward continuation) ──
                     # IMPORTANT: an individual phase run must NOT set the global
@@ -588,6 +597,14 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         state.last_active_at = datetime.utcnow()
                         db.session.commit()
                         log(f'[stop] Individual run: {restart_phase} done. Pipeline stopped (not continuing to later phases).')
+                        try:
+                            from models import ExecutionState as _ES
+                            st4 = _ES.query.filter_by(project_id=project_id).first()
+                            if st4:
+                                st4.last_pipeline_log = json.dumps(pipeline_info.get('log', []))
+                                db.session.commit()
+                        except Exception:
+                            pass
                         pipeline_info['status'] = 'completed'
                         pipeline_info['current_phase'] = None
                         return
@@ -619,6 +636,14 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
 
             # ── All phases completed ──
             log('[complete] All 7 phases completed. Pipeline finished.')
+            try:
+                from models import ExecutionState as _ES
+                st3 = _ES.query.filter_by(project_id=project_id).first()
+                if st3:
+                    st3.last_pipeline_log = json.dumps(pipeline_info.get('log', []))
+                    db.session.commit()
+            except Exception:
+                pass
             pipeline_info['status'] = 'completed'
             pipeline_info['current_phase'] = None
             state.current_phase = 'COMPLETED'
