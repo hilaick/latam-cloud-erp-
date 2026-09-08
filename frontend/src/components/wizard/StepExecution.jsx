@@ -1190,8 +1190,15 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         <div className="mb-4 space-y-2">
                             {[1,2,3,4,5,6,7].map(n => {
                                 const phaseKey = `PHASE_4_${n}`;
-                                const phaseDone = orchestrationLog.some(l => l.includes(phaseKey) && l.includes('[done]'));
-                                if (!phaseDone) return null;
+                                const phaseLabel = phaseContent?.[phaseKey]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'][n-1] || `Phase 4.${n}`;
+                                const phaseDone = orchestrationLog.some(l =>
+                                    (l.includes(phaseKey) || l.includes(phaseLabel) || l.includes(`4.${n}`)) && l.includes('[done]')
+                                );
+                                const doneLines = orchestrationLog.filter(l => l.includes('[done]') || l.includes('[output]'));
+                                if (!phaseDone && doneLines.length === 0) return null;
+                                // If we can't match the phase, still render ONE card (the first/only done phase)
+                                const showForPhase = phaseDone || (n === 1 && doneLines.length > 0 && !completedOrchPhases.has('PHASE_4_2'));
+                                if (!showForPhase) return null;
                                 return (
                                     <PhaseSummaryCard key={phaseKey}
                                         phase={phaseContent?.[phaseKey]}
