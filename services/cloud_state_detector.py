@@ -165,8 +165,35 @@ def detect_cloud_state(project_data, customer_data=None):
         tasks = task_data.get('tasks', [])
         if tasks:
             result['resources']['sms_tasks'] = [
-                {'name': t.get('name', ''), 'id': t.get('id', '')[:12], 'state': t.get('state', ''),
-                 'priority': t.get('priority', ''), 'type': t.get('type', '')}
+                {
+                    'name': t.get('name', ''),
+                    'id': t.get('id', '')[:12],
+                    'state': t.get('state', ''),
+                    'priority': t.get('priority', ''),
+                    'type': t.get('type', ''),
+                    'os_type': t.get('os_type', ''),
+                    'source_server_id': t.get('source_server', {}).get('id', '') if isinstance(t.get('source_server'), dict) else '',
+                    'source_server_name': t.get('source_server', {}).get('name', '') if isinstance(t.get('source_server'), dict) else '',
+                    'source_server_ip': t.get('source_server', {}).get('ip', '') if isinstance(t.get('source_server'), dict) else '',
+                    'target_server_name': t.get('target_server', {}).get('name', '') if isinstance(t.get('target_server'), dict) else '',
+                    'target_server_id': t.get('target_server', {}).get('vm_id', t.get('target_server', {}).get('id', '')) if isinstance(t.get('target_server'), dict) else '',
+                    'migration_ip': t.get('migration_ip', ''),
+                    'syncing': t.get('syncing', False),
+                    'subtask_info': t.get('subtask_info', ''),
+                    # SMS API does NOT expose a top-level percentage — progress lives in
+                    # sub_tasks[].progress. The active data-migration subtask (e.g.
+                    # MIGRATE_WINDOWS_BLOCK / MIGRATE_LINUX_FILE) carries the real %.
+                    'migration_percent': max(
+                        [st.get('progress', 0) for st in (t.get('sub_tasks') or [])
+                         if str(st.get('name', '')).startswith('MIGRATE_')] or [0]
+                    ),
+                    'subtask_progress': {
+                        st.get('name', ''): st.get('progress', 0)
+                        for st in (t.get('sub_tasks') or [])
+                    },
+                    'start_time': t.get('create_date', ''),
+                    'finish_time': t.get('estimate_complete_time', ''),
+                }
                 for t in tasks[:10]
             ]
             states = {}

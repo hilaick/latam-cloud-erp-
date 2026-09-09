@@ -229,7 +229,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
-                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} />}
+                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} execCloudState={cloudState} />}
                     {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
                     {subTab === 'workbench' && <WorkbenchView project={project} />}
                     {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
@@ -241,7 +241,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
 // 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
 // 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
-function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
+function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject, execCloudState }) {
     const execState = executionState || { currentPhase: 'PHASE_4_0', status: 'PENDING', pendingAction: null };
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
@@ -332,8 +332,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     // This works regardless of where the execution is triggered (GUI, external agent, CLI)
     // because it reads the REAL cloud state, not process lists
     const _isAgentic = executionMode === 'agentic';
+    // Poll in ALL modes — individual/manual also need per-server task status (SMS progress, connectivity)
     useEffect(() => {
-        if (!project?.id || !_isAgentic) return;
+        if (!project?.id) return;
         const token = sessionStorage.getItem('hermes_access_token');
         let active = true;
         const poll = () => {
@@ -1716,7 +1717,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 )}
                     </>
                 ) : (
-                    <MigrationOrchestratorView project={project} executionState={executionState} executionMode={executionMode} onUpdateProject={onUpdateProject} />
+                    <MigrationOrchestratorView project={project} executionState={executionState} executionMode={executionMode} onUpdateProject={onUpdateProject} cloudState={cloudState} />
                 )}
 
                 {execState.currentPhase === 'COMPLETED' && completedOrchPhases.size >= 7 && (
@@ -1732,7 +1733,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 }
 
 // ═══ Migration Orchestrator View — for migration projects (not greenfield) ═══
-function MigrationOrchestratorView({ project, executionState, executionMode, onUpdateProject }) {
+function MigrationOrchestratorView({ project, executionState, executionMode, onUpdateProject, cloudState }) {
     const token = sessionStorage.getItem('hermes_access_token');
     const [execPlan, setExecPlan] = useState(null);
     const [executing, setExecuting] = useState(false);
@@ -1826,7 +1827,7 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             </>}
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
-            {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} />}
+            {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} />}
         </div>
     );
 }
@@ -1873,29 +1874,94 @@ function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execRe
     );
 }
 
-function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust }) {
+function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust, cloudState }) {
     const [taskStatus, setTaskStatus] = useState({});
     const TASKS = [
         { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b' },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
         { action: 'SMS_CREATE_TASK', label: 'Start SMS', icon: 'fa-sync-alt', color: '#10b981' },
-        { action: 'DATA_SYNC_START', label: 'rsync Sync', icon: 'fa-exchange-alt', color: '#8b5cf6' },
-        { action: 'IMPORT_IMAGE', label: 'Import Image', icon: 'fa-image', color: '#06b6d4' },
-        { action: 'DRS_CREATE_JOB', label: 'Start DRS', icon: 'fa-database', color: '#10b981' },
+        { action: 'SMS_SUBTASK_MONITOR', label: 'Monitor', icon: 'fa-chart-line', color: '#6366f1' },
+        { action: 'SMS_CUTOVER', label: 'Cutover', icon: 'fa-power-off', color: '#ef4444' },
+        { action: 'MIGRATION_PROJECT_CONFIG', label: 'Config', icon: 'fa-cog', color: '#8b5cf6' },
     ];
     const handleTask = async (action) => {
         if (!selectedServer) return; setTaskStatus(p => ({ ...p, [action]: 'running' }));
         const r = await executeStep(action); setTaskStatus(p => ({ ...p, [action]: r?.success !== false ? 'success' : 'failed' }));
     };
+    // SMS task state per source server name, from the live cloud-state poll (5s)
+    const smsTasks = cloudState?.resources?.sms_tasks || [];
+    const serverTask = (srvName) => {
+        const lower = (srvName || '').toLowerCase();
+        return smsTasks.find(t => (t.source_server_name || '').toLowerCase() === lower || (t.target_server_name || '').toLowerCase() === lower || (t.name || '').toLowerCase().includes(lower));
+    };
     return (
         <div>
             <div className="text-xs text-slate-400 mb-2">Select a server, then run standalone tasks independently.</div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-                {servers.map(s => <div key={s.name} onClick={() => setSelectedServer(s)} className={`p-2 rounded-lg border-2 cursor-pointer ${selectedServer?.name === s.name ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}><i className="fas fa-server text-slate-500" /><div className="text-white text-xs font-bold truncate">{s.name}</div><div className="text-slate-500 text-[10px]">{s.type || 'ECS'}</div></div>)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+                {servers.map(s => {
+                    const st = serverTask(s.name);
+                    const isSelected = selectedServer?.name === s.name;
+                    return (
+                        <div key={s.id || s.name} onClick={() => setSelectedServer(s)}
+                            className={`p-2 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500/10 shadow-md' : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30'}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                                <i className={`fas fa-server text-sm ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`}></i>
+                                <div className="font-bold text-xs text-slate-800 truncate flex-1">{s.name}</div>
+                                {st && <MigrationStatusBadge state={st.state} percent={st.migration_percent} />}
+                                {!st && <span className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded font-medium">No task</span>}
+                            </div>
+                            <div className="text-[10px] text-slate-500">{s.type || 'ECS'}{s.flavor ? ` · ${s.flavor}` : ''}{s.storage ? ` · ${s.storage}GB` : ''}</div>
+                            {st && (
+                                <div className="mt-1.5 bg-slate-100 rounded-lg p-1.5 text-[9px] font-mono text-slate-600 leading-relaxed">
+                                    {st.target_server_name && <div>Target: <span className="font-bold">{st.target_server_name}</span></div>}
+                                    {st.source_server_id && <div>Src ID: <span className="font-bold" title={st.source_server_id}>{st.source_server_id.slice(0,12)}</span></div>}
+                                    {st.source_server_ip && <div>Src IP: <span className="font-bold">{st.source_server_ip}</span></div>}
+                                    {st.migration_percent > 0 && <div>Progress: <span className="font-bold text-emerald-700">{st.migration_percent}%</span></div>}
+                                    {st.syncing && <div className="text-emerald-600"><i className="fas fa-sync fa-spin mr-1"></i>Continuous sync</div>}
+                                    {st.subtask_info && <div>Stage: <span className="font-bold">{st.subtask_info}</span></div>}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
-            {selectedServer && <div className="bg-slate-800 rounded-lg p-3"><div className="text-sm text-white font-bold mb-2">Tasks: {selectedServer.name}</div><div className="grid grid-cols-2 md:grid-cols-3 gap-2">{TASKS.map(t => { const st = taskStatus[t.action]; return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running'} className="p-2 rounded border text-left" style={{ borderColor: t.color + '60', background: t.color + '10' }}><i className={`fas ${t.icon}`} style={{ color: t.color }} /><span className="text-xs text-white ml-1">{t.label}</span>{st === 'success' && <span className="text-emerald-400 text-[10px] block">✅</span>}{st === 'running' && <span className="text-amber-400 text-[10px] block">⏳</span>}{st === 'failed' && <span className="text-red-400 text-[10px] block">❌</span>}</button>; })}</div>{isZeroTrust && <div className="mt-2 text-amber-400 text-xs">⚠ Agent install is customer responsibility</div>}</div>}
+            {selectedServer && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="text-sm font-bold text-slate-800">Tasks: {selectedServer.name}</div>
+                        {(() => { const st = serverTask(selectedServer.name); return st ? <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider ${st.state === 'RUNNING' || st.state === 'SYNCING' ? 'bg-emerald-100 text-emerald-700' : st.state === 'SUCCESS' ? 'bg-blue-100 text-blue-700' : st.state === 'READY' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{st.state}</span> : <span className="text-[10px] text-slate-400">No active task</span>; })()}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        {TASKS.map(t => {
+                            const st = taskStatus[t.action];
+                            const taskMatch = serverTask(selectedServer.name);
+                            return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running'}
+                                className="p-2 rounded-lg border text-left transition-all hover:shadow-sm"
+                                style={{ borderColor: t.color + '60', background: t.color + '08' }}>
+                                <i className={`fas ${t.icon}`} style={{ color: t.color }} />
+                                <span className="text-[10px] text-slate-700 ml-1 font-bold">{t.label}</span>
+                                {st === 'success' && <span className="text-emerald-500 text-[9px] block mt-1">✅ Done</span>}
+                                {st === 'running' && <span className="text-amber-500 text-[9px] block mt-1">⏳ Running...</span>}
+                                {st === 'failed' && <span className="text-red-500 text-[9px] block mt-1">❌ Failed</span>}
+                                {!st && taskMatch?.state === 'RUNNING' && <span className="text-emerald-500 text-[9px] block mt-1">● Active</span>}
+                            </button>;
+                        })}
+                    </div>
+                    {isZeroTrust && <div className="mt-2 text-amber-500 text-[10px] font-medium"><i className="fas fa-lock mr-1"></i> Agent install is customer responsibility — Zero Trust</div>}
+                </div>
+            )}
         </div>
     );
+}
+
+/* ── Sub-component: Migration status badge — tiny color-coded pill ── */
+function MigrationStatusBadge({ state, percent }) {
+    const running = state === 'RUNNING' || state === 'SYNCING';
+    const done = state === 'SUCCESS' || state === 'FINISHED';
+    const failed = state === 'FAIL' || state === 'ERROR';
+    const waiting = state === 'READY' || state === 'WAITING';
+    const bg = running ? 'bg-emerald-100 text-emerald-700' : done ? 'bg-blue-100 text-blue-700' : failed ? 'bg-red-100 text-red-700' : waiting ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500';
+    return <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${bg} uppercase tracking-wider whitespace-nowrap`}>{running && percent ? `${percent}%` : state || '—'}</span>;
 }
 
 // 🚨 PRESERVED: Readiness Gateway View
