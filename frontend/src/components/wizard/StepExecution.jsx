@@ -820,7 +820,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Resources</div>
-                            <div className="text-xs font-bold text-slate-700">{(() => { const ta = project?.targetArchitecture || {}; const all = [...(ta.compute||[]),...(ta.database||[]),...(ta.storage||[])].filter(s=>s.name || s.source_name); return `${all.length} migrating`; })()}</div>
+                            <div className="text-xs font-bold text-slate-700">{(() => {
+                                // Same fallback as MigrationOrchestratorView servers: TA may be
+                                // absent (migration outside ERP) — count mapperNodes instead.
+                                let ta = project?.targetArchitecture;
+                                if (!ta || (!(ta.compute || []).length && !(ta.database || []).length && !(ta.storage || []).length)) {
+                                    const mn = project?.mapperNodes || [];
+                                    const serverTypes = ['ECS', 'COMPUTE', 'APP', 'WEB', 'VM', 'SERVER'];
+                                    const computeFallback = mn.filter(n => serverTypes.includes(String(n.type || '').toUpperCase()));
+                                    const dbFallback = mn.filter(n => ['RDS', 'DATABASE', 'DB', 'DCS'].includes(String(n.type || '').toUpperCase()));
+                                    const storageFallback = mn.filter(n => ['OBS', 'EVS', 'SFS', 'STORAGE', 'BUCKET'].includes(String(n.type || '').toUpperCase()));
+                                    ta = { compute: computeFallback, database: dbFallback, storage: storageFallback };
+                                }
+                                const all = [...(ta.compute||[]),...(ta.database||[]),...(ta.storage||[])].filter(s=>s.name || s.source_name);
+                                return `${all.length} migrating`;
+                            })()}</div>
                         </div>
                         <div className="text-center">
                             <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Target Region</div>
@@ -1728,7 +1742,21 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [serverStatus, setServerStatus] = useState({});
     // showSpawnTree removed — telemetry now in OrchestratorView's external execution dashboard
 
-    const targetArch = project?.targetArchitecture || {};
+    // Servers for Phase 4 execution come from targetArchitecture (execution contract).
+    // Fall back to mapperNodes when targetArchitecture is absent (e.g. projects whose
+    // migration ran outside the ERP — the execution contract was never materialized).
+    // Mirrors backend build_plan() fallback: execution_engine.py — "No targetArchitecture —
+    // falling back to mapperNodes".
+    let ta = project?.targetArchitecture;
+    if (!ta || (!(ta.compute || []).length && !(ta.database || []).length && !(ta.storage || []).length)) {
+        const mn = project?.mapperNodes || [];
+        const serverTypes = ['ECS', 'COMPUTE', 'APP', 'WEB', 'VM', 'SERVER'];
+        const computeFallback = mn.filter(n => serverTypes.includes(String(n.type || '').toUpperCase()));
+        const dbFallback = mn.filter(n => ['RDS', 'DATABASE', 'DB', 'DCS'].includes(String(n.type || '').toUpperCase()));
+        const storageFallback = mn.filter(n => ['OBS', 'EVS', 'SFS', 'STORAGE', 'BUCKET'].includes(String(n.type || '').toUpperCase()));
+        ta = { compute: computeFallback, database: dbFallback, storage: storageFallback, network: mn.filter(n => ['VPC', 'SUBNET', 'SECURITY_GROUP', 'NAT', 'EIP', 'VPN'].includes(String(n.type || '').toUpperCase())) };
+    }
+    const targetArch = ta || {};
     const servers = [
         ...(targetArch.compute || []).map(r => ({ ...r, name: r.name || r.source_name || r.id || `Server-${Math.random().toString(36).slice(2,7)}` })),
         ...(targetArch.database || []).map(r => ({ ...r, name: r.name || r.source_name || r.id || `DB-${Math.random().toString(36).slice(2,7)}`, type: r.type || 'RDS' })),
