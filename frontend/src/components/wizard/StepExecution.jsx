@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { formatShortDate, EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 import WaveZeroConfigModal from './WaveZeroConfigModal';
@@ -24,6 +24,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     
     const [executionState, setExecutionState] = useState(null);
     const [isLoadingState, setIsLoadingState] = useState(true);
+    const [cloudState, setCloudState] = useState(null); // live cloud resource state
 
     const isGreenfield = project?.projectType === 'greenfield' || project?.project_type === 'greenfield';
     const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
@@ -264,7 +265,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [lastToolCall, setLastToolCall] = useState(null);
     const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
     const [polledAt, setPolledAt] = useState(null); // last poll timestamp
-    const [cloudState, setCloudState] = useState(null); // live cloud resource state
     const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
 
     // Detect migration services active for this project from targetArchitecture
@@ -332,24 +332,25 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     // This works regardless of where the execution is triggered (GUI, external agent, CLI)
     // because it reads the REAL cloud state, not process lists
     const _isAgentic = executionMode === 'agentic';
+    // Cloud-state fetch function (called by poll + manual refresh button)
+    const fetchCloudState = useCallback(() => {
+        if (!project?.id) return Promise.resolve();
+        const token = sessionStorage.getItem('hermes_access_token');
+        if (!token) return Promise.resolve();
+        return fetch(`/api/execution/${project.id}/cloud-state`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        })
+            .then(r => r.json())
+            .then(data => { if (data.success) setCloudState(data); })
+            .catch(() => {});
+    }, [project?.id]);
     // Poll in ALL modes — individual/manual also need per-server task status (SMS progress, connectivity)
     useEffect(() => {
         if (!project?.id) return;
-        const token = sessionStorage.getItem('hermes_access_token');
-        let active = true;
-        const poll = () => {
-            if (!active) return;
-            fetch(`/api/execution/${project.id}/cloud-state`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            })
-                .then(r => r.json())
-                .then(data => { if (active && data.success) setCloudState(data); })
-                .catch(() => {});
-        };
-        poll(); // immediate
-        const interval = setInterval(poll, 5000);
-        return () => { active = false; clearInterval(interval); };
-    }, [project?.id, _isAgentic]);
+        fetchCloudState(); // immediate
+        const interval = setInterval(fetchCloudState, 5000);
+        return () => clearInterval(interval);
+    }, [fetchCloudState]);
 
     const isAgentic = _isAgentic;
     const isIndividual = executionMode === 'individual';
@@ -723,6 +724,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <i className="fas fa-play mr-1"></i> Run Pipeline
                         </button>
                     )}
+                    <button
+                        onClick={fetchCloudState}
+                        className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                        title="Refresh cloud state"
+                    >
+                        <i className="fas fa-sync-alt mr-1"></i> Refresh
+                    </button>
                     <button
                         onClick={() => toggleSection('logs')}
                         className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
