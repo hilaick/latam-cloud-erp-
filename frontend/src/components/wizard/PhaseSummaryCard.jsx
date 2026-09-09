@@ -87,13 +87,12 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   };
 
   const handleRollbackExecute = async () => {
-    const selected = Object.entries(rollbackSelected).filter(([_,v]) => v).map(([id]) => id);
     setRollbackExecuting(true);
     try {
       const res = await fetch(`/api/execution/${projectId}/orchestrate/rollback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('hermes_access_token')}` },
-        body: JSON.stringify({ resources: selected.length > 0 ? selected : 'all' })
+        body: JSON.stringify({ resources: 'all' })
       });
       const data = await res.json();
       if (data.success) {
