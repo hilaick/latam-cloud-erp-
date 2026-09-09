@@ -192,7 +192,7 @@ function App() {
                                             setGuidedData(prev => ({...prev, projectId: pid, ...leadData}));
                                         }
                                         setGuidedStep(s => Math.min(s + 1, GUIDED_STEPS.length - 1));
-                                    }
+                                    }}
                                     onBack={() => setGuidedStep(s => Math.max(s - 1, 0))}
                                     onSkip={() => {
                                         // Skip — go to project wizard at Phase 1 (ARB) if project created, else home
