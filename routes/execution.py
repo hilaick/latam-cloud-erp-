@@ -1777,7 +1777,7 @@ def orchestration_rollback(project_id):
         final_eips, _ = h(['EIP','ListPublicips/v3','--cli-region='+target_region])
         remaining = [v['name'] for v in final_vpcs.get('vpcs',[])] + [e['public_ip_address'] for e in final_eips.get('publicips',[])]
 
-        ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING'})
+        ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING', 'last_pipeline_log': None})
         project_record.delegate_tasks = '[]'
         db.session.commit()
         if project_id in _running_pipelines:
