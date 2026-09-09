@@ -1563,9 +1563,18 @@ def orchestration_rollback(project_id):
         def h(cmd, timeout=30):
             try:
                 r = _sp.run(['hcloud'] + cmd, capture_output=True, text=True, timeout=timeout, env=env)
+                parsed = {}
                 idx = r.stdout.find('{')
-                parsed = _json.loads(r.stdout[idx:]) if idx >= 0 else {}
-                if r.returncode != 0:
+                if idx >= 0:
+                    try:
+                        dec = _json.JSONDecoder()
+                        parsed, _ = dec.raw_decode(r.stdout[idx:])
+                    except Exception:
+                        try:
+                            parsed = _json.loads(r.stdout[idx:r.stdout.rfind('}')+1])
+                        except Exception:
+                            parsed = {}
+                if r.returncode != 0 and not parsed.get('code'):
                     parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200])
                 return parsed, ''
             except Exception as e:
@@ -1706,6 +1715,21 @@ def orchestration_rollback(project_id):
                         plan_rollback_done.add(label)
                         # Execute the rollback command (hcloud CLI style)
                         rb_cmd = rb['cmd']
+                        # Skip templated commands that were never ID-substituted
+                        # (e.g. --vpc_id=<vpc_id>) — executing them just fails.
+                        if '<' in rb_cmd and '>' in rb_cmd:
+                            continue
+                        # ONLY run rollback for resource types that actually exist
+                        # in the cloud enumeration. OBS/ECS/SMS steps in the plan
+                        # (junk under 4.1) have no matching found resources -> skip.
+                        type_ok = False
+                        for tkey, tlist in (('vpc','vpcs'), ('subnet','subnets'),
+                                            ('securitygroup','security_groups'), ('eip','eips')):
+                            if ('--' + tkey + '_id' in rb_cmd or tkey in rb_cmd.lower()) and found[tlist]:
+                                type_ok = True
+                                break
+                        if not type_ok:
+                            continue
                         if rb_cmd.startswith('hcloud '):
                             parts = rb_cmd.split()
                             svc_idx = 1  # index of service name (e.g. "VPC", "ECS", "EIP")
