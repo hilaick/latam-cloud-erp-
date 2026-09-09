@@ -69,6 +69,7 @@ function App() {
         activePhase, 
         activeProjectId, 
         setActivePhase, 
+    setActiveProjectId,
         handleUpdateProject, 
         refreshData 
     } = useContext(ERPContext);
@@ -157,7 +158,41 @@ function App() {
                                     subtitle={GUIDED_SCENARIOS[guidedScenario]?.subtitle || ''}
                                     steps={GUIDED_STEPS}
                                     currentStep={guidedStep}
-                                    onNext={() => setGuidedStep(s => Math.min(s + 1, GUIDED_STEPS.length - 1))}
+                                    onNext={() => {
+                                        // Auto-create presales lead when leaving Step 1
+                                        if (guidedStep === 0 && !guidedData.projectId && guidedData.customerName) {
+                                            const pid = `proj-${Date.now()}`;
+                                            const leadData = {
+                                                id: pid,
+                                                name: guidedData.projectName ? guidedData.projectName.toUpperCase() : `${guidedData.customerName.toUpperCase()} Migration`,
+                                                customerName: guidedData.customerName,
+                                                customerId: guidedData.customerId || '',
+                                                region: guidedData.region || 'la-south-2',
+                                                country: guidedData.country || '',
+                                                sa: (guidedData.sa || '').toUpperCase(),
+                                                partner: guidedData.partner || 'TBD',
+                                                isWaiting: true,
+                                                waitingStage: 'prospect',
+                                                health: 'Yellow',
+                                                isDeleted: false,
+                                                project_type: '',
+                                                authLevel: [],
+                                                migrationScope: [],
+                                                deliveryScope: [],
+                                                businessDrivers: [],
+                                                createdAt: new Date().toISOString(),
+                                                updatedAt: new Date().toISOString(),
+                                            };
+                                            const token = sessionStorage.getItem('hermes_access_token');
+                                            fetch('/api/erp/projects', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                                body: JSON.stringify(leadData)
+                                            });
+                                            setGuidedData(prev => ({...prev, projectId: pid, ...leadData}));
+                                        }
+                                        setGuidedStep(s => Math.min(s + 1, GUIDED_STEPS.length - 1));
+                                    }
                                     onBack={() => setGuidedStep(s => Math.max(s - 1, 0))}
                                     onSkip={() => {
                                         // Skip — go to project wizard at Phase 1 (ARB) if project created, else home
@@ -227,15 +262,15 @@ function App() {
                                                 sapTenancy: guidedData.sapTenancy || '',
                                                 sapMigrationWindows: guidedData.sapMigrationWindows || '',
                                                 sapTimelines: guidedData.sapTimelines || '',
-                                                // Active project (not presales lead)
-                                                isWaiting: false,
-                                                waitingStage: null,
+                                                // WIZARD RESULT: keep as Presales Lead
+                                                isWaiting: true,
+                                                waitingStage: 'prospect',
                                                 isDeleted: false,
                                                 health: 'Yellow',
                                                 // Phase 1 (ARB) complete — advance to Phase 2 (Architecture)
-                                                lifecycleState: '2_architecture',
-                                                phase: '2_architecture',
-                                                currentPhase: 'Architecture',
+                                                lifecycleState: '1_presales',
+                                                phase: '1_presales',
+                                                currentPhase: 'Presales',
                                                 migrationScenario: guidedScenario || '',
                                                 createdAt: guidedData.createdAt || new Date().toISOString(),
                                                 updatedAt: new Date().toISOString(),
@@ -251,10 +286,10 @@ function App() {
                                                     r.text().then(txt => alert(`Failed to save project: ${r.status} ${txt}`));
                                                 }
                                             }).catch(err => alert(`Network error: ${err.message}`));
-                                            // Update local state + navigate to Pipeline
-                                            handleUpdateProject(guidedData.projectId, projectData);
-                                            setActiveProjectId(guidedData.projectId);
-                                            setActivePhase('pipeline');
+                                            // Update local state + go to Presales Radar
+                                            setGuidedData(prev => ({...prev, isWaiting: true, lifecycleState: '1_presales'}));
+                                            setActiveProjectId(null);
+                                            setActivePhase('radar');
                                         } else {
                                             setActivePhase('home');
                                         }

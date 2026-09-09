@@ -1,0 +1,24 @@
+{
+  "server": {
+    "name": "CDP-PRTSRV-01-TARGET-NEW-AUTO",
+    "imageRef": "91873c3f-2464-4780-b2d8-1ed8c438d32d",
+    "flavorRef": "x0.2u.8g",
+    "vpcid": "3fd48f1a-11a0-4faf-a858-6e123ebb45de",
+    "nics": [
+      {
+        "subnet_id": "9bfaa83f-9d3e-4f83-9c71-ab1d4b04b3ae"
+      }
+    ],
+    "availability_zone": "la-north-2a",
+    "root_volume": {
+      "volumetype": "SSD",
+      "size": 104
+    },
+    "count": 1,
+    "security_groups": [
+      {
+        "id": "e77b288c-fc8d-4062-aed6-8aa982b7ca51"
+      }
+    ]
+  }
+}
