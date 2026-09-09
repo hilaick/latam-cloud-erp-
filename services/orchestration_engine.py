@@ -677,6 +677,18 @@ def start_pipeline(project_id, start_from=0, restart_phase=None):
             'status': get_pipeline_status(project_id),
         }
 
+    # Clear any persisted log/status from a PREVIOUS run so the first status poll
+    # reports this run as in-progress (not stale 'completed' from the last one).
+    try:
+        from models import db as _db, ExecutionState as _ES2
+        st_prev = _ES2.query.filter_by(project_id=project_id).first()
+        if st_prev:
+            st_prev.last_pipeline_log = None
+            st_prev.status = 'PENDING'
+            _db.session.commit()
+    except Exception:
+        pass
+
     # Start background thread with its own app context
     thread = threading.Thread(
         target=_run_pipeline_thread,
