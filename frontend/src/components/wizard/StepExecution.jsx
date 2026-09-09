@@ -438,7 +438,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 // ── LIVE STATUS: derive autoOrchestrating from actual pipeline state
                 // so the Run button shows Running as soon as the backend starts,
                 // even if this component mounted mid-run (page refresh, navigation).
-                if (st.status === 'running' || st.status === 'running_external' || st.status === 'pending') {
+                if (st.status === 'running' || st.status === 'running_external') {
                     setAutoOrchestrating(true);
                 }
                 // Update phase status map

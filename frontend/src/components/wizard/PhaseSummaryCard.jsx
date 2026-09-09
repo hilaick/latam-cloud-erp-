@@ -100,6 +100,7 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
         const deleted = data.deleted || {};
         const count = (deleted.vpcs?.length||0) + (deleted.subnets?.length||0) + (deleted.security_groups?.length||0) + (deleted.eips?.length||0);
         setRollbackResult(`✅ ${count} deleted. ${data.message || ''}`);
+        setRollbackPreview(null); // clear stale list — show only confirmation
       } else {
         setRollbackResult(`❌ ${data.error || 'Rollback failed'}`);
       }
@@ -107,7 +108,8 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
       setRollbackResult(`❌ ${err.message}`);
     }
     setRollbackExecuting(false);
-    setRollbackOpen(false);
+    // Keep the result visible — reopen panel with just the confirmation
+    setRollbackOpen(true);
   };
 
   const found = rollbackPreview || {};
@@ -158,11 +160,14 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
             ) : (
               <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
                 <div className="text-[10px] font-black text-rose-700 uppercase tracking-widest mb-2">Rollback — Select Resources to Destroy</div>
+                {rollbackResult && !rollbackPreview && (
+                  <p className="text-xs font-bold text-emerald-700 mb-2 whitespace-pre-wrap">{rollbackResult}</p>
+                )}
                 {rollbackLoading ? (
                   <p className="text-xs text-slate-500"><i className="fas fa-spinner fa-spin mr-1"></i> Enumerating resources...</p>
-                ) : total === 0 ? (
+                ) : total === 0 && !rollbackResult ? (
                   <p className="text-xs text-slate-500">No ERP-tagged resources found to rollback.</p>
-                ) : (
+                ) : total > 0 && rollbackPreview ? (
                   <>
                     <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
                       {found.vpcs?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> VPC: {r.name} ({r.id.slice(0,8)})</label>)}
@@ -178,7 +183,7 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
                       {rollbackExecuting ? <><i className="fas fa-spinner fa-spin mr-1"></i> Deleting...</> : <><i className="fas fa-trash-alt mr-1"></i> Destroy Selected ({Object.values(rollbackSelected).filter(v => v).length})</>}
                     </button>
                   </>
-                )}
+                ) : null}
                 {rollbackResult && <p className="text-[10px] mt-2 font-bold text-slate-600 whitespace-pre-wrap">{rollbackResult}</p>}
                 <button onClick={() => setRollbackOpen(false)} className="ml-2 text-[10px] text-slate-400 hover:text-slate-600 underline">Cancel</button>
               </div>
