@@ -1086,6 +1086,11 @@ def orchestration_status(project_id):
                         plog = _j.loads(st_row.last_pipeline_log)
                         if isinstance(plog, list):
                             status['log'] = plog
+                            # Expose the latest [output] line as the agent report
+                            for _e in reversed(plog):
+                                if _e.startswith('[output] '):
+                                    status['agent_report'] = _e[9:]
+                                    break
                     except Exception:
                         status['log'] = []
                 completed = set()

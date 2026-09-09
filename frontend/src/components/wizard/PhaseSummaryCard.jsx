@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // ═══ PHASE SUMMARY CARD — collapsible report from agent output ═══
 // Renders after [done] appears in orchestrationLog, shows agent's full output
@@ -9,6 +9,20 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollbackPreview, setRollbackPreview] = useState(null);
   const [rollbackSelected, setRollbackSelected] = useState({});
+
+  // Fetch full agent report from session DB (log truncates [output] to 200 chars)
+  const [fullReport, setFullReport] = useState(null);
+  useEffect(() => {
+    if (!projectId) return;
+    const token = sessionStorage.getItem('hermes_access_token');
+    if (!token) return;
+    let cancelled = false;
+    fetch(`/api/execution/${projectId}/orchestrate/report`, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.success && d.report) setFullReport(d.report); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   // Build complete resource list with type
   const allResources = [
@@ -22,10 +36,13 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   const outputIdx = logLines.findIndex(l => l.startsWith('[output]'));
   const agentOutput = outputIdx >= 0 ? logLines.slice(outputIdx).join('\n').replace(/\[output\]\s?/g,'') : '';
 
+  // Use full report from session DB when available (log truncates to 200 chars)
+  const reportSource = fullReport || agentOutput;
+
   // Parse markdown table rows from the agent report
   const resourceRows = [];
-  if (agentOutput) {
-    const tableMatch = agentOutput.match(/\|.*\|/g);
+  if (reportSource) {
+    const tableMatch = reportSource.match(/\|.*\|/g);
     if (tableMatch) {
       let header = null;
       for (const row of tableMatch) {
