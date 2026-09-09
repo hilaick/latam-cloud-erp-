@@ -9,6 +9,9 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollbackPreview, setRollbackPreview] = useState(null);
   const [rollbackSelected, setRollbackSelected] = useState({});
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [rollbackExecuting, setRollbackExecuting] = useState(false);
+  const [rollbackResult, setRollbackResult] = useState(null);
 
   // Fetch full agent report from session DB (log truncates [output] to 200 chars)
   const [fullReport, setFullReport] = useState(null);
@@ -60,6 +63,7 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   const handleRollbackClick = async () => {
     setRollbackOpen(true);
     setRollbackPreview(null);
+    setRollbackLoading(true);
     // Preview
     try {
       const res = await fetch(`/api/execution/${projectId}/orchestrate/rollback`, {
@@ -68,11 +72,42 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
         body: JSON.stringify({})
       });
       const data = await res.json();
-      if (data.success) setRollbackPreview(data.found || {});
+      if (data.success) {
+        setRollbackPreview(data.found || {});
+        // Pre-select all
+        const all = {};
+        for (const list of Object.values(data.found || {})) for (const r of list) all[r.id] = true;
+        setRollbackSelected(all);
+      }
       else alert('Rollback preview failed: ' + (data.error || 'Unknown'));
     } catch (err) {
       alert('Rollback preview error: ' + err.message);
     }
+    setRollbackLoading(false);
+  };
+
+  const handleRollbackExecute = async () => {
+    const selected = Object.entries(rollbackSelected).filter(([_,v]) => v).map(([id]) => id);
+    setRollbackExecuting(true);
+    try {
+      const res = await fetch(`/api/execution/${projectId}/orchestrate/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('hermes_access_token')}` },
+        body: JSON.stringify({ resources: selected.length > 0 ? selected : 'all' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const deleted = data.deleted || {};
+        const count = (deleted.vpcs?.length||0) + (deleted.subnets?.length||0) + (deleted.security_groups?.length||0) + (deleted.eips?.length||0);
+        setRollbackResult(`✅ ${count} deleted. ${data.message || ''}`);
+      } else {
+        setRollbackResult(`❌ ${data.error || 'Rollback failed'}`);
+      }
+    } catch (err) {
+      setRollbackResult(`❌ ${err.message}`);
+    }
+    setRollbackExecuting(false);
+    setRollbackOpen(false);
   };
 
   const found = rollbackPreview || {};
@@ -123,7 +158,9 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
             ) : (
               <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
                 <div className="text-[10px] font-black text-rose-700 uppercase tracking-widest mb-2">Rollback — Select Resources to Destroy</div>
-                {total === 0 ? (
+                {rollbackLoading ? (
+                  <p className="text-xs text-slate-500"><i className="fas fa-spinner fa-spin mr-1"></i> Enumerating resources...</p>
+                ) : total === 0 ? (
                   <p className="text-xs text-slate-500">No ERP-tagged resources found to rollback.</p>
                 ) : (
                   <>
@@ -134,16 +171,15 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
                       {found.eips?.map(r => <label key={r.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={rollbackSelected[r.id] !== false} onChange={() => setRollbackSelected(p => ({...p, [r.id]: p[r.id] === false}))} /> EIP: {r.ip}</label>)}
                     </div>
                     <button
-                      onClick={async () => {
-                        setRollbackOpen(false);
-                        onRollback && onRollback();
-                      }}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-md"
+                      onClick={handleRollbackExecute}
+                      disabled={rollbackExecuting}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-md disabled:opacity-50"
                     >
-                      <i className="fas fa-trash-alt mr-1"></i> Destroy All
+                      {rollbackExecuting ? <><i className="fas fa-spinner fa-spin mr-1"></i> Deleting...</> : <><i className="fas fa-trash-alt mr-1"></i> Destroy Selected ({Object.values(rollbackSelected).filter(v => v).length})</>}
                     </button>
                   </>
                 )}
+                {rollbackResult && <p className="text-[10px] mt-2 font-bold text-slate-600 whitespace-pre-wrap">{rollbackResult}</p>}
                 <button onClick={() => setRollbackOpen(false)} className="ml-2 text-[10px] text-slate-400 hover:text-slate-600 underline">Cancel</button>
               </div>
             )}
