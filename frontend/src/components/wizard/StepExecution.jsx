@@ -422,7 +422,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
     // 🚨 POLL: Poll backend for pipeline status every 3s while orchestrating
     useEffect(() => {
-        if (!autoOrchestrating || !project?.id) return;
+        if (!project?.id) return;
         const token = sessionStorage.getItem('hermes_access_token');
         let cancelled = false;
 
@@ -435,6 +435,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (cancelled) return;
 
                 const st = data.status || {};
+                // ── LIVE STATUS: derive autoOrchestrating from actual pipeline state
+                // so the Run button shows Running as soon as the backend starts,
+                // even if this component mounted mid-run (page refresh, navigation).
+                if (st.status === 'running' || st.status === 'running_external' || st.status === 'pending') {
+                    setAutoOrchestrating(true);
+                }
                 // Update phase status map
                 if (st.phase_status) setPhaseStatus(st.phase_status);
                 // Update completed phases
@@ -486,7 +492,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         poll(); // immediate first poll
         const interval = setInterval(poll, 3000);
         return () => { cancelled = true; clearInterval(interval); };
-    }, [autoOrchestrating, project?.id]);
+    }, [project?.id]);
 
     // 🚨 MOUNT-CHECK: On mount or project switch, check if a pipeline is already running.
     // If so, set autoOrchestrating=true so the polling useEffect picks it up.

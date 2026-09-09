@@ -1796,6 +1796,42 @@ def orchestration_rollback(project_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@execution_bp.route('/api/execution/<project_id>/orchestrate/report', methods=['GET'])
+@jwt_required()
+def orchestration_report(project_id):
+    """Return the full agent completion report for the latest pipeline run phase."""
+    import subprocess as _sp, os as _os, json as _j
+    try:
+        # Latest session for this project (by recency)
+        hermes_db = _os.path.expanduser('~/.hermes/state.db')
+        if not _os.path.exists(hermes_db):
+            return jsonify({'success': False, 'error': 'no hermes db'}), 404
+        sess = _sp.run(['sqlite3', hermes_db,
+            "SELECT id FROM sessions WHERE id NOT LIKE 'cron%' ORDER BY started_at DESC LIMIT 3;"],
+            capture_output=True, text=True, timeout=5)
+        session_ids = [s for s in sess.stdout.strip().split('\n') if s]
+        report = None
+        phase = None
+        for sid in session_ids:
+            # find last assistant message mentioning PHASE_4_
+            res = _sp.run(['sqlite3', hermes_db,
+                f"SELECT content FROM messages WHERE session_id='{sid}' AND role='assistant' AND content LIKE '%PHASE_4_%' AND (content LIKE '%COMPLETE%' OR content LIKE '%report%' OR content LIKE '%| Resource |%') ORDER BY id DESC LIMIT 1;"],
+                capture_output=True, text=True, timeout=5)
+            content = res.stdout.strip()
+            if content:
+                # extract phase key
+                import re as _re
+                m = _re.search(r'PHASE_4_\d', content)
+                phase = m.group(0) if m else None
+                report = content[:8000]
+                break
+        if not report:
+            return jsonify({'success': False, 'error': 'no report found'}), 404
+        return jsonify({'success': True, 'phase': phase, 'report': report})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @execution_bp.route('/api/execution/<project_id>/phase-content', methods=['GET'])
 @jwt_required()
 def get_phase_content(project_id):
