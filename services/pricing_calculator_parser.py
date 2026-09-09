@@ -42,7 +42,8 @@ def is_pricing_calculator_format(file_path: str) -> bool:
                             return True
         
         # Must have service sheets with characteristic names
-        service_sheet_keywords = ['compute - prod', 'compute - dev', 'storage', 'connectivity', 'security', 'support']
+        # Also match Pricing Calculator export sheets with "Price Calculator" prefix
+        service_sheet_keywords = ['compute - prod', 'compute - dev', 'storage', 'connectivity', 'security', 'support', 'price calculator']
         service_sheets = 0
         for keyword in service_sheet_keywords:
             if any(keyword in s for s in sheet_names):
