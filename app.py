@@ -96,6 +96,12 @@ def get_js_version():
 
 @app.after_request
 def add_header(response):
+    response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*') or '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    if request.method == 'OPTIONS':
+        return response
     if 'text/html' in response.headers.get('Content-Type', ''):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
         response.headers['Pragma'] = 'no-cache'
