@@ -342,8 +342,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             headers: { 'Authorization': `Bearer ${token}` },
         })
             .then(r => r.json())
-            .then(data => { if (data.success) setCloudState(data); })
-            .catch(() => {});
+            .then(data => { if (data.success) setCloudState(data); else console.error('[cloud-state] success=false', data); })
+            .catch(err => { console.error('[cloud-state] fetch error', err); setCloudState(prev => prev || { error: String(err), timestamp: new Date().toISOString() }); });
     }, [project?.id]);
     // Poll in ALL modes — individual/manual also need per-server task status (SMS progress, connectivity)
     useEffect(() => {
@@ -712,7 +712,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     )}
                     {!cloudState && (
-                        <div className="text-[10px] font-medium text-slate-500">Loading cloud state...</div>
+                        <div className="text-[10px] font-medium text-slate-500">
+                            <i className="fas fa-circle-notch fa-spin mr-1"></i> Loading cloud state...
+                            <span className="ml-2 text-[8px] text-slate-400 font-mono">(refreshing every 5s)</span>
+                        </div>
+                    )}
+                    {cloudState?.error && (
+                        <div className="mt-1 text-[9px] text-rose-500 font-mono">cloud-state error: {cloudState.error}</div>
                     )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
