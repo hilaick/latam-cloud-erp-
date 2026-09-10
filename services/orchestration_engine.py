@@ -276,6 +276,14 @@ When done, report what you actually executed, the verification commands you ran,
         '--toolsets', 'terminal,file',
         '--reasoning', 'medium',
     ]
+    # ── SKILL PRELOAD (phase-specific) ──
+    # The toolsets filter (terminal,file) removes the skill_view tool, so without
+    # explicit --skills the agent sees only skill NAME+description in its prompt
+    # and cannot load the actual runbook commands. Preload relevant skills here.
+    from services.skill_preload import skills_for_phase
+    preload_skills = skills_for_phase(phase)
+    for sk in preload_skills:
+        cmd.extend(['--skills', sk])
 
 
     logger.info(f"[orchestration] Spawning Hermes agent for {phase}: {goal[:100]}...")
