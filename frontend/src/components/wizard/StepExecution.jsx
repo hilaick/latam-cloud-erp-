@@ -1847,7 +1847,7 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             </>}
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
-            {isIndividual && <MigrationIndividualView servers={servers} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} />}
+            {isIndividual && <MigrationIndividualView servers={servers} execPlan={execPlan} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} />}
         </div>
     );
 }
@@ -1894,19 +1894,31 @@ function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execRe
     );
 }
 
-function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust, cloudState }) {
+function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust, cloudState, execPlan }) {
     const [taskStatus, setTaskStatus] = useState({});
     const TASKS = [
-        { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b' },
+        { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b', zeroTrust: true },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
-        { action: 'SMS_CREATE_TASK', label: 'Start SMS', icon: 'fa-sync-alt', color: '#10b981' },
+        { action: 'ADD_SG_RULES_SMS', label: 'SG Rules', icon: 'fa-shield', color: '#ec4899' },
+        { action: 'SMS_TASK_CREATE', label: 'Start SMS', icon: 'fa-sync-alt', color: '#10b981' },
         { action: 'SMS_SUBTASK_MONITOR', label: 'Monitor', icon: 'fa-chart-line', color: '#6366f1' },
-        { action: 'SMS_CUTOVER', label: 'Cutover', icon: 'fa-power-off', color: '#ef4444' },
         { action: 'MIGRATION_PROJECT_CONFIG', label: 'Config', icon: 'fa-cog', color: '#8b5cf6' },
     ];
     const handleTask = async (action) => {
         if (!selectedServer) return; setTaskStatus(p => ({ ...p, [action]: 'running' }));
-        const r = await executeStep(action); setTaskStatus(p => ({ ...p, [action]: r?.success !== false ? 'success' : 'failed' }));
+        // Look up the numeric step_id from the execution plan matching this server + action
+        const planStep = execPlan?.steps?.find(s => s.target_resource === selectedServer.name && s.action === action);
+        if (!planStep) {
+            setTaskStatus(p => ({ ...p, [action]: 'nostep' }));
+            return;
+        }
+        const r = await executeStep(planStep.step_id);
+        setTaskStatus(p => ({ ...p, [action]: r?.success !== false ? 'success' : 'failed' }));
+    };
+    // Does the plan have this step for the selected server? (drives button enable state)
+    const hasPlanStep = (action, srvName) => {
+        const srv = srvName || selectedServer?.name;
+        return !!execPlan?.steps?.find(s => s.target_resource === srv && s.action === action);
     };
     // SMS task state per source server name, from the live cloud-state poll (5s)
     const smsTasks = cloudState?.resources?.sms_tasks || [];
@@ -1955,19 +1967,103 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                         {TASKS.map(t => {
                             const st = taskStatus[t.action];
                             const taskMatch = serverTask(selectedServer.name);
+                            const inPlan = hasPlanStep(t.action);
+                            const disabled = st === 'running' || (!execPlan && false) || (t.zeroTrust && !inPlan);
                             return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running'}
-                                className="p-2 rounded-lg border text-left transition-all hover:shadow-sm"
+                                className="p-2 rounded-lg border text-left transition-all hover:shadow-sm disabled:opacity-50"
                                 style={{ borderColor: t.color + '60', background: t.color + '08' }}>
                                 <i className={`fas ${t.icon}`} style={{ color: t.color }} />
                                 <span className="text-[10px] text-slate-700 ml-1 font-bold">{t.label}</span>
                                 {st === 'success' && <span className="text-emerald-500 text-[9px] block mt-1">✅ Done</span>}
                                 {st === 'running' && <span className="text-amber-500 text-[9px] block mt-1">⏳ Running...</span>}
                                 {st === 'failed' && <span className="text-red-500 text-[9px] block mt-1">❌ Failed</span>}
+                                {st === 'nostep' && <span className="text-slate-400 text-[9px] block mt-1">⚠ Not in plan</span>}
+                                {!st && !inPlan && execPlan && <span className="text-slate-400 text-[9px] block mt-1">Not in plan</span>}
+                                {!st && t.zeroTrust && inPlan && isZeroTrust && <span className="text-amber-500 text-[9px] block mt-1">👤 Customer</span>}
                                 {!st && taskMatch?.state === 'RUNNING' && <span className="text-emerald-500 text-[9px] block mt-1">● Active</span>}
+                                {!st && inPlan && !taskMatch && <span className="text-slate-400 text-[9px] block mt-1">Click to run</span>}
                             </button>;
                         })}
                     </div>
                     {isZeroTrust && <div className="mt-2 text-amber-500 text-[10px] font-medium"><i className="fas fa-lock mr-1"></i> Agent install is customer responsibility — Zero Trust</div>}
+                </div>
+            )}
+            {/* 📋 EXECUTION PLAN PANEL — validate what will execute against the 188-step plan */}
+            <ExecutionPlanPanel execPlan={execPlan} selectedServer={selectedServer} servers={servers} />
+        </div>
+    );
+}
+
+/* ── Sub-component: Execution Plan Panel — collapsible, grouped by server ── */
+function ExecutionPlanPanel({ execPlan, selectedServer, servers }) {
+    const [expanded, setExpanded] = useState(false);
+    const [filter, setFilter] = useState('all'); // all | selected | noagent
+    const steps = execPlan?.steps || [];
+    const serverNames = new Set((servers || []).map(s => s.name));
+    // Steps that belong to a server in the grid (per-server actionable steps)
+    const serverSteps = steps.filter(s => serverNames.has(s.target_resource));
+    const globalSteps = steps.filter(s => !serverNames.has(s.target_resource));
+    // Filter by view mode
+    const shown = filter === 'selected'
+        ? serverSteps.filter(s => s.target_resource === selectedServer?.name)
+        : filter === 'global' ? globalSteps : serverSteps;
+    const phaseLabel = (p) => String(p || '').replace('PHASE_4_', '4.');
+    const toolIcon = (t) => t === 'mcp' ? '🔌' : t === 'skill' ? '🔧' : t === 'external' ? '📦' : t === 'history' ? '🕘' : '⌨️';
+    const statusColor = (st) => st === 'completed' || st === 'success' ? 'text-emerald-600' : st === 'running' ? 'text-amber-600' : st === 'failed' ? 'text-red-600' : 'text-slate-400';
+    return (
+        <div className="mt-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100 cursor-pointer select-none" onClick={() => setExpanded(v => !v)}>
+                <div className="text-xs font-black text-slate-700 uppercase tracking-widest">
+                    <i className={`fas ${expanded ? 'fa-chevron-down' : 'fa-chevron-right'} text-slate-400 mr-2`}></i>
+                    Execution Plan
+                    <span className="ml-2 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{steps.length} steps · {serverSteps.length} per-server · {globalSteps.length} global</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">{execPlan ? `built ${(execPlan.built_at || '').replace('T', ' ').slice(0, 16)}Z` : 'no plan yet'}</span>
+            </div>
+            {expanded && (
+                <div className="p-3">
+                    {!execPlan && <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3"><i className="fas fa-exclamation-triangle mr-1"></i> No execution plan built. Run <b>build-plan</b> first (it runs automatically on Phase 4 mount).</div>}
+                    {execPlan && (
+                        <>
+                            <div className="flex gap-2 mb-3">
+                                {[{k: 'all', l: `All (${serverSteps.length})`}, {k: 'selected', l: selectedServer ? `Selected: ${selectedServer.name}` : 'Selected (pick a server)'}, {k: 'global', l: `Global (${globalSteps.length})`}].map(f => (
+                                    <button key={f.k} onClick={() => setFilter(f.k)} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors ${filter === f.k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>{f.l}</button>
+                                ))}
+                            </div>
+                            {shown.length === 0 && <div className="text-xs text-slate-400 py-2">No steps in this view.</div>}
+                            <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-left border-collapse">
+                                    <thead><tr className="border-b border-slate-200 text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                                        <th className="py-1.5 pr-2 w-10">#</th>
+                                        <th className="py-1.5 pr-2 w-14">Phase</th>
+                                        <th className="py-1.5 pr-2">Server</th>
+                                        <th className="py-1.5 pr-2">Action</th>
+                                        <th className="py-1.5 pr-2 w-20">Tool</th>
+                                        <th className="py-1.5">Status</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {shown.map(s => (
+                                            <tr key={s.step_id} className="border-b border-slate-100 hover:bg-slate-50">
+                                                <td className="py-1.5 pr-2 text-[10px] font-mono text-slate-400">{s.step_id}</td>
+                                                <td className="py-1.5 pr-2 text-[10px] font-bold text-slate-500">{phaseLabel(s.phase)}</td>
+                                                <td className="py-1.5 pr-2 text-[10px]">
+                                                    <span className={`font-bold ${s.target_resource === selectedServer?.name ? 'text-indigo-700' : 'text-slate-600'}`}>{s.target_resource}</span>
+                                                    {s.scope_status === 'not_in_target_arch' && <span className="ml-1 text-[8px] text-amber-600 bg-amber-50 px-1 rounded">scope+</span>}
+                                                </td>
+                                                <td className="py-1.5 pr-2">
+                                                    <span className="text-[10px] font-mono text-slate-700">{s.action}</span>
+                                                    {s.tool_name && <div className="text-[8px] text-slate-400 truncate max-w-[220px]">{s.tool_name}</div>}
+                                                </td>
+                                                <td className="py-1.5 pr-2 text-[11px]" title={s.tool_source}>{toolIcon(s.tool_source)}</td>
+                                                <td className={`py-1.5 text-[9px] font-bold uppercase ${statusColor(s.status)}`}>{s.status || 'pending'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="mt-2 text-[9px] text-slate-400"><i className="fas fa-info-circle mr-1"></i> Individual mode executes the <b>per-server</b> steps one by one via the engine tiers (Terraform → MCP → hcloud). Global steps (VPC, EIP, quotas) run in agentic/pipeline mode.</div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
@@ -2221,6 +2317,17 @@ function WorkbenchView({ project }) {
     const [selectedModel, setSelectedModel] = useState('');
     const [showDryRunModal, setShowDryRunModal] = useState(false);
     const [dryRunResult, setDryRunResult] = useState(null);
+    // 📋 Execution plan fetched for context — agents and humans see what will run
+    const [execPlan, setExecPlan] = useState(null);
+    const [showPlan, setShowPlan] = useState(false);
+
+    useEffect(() => {
+        if (!project?.id) return;
+        const token = sessionStorage.getItem('hermes_access_token');
+        fetch(`/api/execution/${project.id}/build-plan`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({})
+        }).then(r => r.json()).then(d => { if (d.success) setExecPlan(d.plan); }).catch(() => {});
+    }, [project?.id]);
 
     const executionMode = project?.executionMode || 'manual';
     const isAgentic = executionMode === 'agentic';
@@ -2302,6 +2409,43 @@ function WorkbenchView({ project }) {
                         {isAgentic ? 'AGENTIC MODE — GLM 5.2' : 'MANUAL MODE'}
                     </span>
                 </div>
+                {/* 📋 Execution Plan context — agents + humans validate what will run */}
+                <div className="px-4 py-2 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between">
+                    <button onClick={() => setShowPlan(v => !v)} className="text-[10px] font-black text-indigo-700 uppercase tracking-widest hover:text-indigo-900 transition-colors">
+                        <i className={`fas ${showPlan ? 'fa-chevron-down' : 'fa-chevron-right'} mr-1.5`}></i>
+                        Execution Plan {execPlan ? `(${execPlan.summary?.total_steps || execPlan.steps?.length || 0} steps)` : '(loading...)'}
+                    </button>
+                    {execPlan && <span className="text-[9px] font-mono text-indigo-400">targets: {(execPlan.resources || []).length} | built {String(execPlan.built_at || '').replace('T',' ').slice(0,16)}Z</span>}
+                </div>
+                {showPlan && (
+                    <div className="px-4 py-3 bg-white border-b border-slate-100 max-h-64 overflow-y-auto custom-scrollbar">
+                        {!execPlan && <div className="text-[11px] text-slate-400">No execution plan available yet.</div>}
+                        {execPlan && (
+                            <table className="w-full text-left">
+                                <thead><tr className="border-b border-slate-200 text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                                    <th className="py-1 pr-2 w-8">#</th>
+                                    <th className="py-1 pr-2 w-12">Phase</th>
+                                    <th className="py-1 pr-2">Server</th>
+                                    <th className="py-1 pr-2">Action</th>
+                                    <th className="py-1 w-12">Tool</th>
+                                </tr></thead>
+                                <tbody>
+                                    {(execPlan.steps || []).filter(s => ['ECS','COMPUTE','APP','WEB','VM','RDS','DATABASE','DB','OBS','EVS','SFS'].some(t => String(s.target_resource || '').toLowerCase().includes(t.toLowerCase())) || (execPlan.resources || []).some(r => (r.name || r.source_name) === s.target_resource))
+                                        .slice(0, 40).map(s => (
+                                        <tr key={s.step_id} className="border-b border-slate-50">
+                                            <td className="py-0.5 pr-2 text-[9px] font-mono text-slate-400">{s.step_id}</td>
+                                            <td className="py-0.5 pr-2 text-[9px] font-bold text-slate-500">{String(s.phase || '').replace('PHASE_4_', '4.')}</td>
+                                            <td className="py-0.5 pr-2 text-[9px] font-bold text-slate-600">{s.target_resource}</td>
+                                            <td className="py-0.5 pr-2 text-[9px] font-mono text-slate-700">{s.action}</td>
+                                            <td className="py-0.5 text-[10px]" title={s.tool_source}>{s.tool_source === 'mcp' ? '🔌' : s.tool_source === 'skill' ? '🔧' : '⌨️'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                        <div className="mt-1.5 text-[9px] text-slate-400"><i className="fas fa-info-circle mr-1"></i> Delegated agents receive project context; use the plan above to validate scope before sending a task.</div>
+                    </div>
+                )}
                 <div className="flex-1 p-6 bg-slate-50/50 flex flex-col">
                     {isAgentic ? (
                         <>
