@@ -24,7 +24,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
     
     const [executionState, setExecutionState] = useState(null);
     const [isLoadingState, setIsLoadingState] = useState(true);
-    const [cloudState, setCloudState] = useState(null); // live cloud resource state
+    const [liveCloudState, setLiveCloudState] = useState(null); // live cloud resource state
 
     const isGreenfield = project?.projectType === 'greenfield' || project?.project_type === 'greenfield';
     const authLevel = project?.authLevel || 'Read-Only (Customer Managed)';
@@ -230,7 +230,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
                 <div className="flex-1 min-w-0 bg-transparent min-h-[700px] transition-all duration-300">
                     {subTab === 'readiness' && <ReadinessGatewayView project={project} isGreenfield={isGreenfield} authLevel={authLevel} isZeroTrust={isZeroTrust} onApprove={() => { updatePhase('PHASE_4_1', 'PENDING'); setSubTab('orchestrator'); }} />}
-                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} execCloudState={cloudState} />}
+                    {subTab === 'orchestrator' && executionState && <OrchestratorView project={project} executionState={executionState} updatePhase={updatePhase} isGreenfield={isGreenfield} setShowWaveZeroModal={setShowWaveZeroModal} handleExecuteTerraform={handleExecuteTerraform} handleDryRunTerraform={handleDryRunTerraform} handleGarbageCollection={handleGarbageCollection} executionMode={project?.executionMode || 'manual'} onUpdateProject={onUpdateProject} execCloudState={liveCloudState} />}
                     {/* 🚨 REPLACED STUBS WITH INTEGRATED FULL COMPONENTS */}
                     {subTab === 'workbench' && <WorkbenchView project={project} />}
                     {subTab === 'tam' && !isGreenfield && <GovernanceView project={project} onUpdateProject={onUpdateProject} />}
@@ -242,8 +242,8 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
 
 // 🚨 PRESERVED: Your exact interactive state machine for Phase 4.1 to 4.7
 // 🚨 UPGRADED: Modes — manual (original behavior) / agentic (auto-chain) / individual (prereq check)
-function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject, execCloudState }) {
-    const cloudState = execCloudState; // prop name mapping (component body uses cloudState)
+function OrchestratorView({ project, executionState, updatePhase, isGreenfield, setShowWaveZeroModal, handleExecuteTerraform, handleDryRunTerraform, handleGarbageCollection, executionMode, onUpdateProject }) {
+    const [cloudState, setCloudState] = useState(null); // local live cloud state (owned by this component's poller) (component body uses cloudState)
     const execState = executionState || { currentPhase: 'PHASE_4_0', status: 'PENDING', pendingAction: null };
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
@@ -333,8 +333,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     // This works regardless of where the execution is triggered (GUI, external agent, CLI)
     // because it reads the REAL cloud state, not process lists
     const _isAgentic = executionMode === 'agentic';
-    // Cloud-state fetch function (called by poll + manual refresh button)
-    const fetchCloudState = useCallback(() => {
+    // Cloud-state fetch function (called by poll + manual refresh button).
+    // Plain function (NOT useCallback): the minifier broke the useCallback closure
+    // and emitted an unresolved global `setCloudState` -> ReferenceError in browser.
+    const fetchCloudState = () => {
         if (!project?.id) return Promise.resolve();
         const token = sessionStorage.getItem('hermes_access_token');
         if (!token) return Promise.resolve();
@@ -342,16 +344,16 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             headers: { 'Authorization': `Bearer ${token}` },
         })
             .then(r => r.json())
-            .then(data => { if (data.success) setCloudState(data); else console.error('[cloud-state] success=false', data); })
-            .catch(err => { console.error('[cloud-state] fetch error', err); setCloudState(prev => prev || { error: String(err), timestamp: new Date().toISOString() }); });
-    }, [project?.id]);
+            .then(data => { if (data.success) { try { setCloudState(data); } catch (err) { console.error('[cloud-state] set failed', err); } } else console.error('[cloud-state] success=false', data); })
+            .catch(err => { console.error('[cloud-state] fetch error', err); try { setCloudState(prev => prev || { error: String(err), timestamp: new Date().toISOString() }); } catch (e2) { console.error('[cloud-state] set failed in catch', e2); } });
+    };
     // Poll in ALL modes — individual/manual also need per-server task status (SMS progress, connectivity)
     useEffect(() => {
         if (!project?.id) return;
         fetchCloudState(); // immediate
         const interval = setInterval(fetchCloudState, 5000);
         return () => clearInterval(interval);
-    }, [fetchCloudState]);
+    }, [project?.id]);
 
     const isAgentic = _isAgentic;
     const isIndividual = executionMode === 'individual';
