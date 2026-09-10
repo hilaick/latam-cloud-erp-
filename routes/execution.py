@@ -1116,10 +1116,22 @@ def orchestration_status(project_id):
                             completed.add('PHASE_4_6')
                         elif 'Teardown' in l or 'Garbage' in l:
                             completed.add('PHASE_4_7')
+                # ALSO merge completed phases from delegate_tasks — they persist across
+                # log clears / resets, so a finished 4.1 stays "done" even if the log blob
+                # was reset (e.g. individual phase re-run). Ensures 4.2 can start directly.
+                try:
+                    _pr = ProjectData.query.get(project_id)
+                    if _pr and getattr(_pr, 'delegate_tasks', None):
+                        _dt_list = _j.loads(_pr.delegate_tasks)
+                        if isinstance(_dt_list, list):
+                            for _t in _dt_list:
+                                if _t.get('status') == 'COMPLETED':
+                                    completed.add(_t.get('phase', ''))
+                except Exception:
+                    pass
                 if completed:
                     status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                     status['phase_status'] = {p: 'completed' for p in completed}
-                    status['status'] = 'completed'
                 elif not status.get('status') or status.get('status') in ('idle', None):
                     status['status'] = 'idle'
         except Exception as e:

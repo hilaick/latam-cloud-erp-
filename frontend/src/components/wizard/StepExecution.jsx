@@ -1274,13 +1274,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="p-3">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                                         {[
-                                            { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: 'fa-network-wired', color: '#3b82f6', done: completedOrchPhases.has('PHASE_4_1') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_1') },
-                                            { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', icon: 'fa-download', color: '#f59e0b', done: completedOrchPhases.has('PHASE_4_2') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_2') },
-                                            { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', icon: 'fa-server', color: '#8b5cf6', done: completedOrchPhases.has('PHASE_4_3') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_3') },
-                                            { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', done: completedOrchPhases.has('PHASE_4_4') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_4') },
-                                            { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: 'fa-chart-line', color: '#06b6d4', done: completedOrchPhases.has('PHASE_4_5') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_5') },
-                                            { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', done: completedOrchPhases.has('PHASE_4_6') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_6') },
-                                            { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: 'fa-trash-alt', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') || (cloudState?.inferred_phase && cloudState.inferred_phase > 'PHASE_4_7') },
+                                            { n: 1, label: phaseContent?.PHASE_4_1?.label || 'Network', icon: 'fa-network-wired', color: '#3b82f6', done: completedOrchPhases.has('PHASE_4_1') },
+                                            { n: 2, label: phaseContent?.PHASE_4_2?.label || 'Source Prep', icon: 'fa-download', color: '#f59e0b', done: completedOrchPhases.has('PHASE_4_2') },
+                                            { n: 3, label: phaseContent?.PHASE_4_3?.label || 'Target', icon: 'fa-server', color: '#8b5cf6', done: completedOrchPhases.has('PHASE_4_3') },
+                                            { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', done: completedOrchPhases.has('PHASE_4_4') },
+                                            { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: 'fa-chart-line', color: '#06b6d4', done: completedOrchPhases.has('PHASE_4_5') },
+                                            { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', done: completedOrchPhases.has('PHASE_4_6') },
+                                            { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: 'fa-trash-alt', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') },
                                         ].map(ph => (
                                             <div key={ph.n} className={`rounded-lg border-2 p-3 flex items-center justify-between transition-all ${ph.done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
                                                 <div className="flex items-center gap-2 min-w-0">
@@ -1296,8 +1296,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 ) : (
                                                     <button
                                                         onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}
-                                                        disabled={autoOrchestrating}
-                                                        className="text-[8px] font-black uppercase text-purple-600 hover:text-purple-800 shrink-0 hover:underline disabled:opacity-40"
+                                                        disabled={autoOrchestrating || (ph.n > 1 && !completedOrchPhases.has(`PHASE_4_${ph.n - 1}`))}
+                                                        title={ph.n > 1 && !completedOrchPhases.has(`PHASE_4_${ph.n - 1}`) ? `Requires 4.${ph.n - 1} done first` : 'Run this phase'}
+                                                        className="text-[8px] font-black uppercase text-purple-600 hover:text-purple-800 shrink-0 hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
                                                     >
                                                         Run
                                                     </button>
