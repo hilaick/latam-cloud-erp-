@@ -1793,7 +1793,11 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const buildPlan = async () => {
         try {
             const res = await fetch(`/api/execution/${project.id}/build-plan`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({}) });
-            if (res.ok) setExecPlan(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                // API returns {success, plan} — unwrap so execPlan.steps works
+                setExecPlan(data.plan || data);
+            }
         } catch (e) { /* silent */ }
     };
     useEffect(() => { buildPlan(); }, [project.id]);
