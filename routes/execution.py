@@ -1755,36 +1755,87 @@ def orchestration_rollback(project_id):
             if should_del(sg):
                 do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={sg["id"]}','--cli-region='+target_region], f"SG {sg['name']}")
 
-        for v in found['vpcs']:
-            if should_del(v):
-                # VPC deletion with retry loop: the VPC's SGs (created moments ago)
-                # may still be propagating — event-consistency means the SG list can
-                # be stale, so delete SGs and retry VPC a few times with a short sleep.
-                vpc_gone = False
-                last_err = ''
-                for attempt in range(4):
-                    res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                    if not res1:
-                        # no JSON = hcloud printed an error table; try listing SGs
-                        sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
-                        for dsg in (sgs2.get('security_groups') or []):
-                            dbg, err2 = do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"SG {dsg.get('name','?')} (blocking VPC {v['name']})")
-                            if not dbg and err2:
-                                last_err = err2
-                        # small wait for SG propagation, then retry
-                        time.sleep(4)
-                        res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                    # verify
-                    found_vpcs_after, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
-                    after_names = [vv['name'] for vv in found_vpcs_after.get('vpcs',[])]
-                    if v['name'] not in after_names:
-                        vpc_gone = True
-                        break
-                    time.sleep(3)
-                if vpc_gone:
-                    deleted['vpcs'].append(v['name'])
-                elif last_err:
-                    failed.append(f"VPC {v['name']}: {last_err}")
+        # ── SDK-BASED VPC/SG/SUBNET DELETION (resource-kit pattern: huawei_discovery.py) ──
+        # The hcloud CLI prints errors as tables on stderr (no JSON) which made failure
+        # detection unreliable. The official SDK raises typed exceptions with the exact
+        # Huawei error code — deletion either works or reports the real reason.
+        sdk_deleted = {'vpcs': [], 'security_groups': [], 'subnets': []}
+        try:
+            from huaweicloudsdkcore.auth.credentials import BasicCredentials
+            from huaweicloudsdkcore.region.region import Region
+            from huaweicloudsdkvpc.v3 import VpcClient as VpcClientV3, ListVpcsRequest, DeleteVpcRequest
+            from huaweicloudsdkvpc.v3 import ListSecurityGroupsRequest, DeleteSecurityGroupRequest
+            from huaweicloudsdkvpc.v2 import VpcClient as VpcClientV2, ListSubnetsRequest, DeleteSubnetRequest
+            from services.credential_manager import get_credential_manager
+            import json as _json2
+            proj = project_record
+            raw_data = proj.data
+            if isinstance(raw_data, str):
+                try:
+                    pdata = _json2.loads(raw_data) if raw_data else {}
+                except Exception:
+                    pdata = {}
+            else:
+                pdata = raw_data or {}
+            encrypted_ak = None
+            encrypted_sk = None
+            if isinstance(pdata, dict):
+                encrypted_ak = pdata.get('target_huawei_ak') or pdata.get('source_huawei_ak')
+                encrypted_sk = pdata.get('target_huawei_sk') or pdata.get('source_huawei_sk')
+            master_pw = os.environ.get('VAULT_MASTER_PASSWORD', '')
+            if not master_pw:
+                master_pw = getattr(request, 'vault_password', '') or 'LatamCloudAdmin2026!'
+            if encrypted_ak and encrypted_sk:
+                ak, sk = encrypted_ak, encrypted_sk
+                if str(ak).startswith('{'):
+                    from services.credential_manager import get_credential_manager as _gcm
+                    ed = _json2.loads(ak)
+                    ak, sk = _gcm(master_pw).decrypt_credentials(ed)
+                else:
+                    ak, sk = str(ak).strip(), str(sk).strip()
+                region_id = target_region or 'la-north-2'
+                creds = BasicCredentials(ak, sk, None)
+                vpc_region = Region(id=region_id, endpoint=f"https://vpc.{region_id}.myhuaweicloud.com")
+                vclient = VpcClientV3.new_builder().with_credentials(creds).with_region(vpc_region).build()
+                # 1) Subnets first (v2 client — v3 has no subnet delete)
+                vclient2 = VpcClientV2.new_builder().with_credentials(creds).with_region(vpc_region).build()
+                for sub in found['subnets']:
+                    if should_del(sub):
+                        try:
+                            vclient2.delete_subnet(DeleteSubnetRequest(vpc_id=sub.get('vpc_id'), subnet_id=sub['id']))
+                            sdk_deleted['subnets'].append(sub.get('name'))
+                        except Exception as e:
+                            failed.append(f"SDK Subnet {sub.get('name')}: {str(e)[:150]}")
+                # 2) SGs — list ALL in region, delete the ones tied to our VPCs or ERP-marked
+                sgs_resp = vclient.list_security_groups(ListSecurityGroupsRequest(limit=200))
+                vpc_ids = {v['id'] for v in found['vpcs']}
+                for sg in (sgs_resp.security_groups or []):
+                    sg_id = getattr(sg, 'id', '')
+                    # include ERP-tagged SGs + any SG in the target VPC
+                    if not sg_id:
+                        continue
+                    if should_del({'id': sg_id, 'name': getattr(sg, 'name', '')}):
+                        try:
+                            vclient.delete_security_group(DeleteSecurityGroupRequest(security_group_id=sg_id))
+                            sdk_deleted['security_groups'].append(getattr(sg, 'name', '?'))
+                        except Exception as e:
+                            failed.append(f"SDK SG {getattr(sg, 'name', '?')}: {str(e)[:150]}")
+                # 3) VPCs — SDK raises the exact error if SGs still block; catch + report
+                for v in found['vpcs']:
+                    if should_del(v):
+                        try:
+                            vclient.delete_vpc(DeleteVpcRequest(vpc_id=v['id']))
+                            sdk_deleted['vpcs'].append(v.get('name'))
+                        except Exception as e:
+                            failed.append(f"SDK VPC {v.get('name')}: {str(e)[:150]}")
+        except Exception as sdk_err:
+            failed.append(f"SDK init: {str(sdk_err)[:200]}")
+
+        # Merge SDK results into the response
+        for k in ('vpcs', 'security_groups', 'subnets'):
+            for n in sdk_deleted.get(k, []):
+                if n not in deleted[k]:
+                    deleted[k].append(n)
 
         for e in found['eips']:
             if should_del(e):
