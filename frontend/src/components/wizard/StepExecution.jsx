@@ -1195,26 +1195,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     )}
 
-                    {/* Orchestration log / live status — ALWAYS rendered when log exists, gated by Logs toggle */}
-                    {!collapsedSections.logs && orchestrationLog.length > 0 && (
-                        <div className="bg-slate-900 rounded-xl p-4 max-h-64 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner mb-3">
-                            {orchestrationLog.map((line, i) => (
-                                <div key={i} className={line.includes('✓') ? 'text-emerald-400' : line.includes('✗') ? 'text-rose-400' : 'text-purple-300'}>{line}</div>
-                            ))}
-                            {autoOrchestrating && (
-                                <div className="text-amber-400 animate-pulse mt-2">
-                                    <i className="fas fa-spinner fa-spin mr-2"></i> {externalExecutions && externalExecutions[0]?.pid > 0 ? 'External agent working...' : 'Pipeline running...'}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {!collapsedSections.logs && orchestrationLog.length === 0 && autoOrchestrating && (
-                        <div className="flex items-center gap-3 text-purple-700 font-bold text-sm mb-3">
-                            <i className="fas fa-spinner fa-spin text-xl"></i>
-                            Pipeline starting...
-                        </div>
-                    )}
-
                     {/* Phase Summary Cards — show collapsible results for each completed phase */}
                     {orchestrationLog.filter(l => l.includes('[done]')).length > 0 && (
                         <div className="mb-4 space-y-2">
@@ -1249,7 +1229,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                                             <i className="fas fa-clipboard-list text-indigo-500 mr-1"></i> Phase Runbook — individual execution
                                         </div>
-                                        <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.runbook ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
+                                        <span className="flex items-center gap-2">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); toggleSection('logs'); }}
+                                                className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
+                                                    !collapsedSections.logs ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'
+                                                }`}
+                                            >
+                                                <i className="fas fa-terminal mr-1"></i> Logs {!collapsedSections.logs ? '▲' : '▼'}
+                                            </button>
+                                            <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.runbook ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
+                                        </span>
                                     </div>
                                     {!collapsedSections.runbook && (
                                     <div className="p-3">
@@ -1330,6 +1320,27 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </button>
                             </div>
                         </div>
+                        {/* Orchestration log — inside runbook, gated by Logs toggle */}
+                        {!collapsedSections.logs && (
+                            <div className="border-t border-slate-200">
+                                <div className="bg-slate-900 rounded-xl m-3 p-4 max-h-64 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner">
+                                    {orchestrationLog.length === 0 && !autoOrchestrating ? (
+                                        <div className="text-slate-500 italic">No executions yet — run a phase to see live agent output here.</div>
+                                    ) : (
+                                        <>
+                                            {orchestrationLog.map((line, i) => (
+                                                <div key={i} className={line.includes('✓') ? 'text-emerald-400' : line.includes('✗') ? 'text-rose-400' : 'text-purple-300'}>{line}</div>
+                                            ))}
+                                            {autoOrchestrating && (
+                                                <div className="flex items-center gap-3 text-purple-400 font-bold mt-2">
+                                                    <i className="fas fa-spinner fa-spin"></i> Pipeline running — live updates...
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                 </div>
             )}
 
