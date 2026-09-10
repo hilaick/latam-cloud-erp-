@@ -736,7 +736,34 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </button>
                     )}
                     <button
-                        onClick={() => { fetchCloudState(); /* also refresh status */ window.dispatchEvent(new CustomEvent('hermes-refresh-status')); }}
+                        onClick={async () => {
+                            // Refresh BOTH cloud state and pipeline status in one click
+                            try { fetchCloudState(); } catch (e) {}
+                            try {
+                                const token = sessionStorage.getItem('hermes_access_token');
+                                if (project?.id && token) {
+                                    const res = await fetch(`/api/execution/${project.id}/orchestrate/status`, {
+                                        headers: { 'Authorization': `Bearer ${token}` },
+                                    });
+                                    const data = await res.json();
+                                    const st = data.status || {};
+                                    // Re-sync running state from backend truth
+                                    if (st.status === 'running' || st.status === 'running_external') {
+                                        setAutoOrchestrating(true);
+                                    } else {
+                                        setAutoOrchestrating(false);
+                                    }
+                                    if (st.status === 'completed') updatePhase('COMPLETED', 'DONE');
+                                    if (st.phase_status) setPhaseStatus(st.phase_status);
+                                    if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                                    if (st.log) setOrchestrationLog(st.log);
+                                    if (st.external_executions) setExternalExecutions(st.external_executions);
+                                    else setExternalExecutions(null);
+                                }
+                            } catch (e) { console.error('[refresh] status error', e); }
+                            // Also dispatch for any other listeners
+                            window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                        }}
                         className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
                         title="Refresh cloud state + pipeline status"
                     >
@@ -1269,7 +1296,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 ) : (
                                                     <button
                                                         onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}
-                                                        disabled={autoOrchestrating || executionState?.currentPhase === 'COMPLETED'}
+                                                        disabled={autoOrchestrating}
                                                         className="text-[8px] font-black uppercase text-purple-600 hover:text-purple-800 shrink-0 hover:underline disabled:opacity-40"
                                                     >
                                                         Run
