@@ -1566,7 +1566,7 @@ def orchestration_rollback(project_id):
         env = _os.environ.copy()
         env.update({'HW_ACCESS_KEY': target_ak, 'HW_SECRET_KEY': target_sk or ''})
 
-        def h(cmd, timeout=30):
+        def h(cmd, timeout=30, return_rc=False):
             try:
                 r = _sp.run(['hcloud'] + cmd, capture_output=True, text=True, timeout=timeout, env=env)
                 parsed = {}
@@ -1582,6 +1582,8 @@ def orchestration_rollback(project_id):
                             parsed = {}
                 if r.returncode != 0 and not parsed.get('code'):
                     parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200])
+                if return_rc:
+                    return parsed, r.returncode
                 return parsed, ''
             except Exception as e:
                 return {}, str(e)
@@ -1830,6 +1832,27 @@ def orchestration_rollback(project_id):
                             failed.append(f"SDK VPC {v.get('name')}: {str(e)[:150]}")
         except Exception as sdk_err:
             failed.append(f"SDK init: {str(sdk_err)[:200]}")
+
+        # ── hcloud fallback: if SDK didn't delete the VPC, try direct CLI ──
+        # The SDK init may fail silently (missing creds, network, region). The hcloud
+        # CLI is always available as a fallback, and works when called from Flask.
+        if found['vpcs'] and not deleted['vpcs'] and not failed:
+            for v in found['vpcs']:
+                if should_del(v):
+                    for attempt in range(3):
+                        r, rc = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region], return_rc=True)
+                        if rc == 0:
+                            deleted['vpcs'].append(v.get('name'))
+                            logger.warning(f"[rollback] hcloud fallback VPC {v['name']} deleted (SDK path returned 0 deleted)")
+                            break
+                        # SG-block: list and delete non-system SGs, retry
+                        sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+                        for dsg in (sgs2.get('security_groups') or []):
+                            if dsg.get('name') != 'default':
+                                do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"SG {dsg.get('name','?')}")
+                        time.sleep(4)
+                    if v.get('name') not in deleted['vpcs']:
+                        failed.append(f"VPC {v['name']}: all attempts failed")
 
         # Merge SDK results into the response
         for k in ('vpcs', 'security_groups', 'subnets'):
