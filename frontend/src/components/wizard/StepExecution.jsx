@@ -473,7 +473,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (st.polled_at) setPolledAt(st.polled_at);
 
                 // Check if pipeline finished
-                if (st.status === 'completed' || st.status === 'halted' || st.status === 'idle') {
+                if (st.status === 'completed' || st.status === 'halted' || st.status === 'idle' || st.status === 'pending' || st.status === '') {
                     setAutoOrchestrating(false);
                     setExternalExecutions(null);
                     setActiveHermesSessions(null);
@@ -496,7 +496,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
         poll(); // immediate first poll
         const interval = setInterval(poll, 3000);
-        return () => { cancelled = true; clearInterval(interval); };
+        const onRefresh = () => poll();
+        window.addEventListener('hermes-refresh-status', onRefresh);
+        return () => { cancelled = true; clearInterval(interval); window.removeEventListener('hermes-refresh-status', onRefresh); };
     }, [project?.id]);
 
     // 🚨 MOUNT-CHECK: On mount or project switch, check if a pipeline is already running.
@@ -734,9 +736,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </button>
                     )}
                     <button
-                        onClick={fetchCloudState}
+                        onClick={() => { fetchCloudState(); /* also refresh status */ window.dispatchEvent(new CustomEvent('hermes-refresh-status')); }}
                         className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
-                        title="Refresh cloud state"
+                        title="Refresh cloud state + pipeline status"
                     >
                         <i className="fas fa-sync-alt mr-1"></i> Refresh
                     </button>
