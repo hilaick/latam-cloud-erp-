@@ -1291,6 +1291,10 @@ def orchestration_status(project_id):
         except Exception:
             pass
 
+        # Ensure current_phase is present (DB hydration may have set it, engine may not)
+        if not status.get('current_phase'):
+            status['current_phase'] = None
+
         # ── Pull live data from Hermes sessions (running or orphaned) ──
         def _pull_session_data(sid, sessions_list):
             """Pull live feed, inferred phase, and last tool call from a Hermes session."""
@@ -1303,7 +1307,11 @@ def orchestration_status(project_id):
                 capture_output=True, text=True, timeout=5
             )
             live_feed = []
-            phase_inferred = 'PHASE_4_1'
+            # Real phase from pipeline DB (authoritative) — keyword guessing below
+            # is only a fallback. The pipeline engine sets current_phase, so a
+            # running 4.2 shows PHASE_4_2 even if the agent's recent tool calls
+            # (creds, SSH) don't contain SMS keywords.
+            phase_inferred = status.get('current_phase') or 'PHASE_4_1'
             all_text = msg_result.stdout
             # IMPORTANT: the word 'agent' ALWAYS appears in every spawn's system
             # prompt ('migration execution agent', 'SMS agent install') — so it
