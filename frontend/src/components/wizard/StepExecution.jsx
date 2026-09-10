@@ -1926,6 +1926,15 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
         const srv = srvName || selectedServer?.name;
         return !!execPlan?.steps?.find(s => s.target_resource === srv && s.action === action);
     };
+    // Cloud reconciliation: {step_id: 'completed_by_cloud'|'running_in_cloud'}
+    const planReconciled = cloudState?.reconciled_steps || {};
+    // Is this action for the selected server already proven done in the cloud?
+    const isCloudDone = (action) => {
+        const srv = selectedServer?.name;
+        if (!srv) return false;
+        const step = execPlan?.steps?.find(s => s.target_resource === srv && s.action === action);
+        return !!step && planReconciled[step.step_id] === 'completed_by_cloud';
+    };
     // SMS task state per source server name, from the live cloud-state poll (5s)
     const smsTasks = cloudState?.resources?.sms_tasks || [];
     const serverTask = (srvName) => {
@@ -1974,20 +1983,22 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                             const st = taskStatus[t.action];
                             const taskMatch = serverTask(selectedServer.name);
                             const inPlan = hasPlanStep(t.action);
-                            const disabled = st === 'running' || (!execPlan && false) || (t.zeroTrust && !inPlan);
-                            return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running'}
-                                className="p-2 rounded-lg border text-left transition-all hover:shadow-sm disabled:opacity-50"
+                            const cloudDone = isCloudDone(t.action);
+                            const disabled = st === 'running' || cloudDone;
+                            return <button key={t.action} onClick={() => handleTask(t.action)} disabled={st === 'running' || cloudDone}
+                                className="p-2 rounded-lg border text-left transition-all hover:shadow-sm disabled:opacity-70"
                                 style={{ borderColor: t.color + '60', background: t.color + '08' }}>
                                 <i className={`fas ${t.icon}`} style={{ color: t.color }} />
                                 <span className="text-[10px] text-slate-700 ml-1 font-bold">{t.label}</span>
+                                {cloudDone && <span className="text-indigo-500 text-[9px] block mt-1">✓ Done (cloud)</span>}
                                 {st === 'success' && <span className="text-emerald-500 text-[9px] block mt-1">✅ Done</span>}
                                 {st === 'running' && <span className="text-amber-500 text-[9px] block mt-1">⏳ Running...</span>}
                                 {st === 'failed' && <span className="text-red-500 text-[9px] block mt-1">❌ Failed</span>}
                                 {st === 'nostep' && <span className="text-slate-400 text-[9px] block mt-1">⚠ Not in plan</span>}
-                                {!st && !inPlan && execPlan && <span className="text-slate-400 text-[9px] block mt-1">Not in plan</span>}
-                                {!st && t.zeroTrust && inPlan && isZeroTrust && <span className="text-amber-500 text-[9px] block mt-1">👤 Customer</span>}
+                                {!st && !inPlan && execPlan && !cloudDone && <span className="text-slate-400 text-[9px] block mt-1">Not in plan</span>}
+                                {!st && t.zeroTrust && inPlan && isZeroTrust && !cloudDone && <span className="text-amber-500 text-[9px] block mt-1">👤 Customer</span>}
                                 {!st && taskMatch?.state === 'RUNNING' && <span className="text-emerald-500 text-[9px] block mt-1">● Active</span>}
-                                {!st && inPlan && !taskMatch && <span className="text-slate-400 text-[9px] block mt-1">Click to run</span>}
+                                {!st && inPlan && !taskMatch && !cloudDone && <span className="text-slate-400 text-[9px] block mt-1">Click to run</span>}
                             </button>;
                         })}
                     </div>
@@ -1995,16 +2006,18 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                 </div>
             )}
             {/* 📋 EXECUTION PLAN PANEL — validate what will execute against the 188-step plan */}
-            <ExecutionPlanPanel execPlan={execPlan} selectedServer={selectedServer} servers={servers} />
+            <ExecutionPlanPanel execPlan={execPlan} selectedServer={selectedServer} servers={servers} cloudState={cloudState} />
         </div>
     );
 }
 
 /* ── Sub-component: Execution Plan Panel — collapsible, grouped by server ── */
-function ExecutionPlanPanel({ execPlan, selectedServer, servers }) {
+function ExecutionPlanPanel({ execPlan, selectedServer, servers, cloudState }) {
     const [expanded, setExpanded] = useState(false);
     const [filter, setFilter] = useState('all'); // all | selected | noagent
     const steps = execPlan?.steps || [];
+    // reconciled_steps from cloud-state: {step_id: 'completed_by_cloud' | 'running_in_cloud'}
+    const reconciled = cloudState?.reconciled_steps || {};
     const serverNames = new Set((servers || []).map(s => s.name));
     // Steps that belong to a server in the grid (per-server actionable steps)
     const serverSteps = steps.filter(s => serverNames.has(s.target_resource));
@@ -2015,7 +2028,7 @@ function ExecutionPlanPanel({ execPlan, selectedServer, servers }) {
         : filter === 'global' ? globalSteps : serverSteps;
     const phaseLabel = (p) => String(p || '').replace('PHASE_4_', '4.');
     const toolIcon = (t) => t === 'mcp' ? '🔌' : t === 'skill' ? '🔧' : t === 'external' ? '📦' : t === 'history' ? '🕘' : '⌨️';
-    const statusColor = (st) => st === 'completed' || st === 'success' ? 'text-emerald-600' : st === 'running' ? 'text-amber-600' : st === 'failed' ? 'text-red-600' : 'text-slate-400';
+    const statusColor = (st) => st === 'completed' || st === 'success' ? 'text-emerald-600' : st === 'running' ? 'text-amber-600' : st === 'failed' ? 'text-red-600' : st === 'completed_by_cloud' ? 'text-indigo-600' : st === 'running_in_cloud' ? 'text-cyan-600' : 'text-slate-400';
     return (
         <div className="mt-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100 cursor-pointer select-none" onClick={() => setExpanded(v => !v)}>
@@ -2061,7 +2074,7 @@ function ExecutionPlanPanel({ execPlan, selectedServer, servers }) {
                                                     {s.tool_name && <div className="text-[8px] text-slate-400 truncate max-w-[220px]">{s.tool_name}</div>}
                                                 </td>
                                                 <td className="py-1.5 pr-2 text-[11px]" title={s.tool_source}>{toolIcon(s.tool_source)}</td>
-                                                <td className={`py-1.5 text-[9px] font-bold uppercase ${statusColor(s.status)}`}>{s.status || 'pending'}</td>
+                                                <td className={`py-1.5 text-[9px] font-bold uppercase ${statusColor(reconciled[s.step_id] || s.status)}`}>{(reconciled[s.step_id] || s.status || 'pending').replace(/_/g, ' ')}</td>
                                             </tr>
                                         ))}
                                     </tbody>

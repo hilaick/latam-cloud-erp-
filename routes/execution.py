@@ -2018,8 +2018,17 @@ def get_cloud_state(project_id):
             except Exception:
                 pass
         
-        from services.cloud_state_detector import detect_cloud_state
+        from services.cloud_state_detector import detect_cloud_state, reconcile_execution_plan
         result = detect_cloud_state(pdata, customer_data)
+        
+        # Reconcile the project's execution plan against real cloud evidence so
+        # steps already done outside the ERP show 'completed_by_cloud' instead of 'pending'
+        try:
+            plan = pdata.get('executionPlan') or {}
+            result['reconciled_steps'] = reconcile_execution_plan(plan, result)
+        except Exception as _re:
+            result['reconciled_steps'] = {}
+            result['reconcile_error'] = str(_re)[:200]
         
         return jsonify({"success": True, **result})
     except Exception as e:

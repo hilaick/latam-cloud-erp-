@@ -250,3 +250,91 @@ def detect_cloud_state(project_data, customer_data=None):
         result['phase_reason'] = 'No cloud resources detected — pipeline not started'
     
     return result
+
+
+def reconcile_execution_plan(plan, cloud_state):
+    """
+    Reconcile the execution plan's step statuses against LIVE cloud state.
+
+    The plan's status field tracks "has the ERP engine dispatched this step".
+    When the migration ran OUTSIDE the ERP (console / agent / manual), the cloud
+    already contains the artifacts — the plan still shows 'pending'. This maps
+    cloud evidence → plan steps and marks them 'completed_by_cloud'.
+
+    Evidence sources (from detect_cloud_state):
+      resources.sms_sources   — [{name, id, connected, state, os}]
+      resources.sms_tasks     — [{name, source_server_name, target_server_name,
+                                  state, migration_percent, ...}]
+      resources.ecs_instances — [{name, id, status, ...}]  (may be absent)
+      resources.vpcs          — [{name, id}]
+
+    Returns a dict {step_id: 'completed_by_cloud'} for steps with cloud proof.
+    """
+    if not isinstance(plan, dict):
+        return {}
+    steps = plan.get('steps', [])
+    if not isinstance(steps, list):
+        return {}
+    resources = cloud_state.get('resources', {}) if isinstance(cloud_state, dict) else {}
+    sms_sources = resources.get('sms_sources') or []
+    sms_tasks = resources.get('sms_tasks') or []
+    ecs_instances = resources.get('ecs_instances') or []
+    vpcs = resources.get('vpcs') or []
+
+    # Indexes by lowercase name
+    src_by_name = {}
+    for s in sms_sources:
+        n = (s.get('name') or '').lower()
+        if n:
+            src_by_name[n] = s
+    ecs_names = set((e.get('name') or '').lower() for e in ecs_instances)
+    # SMS sources often carry the source server's IP; also index tasks by source + target
+    task_by_src = {}
+    task_by_tgt = {}
+    task_success = set()
+    any_task_running = False
+    for t in sms_tasks:
+        sn = (t.get('source_server_name') or '').lower()
+        tn = (t.get('target_server_name') or '').lower()
+        if sn:
+            task_by_src.setdefault(sn, t)
+        if tn:
+            task_by_tgt.setdefault(tn, t)
+        st = (t.get('state') or '').upper()
+        if st in ('SUCCESS', 'FINISHED', 'COMPLETED'):
+            task_success.add(sn)
+        if st in ('RUNNING', 'SYNCING', 'READY', 'WAITING'):
+            any_task_running = True
+
+    has_network = bool(vpcs) or bool(resources.get('eips')) or bool(resources.get('nat_gateways'))
+
+    reconciled = {}
+    for step in steps:
+        step_id = step.get('step_id')
+        if step_id is None:
+            continue
+        action = (step.get('action') or '').upper()
+        target = (step.get('target_resource') or '').lower()
+        if not target or target in ('n/a', 'account', 'global'):
+            # Global steps: network fabric evidence marks Wave 0 provisioning done
+            if has_network and action in ('PROVISION_VPN', 'CREATE_NAT', 'CREATE_EIP', 'VPC_QUOTA', 'NETWORK_FABRIC'):
+                reconciled[step_id] = 'completed_by_cloud'
+            continue
+        # Per-server evidence
+        src = src_by_name.get(target)
+        task_for_src = task_by_src.get(target)
+        task_for_tgt = task_by_tgt.get(target)
+        target_ecs = target in ecs_names or target in task_by_tgt
+        if action == 'SMS_AGENT_INSTALL' and (src and src.get('connected')):
+            reconciled[step_id] = 'completed_by_cloud'
+        elif action == 'MIGRATION_PROJECT_CONFIG' and src:
+            reconciled[step_id] = 'completed_by_cloud'
+        elif action in ('CREATE_TARGET_ECS', 'CREATE_TARGET_RDS') and (target_ecs or task_for_tgt or task_for_src):
+            reconciled[step_id] = 'completed_by_cloud'
+        elif action in ('SMS_TASK_CREATE', 'OMS_SYNC_START') and (task_for_src or task_for_tgt or target_ecs):
+            reconciled[step_id] = 'completed_by_cloud'
+        elif action in ('SMS_SUBTASK_MONITOR', 'DRS_START_SYNC') and (task_for_src or task_for_tgt):
+            reconciled[step_id] = 'completed_by_cloud' if (target in task_success) else 'running_in_cloud' if any_task_running else 'completed_by_cloud'
+        elif action in ('SMS_CUTOVER', 'CUTOVER', 'SMOKE_TESTS') and target in task_success:
+            reconciled[step_id] = 'completed_by_cloud'
+    return reconciled
