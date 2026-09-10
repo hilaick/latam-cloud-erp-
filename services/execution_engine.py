@@ -907,9 +907,9 @@ class ExecutionEngine:
                 quota_checks.append({"service": "evs", "action": "EVS_QUOTA", "desc": "Check EVS disk quota"})
             if has_network:
                 quota_checks.append({"service": "vpc", "action": "VPC_QUOTA", "desc": "Check VPC quota"})
-            for qc in quota_checks:
+            for i, qc in enumerate(quota_checks):
                 steps.append({
-                    "step_id": quota_step_id, "phase": ExecutionEngine.PHASE_4_0,
+                    "step_id": quota_step_id + i, "phase": ExecutionEngine.PHASE_4_0,
                     "action": qc["action"],
                     "target_resource": "account",
                     "pillar": "network",
@@ -1375,7 +1375,14 @@ class ExecutionEngine:
             # Execute the single step's command
             action = step.get("action", "UNKNOWN")
             target = step.get("target_resource", "N/A")
-            cmd = step.get("command") or step.get("cmd") or ""
+            # Commands are stored as a list of {desc, cmd, type} — extract the first real command
+            step_cmds = step.get("commands") or []
+            cmd = ""
+            if isinstance(step_cmds, list) and step_cmds:
+                first = step_cmds[0]
+                cmd = first.get("cmd", "") if isinstance(first, dict) else str(first)
+            if not cmd:
+                cmd = step.get("command") or step.get("cmd") or ""
             logger.info(f"[EXECUTE] Individual step: step_id={step_id} action={action} target={target}")
 
             step_result = {
