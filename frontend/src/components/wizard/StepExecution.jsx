@@ -732,14 +732,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     >
                         <i className="fas fa-sync-alt mr-1"></i> Refresh
                     </button>
-                    <button
-                        onClick={() => toggleSection('logs')}
-                        className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
-                            !collapsedSections.logs ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'
-                        }`}
-                    >
-                        <i className="fas fa-terminal mr-1"></i> Logs {!collapsedSections.logs ? '▲' : '▼'}
-                    </button>
                     {failedOrchPhaseIdx !== null && (
                         <button onClick={handleResumePipeline} className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors">
                             <i className="fas fa-forward mr-1"></i> Resume

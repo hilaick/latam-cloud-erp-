@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
@@ -1756,22 +1757,34 @@ def orchestration_rollback(project_id):
 
         for v in found['vpcs']:
             if should_del(v):
-                # Try deleting VPC first. If it fails with VPC.0108 (default SG in use),
-                # find and delete the default SG, then retry.
-                res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                if 'VPC.0108' in str(res1) or 'VPC.0112' in str(res1) or 'securitygrou' in str(res1).lower() or 'security group' in str(res1).lower() or 'in use' in str(res1).lower() or 'router' in str(res1).lower():
-                    # SG(s) blocking VPC deletion — delete ALL SGs in the region
-                    # (the VPC created them; they all must go before the VPC can be deleted)
-                    sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
-                    for dsg in (sgs2.get('security_groups') or []):
-                        do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"SG {dsg.get('name','?')} (blocking VPC {v['name']})")
-                    # Retry VPC deletion
-                    _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
-                # Verify
-                found_vpcs_after, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
-                after_names = [vv['name'] for vv in found_vpcs_after.get('vpcs',[])]
-                if v['name'] not in after_names:
+                # VPC deletion with retry loop: the VPC's SGs (created moments ago)
+                # may still be propagating — event-consistency means the SG list can
+                # be stale, so delete SGs and retry VPC a few times with a short sleep.
+                vpc_gone = False
+                last_err = ''
+                for attempt in range(4):
+                    res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
+                    if not res1:
+                        # no JSON = hcloud printed an error table; try listing SGs
+                        sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+                        for dsg in (sgs2.get('security_groups') or []):
+                            dbg, err2 = do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={dsg["id"]}','--cli-region='+target_region], f"SG {dsg.get('name','?')} (blocking VPC {v['name']})")
+                            if not dbg and err2:
+                                last_err = err2
+                        # small wait for SG propagation, then retry
+                        time.sleep(4)
+                        res1, _ = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region])
+                    # verify
+                    found_vpcs_after, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
+                    after_names = [vv['name'] for vv in found_vpcs_after.get('vpcs',[])]
+                    if v['name'] not in after_names:
+                        vpc_gone = True
+                        break
+                    time.sleep(3)
+                if vpc_gone:
                     deleted['vpcs'].append(v['name'])
+                elif last_err:
+                    failed.append(f"VPC {v['name']}: {last_err}")
 
         for e in found['eips']:
             if should_del(e):

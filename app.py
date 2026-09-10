@@ -82,16 +82,22 @@ register_hermes_sockets(socketio)
 
 # Cache busting version
 def get_js_version():
-    # Dynamically find the JS file in assets folder
+    # Hash the ACTUAL bundle referenced by index.html (not the first file in the
+    # dir — that picks an arbitrary old build and the v= param never changes,
+    # so browsers cache stale JS forever).
     if dist_folder and os.path.exists(dist_folder):
+        idx_path = os.path.join(dist_folder, 'index.html')
         assets_dir = os.path.join(dist_folder, 'assets')
-        if os.path.exists(assets_dir):
-            js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
-            if js_files:
-                js_path = os.path.join(assets_dir, js_files[0])
+        if os.path.exists(idx_path) and os.path.exists(assets_dir):
+            with open(idx_path) as fh:
+                idx = fh.read()
+            import re as _re
+            m = _re.search(r'/assets/(index-[^"?]+)\.js', idx)
+            if m:
+                js_path = os.path.join(assets_dir, m.group(1) + '.js')
                 if os.path.exists(js_path):
-                    with open(js_path, 'rb') as f:
-                        return hashlib.md5(f.read()).hexdigest()[:8]
+                    with open(js_path, 'rb') as fh:
+                        return hashlib.md5(fh.read()).hexdigest()[:8]
     return str(int(time.time()))
 
 @app.after_request
