@@ -1173,6 +1173,18 @@ if __name__ == '__main__':
     except Exception as e:
         logging.warning(f"Knowledge store init failed (will lazy-load): {e}")
 
+    # ── Auto-resume stale pipelines (survives Flask crash / server reboot) ──
+    # Any pipeline that was IN_PROGRESS when we died gets resumed from the first
+    # uncompleted phase. This is the checkpoint-resilience layer.
+    try:
+        from services.pipeline_resume import resume_stale_pipelines
+        import threading as _th
+        _t = _th.Thread(target=resume_stale_pipelines, args=(app,), daemon=True)
+        _t.start()
+        logging.info("[startup] Pipeline auto-resume sweep started (thread)")
+    except Exception as e:
+        logging.warning(f"[startup] Auto-resume sweep init failed: {e}")
+
     # Run with SocketIO support — debug=False disables auto-reloader (fixes ERR_EMPTY_RESPONSE on crash)
     # socketio.run already uses threaded=True internally with async_mode='threading'
     socketio.run(app, host='0.0.0.0', port=9119, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

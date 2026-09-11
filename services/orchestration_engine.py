@@ -334,6 +334,8 @@ When done, report what you actually executed, the verification commands you ran,
                 text=True,
                 timeout=PIPELINE_TIMEOUT_SECONDS,
                 env=env,
+                stdin=subprocess.DEVNULL,
+                preexec_fn=os.setsid,
             )
             combined = f"{result.stdout[:2000]}\n{result.stderr[:1000]}"
             # Transient-failure detection: LB key exhaustion / rate limit / 502
@@ -611,6 +613,13 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         det_ok, entries, failures = det.run_phase(plan, log=log)
                         if det_ok:
                             response = f"Deterministic: {len(entries)} steps succeeded."
+                            try:
+                                _hs2 = ExecutionState.query.filter_by(project_id=project_id).first()
+                                if _hs2:
+                                    _hs2.last_active_at = datetime.utcnow()
+                                    db.session.commit()
+                            except Exception:
+                                pass
                             log(f'[det] {phase_key}: all {len(entries)} steps completed deterministically ✓')
                         else:
                             log(f'[det] {phase_key}: {len(failures)}/{len(entries)} steps failed, retrying...')
@@ -618,6 +627,13 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                             time.sleep(3)
                             det_ok2, entries2, failures2 = det.run_phase(plan, log=log)
                             if det_ok2:
+                                try:
+                                    _hs3 = ExecutionState.query.filter_by(project_id=project_id).first()
+                                    if _hs3:
+                                        _hs3.last_active_at = datetime.utcnow()
+                                        db.session.commit()
+                                except Exception:
+                                    pass
                                 response = f"Deterministic (retry): {len(entries2)} steps succeeded."
                                 log(f'[det] {phase_key}: retry succeeded ✓')
                             else:
@@ -638,12 +654,22 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     if not os.path.exists(_ctx_dir):
                         os.makedirs(_ctx_dir, exist_ok=True)
                     _ctx_file = os.path.join(_ctx_dir, f"context_{project_id[:12]}.json")
+                    _ep_for_ctx = plan if isinstance(plan, dict) else {}
+                    _ep_steps_ctx = []
+                    _ep_res_ctx = _ep_for_ctx.get('resources', [])
+                    for _ps in (_ep_for_ctx.get('steps') or []):
+                        _pc_clean = []
+                        for _pc in (_ps.get('commands') or []):
+                            if isinstance(_pc, dict):
+                                _ap = _pc.get('cmd', '')
+                                _pc_clean.append({**_pc, 'cmd': _ap.replace('--cli-ak=', '--cli-ak=HIDDEN').replace('--cli-sk=', '--cli-sk=HIDDEN')})
+                        _ep_steps_ctx.append({**_ps, 'commands': _pc_clean})
                     _safe_ctx = {
                         'projectId': project_id,
                         'executionContext': pdata.get('executionContext', {}),
                         'targetArchitecture': pdata.get('targetArchitecture', {}),
                         'source_ssh_password': (pdata.get('dataPlaneAccess') or {}).get('password', ''),
-                        'executionPlan': {'steps': _ep_steps, 'resources': _ep_res},
+                        'executionPlan': {'steps': _ep_steps_ctx, 'resources': _ep_res_ctx},
                     }
                     import json as _js
                     with open(_ctx_file, 'w') as _fw:
@@ -762,6 +788,15 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 )
                 db.session.add(log_entry)
                 db.session.commit()
+
+                # ── Heartbeat: checkpoint resilience (survives Flask crash) ──
+                try:
+                    _hs = ExecutionState.query.filter_by(project_id=project_id).first()
+                    if _hs:
+                        _hs.last_active_at = datetime.utcnow()
+                        db.session.commit()
+                except Exception:
+                    pass
 
                 if success:
                     log(f'[done] {step["label"]} — agent completed.')
