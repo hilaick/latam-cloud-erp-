@@ -630,24 +630,64 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         success = False
                         error = str(det_err)
                         # Fall through to agent spawn
+                # ── Write project context file (durable, for both lanes) ──
+                # $ERP_HOME/project_data/context_<project_id>.json — persists across
+                # reboots. Agent reads it via cat; never touches erp_prod_db.
+                try:
+                    _ctx_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'project_data')
+                    if not os.path.exists(_ctx_dir):
+                        os.makedirs(_ctx_dir, exist_ok=True)
+                    _ctx_file = os.path.join(_ctx_dir, f"context_{project_id[:12]}.json")
+                    _safe_ctx = {
+                        'projectId': project_id,
+                        'executionContext': pdata.get('executionContext', {}),
+                        'targetArchitecture': pdata.get('targetArchitecture', {}),
+                        'source_ssh_password': (pdata.get('dataPlaneAccess') or {}).get('password', ''),
+                        'executionPlan': {'steps': _ep_steps, 'resources': _ep_res},
+                    }
+                    import json as _js
+                    with open(_ctx_file, 'w') as _fw:
+                        _js.dump(_safe_ctx, _fw, indent=1, default=str)
+                    log(f'[ctx] context file written: {_ctx_file}')
+                except Exception as _ce:
+                    log(f'[ctx] context file write failed: {_ce}')
+
+                # ── Write project context file (durable, for both lanes) ──
+                # $ERP_HOME/project_data/context_<project_id>.json — persists across
+                # reboots. Agent reads it via cat; never touches erp_prod_db.
+                try:
+                    _ctx_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'project_data')
+                    if not os.path.exists(_ctx_dir):
+                        os.makedirs(_ctx_dir, exist_ok=True)
+                    _ctx_file = os.path.join(_ctx_dir, f"context_{project_id[:12]}.json")
+                    _ep_for_ctx = plan if isinstance(plan, dict) else {}
+                    _ep_steps_ctx = []
+                    _ep_res_ctx = _ep_for_ctx.get('resources', [])
+                    for _ps in (_ep_for_ctx.get('steps') or []):
+                        _pc_clean = []
+                        for _pc in (_ps.get('commands') or []):
+                            if isinstance(_pc, dict):
+                                _ap = _pc.get('cmd', '')
+                                _pc_clean.append({**_pc, 'cmd': _ap.replace('--cli-ak=', '--cli-ak=HIDDEN').replace('--cli-sk=', '--cli-sk=HIDDEN')})
+                        _ep_steps_ctx.append({**_ps, 'commands': _pc_clean})
+                    _safe_ctx = {
+                        'projectId': project_id,
+                        'executionContext': pdata.get('executionContext', {}),
+                        'targetArchitecture': pdata.get('targetArchitecture', {}),
+                        'source_ssh_password': (pdata.get('dataPlaneAccess') or {}).get('password', ''),
+                        'executionPlan': {'steps': _ep_steps_ctx, 'resources': _ep_res_ctx},
+                    }
+                    import json as _js
+                    with open(_ctx_file, 'w') as _fw:
+                        _js.dump(_safe_ctx, _fw, indent=1, default=str)
+                    log(f'[ctx] context file written: {_ctx_file}')
+                except Exception as _ce:
+                    log(f'[ctx] context file write failed: {_ce}')
+
                 if not success:
                     # ── Agent lane (deterministic failed or not applicable) ──
-                    # Write project context file so the agent NEVER touches the DB
-                    try:
-                        _ctx_file = f"/tmp/erp_project_context_{project_id[:8]}.json"
-                        _safe_ctx = {
-                            "projectId": project_id,
-                            "executionContext": pdata.get('executionContext', {}),
-                            "targetArchitecture": pdata.get('targetArchitecture', {}),
-                            "source_ssh_password": pdata.get('source_ssh_password',
-                                (pdata.get('dataPlaneAccess') or {}).get('password', '')),
-                            "executionPlan": plan if isinstance(plan, dict) else {},
-                        }
-                        import json as _js
-                        with open(_ctx_file, 'w') as _fw:
-                            _js.dump(_safe_ctx, _fw, indent=1, default=str)
-                    except Exception as _ce:
-                        log(f'[ctx] project context file write failed: {_ce}')
+                    # The project context file was already written before the deterministic lane.
+                    # Agent reads $_ERP_HOME/project_data/context_<project_id>.json — no DB needed.
                     log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
                     success, response, error = _spawn_hermes_agent(
                         step['goal'], enriched, project_id, phase_key
