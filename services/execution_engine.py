@@ -139,7 +139,7 @@ def _discover_flavors(profile: str, region: str) -> list:
     """Discover available ECS flavors in a region (project-agnostic)."""
     try:
         result = subprocess.run(
-            f"hcloud ECS ListFlavors --cli-profile={profile} --cli-region={region}",
+            f"hcloud ECS ListFlavors --cli-profile={profile} --cli-region={region} --availability-zone={region}a",
             shell=True, capture_output=True, text=True, timeout=15
         )
         if result.returncode == 0:
@@ -155,15 +155,7 @@ def _discover_flavors(profile: str, region: str) -> list:
 
 
 def _pick_flavor(profile: str, region: str, source_vcpus: int = None, source_ram_mb: int = None) -> str:
-    """Pick a flavor for the target region with SPEC PARITY (project-agnostic).
-
-    Rules (cost-fidelity guard):
-    1. Prefer EXACT vCPU count match; RAM = nearest tier >= source RAM.
-    2. HARD CAP: never pick a flavor with RAM > 1.5x source RAM (prevents 2-4x
-       oversizing / cost leaks). Only fall through the cap if NO flavor exists
-       below it (region constraint) — then pick the smallest above-source flavor.
-    3. Without source specs: smallest balanced (2 vCPU / 4GB) — never ac8/xlarge.
-    """
+    """Pick a suitable flavor for the target region (project-agnostic)."""
     flavors = _discover_flavors(profile, region)
     if not flavors:
         # Fallback: try common flavors by region prefix
@@ -172,43 +164,18 @@ def _pick_flavor(profile: str, region: str, source_vcpus: int = None, source_ram
         elif region.startswith("ap-southeast"):
             return "s6.medium.2"  # AP fallback
         return "s6.large.2"  # Generic fallback
-
+    
+    # Match source specs if available
     if source_vcpus and source_ram_mb:
-        src_v = int(source_vcpus)
-        src_ram = int(source_ram_mb)
-        cap_ram = int(src_ram * 1.5)
-        # Pass 1: exact vCPU + RAM within [src_ram, 1.5x cap] (tightest fit)
-        best = None
         for f in flavors:
-            fv = int(f.get("vcpus", 0))
-            fr = int(f.get("ram", 0))
-            if fv == src_v and src_ram <= fr <= cap_ram:
-                if best is None or fr < best[1]:
-                    best = (f.get("id", ""), fr)
-        if best:
-            return best[0]
-        # Pass 2: any vCPU >= src with RAM within cap
-        for f in flavors:
-            fv = int(f.get("vcpus", 0))
-            fr = int(f.get("ram", 0))
-            if fv >= src_v and src_ram <= fr <= cap_ram:
+            if int(f.get("vcpus", 0)) >= source_vcpus and int(f.get("ram", 0)) >= source_ram_mb:
                 return f.get("id", "s6.large.2")
-        # Pass 3: no flavor within cap — smallest with RAM >= src (region-limited)
-        for f in flavors:
-            fv = int(f.get("vcpus", 0))
-            fr = int(f.get("ram", 0))
-            if fv >= src_v and fr >= src_ram:
-                return f.get("id", "s6.large.2")
-
-    # No source specs: smallest balanced (2 vCPU, 4GB+) — avoid ac8/xlarge
-    for f in flavors:
-        if int(f.get("vcpus", 0)) >= 2 and int(f.get("ram", 0)) >= 4096:
-            if 'ac8' not in str(f.get("id", "")):
-                return f.get("id", "s6.large.2")
+    
+    # Pick smallest balanced flavor (2 vCPU, 4GB+)
     for f in flavors:
         if int(f.get("vcpus", 0)) >= 2 and int(f.get("ram", 0)) >= 4096:
             return f.get("id", "s6.large.2")
-
+    
     return flavors[0].get("id", "s6.large.2") if flavors else "s6.large.2"
 
 
@@ -432,13 +399,13 @@ class ExecutionEngine:
 
     # ── Phase 4 mapping ──
     PHASE_4_0 = "PHASE_4_0"  # Readiness Gateway
-    PHASE_4_1 = "PHASE_4_1"  # Infrastructure provisioning
-    PHASE_4_2 = "PHASE_4_2"  # Source discovery + agent install
-    PHASE_4_3 = "PHASE_4_3"  # Data sync / replication
-    PHASE_4_4 = "PHASE_4_4"  # Cutover
-    PHASE_4_5 = "PHASE_4_5"  # Post-migration verification
-    PHASE_4_6 = "PHASE_4_6"  # Hardening (HSS, UniAgent, LTS)
-    PHASE_4_7 = "PHASE_4_7"  # Smoke tests + handoff
+    PHASE_4_1 = "PHASE_4_1"  # Network foundation (VPC/subnet/SG/EIP)
+    PHASE_4_2 = "PHASE_4_2"  # Source Prep (discovery + SMS agent install)
+    PHASE_4_3 = "PHASE_4_3"  # Target provisioning (target ECS + EIP + SG rules)
+    PHASE_4_4 = "PHASE_4_4"  # Data Sync (SMS task create + start replication)
+    PHASE_4_5 = "PHASE_4_5"  # Monitor (replication progress -> continuous sync)
+    PHASE_4_6 = "PHASE_4_6"  # Cutover (verify target + incremental + promote)
+    PHASE_4_7 = "PHASE_4_7"  # Teardown (smoke tests + resource cleanup)
 
     @staticmethod
     def build_plan(project: dict, customer: dict = None) -> dict:
@@ -612,25 +579,6 @@ class ExecutionEngine:
         step_id += 1
         cred_resolution = _resolve_step_from_knowledge("VALIDATE_CREDENTIALS", "network", "validate",
                                                         {"os": "linux", "type": "ECS"}, {"os_family": "linux", "role": "app"})
-        # DETERMINISTIC credential validation — a real IAM ping with the project's
-        # profile. The knowledge tree's CREDENTIAL_VALIDATION entry was a copy-paste
-        # of a CCE create-cluster skill ("hcloud CCE CreateCluster ... <CLUSTER_ID>")
-        # that has NOTHING to do with validating creds and ALWAYS fails/blocks.
-        _cred_cmds = cred_resolution.get('commands') or []
-        _cred_is_bad = any(
-            'cce' in str((c.get('cmd') if isinstance(c, dict) else c)).lower()
-            or 'createcluster' in str((c.get('cmd') if isinstance(c, dict) else c)).lower()
-            for c in _cred_cmds
-        ) or not _cred_cmds
-        if _cred_is_bad:
-            cred_resolution = {
-                'tool_source': 'hcloud',
-                'tool_name': 'hcloud IAM KeystoneListRegions (deterministic AK/SK ping)',
-                'commands': [{'desc': 'Validate AK/SK by listing IAM regions',
-                              'cmd': 'hcloud IAM KeystoneListRegions --cli-profile=<profile> --cli-region=la-north-2',
-                              'type': 'hcloud'}],
-                'source_detail': '\U0001f527 deterministic credential ping',
-            }
         steps.append({
             "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
             "action": "CREDENTIAL_VALIDATION",
@@ -739,12 +687,6 @@ class ExecutionEngine:
         if mig_worker_triggers:
             step_id += 1
             mw_region = source_region if mig_worker_location == "source" else target_region
-            # SPEC PARITY for mig_worker: smallest balanced flavor in the region
-            # (2 vCPU/4GB) — never ac8/xlarge. _pick_flavor handles the mapping.
-            try:
-                _mw_flavor = _pick_flavor('', mw_region, None, None)
-            except Exception:
-                _mw_flavor = "s6.large.2"
             steps.append({
                 "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
                 "action": "MIG_WORKER_DEPLOY",
@@ -753,7 +695,7 @@ class ExecutionEngine:
                 "strategy": "provision",
                 "tool_source": "skill",
                 "tool_name": "mig-worker-framework (autonomous deployment)",
-                "commands": [{"desc": f"Create mig_worker ECS in {mig_worker_location} account ({mw_region})", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{mig_worker_location}' --server.flavorRef={_mw_flavor} --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone='{mw_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id=<sg_id> --server.count=1 --cli-region={mw_region}", "type": "hcloud"}],
+                "commands": [{"desc": f"Create mig_worker ECS in {mig_worker_location} account ({mw_region})", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{mig_worker_location}' --server.flavorRef=<DISCOVERED_FLAVOR> --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone='{mw_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id=<sg_id> --server.count=1 --cli-region={mw_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
@@ -1038,68 +980,12 @@ class ExecutionEngine:
             # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
             server_profile = {"os_family": "linux" if "windows" not in os_type.lower() else "windows", "role": "compute", "strategy": "sms_primary"}
             step_id_counter = sid
-            # Step: Target ECS creation — search knowledge tree first,
-            # BUT the deterministic hcloud command (with SPEC PARITY flavor) wins
-            # over stale TF stubs from the knowledge tree. The knowledge tree's
-            # "terraform {" placeholder caused agents to improvise (ac8 oversizing).
+            # Step: Target ECS creation — search knowledge tree first
             ecs_resolution = _resolve_step_from_knowledge("CREATE_TARGET_ECS", "compute", "sms", node, server_profile)
-            # ── SPEC PARITY (cost/fidelity guard) ──
-            # Source flavor IDs are region-specific (x1.2u.2g = ap-southeast-3).
-            # Copying them verbatim to the target region breaks (flavor not found),
-            # which is why agents improvised ac8 2-4x oversizing. Instead:
-            #   parse source vCPU/RAM from the flavor id, then _pick_flavor() maps to
-            #   an equivalent target-region flavor (exact vCPU, RAM within 1.5x cap).
+            # Flavor: use source flavor if available, otherwise dynamic discovery at execution time
             source_flavor = node.get("flavor", node.get("source_flavor", ""))
-            src_vcpus = None
-            src_ram_mb = None
-            try:
-                # flavor ids like: x1.2u.2g / ac8.large.2 / s6.large.2 / x1e.4u.2g
-                import re as _re
-                m = _re.search(r'x?\d?[a-z]?\d*\.(\d+)u\.(\d+)g', str(source_flavor))
-                if not m:
-                    m = _re.search(r'[a-z0-9]+\.(\d+)xlarge\.(\d+)', str(source_flavor))
-                if m:
-                    src_vcpus = int(m.group(1))
-                    src_ram_mb = int(m.group(2)) * 1024
-                elif source_flavor:
-                    # last resort: parse 'x1.2u.2g' style manually
-                    parts = str(source_flavor).split('.')
-                    if len(parts) >= 3 and parts[-2].endswith('u'):
-                        src_vcpus = int(parts[-2][:-1])
-                        src_ram_mb = int(parts[-1][:-1]) * 1024
-            except Exception:
-                src_vcpus = None
-                src_ram_mb = None
-            flavor_ref = source_flavor
-            if source_flavor and src_vcpus:
-                try:
-                    picked = _pick_flavor('', target_region, src_vcpus, src_ram_mb)
-                    if picked and picked != 's6.large.2':
-                        flavor_ref = picked
-                except Exception:
-                    pass
-            if not source_flavor:
-                flavor_ref = _pick_flavor('', target_region, None, None)
-            # encode source vCPU/RAM into the step for the agent (parity contract)
-            spec_contract = f" (source: {src_vcpus}vCPU/{int((src_ram_mb or 0)/1024)}GB -> target: {flavor_ref})" if src_vcpus else ""
-            # Override TF knowledge stub with deterministic hcloud command
-            _det_cmd = f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.root_volume.volumetype=SAS --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}"
-            _k_cmds = ecs_resolution.get("commands") or []
-            _k_is_stub = any(
-                str((c.get("cmd") if isinstance(c, dict) else c)).strip().lower().startswith("terraform")
-                for c in _k_cmds
-            ) or not _k_cmds
-            if _k_is_stub:
-                ecs_resolution = {
-                    "tool_source": "hcloud",
-                    "tool_name": "hcloud CLI (deterministic ECS create + EIP)",
-                    "commands": [{"desc": "Create target ECS with EIP (spec-parity flavor)",
-                                  "cmd": _det_cmd, "type": "hcloud"}],
-                    "source_detail": "\U0001f527 deterministic spec-parity fallback",
-                    "failure_modes": [],
-                    "learnings": "",
-                }
-
+            flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
+            sid += 1
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
                 "action": "CREATE_TARGET_ECS",
@@ -1180,9 +1066,11 @@ class ExecutionEngine:
             })
 
             # Step: SMS task creation (MGC-style disk mapping)
+            # PHASE 4.4 DATA SYNC: create the replication task and start it.
+            # MIGRATE_FILE + --syncing=false = file-level full replication (Linux, no LVM).
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_4,
                 "action": "SMS_TASK_CREATE",
                 "target_resource": name,
                 "pillar": "compute",
@@ -1198,9 +1086,11 @@ class ExecutionEngine:
             })
 
             # Step: Monitor SMS subtasks
+            # PHASE 4.5 MONITOR: poll replication progress until all subtasks 100%,
+            # then transition to continuous/incremental-sync readiness.
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_5,
                 "action": "SMS_SUBTASK_MONITOR",
                 "target_resource": name,
                 "pillar": "compute",
@@ -1215,6 +1105,118 @@ class ExecutionEngine:
                 "status": "pending",
                 "monitor": True,
                 "expected_subtasks": ["SSL_CONFIG", "ATTACH_AGENT_IMAGE", "FORMAT_DISK_LINUX_FILE", "MIGRATE_LINUX_FILE", "CONFIGURE_LINUX_FILE", "DETACH_AGENT_IMAGE"],
+            })
+
+            # Step (4.5): Continuous sync readiness — verify agent still connected
+            # + initial replication reached 100%. This gates the cutover window.
+            sid += 1
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_5,
+                "action": "SMS_CONTINUOUS_SYNC_READY",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "skill",
+                "tool_name": "sms-migration-linux-pattern (continuous sync gate)",
+                "commands": [
+                    {"desc": "Verify migration task reached full replication (100%)",
+                     "cmd": f"hcloud SMS ShowTask --task_id=<task_id> --cli-region={source_region}",
+                     "type": "hcloud"},
+                    {"desc": "Confirm source agent still connected (for incremental sync)",
+                     "cmd": f"hcloud SMS ListSourceServers --cli-region={source_region}",
+                     "type": "hcloud"},
+                ],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": fallback,
+                "rollback": None,
+                "status": "pending",
+                "monitor": True,
+                "expected": "full replication 100% + agent connected",
+            })
+
+            # Step: SMS Cutover (PHASE 4.6) — per Huawei SMS workflow:
+            #   1. Test the Target Server (boot + verify data/apps on target ECS)
+            #   2. Synchronize Incremental Data (catch-up for changes during testing)
+            #   3. Service Cutover (stop source replication, promote target, uninstall agent)
+            sid += 1
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_6,
+                "action": "SMS_CUTOVER_TARGET_TEST",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "skill",
+                "tool_name": "sms-migration-linux-pattern (target test)",
+                "commands": [
+                    {"desc": "Boot/verify target ECS is ACTIVE with migrated data",
+                     "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region} --id=<ecs_id>",
+                     "type": "hcloud"},
+                    {"desc": "Probe target ECS via EIP (SSH/ICMP smoke check)",
+                     "cmd": f"ping -c 1 -W 2 <target_eip>",
+                     "type": "shell"},
+                ],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": fallback,
+                "rollback": None,
+                "status": "pending",
+                "cutover_step": "target_test",
+                "verification_doc": "Huawei SMS: Test the Target Server (boot + data/app validation before final cutover)",
+            })
+
+            sid += 1
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_6,
+                "action": "SMS_CUTOVER_INCREMENTAL_SYNC",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "skill",
+                "tool_name": "sms-migration-linux-pattern (incremental sync)",
+                "commands": [
+                    {"desc": "Resume agent for incremental sync during cutover window",
+                     "cmd": f"hcloud SMS ShowTask --task_id=<task_id> --cli-region={source_region}",
+                     "type": "hcloud"},
+                    {"desc": "Trigger final incremental sync (catch-up after target test)",
+                     "cmd": f"hcloud SMS UpdateTask --task_id=<task_id> --syncing=false --speed_limit=0 --cli-region={source_region}",
+                     "type": "hcloud"},
+                ],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": fallback,
+                "rollback": None,
+                "status": "pending",
+                "cutover_step": "incremental_sync",
+            })
+
+            sid += 1
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_6,
+                "action": "SMS_CUTOVER_PROMOTE",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "skill",
+                "tool_name": "sms-migration-linux-pattern (service cutover)",
+                "commands": [
+                    {"desc": "Stop source replication — finalize sync (agent detach)",
+                     "cmd": f"hcloud SMS DeleteTask --task_id=<task_id> --cli-region={source_region}",
+                     "type": "hcloud"},
+                    {"desc": "Uninstall SMS agent from source server",
+                     "cmd": f"ssh root@<source_ip> 'bash /opt/SMS-Agent/uninstall.sh'",
+                     "type": "ssh"},
+                    {"desc": "Confirm target ECS ACTIVE (production promoted)",
+                     "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region} --id=<ecs_id>",
+                     "type": "hcloud"},
+                ],
+                "credentials_needed": ["ak", "sk", "os_password"],
+                "zero_trust": False,
+                "fallback_strategy": fallback,
+                "rollback": {"cmd": f"hcloud SMS CreateTask --name='migrate-{name}-rollback' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=<src_id> --target_server.vm_id=<ecs_id> --use_public_ip=false --start_target_server=true --cli-region={source_region}", "label": "Re-create SMS task to rerun replication"},
+                "status": "pending",
+                "cutover_step": "promote",
+                "verification_doc": "Huawei SMS: Service Cutover — route live traffic to production target",
             })
 
         elif strategy == "drs":
