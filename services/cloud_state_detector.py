@@ -227,15 +227,23 @@ def detect_cloud_state(project_data, customer_data=None):
     elif tasks_running > 0:
         result['inferred_phase'] = 'PHASE_4_5'
         result['phase_reason'] = f'{tasks_running} SMS tasks syncing — monitoring progress'
-    elif has_tasks:
+    elif has_tasks and has_ecs:
+        # Tasks exist AND target ECS exist → data sync phase is genuinely reached.
+        # (Leftover waiting tasks with NO target ECS are aborted 4.3 artifacts —
+        #  a fresh 4.3 must run first; don't skip to 4.4.)
         result['inferred_phase'] = 'PHASE_4_4'
-        result['phase_reason'] = f'{has_tasks} SMS tasks created — data sync starting'
+        result['phase_reason'] = f'{result.get("ecs_count",0)} target ECS + {has_tasks} SMS tasks — data sync starting'
     elif has_ecs and sources_connected:
         result['inferred_phase'] = 'PHASE_4_4'
         result['phase_reason'] = f'{result.get("ecs_count",0)} target ECS + {sources_connected} sources connected — ready for task creation'
     elif has_ecs:
         result['inferred_phase'] = 'PHASE_4_3'
         result['phase_reason'] = f'{result.get("ecs_count",0)} target ECS created — source agents not yet connected'
+    elif has_tasks:
+        # Tasks without target ECS = leftovers from an aborted/partial 4.3.
+        # Pipeline is still at Target provisioning — flag it.
+        result['inferred_phase'] = 'PHASE_4_3'
+        result['phase_reason'] = f'{has_tasks} SMS task(s) present but 0 target ECS — aborted 4.3 artifacts; re-run Target phase'
     elif sources_connected:
         result['inferred_phase'] = 'PHASE_4_2'
         result['phase_reason'] = f'{sources_connected} source servers connected to SMS — target not yet provisioned'
