@@ -33,3 +33,14 @@ _This file is appended by the erp-session-summary-sync cron job. It is the durab
 - Mined 52,603-message Telegram export (ChatExport_2026-08-07) → 6 new skills created: hcloud-cli-workarounds, huawei-cloud-eip-billing-region-pitfalls, sms-migration-automatic-retry-monitor, huawei-cloud-erp-execution-safety-architecture, huaweicloud-sdk-mcp-tradeoffs, azure-vhd-to-huawei-obs-ecs.
 - 5 duplicate topics mapped to existing skills (SMS agent install → sms-migration skills; proxy → proxy-ssh-tunnel; phases → erp-execution-orchestration; flask → huawei-cloud-flask-server; ops → huawei-cloud-operations).
 - Full chat archived at docs/session-archives/telegram-2026-08-07/ (chat_full.json.gz 3.3MB, chat_full.txt.gz 2.0MB).
+# SESSION-LESSONS — Auto-synced from dev sessions
+
+## 2026-09-11 (Phase 4.2/4.3 live execution — ERP GUI)
+- **Resource-Kit-First is now directive #0**: preloaded skills contain exact image IDs, disk mapping, syncing=false, error fixes. Agents MUST read skills + plan before any hcloud --help / self-discovery. SMS.0515 has a fix skill — read it, don't re-derive.
+- **source_servers enrichment**: after 4.2, agents MUST persist discovered source server data (EIP, sms_id, disk, agent_version) into executionContext.source_servers + sms_migration_project_id. Later phases read these from the spawn context — no DB hunting.
+- **Source SSH password**: wizard stores it in dataPlaneAccess.password (hasDataPlaneAdmin). Agents get it injected as SOURCE OS ACCESS. If servers reject it: reset via `hcloud ECS ResetServerPassword` + reboot (worked on 4.2 — password was cleared at creation).
+- **SMS agent install (proven)**: download SMS-Agent.tar.gz from region URL → extract /tmp/SMS-Agent → write auth.cfg directly (bypass interactive startup.sh) → screen linuxmain with AK/SK + region endpoint → verify 13/13 health. Do NOT use interactive printf pipe (terminal blocks it).
+- **No DB reads**: agents NEVER query erp_prod_db directly (.env blocked). All project data comes via spawn context (executionContext, SOURCE OS ACCESS, targetArchitecture summary).
+- **Deterministic executor**: plan steps run via subprocess first (no LLM), retry x2, then agent lane. Det lane consumoter executionContext — placeholders that can't resolve fall through to agent.
+- **hcloud SMS ListSourceServers NOT supported** — use ListServers/ListMigprojects; server UUIDs from `hcloud ECS ListServers` in source region.
+- **completed_phases from delegate_tasks**: persists across log resets; runbook shows done from DB not cloud-guessing.
