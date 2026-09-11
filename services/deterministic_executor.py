@@ -17,6 +17,10 @@ import subprocess
 import re
 import time
 
+from services.placeholder_registry import (
+    classify_placeholder, extract_chained_values, PLACEHOLDER_REGISTRY,
+)
+
 logger = logging.getLogger(__name__)
 
 PLACEHOLDER_PATTERNS = [
@@ -142,9 +146,14 @@ class DeterministicExecutor:
         return out
 
     # ── step execution ────────────────────────────────────────────────────
-    def run_step(self, step, ctx=None, log=None):
-        """Execute a single plan step deterministically. Returns result dict."""
+    def run_step(self, step, ctx=None, log=None, chain_vals=None):
+        """Execute a single plan step deterministically. Returns result dict.
+
+        chain_vals: dict of chained values from previous steps ({action: value})
+        — substituted into placeholders that reference prior-step output.
+        """
         ctx = ctx or self._resolve_ctx()
+        chain_vals = chain_vals or {}
         action = step.get('action', 'UNKNOWN')
         target = step.get('target_resource', 'N/A')
         cmds = step.get('commands') or []
@@ -154,11 +163,33 @@ class DeterministicExecutor:
             if not cmd:
                 continue
             if '<' in cmd and '>' in cmd:
-                resolved = self.resolve_cmd(cmd, ctx)
-                if '<' in resolved and '>' in resolved:
-                    # still has unresolved placeholders — cannot run deterministically
-                    results.append({'cmd': cmd[:120], 'status': 'blocked',
-                                    'error': 'Unresolved placeholders — needs discovery/agent lane'})
+                resolved = cmd
+                # First substitute chained values from prior steps
+                for ph in re.findall(r'<[^>]+>', resolved):
+                    strat, source = classify_placeholder(ph)
+                    if strat == 'chain':
+                        val = chain_vals.get(source, '')
+                        if val:
+                            resolved = resolved.replace(ph, val)
+                # Then context-based substitution
+                resolved = self.resolve_cmd(resolved, ctx)
+                # Classify any remaining placeholders — secrets/env NEVER run
+                remaining = re.findall(r'<[^>]+>', resolved)
+                blocked_reason = None
+                for ph in remaining:
+                    strat, source = classify_placeholder(ph)
+                    if strat == 'env':
+                        blocked_reason = f'SECRET placeholder {ph} in command — inject via env/auth.cfg, never inline'
+                        break
+                    elif strat == 'chain':
+                        blocked_reason = f'Chained placeholder {ph} unresolved (prior step output missing)'
+                        break
+                    elif strat == 'plan':
+                        blocked_reason = f'Plan placeholder {ph} needs plan/agent data'
+                        break
+                if blocked_reason:
+                    results.append({'cmd': resolved[:120], 'status': 'blocked',
+                                    'error': blocked_reason})
                     continue
             else:
                 resolved = cmd
@@ -183,16 +214,31 @@ class DeterministicExecutor:
         return entry
 
     def run_phase(self, plan, log=None):
-        """Run ALL plan steps for this phase. Returns (success, entries, failures)."""
+        """Run ALL plan steps for this phase. Returns (success, entries, failures).
+
+        Chain-aware: runs steps in order; captures output values from each step
+        (vpc_id, sg_id, ecs_id, task_id...) and substitutes them into later
+        steps' <placeholders>. Secret placeholders (<AK>, <SK>...) are NEVER
+        substituted — they mark 'env' strategy and report blocked to force the
+        agent lane to use auth.cfg / env injection instead.
+        """
         steps = [s for s in (plan.get('steps') or []) if s.get('phase') == self.phase_key]
         if not steps:
             return False, [], 'no-steps'
         ctx = self._resolve_ctx()
+        chain_vals = {}   # {action: value} — from previous step outputs
         entries = []
         failures = []
         for s in steps:
-            e = self.run_step(s, ctx, log)
+            e = self.run_step(s, ctx, log, chain_vals)
             entries.append(e)
+            # Capture chained values even from failed steps that produced output
+            if e.get('results'):
+                for r in e['results']:
+                    if r.get('output'):
+                        cv = extract_chained_values(s.get('action', ''), r['output'])
+                        if cv:
+                            chain_vals.update(cv)
             if e['status'] != 'success':
                 failures.append(e)
         success = len(failures) == 0
