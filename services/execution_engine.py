@@ -612,6 +612,25 @@ class ExecutionEngine:
         step_id += 1
         cred_resolution = _resolve_step_from_knowledge("VALIDATE_CREDENTIALS", "network", "validate",
                                                         {"os": "linux", "type": "ECS"}, {"os_family": "linux", "role": "app"})
+        # DETERMINISTIC credential validation — a real IAM ping with the project's
+        # profile. The knowledge tree's CREDENTIAL_VALIDATION entry was a copy-paste
+        # of a CCE create-cluster skill ("hcloud CCE CreateCluster ... <CLUSTER_ID>")
+        # that has NOTHING to do with validating creds and ALWAYS fails/blocks.
+        _cred_cmds = cred_resolution.get('commands') or []
+        _cred_is_bad = any(
+            'cce' in str((c.get('cmd') if isinstance(c, dict) else c)).lower()
+            or 'createcluster' in str((c.get('cmd') if isinstance(c, dict) else c)).lower()
+            for c in _cred_cmds
+        ) or not _cred_cmds
+        if _cred_is_bad:
+            cred_resolution = {
+                'tool_source': 'hcloud',
+                'tool_name': 'hcloud IAM KeystoneListRegions (deterministic AK/SK ping)',
+                'commands': [{'desc': 'Validate AK/SK by listing IAM regions',
+                              'cmd': 'hcloud IAM KeystoneListRegions --cli-profile=<profile> --cli-region=la-north-2',
+                              'type': 'hcloud'}],
+                'source_detail': '\U0001f527 deterministic credential ping',
+            }
         steps.append({
             "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
             "action": "CREDENTIAL_VALIDATION",
@@ -720,6 +739,12 @@ class ExecutionEngine:
         if mig_worker_triggers:
             step_id += 1
             mw_region = source_region if mig_worker_location == "source" else target_region
+            # SPEC PARITY for mig_worker: smallest balanced flavor in the region
+            # (2 vCPU/4GB) — never ac8/xlarge. _pick_flavor handles the mapping.
+            try:
+                _mw_flavor = _pick_flavor('', mw_region, None, None)
+            except Exception:
+                _mw_flavor = "s6.large.2"
             steps.append({
                 "step_id": step_id, "phase": ExecutionEngine.PHASE_4_0,
                 "action": "MIG_WORKER_DEPLOY",
@@ -728,7 +753,7 @@ class ExecutionEngine:
                 "strategy": "provision",
                 "tool_source": "skill",
                 "tool_name": "mig-worker-framework (autonomous deployment)",
-                "commands": [{"desc": f"Create mig_worker ECS in {mig_worker_location} account ({mw_region})", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{mig_worker_location}' --server.flavorRef=<DISCOVERED_FLAVOR> --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone='{mw_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id=<sg_id> --server.count=1 --cli-region={mw_region}", "type": "hcloud"}],
+                "commands": [{"desc": f"Create mig_worker ECS in {mig_worker_location} account ({mw_region})", "cmd": f"hcloud ECS CreateServers --server.name='mig-worker-{mig_worker_location}' --server.flavorRef={_mw_flavor} --server.vpcid=<vpc_id> --server.nics.1.subnet_id=<subnet_id> --server.availability_zone='{mw_region}a' --server.root_volume.volumetype=SAS --server.root_volume.size=40 --server.security_groups.1.id=<sg_id> --server.count=1 --cli-region={mw_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,

@@ -636,6 +636,28 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         step['goal'], enriched, project_id, phase_key
                     )
 
+                # ── FEEDBACK LOOP: agent resolutions -> plan updates ──
+                # When the agent lane resolved placeholders (discovered IDs,
+                # picked flavors, found the mig project), write those values
+                # into the plan so FUTURE deterministic runs of ANY project
+                # inherit them. Self-healing convergence.
+                try:
+                    if success:
+                        from services.feedback_loop import apply_agent_resolutions
+                        n = apply_agent_resolutions(project_id, pdata, response or "")
+                        if n:
+                            # Persist the updated plan back to the DB immediately
+                            try:
+                                _proj = ProjectData.query.get(project_id)
+                                if _proj:
+                                    _proj.data = json.dumps(pdata, ensure_ascii=False)
+                                    db.session.commit()
+                            except Exception as _pe:
+                                log(f"[feedback] persist failed: {_pe}")
+                            log(f"[feedback] {n} agent resolutions applied to plan (deterministic coverage +{n})")
+                except Exception as fb_err:
+                    log(f"[feedback] loop failed: {fb_err}")
+
                 # ── Create delegate task record ──
                 # Persist success outcome to Postgres
                 if success:
