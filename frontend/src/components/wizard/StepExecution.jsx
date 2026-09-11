@@ -685,6 +685,28 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         logs: true
     });
 
+    // ⏱ Slow-loading awareness: after 8s without cloudState, show a hint banner
+    const [loadStalled, setLoadStalled] = useState(false);
+    const [phaseErrorMsg, setPhaseErrorMsg] = useState(null);
+    useEffect(() => {
+        if (!cloudState) {
+            const t = setTimeout(() => setLoadStalled(true), 8000);
+            return () => clearTimeout(t);
+        }
+        setLoadStalled(false);
+    }, [cloudState]);
+    // Detect phase failure from backend status and surface it as a banner
+    useEffect(() => {
+        if (phaseStatus && Object.values(phaseStatus).some(v => v === 'failed' || v === 'FAILED')) {
+            const failed = Object.entries(phaseStatus).find(([, v]) => v === 'failed' || v === 'FAILED');
+            if (failed) setPhaseErrorMsg(`Phase ${failed[0].replace('PHASE_4_', '4.')} failed — check the Logs panel for the error report. Options: Rollback the phase, fix, and re-run it.`);
+        } else if (failedOrchPhaseIdx !== null) {
+            setPhaseErrorMsg(`Pipeline halted at phase ${failedOrchPhaseIdx !== null ? String(failedOrchPhaseIdx) : '?'} — review logs, fix the blocker, then Re-run from this phase.`);
+        } else {
+            setPhaseErrorMsg(null);
+        }
+    }, [phaseStatus, failedOrchPhaseIdx]);
+
     // Toggle function
     const toggleSection = (section) => {
         setCollapsedSections(prev => ({...prev, [section]: !prev[section]}));
@@ -692,6 +714,27 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
 
     return (
         <div className="space-y-4 animate-fade-in">
+            {/* 🚨 ERROR / STALL AWARENESS BANNERS */}
+            {phaseErrorMsg && (
+                <div className="border-2 border-rose-300 bg-rose-50 rounded-xl px-3 py-2 flex items-start justify-between gap-2 animate-fade-in">
+                    <div className="flex items-start gap-2">
+                        <i className="fas fa-exclamation-triangle text-rose-500 mt-0.5"></i>
+                        <div>
+                            <div className="text-[10px] font-black text-rose-700 uppercase tracking-widest">Phase error detected</div>
+                            <div className="text-[10px] text-rose-600">{phaseErrorMsg}</div>
+                        </div>
+                    </div>
+                    <button onClick={() => setPhaseErrorMsg(null)} className="text-rose-400 hover:text-rose-600 text-[10px]">✕</button>
+                </div>
+            )}
+            {loadStalled && !cloudState && (
+                <div className="border-2 border-amber-300 bg-amber-50 rounded-xl px-3 py-2 flex items-center gap-2 animate-fade-in">
+                    <i className="fas fa-hourglass-half text-amber-500"></i>
+                    <div className="text-[10px] text-amber-700">
+                        <span className="font-black uppercase tracking-widest">Still loading cloud state...</span> — the server may be running a slow discovery or restarting. The panel refreshes every 5s automatically; you can also hit <b>Refresh</b> above.
+                    </div>
+                </div>
+            )}
             {/* 🚨 STICKY SUMMARY BAR */}
             <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-2 border-indigo-100 rounded-2xl shadow-md p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
@@ -1293,7 +1336,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 </div>
                                                 {ph.done ? (
                                                     <span className="text-[8px] font-black uppercase text-emerald-600 shrink-0">Done</span>
-                                                ) : (
+                ) : (
                                                     <button
                                                         onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}
                                                         disabled={autoOrchestrating || (ph.n > 1 && !completedOrchPhases.has(`PHASE_4_${ph.n - 1}`))}
@@ -1302,7 +1345,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     >
                                                         Run
                                                     </button>
-                                                )}
+                                                    )}
                                             </div>
                                         ))}
                                     </div>
