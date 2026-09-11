@@ -551,10 +551,45 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         enriched += f"\nTarget servers: {', '.join(phase_ctx['servers'])}"
                     enriched += "\n=== END SIMULATION CONTEXT ==="
 
-                # ── Spawn the Hermes agent ──
-                success, response, error = _spawn_hermes_agent(
-                    step['goal'], enriched, project_id, phase_key
-                )
+                # ── DETERMINISTIC FIRST (Phase 4.0 pre-tasks skip this) ──
+                # Execute plan steps for this phase via subprocess (NO LLM).
+                # Fall through to agent spawn only if deterministic steps fail ×2.
+                success = True
+                response = ""
+                error = ""
+                if phase_key.startswith('PHASE_4_') and phase_key != 'PHASE_4_0':
+                    try:
+                        from services.deterministic_executor import DeterministicExecutor
+                        det = DeterministicExecutor(pdata, project_id, phase_key,
+                                                     target_region=pdata.get('region', 'la-north-2'))
+                        det_ok, entries, failures = det.run_phase(plan, log=log)
+                        if det_ok:
+                            response = f"Deterministic: {len(entries)} steps succeeded."
+                            log(f'[det] {phase_key}: all {len(entries)} steps completed deterministically ✓')
+                        else:
+                            log(f'[det] {phase_key}: {len(failures)}/{len(entries)} steps failed, retrying...')
+                            # Retry ×2 (same deterministic path)
+                            time.sleep(3)
+                            det_ok2, entries2, failures2 = det.run_phase(plan, log=log)
+                            if det_ok2:
+                                response = f"Deterministic (retry): {len(entries2)} steps succeeded."
+                                log(f'[det] {phase_key}: retry succeeded ✓')
+                            else:
+                                log(f'[det] {phase_key}: deterministic failed after retry — falling through to agent lane')
+                                success = False
+                                error = f"Deterministic: {len(failures2)} steps failed after retry"
+                                # Fall through to agent spawn below
+                    except Exception as det_err:
+                        log(f'[det] {phase_key}: deterministic executor error: {det_err}')
+                        success = False
+                        error = str(det_err)
+                        # Fall through to agent spawn
+                if not success:
+                    # ── Agent lane (deterministic failed or not applicable) ──
+                    log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
+                    success, response, error = _spawn_hermes_agent(
+                        step['goal'], enriched, project_id, phase_key
+                    )
 
                 # ── Create delegate task record ──
                 # Persist success outcome to Postgres
