@@ -250,10 +250,16 @@ Skills Knowledge Tree ({num_skills} skills available):
 === RECENT EXECUTION OUTCOMES ===
 {outcomes_context}
 
-{data_plane_ctx}EXECUTION DISCIPLINE — ABSOLUTE RULES:
+{data_plane_ctx}EXECUTION DISCIPLINE — ABSOLUTE RULES (source order matters — follow this EVERY time):
+0. RESOURCE KIT FIRST — for EVERY action and EVERY value you need (image IDs, flavors, API operations, parameter syntax, error handling):
+   a. READ the preloaded SKILLS in your context (they contain exact proven commands — image IDs, disk mapping, syncing=false, error fixes). Your session has them preloaded — use them before anything.
+   b. If a skill lacks the answer, READ the execution plan / simulated commands in your context.
+   c. Use MCP tools (iaas-mcp-server) for API operations.
+   d. ONLY THEN, if the kit genuinely lacks it, use hcloud --help / self-discovery.
+   NEVER treat a missing value as a reason to guess: search the kit first. The kit is authoritative and was built from real completed migrations.
 1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.
 2. VERIFY BEFORE REPORTING: Never claim a resource was created or a step completed unless you ran the cloud command AND saw the success output. For every provisioned resource (VPC, SG, EIP, ECS, SMS task), run the corresponding read/Show command afterwards and include its actual output in your report.
-3. EXACT PARAMETERS — READ THE PLAN: The executionPlan in the project data contains the exact commands for every step. Your SOLE job is to execute those steps in order using the exact commands listed there. Do NOT run --help, do NOT self-discover, do NOT improvise — ANY deviation from the plan is a bug. Use the exact parameters from the plan/simulation verbatim. Example: EIPs MUST be --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic. SMS tasks MUST use --syncing=false with speed_limit=0.
+3. EXACT PARAMETERS — READ THE PLAN: The executionPlan in the project data contains the exact commands for every step. Your SOLE job is to execute those steps in order using the exact commands listed there. Do NOT run --help as a first move, do NOT self-discover, do NOT improvise — ANY deviation from the plan is a bug. Use the exact parameters from the plan/simulation verbatim. Example: EIPs MUST be --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic. SMS tasks MUST use --syncing=false with speed_limit=0.
 4. HONESTY: If a command fails, report the failure with the exact error output. Do NOT summarize, sugarcoat, or declare partial success. A failed step is a failed step.
 5. TONE: Report factually and concisely. No celebratory language, no kaomoji, no personality flourishes. State what you did, the verification output, and the result.
 
@@ -542,6 +548,45 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 # Build enriched context
                 phase_ctx = build_phase_context(phase_key)
                 enriched = f"ERP Migration Project ID: {project_id}. Current pipeline phase: {phase_key}. Customer: {pdata.get('customerName', 'N/A')}. Target region: {pdata.get('region', 'la-south-2')}. Execution mode: agentic orchestration."
+
+                # ── Enriched execution context (injected, so the agent does NOT need to read the DB) ──
+                # The 4.2 agent persisted source_servers (EIPs, SMS IDs, disk), mig project id etc.
+                # to executionContext. Later phases need these values — provide them directly.
+                ec = pdata.get('executionContext') or {}
+                if isinstance(ec, dict):
+                    src_servers = ec.get('source_servers') or []
+                    if src_servers:
+                        enriched += "\n\n=== SOURCE SERVERS (from executionContext — authoritative) ==="
+                        for srv in src_servers:
+                            enriched += ("\n- {name}: eip={eip} private={private_ip} sms_id={sms_id} "
+                                         "state={state} agent={agent_version} disk={disk_name} {disk_size}B").format(
+                                name=srv.get('name','?'),
+                                eip=srv.get('eip',''),
+                                private_ip=srv.get('private_ip',''),
+                                sms_id=srv.get('sms_id',''),
+                                state=srv.get('state',''),
+                                agent_version=srv.get('agent_version',''),
+                                disk_name=srv.get('disk_name',''),
+                                disk_size=srv.get('disk_size',''))
+                        enriched += "\n=== END SOURCE SERVERS ==="
+                    mp_id = ec.get('sms_migration_project_id') or ec.get('mig_project_id') or ''
+                    if mp_id:
+                        enriched += f"\nMigration project ID: {mp_id} (SMS)"
+                    if ec.get('phase_4_2_complete'):
+                        enriched += "\nPhase 4.2 status: COMPLETE (SMS agents installed + verified)"
+
+                # Target architecture summary (compute / database / storage)
+                ta = pdata.get('targetArchitecture') or {}
+                if isinstance(ta, dict):
+                    parts = []
+                    for grp, label in (('compute','ECS'), ('database','DB'), ('storage','Storage')):
+                        items = ta.get(grp) or []
+                        if items:
+                            names = ", ".join(str((x.get('name') or x.get('source_name') or '?')) for x in items[:5])
+                            parts.append(f"{label}: {names}")
+                    if parts:
+                        enriched += "\n=== TARGET ARCHITECTURE ===\n" + "\n".join(parts) + "\n=== END TARGET ARCHITECTURE ==="
+
                 if phase_ctx:
                     enriched += f"\n\n=== SIMULATION CONTEXT for {phase_key} ==="
                     enriched += f"\nSimulated steps in this phase: {len(sim_trace)}"
