@@ -139,7 +139,7 @@ def _discover_flavors(profile: str, region: str) -> list:
     """Discover available ECS flavors in a region (project-agnostic)."""
     try:
         result = subprocess.run(
-            f"hcloud ECS ListFlavors --cli-profile={profile} --cli-region={region} --availability-zone={region}a",
+            f"hcloud ECS ListFlavors --cli-profile={profile} --cli-region={region}",
             shell=True, capture_output=True, text=True, timeout=15
         )
         if result.returncode == 0:
@@ -155,7 +155,15 @@ def _discover_flavors(profile: str, region: str) -> list:
 
 
 def _pick_flavor(profile: str, region: str, source_vcpus: int = None, source_ram_mb: int = None) -> str:
-    """Pick a suitable flavor for the target region (project-agnostic)."""
+    """Pick a flavor for the target region with SPEC PARITY (project-agnostic).
+
+    Rules (cost-fidelity guard):
+    1. Prefer EXACT vCPU count match; RAM = nearest tier >= source RAM.
+    2. HARD CAP: never pick a flavor with RAM > 1.5x source RAM (prevents 2-4x
+       oversizing / cost leaks). Only fall through the cap if NO flavor exists
+       below it (region constraint) — then pick the smallest above-source flavor.
+    3. Without source specs: smallest balanced (2 vCPU / 4GB) — never ac8/xlarge.
+    """
     flavors = _discover_flavors(profile, region)
     if not flavors:
         # Fallback: try common flavors by region prefix
@@ -164,18 +172,43 @@ def _pick_flavor(profile: str, region: str, source_vcpus: int = None, source_ram
         elif region.startswith("ap-southeast"):
             return "s6.medium.2"  # AP fallback
         return "s6.large.2"  # Generic fallback
-    
-    # Match source specs if available
+
     if source_vcpus and source_ram_mb:
+        src_v = int(source_vcpus)
+        src_ram = int(source_ram_mb)
+        cap_ram = int(src_ram * 1.5)
+        # Pass 1: exact vCPU + RAM within [src_ram, 1.5x cap] (tightest fit)
+        best = None
         for f in flavors:
-            if int(f.get("vcpus", 0)) >= source_vcpus and int(f.get("ram", 0)) >= source_ram_mb:
+            fv = int(f.get("vcpus", 0))
+            fr = int(f.get("ram", 0))
+            if fv == src_v and src_ram <= fr <= cap_ram:
+                if best is None or fr < best[1]:
+                    best = (f.get("id", ""), fr)
+        if best:
+            return best[0]
+        # Pass 2: any vCPU >= src with RAM within cap
+        for f in flavors:
+            fv = int(f.get("vcpus", 0))
+            fr = int(f.get("ram", 0))
+            if fv >= src_v and src_ram <= fr <= cap_ram:
                 return f.get("id", "s6.large.2")
-    
-    # Pick smallest balanced flavor (2 vCPU, 4GB+)
+        # Pass 3: no flavor within cap — smallest with RAM >= src (region-limited)
+        for f in flavors:
+            fv = int(f.get("vcpus", 0))
+            fr = int(f.get("ram", 0))
+            if fv >= src_v and fr >= src_ram:
+                return f.get("id", "s6.large.2")
+
+    # No source specs: smallest balanced (2 vCPU, 4GB+) — avoid ac8/xlarge
+    for f in flavors:
+        if int(f.get("vcpus", 0)) >= 2 and int(f.get("ram", 0)) >= 4096:
+            if 'ac8' not in str(f.get("id", "")):
+                return f.get("id", "s6.large.2")
     for f in flavors:
         if int(f.get("vcpus", 0)) >= 2 and int(f.get("ram", 0)) >= 4096:
             return f.get("id", "s6.large.2")
-    
+
     return flavors[0].get("id", "s6.large.2") if flavors else "s6.large.2"
 
 
@@ -980,12 +1013,68 @@ class ExecutionEngine:
             # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
             server_profile = {"os_family": "linux" if "windows" not in os_type.lower() else "windows", "role": "compute", "strategy": "sms_primary"}
             step_id_counter = sid
-            # Step: Target ECS creation — search knowledge tree first
+            # Step: Target ECS creation — search knowledge tree first,
+            # BUT the deterministic hcloud command (with SPEC PARITY flavor) wins
+            # over stale TF stubs from the knowledge tree. The knowledge tree's
+            # "terraform {" placeholder caused agents to improvise (ac8 oversizing).
             ecs_resolution = _resolve_step_from_knowledge("CREATE_TARGET_ECS", "compute", "sms", node, server_profile)
-            # Flavor: use source flavor if available, otherwise dynamic discovery at execution time
+            # ── SPEC PARITY (cost/fidelity guard) ──
+            # Source flavor IDs are region-specific (x1.2u.2g = ap-southeast-3).
+            # Copying them verbatim to the target region breaks (flavor not found),
+            # which is why agents improvised ac8 2-4x oversizing. Instead:
+            #   parse source vCPU/RAM from the flavor id, then _pick_flavor() maps to
+            #   an equivalent target-region flavor (exact vCPU, RAM within 1.5x cap).
             source_flavor = node.get("flavor", node.get("source_flavor", ""))
-            flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
-            sid += 1
+            src_vcpus = None
+            src_ram_mb = None
+            try:
+                # flavor ids like: x1.2u.2g / ac8.large.2 / s6.large.2 / x1e.4u.2g
+                import re as _re
+                m = _re.search(r'x?\d?[a-z]?\d*\.(\d+)u\.(\d+)g', str(source_flavor))
+                if not m:
+                    m = _re.search(r'[a-z0-9]+\.(\d+)xlarge\.(\d+)', str(source_flavor))
+                if m:
+                    src_vcpus = int(m.group(1))
+                    src_ram_mb = int(m.group(2)) * 1024
+                elif source_flavor:
+                    # last resort: parse 'x1.2u.2g' style manually
+                    parts = str(source_flavor).split('.')
+                    if len(parts) >= 3 and parts[-2].endswith('u'):
+                        src_vcpus = int(parts[-2][:-1])
+                        src_ram_mb = int(parts[-1][:-1]) * 1024
+            except Exception:
+                src_vcpus = None
+                src_ram_mb = None
+            flavor_ref = source_flavor
+            if source_flavor and src_vcpus:
+                try:
+                    picked = _pick_flavor('', target_region, src_vcpus, src_ram_mb)
+                    if picked and picked != 's6.large.2':
+                        flavor_ref = picked
+                except Exception:
+                    pass
+            if not source_flavor:
+                flavor_ref = _pick_flavor('', target_region, None, None)
+            # encode source vCPU/RAM into the step for the agent (parity contract)
+            spec_contract = f" (source: {src_vcpus}vCPU/{int((src_ram_mb or 0)/1024)}GB -> target: {flavor_ref})" if src_vcpus else ""
+            # Override TF knowledge stub with deterministic hcloud command
+            _det_cmd = f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.root_volume.volumetype=SAS --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}"
+            _k_cmds = ecs_resolution.get("commands") or []
+            _k_is_stub = any(
+                str((c.get("cmd") if isinstance(c, dict) else c)).strip().lower().startswith("terraform")
+                for c in _k_cmds
+            ) or not _k_cmds
+            if _k_is_stub:
+                ecs_resolution = {
+                    "tool_source": "hcloud",
+                    "tool_name": "hcloud CLI (deterministic ECS create + EIP)",
+                    "commands": [{"desc": "Create target ECS with EIP (spec-parity flavor)",
+                                  "cmd": _det_cmd, "type": "hcloud"}],
+                    "source_detail": "\U0001f527 deterministic spec-parity fallback",
+                    "failure_modes": [],
+                    "learnings": "",
+                }
+
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
                 "action": "CREATE_TARGET_ECS",
