@@ -149,6 +149,34 @@ def _spawn_hermes_agent(goal, context, project_id, phase):
     except Exception as cred_ex:
         logger.warning(f"Failed to load credentials for project {project_id}: {cred_ex}")
 
+    # ── Source OS access (dataPlaneAccess) — preflight-injected ──
+    # The wizard collects OS data-plane user/password during intake. Source Prep
+    # (SMS agent install) NEEDS these to SSH into source servers. If missing,
+    # the agent MUST NOT trial-and-error — it reports a blocker for human input.
+    data_plane_ctx = ""
+    source_os_user = ""
+    source_os_password = ""
+    try:
+        pd = pdata
+        dpa = pd.get('dataPlaneAccess') or {}
+        if isinstance(dpa, dict):
+            source_os_user = dpa.get('user') or dpa.get('os_user') or 'root'
+            source_os_password = dpa.get('password') or ''
+        # fallback keys
+        if not source_os_password:
+            source_os_password = pd.get('source_ssh_password') or ''
+        if not source_os_user:
+            source_os_user = 'root'
+        dpa_ready = bool(source_os_password)
+        data_plane_ctx = (
+            f"=== SOURCE OS ACCESS (preflight) ===\n"
+            f"Source SSH user: {source_os_user}\n"
+            f"Source SSH password: {'SET (use it for agent install SSH)' if dpa_ready else 'MISSING — DO NOT guess. Report as BLOCKER for human intervention.'}\n"
+            f"Usage: ssh {source_os_user}@<source_ip> for SMS agent install.\n\n"
+        )
+    except Exception as dpx:
+        logger.warning(f"dataPlaneAccess injection failed: {dpx}")
+
     # ── Build skill context ──
     skill_context = ""
     num_skills = 0
@@ -222,7 +250,7 @@ Skills Knowledge Tree ({num_skills} skills available):
 === RECENT EXECUTION OUTCOMES ===
 {outcomes_context}
 
-EXECUTION DISCIPLINE — ABSOLUTE RULES:
+{data_plane_ctx}EXECUTION DISCIPLINE — ABSOLUTE RULES:
 1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.
 2. VERIFY BEFORE REPORTING: Never claim a resource was created or a step completed unless you ran the cloud command AND saw the success output. For every provisioned resource (VPC, SG, EIP, ECS, SMS task), run the corresponding read/Show command afterwards and include its actual output in your report.
 3. EXACT PARAMETERS — READ THE PLAN: The executionPlan in the project data contains the exact commands for every step. Your SOLE job is to execute those steps in order using the exact commands listed there. Do NOT run --help, do NOT self-discover, do NOT improvise — ANY deviation from the plan is a bug. Use the exact parameters from the plan/simulation verbatim. Example: EIPs MUST be --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic. SMS tasks MUST use --syncing=false with speed_limit=0.
