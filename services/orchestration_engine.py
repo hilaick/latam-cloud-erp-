@@ -253,10 +253,11 @@ Skills Knowledge Tree ({num_skills} skills available):
 {data_plane_ctx}EXECUTION DISCIPLINE — ABSOLUTE RULES (source order matters — follow this EVERY time):
 0. RESOURCE KIT FIRST — for EVERY action and EVERY value you need (image IDs, flavors, API operations, parameter syntax, error handling):
    a. READ the preloaded SKILLS in your context (they contain exact proven commands — image IDs, disk mapping, syncing=false, error fixes). Your session has them preloaded — use them before anything.
-   b. If a skill lacks the answer, READ the execution plan / simulated commands in your context.
-   c. Use MCP tools (iaas-mcp-server) for API operations.
-   d. ONLY THEN, if the kit genuinely lacks it, use hcloud --help / self-discovery.
-   NEVER treat a missing value as a reason to guess: search the kit first. The kit is authoritative and was built from real completed migrations.
+   b. If a skill lacks the answer, READ /tmp/erp_project_context_*.json — it has the full project context including targetArchitecture, executionContext, source passwords, and the execution plan. Use `cat /tmp/erp_project_context_<project_id>.json` to access it. This is the PROJECT DATA SOURCE OF TRUTH — the ERP data comes from here, NOT from the database.
+   c. If the JSON file is missing, read the execution plan / simulated commands in your context.
+   d. Use MCP tools (iaas-mcp-server) for API operations.
+   e. ONLY THEN, if the kit genuinely lacks it, use hcloud --help / self-discovery.
+   NEVER touch the ERP database (erp_prod_db / postgresql://). The .env file is blocked. Do NOT grep for database passwords. Do NOT write Python scripts to query the database. The project data file (/tmp/erp_project_context_*) has everything you need. NEVER treat a missing value as a reason to guess or DB-hunt: search the kit first.
 1. PHASE SCOPE: Execute ONLY the steps listed in the Task for your assigned phase. NEVER provision, create, register, or modify ANY resource outside this list. Do NOT start later phases, do NOT revisit earlier phases. If a step seems to require something outside your phase, report it as a blocker instead of doing it.
 2. VERIFY BEFORE REPORTING: Never claim a resource was created or a step completed unless you ran the cloud command AND saw the success output. For every provisioned resource (VPC, SG, EIP, ECS, SMS task), run the corresponding read/Show command afterwards and include its actual output in your report.
 3. EXACT PARAMETERS — READ THE PLAN: The executionPlan in the project data contains the exact commands for every step. Your SOLE job is to execute those steps in order using the exact commands listed there. Do NOT run --help as a first move, do NOT self-discover, do NOT improvise — ANY deviation from the plan is a bug. Use the exact parameters from the plan/simulation verbatim. Example: EIPs MUST be --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic. SMS tasks MUST use --syncing=false with speed_limit=0.
@@ -631,6 +632,22 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         # Fall through to agent spawn
                 if not success:
                     # ── Agent lane (deterministic failed or not applicable) ──
+                    # Write project context file so the agent NEVER touches the DB
+                    try:
+                        _ctx_file = f"/tmp/erp_project_context_{project_id[:8]}.json"
+                        _safe_ctx = {
+                            "projectId": project_id,
+                            "executionContext": pdata.get('executionContext', {}),
+                            "targetArchitecture": pdata.get('targetArchitecture', {}),
+                            "source_ssh_password": pdata.get('source_ssh_password',
+                                (pdata.get('dataPlaneAccess') or {}).get('password', '')),
+                            "executionPlan": plan if isinstance(plan, dict) else {},
+                        }
+                        import json as _js
+                        with open(_ctx_file, 'w') as _fw:
+                            _js.dump(_safe_ctx, _fw, indent=1, default=str)
+                    except Exception as _ce:
+                        log(f'[ctx] project context file write failed: {_ce}')
                     log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
                     success, response, error = _spawn_hermes_agent(
                         step['goal'], enriched, project_id, phase_key
