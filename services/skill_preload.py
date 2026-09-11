@@ -27,6 +27,9 @@ _PHASE_SKILLS = {
         'huawei-cloud-sms-migration',
         'huawei-cloud-sms-migration-exact-disk-config',
         'huawei-cloud-eip-billing-region-pitfalls',
+        'huawei-cloud-sms-0515-fix',
+        'sms-error-codes-troubleshooting',
+        'huawei-cloud-sms-api-only',
     ],
     'PHASE_4_4': [  # Data Sync: SMS tasks, disk mapping
         'huawei-cloud-sms-migration',
@@ -43,6 +46,8 @@ _PHASE_SKILLS = {
     'PHASE_4_6': [  # Cutover
         'huawei-cloud-sms-migration',
         'huawei-cloud-eip-billing-region-pitfalls',
+        'huawei-cloud-sms-0515-fix',
+        'sms-error-codes-troubleshooting',
     ],
     'PHASE_4_7': [  # Teardown / post-migration
         'linux-system-recovery',
