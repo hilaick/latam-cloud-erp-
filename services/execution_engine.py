@@ -540,6 +540,14 @@ class ExecutionEngine:
         for r in ta_database:
             plan_resources.append({"type": "RDS", "name": r.get("name") or r.get("source_name", "")})
         for r in ta_storage:
+            # Phantom filter: compute-disk-mirror entries (volume-NNNN, size 0) are NOT
+            # object-storage resources — OMS migrates OBS buckets/objects, not ECS volumes.
+            _rname = (r.get("name") or r.get("source_name") or "").lower()
+            _is_phantom = (("volume" in _rname or "boot" in _rname) and
+                          (not r.get("size_gb") or float(r.get("size_gb") or 0) == 0))
+            if _is_phantom:
+                logger.info(f"[BUILD_PLAN] Skipping phantom storage node: {_rname} (compute-disk mirror, not OBS object)")
+                continue
             rtype = (r.get("type") or "EVS").upper()
             plan_resources.append({
                 "type": rtype, "name": r.get("name") or r.get("source_name", ""),
@@ -1241,7 +1249,7 @@ class ExecutionEngine:
 
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_4,
                 "action": "DRS_JOB_CREATE",
                 "target_resource": name,
                 "pillar": "database",
@@ -1258,7 +1266,7 @@ class ExecutionEngine:
 
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_4,
                 "action": "DRS_START_SYNC",
                 "target_resource": name,
                 "pillar": "database",
@@ -1278,7 +1286,7 @@ class ExecutionEngine:
             # ── OMS Migration (storage) ──
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
                 "action": "CREATE_TARGET_OBS",
                 "target_resource": name,
                 "pillar": "storage",
@@ -1295,7 +1303,7 @@ class ExecutionEngine:
 
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_4,
                 "action": "OMS_SYNC_START",
                 "target_resource": name,
                 "pillar": "storage",
