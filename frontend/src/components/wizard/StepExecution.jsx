@@ -625,10 +625,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             if (!confirm(`Preview: ${total} resource(s) match phase ${phaseLabel}:\n  VPCs: ${(found.vpcs||[]).length}, subnets: ${(found.subnets||[]).length}, SGs: ${(found.security_groups||[]).length}, EIPs: ${(found.eips||[]).length}\n\nDelete them now?`)) {
                 setRollbackLoading(false); return;
             }
+            // Execute with phase filter only — NOT resources:all. This tells
+            // the backend to run the plan's rollback commands for this phase
+            // and let should_del match the phase's target resources.
             const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ phase: phaseKey, resources: 'all' })
+                body: JSON.stringify({ phase: phaseKey })
             });
             const data = await res.json();
             if (!data.success) {
@@ -1218,6 +1221,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                              inferredPhase === 'PHASE_4_6' ? 'Cutover Complete' : 'Unknown'}
                                         </div>
                                         {externalExecutions[0]?.pid > 0 && <i className="fas fa-spinner fa-spin text-amber-500 ml-auto"></i>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ⏳ Spawning indicator — pipeline running but agent not producing output yet */}
+                            {autoOrchestrating && (!liveFeed || liveFeed.length === 0) && (
+                                <div className="bg-slate-900 rounded-lg p-3 border border-indigo-700/50">
+                                    <div className="flex items-center gap-3">
+                                        <i className="fas fa-spinner fa-spin text-indigo-400 text-sm"></i>
+                                        <div>
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Starting up agent…</div>
+                                            <div className="text-[9px] text-slate-500 mt-0.5">
+                                                Loading skills + model context (typically 20–60s). The agent will appear here automatically when ready.
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
