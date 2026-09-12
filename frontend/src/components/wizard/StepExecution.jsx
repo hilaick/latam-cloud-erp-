@@ -1583,6 +1583,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 </div>
             )}
 
+            {autoOrchestrating && (
+                <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
+                    <i className="fas fa-circle-notch fa-spin text-indigo-500 text-xs"></i>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700">
+                        Pipeline running — phases are locked until it completes
+                    </span>
+                    <span className="text-[9px] text-indigo-400 font-mono ml-auto">
+                        {phaseStatus && Object.entries(phaseStatus).find(([k,v]) => v === 'running')?.[0]?.replace('PHASE_4_','4.') || 'starting'} …
+                    </span>
+                </div>
+            )}
             {/* 🚨 INDIVIDUAL: Prerequisite Check */}
             {isIndividual && (
                 <div className="bg-white border-2 border-emerald-200 rounded-2xl shadow-lg p-6">
