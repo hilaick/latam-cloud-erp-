@@ -616,6 +616,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 setOrchestrationLog(prev => [...prev, `[rollback ✗] ${preview.error || 'preview failed'}`]);
                 setRollbackLoading(false); return;
             }
+            if (preview.clean) {
+                setOrchestrationLog(prev => [...prev, `[rollback] ${phaseKey}: ${preview.message || 'no resources to roll back (phase created nothing durable)'}`]);
+                setRollbackLoading(false); return;
+            }
             const found = preview.found || {};
             const total = Object.values(found).reduce((a, l) => a + (l || []).length, 0);
             if (total === 0) {
@@ -1408,14 +1412,16 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 {ph.done ? (
                                                     <div className="flex items-center gap-1.5 shrink-0">
                                                         <span className="text-[8px] font-black uppercase text-emerald-600">Done</span>
-                                                        <button
-                                                            onClick={() => handlePhaseRollback(`PHASE_4_${ph.n}`, ph.label)}
-                                                            disabled={rollbackLoading || autoOrchestrating}
-                                                            title={`Phase 4.${ph.n} rollback: ${ph.n === 6 ? 're-create SMS task + reinstall agents to re-run replication (DR action — reverts the promotion, does NOT delete targets)' : ph.n === 7 ? 'release any remaining staging EIPs / cleanup leftovers (usually already clean)' : `delete only resources created by phase 4.${ph.n}`}`}
-                                                            className="text-[8px] font-bold uppercase text-rose-500 hover:text-rose-700 hover:underline disabled:opacity-30"
-                                                        >
-                                                            {ph.n === 6 ? 'Re-run replication' : ph.n === 7 ? 'Rollback' : 'Rollback'}
-                                                        </button>
+                                                        {ph.n <= 3 && (
+                                                            <button
+                                                                onClick={() => handlePhaseRollback(`PHASE_4_${ph.n}`, ph.label)}
+                                                                disabled={rollbackLoading || autoOrchestrating}
+                                                                title={`Delete only resources created by phase 4.${ph.n} (rollback)`}
+                                                                className="text-[8px] font-bold uppercase text-rose-500 hover:text-rose-700 hover:underline disabled:opacity-30"
+                                                            >
+                                                                Rollback
+                                                            </button>
+                                                        )}
                                                     </div>
                 ) : (
                                                     <button
