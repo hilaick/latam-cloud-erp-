@@ -1524,48 +1524,38 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 </div>
                             ) : (
                                 <div className="space-y-1.5">
-                                    {rollbackPreview.vpcs?.map(r => (
-                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
-                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
-                                            <i className="fas fa-network-wired text-rose-400 w-4"></i>
-                                            <span className="text-sm font-bold text-slate-700 flex-1">VPC · {r.name}</span>
-                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
-                                        </label>
-                                    ))}
-                                    {rollbackPreview.subnets?.map(r => (
-                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
-                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
-                                            <i className="fas fa-layer-group text-rose-400 w-4"></i>
-                                            <span className="text-sm font-bold text-slate-700 flex-1">Subnet · {r.name}</span>
-                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
-                                        </label>
-                                    ))}
-                                    {rollbackPreview.security_groups?.map(r => (
-                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
-                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
-                                            <i className="fas fa-shield-alt text-rose-400 w-4"></i>
-                                            <span className="text-sm font-bold text-slate-700 flex-1">SG · {r.name}</span>
-                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
-                                        </label>
-                                    ))}
-                                    {rollbackPreview.eips?.map(r => (
-                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
-                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
-                                            <i className="fas fa-globe text-rose-400 w-4"></i>
-                                            <span className="text-sm font-bold text-slate-700 flex-1">EIP · {r.ip}</span>
-                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
-                                        </label>
-                                    ))}
-                                    {rollbackPreview.ecs?.map(r => (
-                                        <label key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
-                                            <input type="checkbox" checked={rollbackSelected[r.id]} onChange={() => setRollbackSelected(p => ({...p, [r.id]: !p[r.id]}))} className="accent-rose-600" />
-                                            <i className="fas fa-server text-rose-400 w-4"></i>
-                                            <span className="text-sm font-bold text-slate-700 flex-1">ECS · {r.name}</span>
-                                            <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>
-                                        </label>
-                                    ))}
+                                    {Object.entries(rollbackPreview || {}).map(([kind, items]) =>
+                                        !items || items.length === 0 ? null : (
+                                            <div key={kind}>
+                                                {items.map(r => {
+                                                    const label = {
+                                                        vpcs: 'VPC', subnets: 'Subnet', security_groups: 'SG',
+                                                        eips: 'EIP', ecs: 'ECS', rds: 'RDS', elb: 'ELB',
+                                                        nat: 'NAT', obs: 'OBS bucket', sfs: 'SFS',
+                                                        volumes: 'Volume', mig_worker: 'Mig-Worker',
+                                                    }[kind] || kind.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+                                                    const icon = {
+                                                        vpcs: 'fa-network-wired', subnets: 'fa-layer-group',
+                                                        security_groups: 'fa-shield-alt', eips: 'fa-globe',
+                                                        ecs: 'fa-server', rds: 'fa-database', elb: 'fa-balance-scale',
+                                                        nat: 'fa-random', obs: 'fa-archive', sfs: 'fa-folder-open',
+                                                        volumes: 'fa-hdd', mig_worker: 'fa-robot',
+                                                    }[kind] || 'fa-cube';
+                                                    const display = r.ip || r.name || r.id;
+                                                    return (
+                                                        <label key={r.id || r.name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-rose-50 cursor-pointer border border-slate-100">
+                                                            <input type="checkbox" checked={!!rollbackSelected[r.id || r.name]} onChange={() => { const k = r.id || r.name; setRollbackSelected(p => ({...p, [k]: !p[k]})); }} className="accent-rose-600" />
+                                                            <i className={`fas ${icon} text-rose-400 w-4`}></i>
+                                                            <span className="text-sm font-bold text-slate-700 flex-1">{label} · {display}</span>
+                                                            {r.id && <span className="text-[9px] font-mono text-slate-400">{r.id.slice(0,8)}</span>}
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        )
+                                    )}
                                     <div className="flex gap-2 pt-3 mt-2 border-t border-slate-100">
-                                        <button onClick={() => { const all = {}; for (const list of Object.values(rollbackPreview)) for (const r of list) all[r.id] = true; setRollbackSelected(all); }} className="text-[10px] text-slate-500 hover:text-slate-700 underline">Select All</button>
+                                        <button onClick={() => { const all = {}; for (const list of Object.values(rollbackPreview)) for (const r of list) all[r.id || r.name] = true; setRollbackSelected(all); }} className="text-[10px] text-slate-500 hover:text-slate-700 underline">Select All</button>
                                         <button onClick={() => setRollbackSelected({})} className="text-[10px] text-slate-500 hover:text-slate-700 underline">Clear</button>
                                     </div>
                                 </div>
