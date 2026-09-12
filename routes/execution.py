@@ -1095,10 +1095,9 @@ def orchestration_status(project_id):
                     except Exception:
                         status['log'] = []
                 completed = set()
-                # ── MULTI-SOURCE PHASE COMPLETION (robust to log clears) ──
-                # Source A: [done] log markers (primary during live runs)
                 for l in status.get('log', []):
                     if l.startswith('[done]'):
+                        # Match phase by label or fallback key
                         for n in range(1, 8):
                             pk = f'PHASE_4_{n}'
                             if pk in l or f'4.{n}' in l:
@@ -1117,41 +1116,6 @@ def orchestration_status(project_id):
                             completed.add('PHASE_4_6')
                         elif 'Teardown' in l or 'Garbage' in l:
                             completed.add('PHASE_4_7')
-                # Source B: delegate_tasks (persisted; survives log clears/restarts)
-                try:
-                    _dt_tasks = json.loads(project_record.delegate_tasks or '[]')
-                    for _t in _dt_tasks:
-                        if _t.get("status") == "COMPLETED" and _t.get("phase"):
-                            completed.add(_t["phase"])
-                except Exception:
-                    pass
-                # Source C: cloud evidence — all SMS tasks MIGRATE_SUCCESS => 4.4/4.5 done
-                try:
-                    _cs = project_data or {}
-                    _ec2 = _cs.get("executionContext") or {}
-                    _tasks2 = (_cs.get("executionContext") or {}).get("sms_tasks") or []
-                    if _tasks2 and all(
-                        str(t.get("state","")).upper() in {"MIGRATE_SUCCESS","FINISHED","COMPLETED","SUCCESS"}
-                        for t in _tasks2
-                    ):
-                        completed.add("PHASE_4_4")
-                        completed.add("PHASE_4_5")
-                except Exception:
-                    pass
-                # Source D: executionContext completion flags
-                try:
-                    _ec = (project_data or {}).get("executionContext") or {}
-                    if _ec.get("phase_4_2_complete"):
-                        completed.add("PHASE_4_2")
-                except Exception:
-                    pass
-                # Backfill: any later phase done => all prior phases implicitly done
-                _all_ph = [f"PHASE_4_{n}" for n in range(1, 8)]
-                for _ph in reversed(_all_ph):
-                    if _ph in completed:
-                        for _n in range(_all_ph.index(_ph)):
-                            completed.add(_all_ph[_n])
-                        break
                 if completed:
                     status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                     status['phase_status'] = {p: 'completed' for p in completed}
@@ -1648,13 +1612,14 @@ def orchestration_rollback(project_id):
             except Exception:
                 pass
             # If phase resources resolved, restrict deletion to them
-            # NOTE: phase_resources intentionally does NOT set `resources`.
-            # The preview/execute decision below uses the ORIGINAL request value:
-            #   {phase: X} only            -> preview (NOT execute)
-            #   {phase: X, resources: all} -> execute, but should_del is phase-filtered
-            # This prevents a bare phase rollback from executing a delete.
+            if phase_resources:
+                # Store for should_del but do NOT set resources here — the preview/execute
+                # decision at 'if not resources:' must use the ORIGINAL resources value,
+                # not phase-derived. User must explicitly send resources: 'all' to execute
+                # a phase rollback (preview is automatic with just phase=).
+                pass
 
-        found = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
+        found = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': [], 'ecs': []}
         # Load the unique per-build tag value from the saved execution plan
         # (set by build_plan: erp-migration-<project8>-<timestamp>). Only
         # resources carrying THIS tag value are candidates for rollback.
@@ -1709,6 +1674,16 @@ def orchestration_rollback(project_id):
             if has_erp_tag(e) or (bw.endswith('-eip') and '-' in bw and not str(e.get('public_ip_address','')).startswith('124.243')):
                 found['eips'].append({'id': e['id'], 'ip': e.get('public_ip_address')})
 
+        # Enumerate ECS instances (target servers) for phase scoping
+        try:
+            for sv in (h(['ECS','ListServersDetails','--cli-region='+target_region])[0].get('servers') or []):
+                sname = sv.get('name') or ''
+                if has_erp_tag(sv) or '-TARGET' in sname.upper() or 'target' in sname.lower():
+                    found['ecs'].append({'id': sv.get('id'), 'name': sname,
+                                         'status': sv.get('status'), 'ip': ''})
+        except Exception:
+            pass
+
         # ── Manifest-driven rollback (if project has a recorded manifest) ──
         # The execution engine records every created resource ID in
         # project.data['rollback_manifest'] = [{kind, id, name, ts}].
@@ -1724,9 +1699,27 @@ def orchestration_rollback(project_id):
             # Phase rollback with no named target resources (e.g. 4.5/4.6/4.7 whose
             # steps target 'all' / no-op actions). Nothing specific to this phase —
             # return clean preview WITHOUT falling into the full-enumeration path.
-            return jsonify({'success': True, 'found': {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []},
+            return jsonify({'success': True, 'found': {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': [], 'ecs': []},
                             'message': f'Phase {phase_filter} has no named resources to roll back (nothing created by this phase).',
                             'clean': True})
+        if phase_filter and not resources:
+            # Phase-aware preview: ONLY show resources matching this phase's targets.
+            # A phase rollback must never display (or later destroy) another phase's
+            # resources — e.g. 4.3 must show only its target ECS, not the 4.1 network.
+            _filtered = {k: [] for k in found}
+            for _kind in ('vpcs', 'subnets', 'security_groups', 'eips', 'ecs'):
+                for _item in found.get(_kind, []):
+                    _nm = (_item.get('name') or '').lower()
+                    _ip = str(_item.get('ip') or '').lower()
+                    for _tr in phase_resources:
+                        _trl = str(_tr).lower().strip()
+                        if not _trl or _trl in ('all','unknown','kms-key','mig-worker-target'):
+                            continue
+                        if _nm == _trl or _nm.endswith('-'+_trl) or _nm.startswith(_trl+'-') or \
+                           f'{_trl}-target' in _nm or f'{_trl}-eip' in _nm or _trl in _ip:
+                            _filtered[_kind].append(_item)
+                            break
+            found = _filtered
         if not resources:
             # Preview: show manifest items (if any) merged with cloud-found
             if manifest:
@@ -1738,9 +1731,12 @@ def orchestration_rollback(project_id):
             if resources == 'all' and not phase_resources:
                 return True
             if phase_filter:
-                # Phase rollback: ONLY delete resources matching this phase's targets.
-                # Never let 'resources == all' bypass the phase filter (delete-everything
-                # under a phase rollback would nuke the whole landing zone).
+                # Phase rollback: delete the EXPLICITLY SELECTED resources (their
+                # IDs came from the phase preview) — this takes priority. Only when
+                # sending resources:'all' do we fall back to name-matching phase targets.
+                if isinstance(resources, list):
+                    return (item.get('id') in resources or item.get('name') in resources
+                            or item.get('ip') in resources)
                 if not phase_resources:
                     return False
                 nm = (item.get('name') or '').lower()
@@ -1756,8 +1752,8 @@ def orchestration_rollback(project_id):
                 return False
             return item.get('id') in resources or item.get('name') in resources or item.get('ip') in resources
 
-        deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
-        attempted = {'vpcs': 0, 'subnets': 0, 'security_groups': 0, 'eips': 0}
+        deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': [], 'ecs': []}
+        attempted = {'vpcs': 0, 'subnets': 0, 'security_groups': 0, 'eips': 0, 'ecs': 0}
         failed = []
 
         def do_del(cmd_list, label):
@@ -1953,6 +1949,20 @@ def orchestration_rollback(project_id):
         for e in found['eips']:
             if should_del(e):
                 do_del(['EIP','DeletePublicip',f'--publicip_id={e["id"]}','--cli-region='+target_region], f"EIP {e['ip']}")
+
+        # Delete target ECS (phase 4.3 rollback: remove the migrated target servers)
+        # NOTE: VPC/subnet/SG deletion below would fail while ECS still exists —
+        # so ECS goes FIRST, before the network teardown path.
+        for sv in found['ecs']:
+            if should_del(sv):
+                sv_id = sv.get('id')
+                if sv_id:
+                    do_del(['ECS','DeleteServer',f'--server_id={sv_id}','--cli-region='+target_region], f"ECS {sv.get('name')}")
+                    deleted['ecs'].append(sv.get('name'))
+                    # If this ECS held one of our EIPs, its EIP is auto-released;
+                    # remove it from the eips list so the later loop skips it.
+        # Unbind+release EIPs (after ECS deletion, EIPs become unbound)
+        # (the ECS delete auto-detaches; only standalone EIPs need explicit release)
 
         # Verify final state
         final_vpcs, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])

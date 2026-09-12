@@ -752,7 +752,7 @@ class ExecutionEngine:
                 cmd = (f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 "
                        f"--bandwidth.name={node.get('name','target-eip')}-eip "
                        f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic "
-                       f"--cli-region={target_region}")
+                       f"--tags.1={erp_tag_q} --cli-region={target_region}")
                 rollback = {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Delete EIP"}
             elif ntype == "ELB":
                 action = "CREATE_ELB"
@@ -824,6 +824,7 @@ class ExecutionEngine:
                 source_region=source_region, target_region=target_region,
                 is_zero_trust=is_zero_trust, is_vmware=is_vmware,
                 data_gb=data_gb, os_type=os_type,
+                erp_tag_q=erp_tag_q,
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1027,7 +1028,7 @@ class ExecutionEngine:
     def _build_resource_steps(step_id_counter: int, node: dict, pillar: str, strategy: str,
                               fallback: str, source_region: str, target_region: str,
                               is_zero_trust: bool, is_vmware: bool, data_gb: float,
-                              os_type: str) -> List[dict]:
+                              os_type: str, erp_tag_q: str = None) -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
@@ -1058,7 +1059,7 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": ecs_resolution["tool_source"],
                 "tool_name": ecs_resolution["tool_name"],
-                "commands": _kb_cmds or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
+                "commands": _kb_cmds or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 {('--server.tags.1=' + erp_tag_q + ' ') if erp_tag_q else ''}--cli-region={target_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
