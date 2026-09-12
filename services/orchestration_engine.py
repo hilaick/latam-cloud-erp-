@@ -79,16 +79,40 @@ def get_pipeline_status(project_id):
     try:
         from models import db, ProjectData, ExecutionState
         proj = ProjectData.query.get(str(project_id)) if project_id else None
+        completed = set()
         if proj:
             import json as _json
+            # ── SOURCE OF TRUTH: cloud evidence (live resources) ──
+            # The GUI must reflect the real Huawei Cloud state, not persisted
+            # markers that can be cleared / restored / go stale.
             try:
-                dt_tasks = _json.loads(proj.delegate_tasks or '[]')
+                _pd = _json.loads(proj.data) if isinstance(proj.data, str) else (proj.data or {})
             except Exception:
-                dt_tasks = []
-            completed = set()
-            for t in dt_tasks:
-                if t.get("status") == "COMPLETED" and t.get("phase"):
-                    completed.add(t["phase"])
+                _pd = {}
+            _cloud_ev = None
+            try:
+                from services.cloud_completion import derive_completed_from_cloud
+                # Run detect_cloud_state (cheap-ish: hcloud list calls) to ground truth
+                try:
+                    from services.cloud_state_detector import detect_cloud_state
+                    _cs = detect_cloud_state(_pd)
+                except Exception:
+                    _cs = None
+                if _cs is not None:
+                    _cloud_ev = derive_completed_from_cloud(str(project_id), _pd, _cs)
+            except Exception:
+                _cloud_ev = None
+            # Fallback if cloud detection failed: delegate_tasks markers
+            if _cloud_ev:
+                completed = set(_cloud_ev)
+            else:
+                try:
+                    dt_tasks = _json.loads(proj.delegate_tasks or '[]')
+                    for t in dt_tasks:
+                        if t.get("status") == "COMPLETED" and t.get("phase"):
+                            completed.add(t["phase"])
+                except Exception:
+                    pass
             _all_ph = [f"PHASE_4_{n}" for n in range(1, 8)]
             for _ph in reversed(_all_ph):
                 if _ph in completed:
@@ -99,10 +123,9 @@ def get_pipeline_status(project_id):
                 status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                 status['phase_status'] = {p: 'completed' for p in completed}
                 status['status'] = 'completed'
-            # ExecutionState overrides when it says DONE/COMPLETED
         try:
             st = ExecutionState.query.filter_by(project_id=str(project_id)).first()
-            if st and st.status in ('DONE', 'COMPLETED'):
+            if st and st.status in ('DONE', 'COMPLETED') and not completed:
                 status['status'] = 'completed'
                 if st.current_phase == 'COMPLETED':
                     if not status['completed_phases']:
