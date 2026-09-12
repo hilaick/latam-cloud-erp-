@@ -597,6 +597,54 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [rollbackSelected, setRollbackSelected] = useState({});
     const [rollbackLoading, setRollbackLoading] = useState(false);
 
+    // 🎯 PER-PHASE ROLLBACK — roll back only one phase's resources
+    const handlePhaseRollback = async (phaseKey, phaseLabel) => {
+        const ok = confirm(`Roll back phase ${phaseLabel} (${phaseKey})?\n\nThis will delete only the resources created by this phase:\n  - Its target ECS/servers\n  - Its EIPs (if created)\n  - Its SG rules / SG (if any)\n\nPermanent. Other phases' resources are untouched. Proceed?`);
+        if (!ok) return;
+        setRollbackLoading(true);
+        setOrchestrationLog(prev => [...prev, `[rollback] ${phaseKey}: enumerating phase resources...`]);
+        const token = sessionStorage.getItem('hermes_access_token');
+        try {
+            // Preview first (what this phase owns)
+            const previewRes = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ phase: phaseKey })
+            });
+            const preview = await previewRes.json();
+            if (!preview.success) {
+                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${preview.error || 'preview failed'}`]);
+                setRollbackLoading(false); return;
+            }
+            const found = preview.found || {};
+            const total = Object.values(found).reduce((a, l) => a + (l || []).length, 0);
+            if (total === 0) {
+                setOrchestrationLog(prev => [...prev, `[rollback] ${phaseKey}: no matching resources found to delete (already clean)`]);
+                setRollbackLoading(false); return;
+            }
+            if (!confirm(`Preview: ${total} resource(s) match phase ${phaseLabel}:\n  VPCs: ${(found.vpcs||[]).length}, subnets: ${(found.subnets||[]).length}, SGs: ${(found.security_groups||[]).length}, EIPs: ${(found.eips||[]).length}\n\nDelete them now?`)) {
+                setRollbackLoading(false); return;
+            }
+            const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ phase: phaseKey, resources: 'all' })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${data.error}`]);
+            } else {
+                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${phaseKey}: ${data.message || 'phase resources removed'}`]);
+                setOrchestrationLog(prev => [...prev, `[rollback] deleted → VPCs: ${(data.deleted?.vpcs||[]).join(', ') || '-'} | SGs: ${(data.deleted?.security_groups||[]).join(', ') || '-'} | EIPs: ${(data.deleted?.eips||[]).join(', ') || '-'}`]);
+            }
+            // Refresh state after rollback
+            setTimeout(() => fetchStatus(), 2000);
+        } catch (err) {
+            setOrchestrationLog(prev => [...prev, `[rollback ✗] ${err.message}`]);
+        }
+        setRollbackLoading(false);
+    };
+
     const handleRollback = async () => {
         setRollbackLoading(true);
         setOrchestrationLog(prev => [...prev, '[rollback] Enumerating resources...']);
@@ -1340,7 +1388,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     </div>
                                                 </div>
                                                 {ph.done ? (
-                                                    <span className="text-[8px] font-black uppercase text-emerald-600 shrink-0">Done</span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[8px] font-black uppercase text-emerald-600">Done</span>
+                                                        <button
+                                                            onClick={() => handlePhaseRollback(`PHASE_4_${ph.n}`, ph.label)}
+                                                            disabled={rollbackLoading || autoOrchestrating}
+                                                            title={`Roll back phase 4.${ph.n} resources only`}
+                                                            className="text-[8px] font-bold uppercase text-rose-500 hover:text-rose-700 hover:underline disabled:opacity-30"
+                                                        >
+                                                            Rollback
+                                                        </button>
+                                                    </div>
                 ) : (
                                                     <button
                                                         onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}

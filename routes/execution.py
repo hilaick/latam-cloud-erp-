@@ -1116,22 +1116,10 @@ def orchestration_status(project_id):
                             completed.add('PHASE_4_6')
                         elif 'Teardown' in l or 'Garbage' in l:
                             completed.add('PHASE_4_7')
-                # ALSO merge completed phases from delegate_tasks — they persist across
-                # log clears / resets, so a finished 4.1 stays "done" even if the log blob
-                # was reset (e.g. individual phase re-run). Ensures 4.2 can start directly.
-                try:
-                    _pr = ProjectData.query.get(project_id)
-                    if _pr and getattr(_pr, 'delegate_tasks', None):
-                        _dt_list = _j.loads(_pr.delegate_tasks)
-                        if isinstance(_dt_list, list):
-                            for _t in _dt_list:
-                                if _t.get('status') == 'COMPLETED':
-                                    completed.add(_t.get('phase', ''))
-                except Exception:
-                    pass
                 if completed:
                     status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                     status['phase_status'] = {p: 'completed' for p in completed}
+                    status['status'] = 'completed'
                 elif not status.get('status') or status.get('status') in ('idle', None):
                     status['status'] = 'idle'
         except Exception as e:
@@ -1303,10 +1291,6 @@ def orchestration_status(project_id):
         except Exception:
             pass
 
-        # Ensure current_phase is present (DB hydration may have set it, engine may not)
-        if not status.get('current_phase'):
-            status['current_phase'] = None
-
         # ── Pull live data from Hermes sessions (running or orphaned) ──
         def _pull_session_data(sid, sessions_list):
             """Pull live feed, inferred phase, and last tool call from a Hermes session."""
@@ -1319,11 +1303,7 @@ def orchestration_status(project_id):
                 capture_output=True, text=True, timeout=5
             )
             live_feed = []
-            # Real phase from pipeline DB (authoritative) — keyword guessing below
-            # is only a fallback. The pipeline engine sets current_phase, so a
-            # running 4.2 shows PHASE_4_2 even if the agent's recent tool calls
-            # (creds, SSH) don't contain SMS keywords.
-            phase_inferred = status.get('current_phase') or 'PHASE_4_1'
+            phase_inferred = 'PHASE_4_1'
             all_text = msg_result.stdout
             # IMPORTANT: the word 'agent' ALWAYS appears in every spawn's system
             # prompt ('migration execution agent', 'SMS agent install') — so it
@@ -1610,6 +1590,30 @@ def orchestration_rollback(project_id):
 
         data = request.get_json(silent=True) or {}
         resources = data.get('resources', [])
+        phase_filter = data.get('phase')   # optional: 'PHASE_4_1'..'PHASE_4_7' → per-phase rollback
+        # For per-phase rollback, collect that phase's target resource names from the plan
+        phase_resources = []
+        phase_actions = set()
+        if phase_filter:
+            try:
+                _saved_plan = project_data.get('executionPlan') or {}
+                if isinstance(_saved_plan, dict):
+                    _steps = _saved_plan.get('steps') or []
+                elif isinstance(_saved_plan, list):
+                    _steps = _saved_plan
+                else:
+                    _steps = []
+                for _s in _steps:
+                    if isinstance(_s, dict) and _s.get('phase') == phase_filter:
+                        _tr = _s.get('target_resource')
+                        if _tr and _tr not in ('all', 'unknown', 'kms-key', 'mig-worker-target'):
+                            phase_resources.append(_tr)
+                        phase_actions.add(_s.get('action', ''))
+            except Exception:
+                pass
+            # If phase resources resolved, restrict deletion to them
+            if phase_resources:
+                resources = phase_resources
 
         found = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
         # Load the unique per-build tag value from the saved execution plan
@@ -1686,6 +1690,15 @@ def orchestration_rollback(project_id):
 
         def should_del(item):
             if resources == 'all': return True
+            if phase_resources:
+                nm = (item.get('name') or '').lower()
+                # phase rollback: only delete resources whose name matches a phase target
+                # (or an EIP bandwidth / server name containing the target name)
+                for _tr in phase_resources:
+                    _trl = str(_tr).lower()
+                    if _trl and (_trl in nm or nm in _trl or f'{_trl}-target' in nm or f'{_trl}-eip' in nm):
+                        return True
+                return False
             return item.get('id') in resources or item.get('name') in resources or item.get('ip') in resources
 
         deleted = {'vpcs': [], 'subnets': [], 'security_groups': [], 'eips': []}
@@ -1737,6 +1750,8 @@ def orchestration_rollback(project_id):
                 steps = []
             if isinstance(steps, list) and len(steps) > 0:
                 for step in reversed(steps):
+                    if phase_filter and step.get('phase') != phase_filter:
+                        continue  # per-phase rollback: only this phase's steps
                     rb = step.get('rollback')
                     if rb and isinstance(rb, dict) and rb.get('cmd'):
                         label = rb.get('label', step.get('action', '?'))
@@ -2040,17 +2055,6 @@ def get_cloud_state(project_id):
         
         from services.cloud_state_detector import detect_cloud_state, reconcile_execution_plan
         result = detect_cloud_state(pdata, customer_data)
-        # ── Evidence-based phase auto-completion ──
-        # If the cloud shows all SMS tasks MIGRATE_SUCCESS, Data Sync (4.4) and
-        # Monitor (4.5) are factually complete — reflect that in delegate_tasks
-        # so the GUI matches the SMS console. 4.6 Cutover stays a MANUAL gate.
-        try:
-            from services.evidence_completion import auto_complete_sync_phases
-            _marked = auto_complete_sync_phases(project_id, result)
-            if _marked:
-                logger.info(f"[cloud-state] Auto-completed phases from cloud evidence: {_marked}")
-        except Exception as _ev_err:
-            logger.warning(f"[cloud-state] evidence completion check failed: {_ev_err}")
         
         # Reconcile the project's execution plan against real cloud evidence so
         # steps already done outside the ERP show 'completed_by_cloud' instead of 'pending'
