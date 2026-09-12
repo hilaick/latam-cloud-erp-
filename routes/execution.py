@@ -1095,9 +1095,10 @@ def orchestration_status(project_id):
                     except Exception:
                         status['log'] = []
                 completed = set()
+                # ── MULTI-SOURCE PHASE COMPLETION (robust to log clears) ──
+                # Source A: [done] log markers (primary during live runs)
                 for l in status.get('log', []):
                     if l.startswith('[done]'):
-                        # Match phase by label or fallback key
                         for n in range(1, 8):
                             pk = f'PHASE_4_{n}'
                             if pk in l or f'4.{n}' in l:
@@ -1116,6 +1117,42 @@ def orchestration_status(project_id):
                             completed.add('PHASE_4_6')
                         elif 'Teardown' in l or 'Garbage' in l:
                             completed.add('PHASE_4_7')
+                # Source B: delegate_tasks (persisted; survives log clears/restarts)
+                try:
+                    _dt_tasks = json.loads(project_record.delegate_tasks or '[]')
+                    for _t in _dt_tasks:
+                        if _t.get("status") == "COMPLETED" and _t.get("phase"):
+                            completed.add(_t["phase"])
+                except Exception:
+                    pass
+                # Source C: cloud evidence — all SMS tasks MIGRATE_SUCCESS ⇒ 4.4/4.5 done
+                try:
+                    _cs = status_data.get("cloud_state") or {}
+                    _res = _cs.get("resources") or {}
+                    _tasks = _res.get("sms_tasks") or []
+                    if _tasks and all(
+                        str(t.get("state","")).upper() in {"MIGRATE_SUCCESS","FINISHED","COMPLETED","SUCCESS"}
+                        for t in _tasks
+                    ):
+                        completed.add("PHASE_4_4")
+                        completed.add("PHASE_4_5")
+                except Exception:
+                    pass
+                # Source D: executionContext completion flags (phase_4_2_complete etc.)
+                try:
+                    _ec = pdata.get("executionContext") or {}
+                    if _ec.get("phase_4_2_complete"):
+                        completed.add("PHASE_4_2")
+                except Exception:
+                    pass
+                # Backfill: any later phase done ⇒ all prior phases implicitly done
+                # (prevents gaps when intermediate evidence was cleared mid-lifecycle)
+                _all_ph = [f"PHASE_4_{n}" for n in range(1, 8)]
+                for _ph in reversed(_all_ph):
+                    if _ph in completed:
+                        for _n in range(_all_ph.index(_ph)):
+                            completed.add(_all_ph[_n])
+                        break
                 if completed:
                     status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                     status['phase_status'] = {p: 'completed' for p in completed}
