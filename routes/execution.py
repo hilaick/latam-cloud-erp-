@@ -1980,9 +1980,22 @@ def orchestration_rollback(project_id):
         final_eips, _ = h(['EIP','ListPublicips/v3','--cli-region='+target_region])
         remaining = [v['name'] for v in final_vpcs.get('vpcs',[])] + [e['public_ip_address'] for e in final_eips.get('publicips',[])]
 
-        ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING', 'last_pipeline_log': None})
-        project_record.delegate_tasks = '[]'
-        db.session.commit()
+        # Reset state only on FULL rollback (no phase filter — wipe everything).
+        # Phase-scoped rollback (4.3 only) must NOT clear other phases' completion.
+        if not phase_filter:
+            ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING', 'last_pipeline_log': None})
+            project_record.delegate_tasks = '[]'
+            db.session.commit()
+        else:
+            # Phase-scoped: remove only this phase's delegate_task markers
+            try:
+                import json as _jj
+                remaining_tasks = _jj.loads(project_record.delegate_tasks or '[]')
+                remaining_tasks = [t for t in remaining_tasks if t.get('phase') != phase_filter]
+                project_record.delegate_tasks = _jj.dumps(remaining_tasks, ensure_ascii=False)
+                db.session.commit()
+            except Exception:
+                pass
         if project_id in _running_pipelines:
             _running_pipelines[project_id] = {'status':'idle','completed_phases':[],'failed_phase':None,'log':[],'phase_status':{}}
 
