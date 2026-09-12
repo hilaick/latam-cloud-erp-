@@ -805,7 +805,14 @@ class ExecutionEngine:
                 strategy = "drs"
                 fallback = "db_replication"
             elif pillar == "storage":
-                strategy = "oms"
+                # Only object-storage resources get OMS strategy.
+                # EVS/SFS/DISK volumes are handled inside the compute server's SMS task disk mapping.
+                if any(kw in str(node.get("type", "")).upper() for kw in ["OBS", "BUCKET", "OBJECT", "CBR"]):
+                    strategy = "oms"
+                else:
+                    # Volume resources (EVS/DISK/SFS) — skip; SMS handles them per-compute-server.
+                    logger.info(f"[BUILD_PLAN] Skipping storage node {node_name}: {str(node.get('type', ''))} — handled by SMS disk mapping. Not OMS object migration.")
+                    continue
                 fallback = "data_sync"
             else:
                 strategy = "provision"
