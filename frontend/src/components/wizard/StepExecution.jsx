@@ -1104,7 +1104,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-xs font-bold text-slate-700">4.{ph.n} {ph.label}</div>
-                                            <div className="text-[10px] text-slate-500 line-clamp-2">{ph.desc}</div>
+                                            <div className="text-[10px] text-slate-500 max-h-[4.5em] overflow-y-auto break-words">{ph.desc}</div>
                                         </div>
                                     </div>
                                  );
