@@ -90,12 +90,29 @@ def get_pipeline_status(project_id):
             except Exception:
                 _pd = {}
             _cloud_ev = None
+            _customer_data = None
             try:
                 from services.cloud_completion import derive_completed_from_cloud
-                # Run detect_cloud_state (cheap-ish: hcloud list calls) to ground truth
+                # Decrypt customer credentials for cloud state detection
+                _cid = _pd.get('customerId')
+                if _cid:
+                    from models import Customer
+                    from services.credential_manager import get_credential_manager
+                    _cust = Customer.query.get(str(_cid))
+                    if _cust:
+                        import os as _os
+                        _pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
+                        _cm = get_credential_manager(_pw)
+                        _enc = json.loads(_cust.ak) if isinstance(_cust.ak, str) and _cust.ak.startswith('{') else None
+                        if _enc:
+                            _ak2, _sk2 = _cm.decrypt_credentials(_enc)
+                            _customer_data = {'ak': _ak2, 'sk': _sk2,
+                                              'region': _cust.region or _pd.get('region', 'la-north-2'),
+                                              'source_region': _pd.get('sourceRegion', 'ap-southeast-3')}
+                # Run detect_cloud_state with live cloud data
                 try:
                     from services.cloud_state_detector import detect_cloud_state
-                    _cs = detect_cloud_state(_pd)
+                    _cs = detect_cloud_state(_pd, customer_data=_customer_data)
                 except Exception:
                     _cs = None
                 if _cs is not None:
@@ -103,9 +120,12 @@ def get_pipeline_status(project_id):
             except Exception:
                 _cloud_ev = None
             # Fallback if cloud detection failed: delegate_tasks markers
-            if _cloud_ev:
+            _detection_failed = (_cloud_ev is None)
+            if _cloud_ev is not None:
                 completed = set(_cloud_ev)
             else:
+                # Detection failed (exception) — allow delegate_tasks + ExecutionState
+                # fallbacks, marked so ExecutionState is only a last resort.
                 try:
                     dt_tasks = _json.loads(proj.delegate_tasks or '[]')
                     for t in dt_tasks:
@@ -125,7 +145,11 @@ def get_pipeline_status(project_id):
                 status['status'] = 'completed'
         try:
             st = ExecutionState.query.filter_by(project_id=str(project_id)).first()
-            if st and st.status in ('DONE', 'COMPLETED') and not completed:
+            # ExecutionState is a STALE-RISK artifact (restored/reset, survives).
+            # Cloud evidence ALWAYS wins. Only use ExecutionState when cloud
+            # detection could not run at all (detection_failed=True) — never as
+            # a way to override an empty-but-valid cloud result.
+            if st and st.status in ('DONE', 'COMPLETED') and not completed and _detection_failed:
                 status['status'] = 'completed'
                 if st.current_phase == 'COMPLETED':
                     if not status['completed_phases']:

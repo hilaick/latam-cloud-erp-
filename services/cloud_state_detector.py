@@ -113,13 +113,28 @@ def detect_cloud_state(project_data, customer_data=None):
     
     # 1. Check VPCs in target region (Phase 4.1 — Network)
     try:
-        vpc_url = f'https://vpc.{target_region}.myhuaweicloud.com/v1/{target_project_id or ""}/vpcs?limit=50'
-        if not target_project_id:
-            # Try without project_id in path (use query param)
-            vpc_url = f'https://vpc.{target_region}.myhuaweicloud.com/v1/vpcs?limit=50'
-        vpc_data = _api_call('GET', vpc_url, ak, sk, project_id=target_project_id)
-        vpcs = vpc_data.get('vpcs', [])
-        result['resources']['vpcs'] = [{'name': v.get('name'), 'id': v.get('id', '')[:12], 'status': v.get('status')} for v in vpcs[:10]]
+        vpc_url = f'https://vpc.{target_region}.myhuaweicloud.com/v3/{target_project_id}/vpcs?limit=50' if target_project_id else None
+        vpcs = []
+        if vpc_url:
+            vpc_data = _api_call('GET', vpc_url, ak, sk, project_id=target_project_id)
+            vpcs = vpc_data.get('vpcs', []) or []
+        if not vpcs:
+            # v3 needs project_id in path; fall back to the hcloud CLI which
+            # resolves the project automatically (proven working path).
+            import subprocess, json as _j
+            _env = os.environ.copy()
+            _env.update({'HW_ACCESS_KEY': ak or '', 'HW_SECRET_KEY': sk or ''})
+            _r = subprocess.run(['hcloud', 'VPC', 'ListVpcs/v3', '--cli-region=' + target_region],
+                                capture_output=True, text=True, timeout=25, env=_env)
+            _idx = _r.stdout.find('{')
+            if _idx >= 0:
+                try:
+                    _parsed, _ = _j.JSONDecoder().raw_decode(_r.stdout[_idx:])
+                    vpcs = _parsed.get('vpcs', []) or []
+                except Exception:
+                    vpcs = []
+        result['resources']['vpcs'] = [{'name': v.get('name'), 'id': v.get('id', '')[:12],
+                                        'status': v.get('status')} for v in vpcs[:10]]
         result['vpc_count'] = len(vpcs)
     except Exception as e:
         result['resources']['vpcs'] = []

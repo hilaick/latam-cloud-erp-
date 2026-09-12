@@ -47,9 +47,19 @@ def derive_completed_from_cloud(project_id, project_data, cloud_state, decrypted
     if len(vpcs) >= 1:
         completed.add("PHASE_4_1")
 
-    # ── 4.2 Source Prep: ec flag or at least one source server detected ──
-    sources = res.get("sms_sources") or []
-    if ec.get("phase_4_2_complete") or len(sources) >= 1:
+    # ── 4.2 Source Prep ──
+    # Strict: needs BOTH SMS migration project AND SMS agents on sources.
+    # Post-cutover neither exists - 4.2 correctly shows not done.
+    sms_proj_42 = res.get("sms_migration_projects") or []
+    sms_sources_42 = res.get("sms_sources") or []
+    sms_tasks_42 = res.get("sms_tasks") or []
+    has_project = len(sms_proj_42) >= 1
+    has_agents = any(
+        (s.get('agent_connected') if isinstance(s, dict) else False) or
+        (isinstance(s, dict) and s.get('connected') is True)
+        for s in sms_sources_42
+    ) if sms_sources_42 else False
+    if has_project and (has_agents or ec.get("phase_4_2_complete")):
         completed.add("PHASE_4_2")
 
     # ── 4.3 Target: -TARGET named ECS exist ──
@@ -83,19 +93,18 @@ def derive_completed_from_cloud(project_id, project_data, cloud_state, decrypted
     running_tasks = [t for t in tasks if str(t.get('state', '')).upper() not in _TERMINAL_TASK_STATES]
     no_active_tasks = len(tasks) == 0 or (task_evidence and len(running_tasks) == 0)
     # Also: 4.6 is done if 4.3 and 4.4 are done and SMS sources count is 0 (agents uninstalled)
-    sources_gone = len(sources) == 0
+    sources_gone = len(res.get('sms_sources') or []) == 0
     if task_evidence and (no_active_tasks or sources_gone):
         completed.add("PHASE_4_6")
 
-    # ── 4.7 Teardown: no staging resources, or flag ──
-    # Hard to detect directly (staging EIPs vs production). Use executionContext flag
-    # from the agent report, or check that EIPs were released.
-    eips = res.get("eips") or []
-    eip_count = len(eips)
-    # If no EIPs remain (all released) and VPC still stands → teardown likely done
-    if "PHASE_4_1" in completed and eip_count == 0:
+    # ── 4.7 Teardown: ONLY flagged by real teardown evidence ──
+    # The old heuristic "VPC up + no EIPs = teardown done" was WRONG: a fresh
+    # project or a partially-rolled-back project has a VPC and no EIPs without
+    # any teardown having run. Require explicit marker from the agent/executor.
+    if ec.get("phase_4_7_complete") or ec.get("teardown_complete") or ec.get("staging_released"):
         completed.add("PHASE_4_7")
-    # Backfill: any later phase done implies all priors
+
+    # Backfill: any LATER phase done implies all priors (only from solid evidence)
     _all = [f"PHASE_4_{n}" for n in [7, 6, 5, 4, 3, 2, 1]]
     for ph in _all:
         if ph in completed:
