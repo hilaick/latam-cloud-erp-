@@ -1411,10 +1411,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                         <button
                                                             onClick={() => handlePhaseRollback(`PHASE_4_${ph.n}`, ph.label)}
                                                             disabled={rollbackLoading || autoOrchestrating}
-                                                            title={`Roll back phase 4.${ph.n} resources only`}
+                                                            title={`Phase 4.${ph.n} rollback: ${ph.n === 6 ? 're-create SMS task + reinstall agents to re-run replication (DR action — reverts the promotion, does NOT delete targets)' : ph.n === 7 ? 'release any remaining staging EIPs / cleanup leftovers (usually already clean)' : `delete only resources created by phase 4.${ph.n}`}`}
                                                             className="text-[8px] font-bold uppercase text-rose-500 hover:text-rose-700 hover:underline disabled:opacity-30"
                                                         >
-                                                            Rollback
+                                                            {ph.n === 6 ? 'Re-run replication' : ph.n === 7 ? 'Rollback' : 'Rollback'}
                                                         </button>
                                                     </div>
                 ) : (
