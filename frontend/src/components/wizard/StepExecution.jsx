@@ -293,6 +293,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             if (t.includes('OBS') || t.includes('SFS') || t.includes('BUCKET')) return true;
             // Fallback by name: volume-XXXX pattern = EVS attached to server
             if (/volume/i.test(nm) || /-v\d+$/i.test(nm)) return false;
+            // Stale discovery artifact: no type AND size 0 AND no meaningful name —
+            // not a real standalone object-storage resource
+            const sz = Number(s.size_gb ?? s.size ?? s.disk_size ?? 0) || 0;
+            const is_stale = !t && sz === 0;
+            if (is_stale) return false;
             return true;
         }).length;
         // Also scan execution plan for service markers
