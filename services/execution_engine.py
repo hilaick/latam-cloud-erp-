@@ -679,8 +679,8 @@ class ExecutionEngine:
         if not True:  # flask_health_ok — ERP is running
             mig_worker_triggers.append({"reason": "erp_availability_risk", "detail": "ERP health check failed"})
             mig_worker_location = "target"
-        if active_sms_tasks > 3:
-            mig_worker_triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>3 threshold)"})
+        if active_sms_tasks > 12:
+            mig_worker_triggers.append({"reason": "concurrent_overload", "detail": f"{active_sms_tasks} active SMS tasks (>12 threshold)"})
             mig_worker_location = "target"
         if is_cross_cloud:
             mig_worker_triggers.append({"reason": "cross_cloud", "detail": "Cross-cloud migration requires local image conversion (qemu-img) in target"})
@@ -827,7 +827,47 @@ class ExecutionEngine:
             ))
             step_id = steps[-1]["step_id"]
 
-        # ═══ PHASE 4.7: Smoke tests + handoff ═══
+        # ═══ PHASE 4.7: Teardown — destroy transient resources, smoke tests, cost baseline ═══
+        # Step 1: Destroy mig_worker ECS (if deployed)
+        if mig_worker_triggers:
+            step_id += 1
+            steps.append({
+                "step_id": step_id, "phase": ExecutionEngine.PHASE_4_7,
+                "action": "DESTROY_MIG_WORKER",
+                "target_resource": "mig-worker-target",
+                "pillar": "compute",
+                "strategy": "teardown",
+                "tool_source": "plan",
+                "tool_name": "erp-execution-orchestration (mig-worker teardown)",
+                "commands": [{"desc": "Delete mig_worker ECS", "cmd": "hcloud ECS DeleteServer --server_id=<ecs_id> --cli-region=%s" % target_region, "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": None,
+                "rollback": None,
+                "status": "pending",
+            })
+
+        # Step 2: Release unassociated/staging EIPs (keep only production target EIPs)
+        step_id += 1
+        steps.append({
+            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_7,
+            "action": "RELEASE_STAGING_EIPS",
+            "target_resource": "all",
+            "pillar": "network",
+            "strategy": "teardown",
+            "tool_source": "skill",
+            "tool_name": "huawei-cloud-eip-billing-region-pitfalls (release unaudited EIPs)",
+            "commands": [{"desc": "List all EIPs and release unassociated/staging ones",
+                          "cmd": f"hcloud EIP ListPublicips --cli-region={target_region}",
+                          "type": "hcloud"}],
+            "credentials_needed": ["ak", "sk"],
+            "zero_trust": False,
+            "fallback_strategy": None,
+            "rollback": None,
+            "status": "pending",
+        })
+
+        # Step 3: Smoke tests + verify production targets remain
         step_id += 1
         steps.append({
             "step_id": step_id, "phase": ExecutionEngine.PHASE_4_7,
@@ -837,7 +877,10 @@ class ExecutionEngine:
             "strategy": "verify",
             "tool_source": "skill",
             "tool_name": "huawei-sms-cross-region-migration (post-migration verification)",
-            "commands": [{"desc": "Verify all target ECS active", "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region}", "type": "hcloud"}],
+            "commands": [
+                {"desc": "Verify all target ECS active", "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region}", "type": "hcloud"},
+                {"desc": "Confirm no orphaned resources remain", "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region} --status=ACTIVE --name-suffix=-TARGET", "type": "hcloud"},
+            ],
             "credentials_needed": ["ak", "sk"],
             "zero_trust": False,
             "fallback_strategy": None,
