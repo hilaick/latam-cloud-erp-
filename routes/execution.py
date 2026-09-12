@@ -1580,8 +1580,16 @@ def orchestration_rollback(project_id):
                             parsed = _json.loads(r.stdout[idx:r.stdout.rfind('}')+1])
                         except Exception:
                             parsed = {}
-                if r.returncode != 0 and not parsed.get('code'):
-                    parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200])
+                # Robust error detection — hcloud CLI quirks:
+                #  * [USE_ERROR]Operation not supported prints to stdout with EXIT 0
+                #  * Some APIs return {error_code: ERR.XXX} with rc 0
+                #  * stderr may carry the real error even when rc==0
+                err_markers = ('[USE_ERROR]', '[CLI_ERROR]', 'error_code', '"error"', '"error_msg"',
+                               'not supported', 'is not supported', 'InvalidParameter', 'Unauthorized')
+                combined_out = (r.stdout or '') + '\n' + (r.stderr or '')
+                if r.returncode != 0 or any(m in combined_out for m in err_markers):
+                    if not parsed.get('code') and not parsed.get('error_code'):
+                        parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200] or 'hcloud error')
                 if return_rc:
                     return parsed, r.returncode
                 return parsed, ''
@@ -1957,7 +1965,10 @@ def orchestration_rollback(project_id):
             if should_del(sv):
                 sv_id = sv.get('id')
                 if sv_id:
-                    do_del(['ECS','DeleteServer',f'--server_id={sv_id}','--cli-region='+target_region], f"ECS {sv.get('name')}")
+                    # hcloud ECS DeleteServers (plural) — DeleteServer does NOT exist
+                    # and returns exit 0 with [USE_ERROR], causing silent false-success.
+                    # Use the batch delete API with delete_publicip so bound EIPs go too.
+                    do_del(['ECS','DeleteServers',f'--servers.1.id={sv_id}','--delete_publicip=true','--cli-region='+target_region], f"ECS {sv.get('name')}")
                     deleted['ecs'].append(sv.get('name'))
                     # If this ECS held one of our EIPs, its EIP is auto-released;
                     # remove it from the eips list so the later loop skips it.
