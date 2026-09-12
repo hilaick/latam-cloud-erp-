@@ -1038,8 +1038,14 @@ class ExecutionEngine:
             # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
             server_profile = {"os_family": "linux" if "windows" not in os_type.lower() else "windows", "role": "compute", "strategy": "sms_primary"}
             step_id_counter = sid
-            # Step: Target ECS creation — search knowledge tree first
+            # Step: Target ECS creation — deterministic hcloud command (primary).
+            # The knowledge tree has stale `terraform {` entries from an earlier
+            # RFS era. Log and overwrite if the knowledge tree returns terraform stubs.
             ecs_resolution = _resolve_step_from_knowledge("CREATE_TARGET_ECS", "compute", "sms", node, server_profile)
+            _kb_cmds = ecs_resolution.get("commands") or []
+            if _kb_cmds and any("terraform" in str(c.get("cmd",""))[:20] for c in _kb_cmds if isinstance(c, dict)):
+                logger.warning(f"[BUILD_PLAN] Knowledge tree returned terraform stub for CREATE_TARGET_ECS ({name}) — overriding with deterministic hcloud command.")
+                _kb_cmds = []
             # Flavor: use source flavor if available, otherwise dynamic discovery at execution time
             source_flavor = node.get("flavor", node.get("source_flavor", ""))
             flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
@@ -1052,7 +1058,7 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": ecs_resolution["tool_source"],
                 "tool_name": ecs_resolution["tool_name"],
-                "commands": ecs_resolution["commands"] or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
+                "commands": _kb_cmds or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --cli-region={target_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
