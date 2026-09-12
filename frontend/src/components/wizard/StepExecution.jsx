@@ -673,6 +673,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         const selected = Object.entries(rollbackSelected).filter(([_,v]) => v).map(([id]) => id);
         setShowRollbackModal(false);
         setOrchestrationLog(prev => [...prev, `[rollback] Deleting ${selected.length} resources...`]);
+        // Show inline progress in the log panel
+        setOrchestrationLog(prev => [...prev, `[rollback] ⏳ Sending delete request to cloud...`]);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
             const body = { resources: selected.length > 0 ? selected : 'all' };
@@ -801,24 +803,24 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         <i className={`fas ${isAgentic ? 'fa-robot' : isIndividual ? 'fa-cube' : 'fa-tasks'}`}></i>
                         {isAgentic ? 'Auto' : isIndividual ? 'Tasks' : 'Manual'}
                     </div>
-                    {cloudState?.inferred_phase && (
+                    {/* Progress summary — derived from cloud-evidence completed phases (same source as runbook) */}
+                    {completedOrchPhases.size > 0 && (
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-700">
                             <span className={`w-2 h-2 rounded-full ${
-                                completedOrchPhases.size > 0 ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'
+                                completedOrchPhases.size > 0 && execState?.currentPhase !== 'PHASE_4_0' ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'
                             }`}></span>
-                            {cloudState.inferred_phase.replace('PHASE_4_', 'Phase 4.')} · {
-  cloudState.error ? <span className="text-red-500 font-bold">Crashed: {cloudState.error}</span> :
-  cloudState.phase_reason ? cloudState.phase_reason :
-  cloudState.sms_progress?.running > 0 ? `${cloudState.sms_progress.running} task${cloudState.sms_progress.running > 1 ? 's' : ''} syncing` :
+                            {completedOrchPhases.size}/7 phases complete · {
+  autoOrchestrating ? `${execState?.currentPhase?.replace('PHASE_4_', '4.') || ''} active` :
+  failedOrchPhaseIdx !== null ? `Halted at phase ${failedOrchPhaseIdx}` :
+  completedOrchPhases.size >= 7 ? 'All phases complete' :
   'Ready'
 }
-                            <span className="text-[8px] text-slate-400 font-mono">↻ {cloudState.timestamp}</span>
+                            <span className="text-[8px] text-slate-400 font-mono">{cloudState?.timestamp || ''}</span>
                         </div>
                     )}
-                    {!cloudState && (
+                    {completedOrchPhases.size === 0 && !cloudState?.inferred_phase && (
                         <div className="text-[10px] font-medium text-slate-500">
-                            <i className="fas fa-circle-notch fa-spin mr-1"></i> Loading cloud state...
-                            <span className="ml-2 text-[8px] text-slate-400 font-mono">(refreshing every 5s)</span>
+                            <i className="fas fa-circle-notch fa-spin mr-1"></i> Loading phase state...
                         </div>
                     )}
                     {cloudState?.error && (
@@ -859,6 +861,12 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     if (st.log) setOrchestrationLog(st.log);
                                     if (st.external_executions) setExternalExecutions(st.external_executions);
                                     else setExternalExecutions(null);
+                                    // Re-derive phase status from cloud-evidence completed phases
+                                    if (st.completed_phases) {
+                                        const ps = {};
+                                        for (const ph of st.completed_phases) ps[ph] = 'completed';
+                                        setPhaseStatus(ps);
+                                    }
                                 }
                             } catch (e) { console.error('[refresh] status error', e); }
                             // Also dispatch for any other listeners
@@ -1046,8 +1054,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="text-[9px] font-black uppercase tracking-widest">7 Phases</div>
                                     <div className="text-[8px] text-purple-200 mt-0.5">{
                                         completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` :
-                                        inferredPhase ? `${inferredPhase.replace('PHASE_4_', '4.')} active` :
-                                        cloudState?.inferred_phase ? `${cloudState.inferred_phase.replace('PHASE_4_', '4.')} active` : 'Ready'
+                                        autoOrchestrating && execState?.currentPhase ? `${execState.currentPhase.replace('PHASE_4_', '4.')} active` :
+                                        'Ready'
                                     }</div>
                                 </div>
                                 {/* SVG connecting circle */}
