@@ -45,7 +45,7 @@ const allNavItems = [
     { id: 'process', icon: BranchesOutlined, label: 'Process', mobileLabel: 'Process' },
     { id: 'resource-discovery', icon: SearchOutlined, label: 'Discovery', mobileLabel: 'Discovery' },
     { id: 'playbooks', icon: BookOutlined, label: 'Playbooks', mobileLabel: 'Playbooks' },
-    { id: 'migration_monitor', icon: DesktopOutlined, label: 'Live NOC', mobileLabel: 'NOC' },
+    { id: 'migration_monitor', icon: DesktopOutlined, label: 'Ops Center', mobileLabel: 'Ops' },
     { id: 'workflow', icon: ProjectOutlined, label: 'Workflow Graph', mobileLabel: 'Flow' },
     { id: 'halted', icon: PauseCircleOutlined, label: 'Halted Projects', mobileLabel: 'Halted' },
 ];

@@ -7,6 +7,7 @@ import FinOpsDashboard from './components/views/FinOpsDashboard';
 import CustomerDirectory from './components/views/CustomerDirectory';
 import MasterExecutionHub from './components/views/MasterExecutionHub';
 import LiveCloudNOC from './components/views/LiveCloudNOC';
+import MigrationOperationsCenter from './components/views/MigrationOperationsCenter';
 import RegionalMap from './components/views/RegionalMap';
 import MasterPipeline from './components/views/MasterPipeline';
 import PreSalesRadar from './components/views/PreSalesRadar';
@@ -127,7 +128,8 @@ function App() {
                     {activePhase === 'radar' && <PreSalesRadar />}
                     {activePhase === 'pipeline' && <MasterPipeline />}
                     {activePhase === 'crm' && <CustomerDirectory />}
-                    {activePhase === 'migration_monitor' && <LiveCloudNOC />}
+                    {activePhase === 'migration_monitor' && <MigrationOperationsCenter />}
+                    {activePhase === 'resource-discovery' && <LiveCloudNOC />}
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     
                     {activePhase === 'wizard' && (
