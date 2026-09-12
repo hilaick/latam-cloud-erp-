@@ -56,14 +56,63 @@ def is_pipeline_running(project_id):
 
 
 def get_pipeline_status(project_id):
-    """Get the current status of a pipeline for a project."""
-    return _running_pipelines.get(project_id, {
+    """Get the current status of a pipeline for a project.
+
+    Falls back to PERSISTED state when no pipeline thread is alive:
+      * delegate_tasks COMPLETED rows -> completed_phases (survives restarts)
+      * ExecutionState status/current_phase -> status
+    This makes the GUI show the true lifecycle state even after a
+    Flask restart / server reboot cleared the in-memory _running_pipelines.
+    """
+    pipe = _running_pipelines.get(project_id)
+    if pipe and pipe.get('status') not in (None, 'idle', ''):
+        return pipe
+    # ── Persisted fallback (no live thread) ──
+    status = {
         'status': 'idle',
         'completed_phases': [],
         'failed_phase': None,
         'log': [],
         'phase_status': {},
-    })
+        'from_persisted_state': True,
+    }
+    try:
+        from models import db, ProjectData, ExecutionState
+        proj = ProjectData.query.get(str(project_id)) if project_id else None
+        if proj:
+            import json as _json
+            try:
+                dt_tasks = _json.loads(proj.delegate_tasks or '[]')
+            except Exception:
+                dt_tasks = []
+            completed = set()
+            for t in dt_tasks:
+                if t.get("status") == "COMPLETED" and t.get("phase"):
+                    completed.add(t["phase"])
+            _all_ph = [f"PHASE_4_{n}" for n in range(1, 8)]
+            for _ph in reversed(_all_ph):
+                if _ph in completed:
+                    for _n in range(_all_ph.index(_ph)):
+                        completed.add(_all_ph[_n])
+                    break
+            if completed:
+                status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
+                status['phase_status'] = {p: 'completed' for p in completed}
+                status['status'] = 'completed'
+            # ExecutionState overrides when it says DONE/COMPLETED
+        try:
+            st = ExecutionState.query.filter_by(project_id=str(project_id)).first()
+            if st and st.status in ('DONE', 'COMPLETED'):
+                status['status'] = 'completed'
+                if st.current_phase == 'COMPLETED':
+                    if not status['completed_phases']:
+                        status['completed_phases'] = [f"PHASE_4_{n}" for n in range(1, 8)]
+                    status['phase_status'] = {p: 'completed' for p in status['completed_phases']}
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return status
 
 
 # ── The 7-phase chain definition ──
