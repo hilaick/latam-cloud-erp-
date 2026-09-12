@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { ERPContext } from '../../context/ERPContext';
+import LiveCloudNOC from './LiveCloudNOC';
 
 /* ═══════════════════════════════════════════════════════════════════
    Migration Operations Center — top-level LIVE dashboard.
@@ -205,67 +206,9 @@ function MigrationOpsDashboard({ project }) {
 
 /* ── Inventory tab — original Cloud Infrastructure Scanner, driven by the GLOBAL project picker ── */
 function InventoryScanTab({ project, customer }) {
-    const [inventory, setInventory] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [scanMode, setScanMode] = useState('target');
-    const token = sessionStorage.getItem('hermes_access_token');
-
-    const activeCustomer = customer;
-    // Auto-scan when the selected project (and thus its customer) changes
-    useEffect(() => {
-        setInventory(null);
-        if (activeCustomer?.id) fetchInventory();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [project?.id, activeCustomer?.id]);
-
-    const fetchInventory = async () => {
-        if (!activeCustomer) return;
-        setIsLoading(true);
-        try {
-            const body = { customer_id: activeCustomer.id, region: activeCustomer.region || 'la-south-2', provider: 'Huawei' };
-            if (scanMode === 'source') {
-                if (!activeCustomer.source_huawei_ak) { setInventory(null); setIsLoading(false); return; }
-                body.region = activeCustomer.source_huawei_region || 'la-south-2';
-                body.use_source_credentials = true;
-            }
-            const r = await fetch('/api/cloud/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-            const d = await r.json();
-            if (d.success) setInventory({ ...d.inventory, is_source_discovery: d.is_source_discovery, region: d.region });
-        } catch (err) { setInventory(null); }
-        setIsLoading(false);
-    };
-
     return (
-        <div className="bg-slate-900 rounded-2xl border border-slate-700 p-6">
-            <div className="flex items-center gap-4 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><i className="fas fa-tv text-white"></i></div>
-                <div><h2 className="text-xl font-black text-white">Cloud Infrastructure Scanner</h2><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target & Source Infrastructure Discovery</p></div>
-            </div>
-            <div className="bg-slate-800 rounded-xl p-4 space-y-3">
-                <div className="flex flex-col lg:flex-row gap-3 items-end">
-                    <div className="flex-1">
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Account (from selected project)</label>
-                        <div className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-white">
-                            {activeCustomer ? <><i className="fas fa-building mr-1.5 text-blue-400"></i>{activeCustomer.name} <span className="text-slate-400 font-normal text-[10px]">· {activeCustomer.region || 'la-south-2'}</span></> : <span className="text-slate-400 font-normal text-[10px]">No customer linked to this project</span>}
-                        </div>
-                    </div>
-                    <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700">
-                        <button onClick={() => setScanMode('target')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${scanMode === 'target' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><i className="fas fa-cloud mr-1.5"></i>Target (Master AK/SK)</button>
-                        <button onClick={() => setScanMode('source')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${scanMode === 'source' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><i className="fas fa-cloud-upload-alt mr-1.5"></i>Source (Cross-Account)</button>
-                    </div>
-                    <button onClick={fetchInventory} disabled={isLoading || !activeCustomer} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest">{isLoading ? <><i className="fas fa-spinner fa-spin mr-1"></i>Scanning</> : <><i className="fas fa-search mr-1"></i>Scan</>}</button>
-                </div>
-                {inventory && (
-                    <div className="mt-4 space-y-3">
-                        <div className="text-[11px] text-slate-300 font-bold">Discovered in <span className="text-blue-400">{inventory.region}</span> {inventory.is_source_discovery ? '(Source Account)' : '(Target Account)'}:</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {[{l:'ECS', v:inventory.compute?.length||0},{l:'VPC', v:inventory.network?.filter(n=>n.type?.includes('VPC')).length||0},{l:'Subnets', v:inventory.network?.filter(n=>n.type?.includes('Subnet')).length||0},{l:'EIP', v:inventory.network?.filter(n=>n.fip||n.public_ip_address).length||0}].map(c => <div key={c.l} className="bg-slate-850 rounded-lg p-3 border border-slate-700"><div className="text-[9px] font-black uppercase text-slate-400">{c.l}</div><div className="text-2xl font-black text-white">{c.v}</div></div>)}
-                        </div>
-                        {inventory.compute?.slice(0, 20).map(s => <div key={s.name||s.id} className="flex items-center justify-between bg-slate-850 rounded-lg px-3 py-2 border border-slate-700"><span className="text-xs font-bold text-white">{s.name||s.id}</span><span className="text-[9px] text-slate-400">{s.flavor||''} {s.os||''} {s.private_ip ? `· ${s.private_ip}` : ''}</span></div>)}
-                        {inventory.network?.filter(n => n.type?.includes('VPC')).slice(0, 5).map(n => <div key={n.id||n.name} className="flex items-center justify-between bg-slate-850 rounded-lg px-3 py-2 border border-slate-700"><span className="text-xs font-bold text-white">{n.name||n.type||'VPC'}</span><span className="text-[9px] text-slate-400">{n.id?.slice(0,12)}</span></div>)}
-                    </div>
-                )}
-            </div>
+        <div className="min-h-[500px]">
+            <LiveCloudNOC defaultCustomerId={customer?.id || ''} />
         </div>
     );
 }

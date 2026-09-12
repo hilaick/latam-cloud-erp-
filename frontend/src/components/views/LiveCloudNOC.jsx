@@ -1,17 +1,25 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { ERPContext } from '../../context/ERPContext';
 
 const badge = (label, color) => (
   <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-${color}-400/10 text-${color}-400 border border-${color}-400/20`}>{label}</span>
 );
 
-export default function LiveCloudNOC() {
+export default function LiveCloudNOC({ defaultCustomerId, onCustomerChange }) {
   const { customers } = useContext(ERPContext);
 
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(defaultCustomerId || '');
   const [inventory, setInventory] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [scanMode, setScanMode] = useState('target'); // 'target' (Master AK/SK) | 'source' (Cross-Account)
+
+  // Sync with the Ops Center project picker when it changes (only the selection — never auto-scan)
+  useEffect(() => {
+    if (defaultCustomerId && String(defaultCustomerId) !== String(selectedCustomerId)) {
+      setSelectedCustomerId(defaultCustomerId);
+      setInventory(null);
+    }
+  }, [defaultCustomerId]);
 
   const activeCustomer = customers?.find(c => String(c.id) === selectedCustomerId);
 
@@ -20,7 +28,6 @@ export default function LiveCloudNOC() {
       alert('Please select a customer first.');
       return;
     }
-
     setIsLoading(true);
     try {
       const token = sessionStorage.getItem('hermes_access_token');
