@@ -2040,6 +2040,17 @@ def get_cloud_state(project_id):
         
         from services.cloud_state_detector import detect_cloud_state, reconcile_execution_plan
         result = detect_cloud_state(pdata, customer_data)
+        # ── Evidence-based phase auto-completion ──
+        # If the cloud shows all SMS tasks MIGRATE_SUCCESS, Data Sync (4.4) and
+        # Monitor (4.5) are factually complete — reflect that in delegate_tasks
+        # so the GUI matches the SMS console. 4.6 Cutover stays a MANUAL gate.
+        try:
+            from services.evidence_completion import auto_complete_sync_phases
+            _marked = auto_complete_sync_phases(project_id, result)
+            if _marked:
+                logger.info(f"[cloud-state] Auto-completed phases from cloud evidence: {_marked}")
+        except Exception as _ev_err:
+            logger.warning(f"[cloud-state] evidence completion check failed: {_ev_err}")
         
         # Reconcile the project's execution plan against real cloud evidence so
         # steps already done outside the ERP show 'completed_by_cloud' instead of 'pending'
