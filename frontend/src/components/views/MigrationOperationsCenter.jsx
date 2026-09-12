@@ -203,33 +203,35 @@ function MigrationOpsDashboard({ project }) {
     );
 }
 
-/* ── Inventory tab — embeds the original Cloud Infrastructure Scanner ── */
-function InventoryScanTab({ project }) {
-    const { customers } = useContext(ERPContext);
-    const [selectedCustomerId, setSelectedCustomerId] = useState('');
+/* ── Inventory tab — original Cloud Infrastructure Scanner, driven by the GLOBAL project picker ── */
+function InventoryScanTab({ project, customer }) {
     const [inventory, setInventory] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [scanMode, setScanMode] = useState('target');
-    const [log, setLog] = useState([]);
     const token = sessionStorage.getItem('hermes_access_token');
 
-    const activeCustomer = customers?.find(c => String(c.id) === selectedCustomerId);
+    const activeCustomer = customer;
+    // Auto-scan when the selected project (and thus its customer) changes
+    useEffect(() => {
+        setInventory(null);
+        if (activeCustomer?.id) fetchInventory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [project?.id, activeCustomer?.id]);
 
     const fetchInventory = async () => {
-        if (!activeCustomer) { alert('Select a customer first.'); return; }
+        if (!activeCustomer) return;
         setIsLoading(true);
         try {
             const body = { customer_id: activeCustomer.id, region: activeCustomer.region || 'la-south-2', provider: 'Huawei' };
             if (scanMode === 'source') {
-                if (!activeCustomer.source_huawei_ak) { alert('Source creds not configured.'); setIsLoading(false); return; }
+                if (!activeCustomer.source_huawei_ak) { setInventory(null); setIsLoading(false); return; }
                 body.region = activeCustomer.source_huawei_region || 'la-south-2';
                 body.use_source_credentials = true;
             }
             const r = await fetch('/api/cloud/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
             const d = await r.json();
             if (d.success) setInventory({ ...d.inventory, is_source_discovery: d.is_source_discovery, region: d.region });
-            else alert('API Error: ' + d.error);
-        } catch (err) { alert('Error: ' + err.message); }
+        } catch (err) { setInventory(null); }
         setIsLoading(false);
     };
 
@@ -242,17 +244,16 @@ function InventoryScanTab({ project }) {
             <div className="bg-slate-800 rounded-xl p-4 space-y-3">
                 <div className="flex flex-col lg:flex-row gap-3 items-end">
                     <div className="flex-1">
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Customer</label>
-                        <select value={selectedCustomerId} onChange={e => setSelectedCustomerId(e.target.value)} className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-white outline-none focus:border-blue-500">
-                            <option value="">-- Choose Account --</option>
-                            {(customers || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Account (from selected project)</label>
+                        <div className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-bold text-white">
+                            {activeCustomer ? <><i className="fas fa-building mr-1.5 text-blue-400"></i>{activeCustomer.name} <span className="text-slate-400 font-normal text-[10px]">· {activeCustomer.region || 'la-south-2'}</span></> : <span className="text-slate-400 font-normal text-[10px]">No customer linked to this project</span>}
+                        </div>
                     </div>
                     <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700">
                         <button onClick={() => setScanMode('target')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${scanMode === 'target' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><i className="fas fa-cloud mr-1.5"></i>Target (Master AK/SK)</button>
                         <button onClick={() => setScanMode('source')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${scanMode === 'source' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><i className="fas fa-cloud-upload-alt mr-1.5"></i>Source (Cross-Account)</button>
                     </div>
-                    <button onClick={fetchInventory} disabled={isLoading} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest">{isLoading ? <><i className="fas fa-spinner fa-spin mr-1"></i>Scanning</> : <><i className="fas fa-search mr-1"></i>Scan</>}</button>
+                    <button onClick={fetchInventory} disabled={isLoading || !activeCustomer} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest">{isLoading ? <><i className="fas fa-spinner fa-spin mr-1"></i>Scanning</> : <><i className="fas fa-search mr-1"></i>Scan</>}</button>
                 </div>
                 {inventory && (
                     <div className="mt-4 space-y-3">
@@ -365,13 +366,14 @@ const TABS = [
 ];
 
 export default function MigrationOperationsCenter() {
-    const { projects } = useContext(ERPContext);
+    const { projects, customers } = useContext(ERPContext);
     const [selectedProjectId, setSelectedProjectId] = useState('');
     const [activeTab, setActiveTab] = useState('status');
-    const [openChipDropdown, setOpenChipDropdown] = useState(false);
 
     const activeProjects = (projects || []).filter(p => p.id);
     const sp = activeProjects.find(p => String(p.id) === String(selectedProjectId)) || activeProjects[0];
+    // Resolve the customer from the selected project (single source of truth — no duplicate picker)
+    const customer = customers?.find(c => String(c.id) === (sp?.customerId || sp?.customer_id || ''));
 
     return (
         <div className="animate-fade-in min-h-screen bg-slate-50">
@@ -409,7 +411,7 @@ export default function MigrationOperationsCenter() {
                 {sp ? (
                     <>
                         {activeTab === 'status' && <MigrationOpsDashboard project={sp} />}
-                        {activeTab === 'inventory' && <InventoryScanTab project={sp} />}
+                        {activeTab === 'inventory' && <InventoryScanTab project={sp} customer={customer} />}
                         {activeTab === 'mig_worker' && <MigWorkerTab project={sp} />}
                     </>
                 ) : (
