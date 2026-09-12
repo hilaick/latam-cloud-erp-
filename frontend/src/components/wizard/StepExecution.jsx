@@ -2651,7 +2651,7 @@ function WorkbenchView({ project, onUpdateProject }) {
                         </div>
                     </div>
                     <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden flex-1 min-h-[200px]">
-                        <div className="bg-slate-800 border-b border-slate-700 p-3"><h3 className="font-black text-xs text-white flex items-center"><i className="fas fa-terminal text-emerald-400 mr-1.5"></i>mig_worker Terminal</h3></div>
+                        <div className="bg-slate-800 border-b border-slate-700 p-3"><h3 className="font-black text-xs text-white flex items-center"><i className="fas fa-terminal text-emerald-400 mr-1.5"></i>Activity Log <span className="ml-2 text-[8px] text-slate-500 font-normal">(step/plan/cloud/agent output — see Ops Center → mig_worker for worker access)</span></h3></div>
                         <div className="flex-1 p-3 font-mono text-[10px] text-emerald-400 overflow-y-auto whitespace-pre-wrap custom-scrollbar bg-slate-950 min-h-[140px] max-h-[280px]">
                             {term.length === 0 && <div className="text-slate-500">[system] no activity — run a step, poll status, or delegate a freeform task.</div>}
                             {term.map((l, i) => <div key={i}>{l}</div>)}
