@@ -1583,13 +1583,21 @@ def orchestration_rollback(project_id):
                 # Robust error detection — hcloud CLI quirks:
                 #  * [USE_ERROR]Operation not supported prints to stdout with EXIT 0
                 #  * Some APIs return {error_code: ERR.XXX} with rc 0
+                #  * Huawei error JSON: {"code": "VPC.0112", "message": "..."} with rc 0
                 #  * stderr may carry the real error even when rc==0
                 err_markers = ('[USE_ERROR]', '[CLI_ERROR]', 'error_code', '"error"', '"error_msg"',
                                'not supported', 'is not supported', 'InvalidParameter', 'Unauthorized')
                 combined_out = (r.stdout or '') + '\n' + (r.stderr or '')
-                if r.returncode != 0 or any(m in combined_out for m in err_markers):
+                # Huawei error JSON detection: code like "XXX.NNNN" + message
+                has_hw_error = False
+                if isinstance(parsed, dict):
+                    code = str(parsed.get('code') or parsed.get('error_code') or '')
+                    has_hw_error = bool(code and ('.' in code or code.upper().startswith('ERR')))
+                if r.returncode != 0 or any(m in combined_out for m in err_markers) or has_hw_error:
                     if not parsed.get('code') and not parsed.get('error_code'):
                         parsed.setdefault('_hcloud_error', (r.stderr or r.stdout)[:200] or 'hcloud error')
+                    elif has_hw_error:
+                        parsed.setdefault('_hcloud_error', str(parsed.get('message') or parsed)[:200])
                 if return_rc:
                     return parsed, r.returncode
                 return parsed, ''
