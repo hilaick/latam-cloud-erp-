@@ -1965,11 +1965,16 @@ def orchestration_rollback(project_id):
                 if should_del(v):
                     for attempt in range(3):
                         r, rc = h(['VPC','DeleteVpc',f'--vpc_id={v["id"]}','--cli-region='+target_region], return_rc=True)
-                        if rc == 0:
+                        # rc==0 is NOT proof of success: hcloud prints Huawei error
+                        # JSON ({"code":"VPC.0112",...}) with exit 0. Check body too.
+                        err = r.get('_hcloud_error') or ''
+                        vpc0112 = '0112' in err or 'router' in err.lower() or 'securitygroup first' in err.lower()
+                        if rc == 0 and not err:
                             deleted['vpcs'].append(v.get('name'))
                             logger.warning(f"[rollback] hcloud fallback VPC {v['name']} deleted (SDK path returned 0 deleted)")
                             break
-                        # SG-block: list and delete non-system SGs, retry
+                        # SG-block (VPC.0112 "delete the securitygroup first"):
+                        # list and delete non-system SGs, then retry the VPC delete.
                         sgs2, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
                         for dsg in (sgs2.get('security_groups') or []):
                             if dsg.get('name') != 'default':
