@@ -598,14 +598,13 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [rollbackLoading, setRollbackLoading] = useState(false);
 
     // 🎯 PER-PHASE ROLLBACK — roll back only one phase's resources
+    const [phaseRollbackKey, setPhaseRollbackKey] = useState(null);
     const handlePhaseRollback = async (phaseKey, phaseLabel) => {
-        const ok = confirm(`Roll back phase ${phaseLabel} (${phaseKey})?\n\nThis will delete only the resources created by this phase:\n  - Its target ECS/servers\n  - Its EIPs (if created)\n  - Its SG rules / SG (if any)\n\nPermanent. Other phases' resources are untouched. Proceed?`);
-        if (!ok) return;
+        setPhaseRollbackKey(phaseKey);
         setRollbackLoading(true);
         setOrchestrationLog(prev => [...prev, `[rollback] ${phaseKey}: enumerating phase resources...`]);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
-            // Preview first (what this phase owns)
             const previewRes = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -626,26 +625,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 setOrchestrationLog(prev => [...prev, `[rollback] ${phaseKey}: no matching resources found to delete (already clean)`]);
                 setRollbackLoading(false); return;
             }
-            if (!confirm(`Preview: ${total} resource(s) match phase ${phaseLabel}:\n  VPCs: ${(found.vpcs||[]).length}, subnets: ${(found.subnets||[]).length}, SGs: ${(found.security_groups||[]).length}, EIPs: ${(found.eips||[]).length}\n\nDelete them now?`)) {
-                setRollbackLoading(false); return;
+            // Show the existing inline rollback modal with phase-scoped resources
+            setRollbackPreview(found);
+            const all = {};
+            for (const list of Object.values(found)) {
+                for (const r of list) all[r.id] = true;
             }
-            // Execute with phase filter only — NOT resources:all. This tells
-            // the backend to run the plan's rollback commands for this phase
-            // and let should_del match the phase's target resources.
-            const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ phase: phaseKey })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                setOrchestrationLog(prev => [...prev, `[rollback ✗] ${data.error}`]);
-            } else {
-                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${phaseKey}: ${data.message || 'phase resources removed'}`]);
-                setOrchestrationLog(prev => [...prev, `[rollback] deleted → VPCs: ${(data.deleted?.vpcs||[]).join(', ') || '-'} | SGs: ${(data.deleted?.security_groups||[]).join(', ') || '-'} | EIPs: ${(data.deleted?.eips||[]).join(', ') || '-'}`]);
-            }
-            // Refresh state after rollback
-            setTimeout(() => fetchStatus(), 2000);
+            setRollbackSelected(all);
+            setShowRollbackModal(true);
         } catch (err) {
             setOrchestrationLog(prev => [...prev, `[rollback ✗] ${err.message}`]);
         }
@@ -688,20 +675,30 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         setOrchestrationLog(prev => [...prev, `[rollback] Deleting ${selected.length} resources...`]);
         const token = sessionStorage.getItem('hermes_access_token');
         try {
+            const body = { resources: selected.length > 0 ? selected : 'all' };
+            if (phaseRollbackKey) body.phase = phaseRollbackKey; // scope to phase
             const res = await fetch(`/api/execution/${project?.id}/orchestrate/rollback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ resources: selected.length > 0 ? selected : 'all' })
+                body: JSON.stringify(body)
             });
             const data = await res.json();
             if (data.success) {
                 const deleted = data.deleted || {};
                 const count = (deleted.vpcs?.length||0) + (deleted.subnets?.length||0) + (deleted.security_groups?.length||0) + (deleted.eips?.length||0);
-                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${count} resources deleted: ${data.message || ''}`]);
-                setCompletedOrchPhases(new Set());
-                setPhaseStatus({});
-                setFailedOrchPhaseIdx(null);
-                updatePhase('PHASE_4_0', 'PENDING');
+                setOrchestrationLog(prev => [...prev, `[rollback ✓] ${phaseRollbackKey || 'all'}: ${count} resources deleted: ${data.message || ''}`]);
+                if (phaseRollbackKey) {
+                    // Phase-scoped rollback: only that phase's resources went.
+                    // Refresh status so for this phase the done-marker clears.
+                    setPhaseRollbackKey(null);
+                    setTimeout(() => fetchStatus(), 2000);
+                } else {
+                    // Full rollback: reset the whole lifecycle state.
+                    setCompletedOrchPhases(new Set());
+                    setPhaseStatus({});
+                    setFailedOrchPhaseIdx(null);
+                    updatePhase('PHASE_4_0', 'PENDING');
+                }
             } else {
                 setOrchestrationLog(prev => [...prev, `[rollback ✗] ${data.error}`]);
             }
@@ -1510,7 +1507,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
                             <h3 className="font-black text-rose-700 text-sm uppercase tracking-widest">
-                                <i className="fas fa-undo mr-2"></i> Rollback — Select Resources
+                                <i className="fas fa-undo mr-2"></i> {phaseRollbackKey ? `Rollback ${phaseRollbackKey.replace('PHASE_4_', '4.')}` : 'Rollback — Select Resources'}
                             </h3>
                             <button onClick={() => setShowRollbackModal(false)} className="text-slate-400 hover:text-slate-600">
                                 <i className="fas fa-times"></i>
