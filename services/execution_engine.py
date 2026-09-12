@@ -1002,7 +1002,7 @@ class ExecutionEngine:
             flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
             sid += 1
             steps.append({
-                "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
                 "action": "CREATE_TARGET_ECS",
                 "target_resource": name,
                 "pillar": "compute",
