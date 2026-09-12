@@ -1932,6 +1932,28 @@ def orchestration_rollback(project_id):
                             sdk_deleted['vpcs'].append(v.get('name'))
                         except Exception as e:
                             failed.append(f"SDK VPC {v.get('name')}: {str(e)[:150]}")
+                # VERIFY SDK deletions actually took (SDK can return 200 with an
+                # error body for async deletes, e.g. VPC.0112 router-in-use).
+                # Re-list and reconcile: anything still present goes to failed,
+                # so the hcloud fallback below is NOT skipped.
+                try:
+                    _vlist = vclient.list_vpcs(ListVpcsRequest(limit=200))
+                    _still_here = {v['id'] for v in found['vpcs'] if should_del(v)}
+                    for _vv in (_vlist.vpcs or []):
+                        _vv_id = getattr(_vv, 'id', '')
+                        if _vv_id in _still_here:
+                            _vv_name = getattr(_vv, 'name', '?')
+                            if _vv_name in sdk_deleted['vpcs']:
+                                sdk_deleted['vpcs'].remove(_vv_name)
+                            failed.append(f"SDK VPC {_vv_name}: delete did not stick (VPC.0112 router/SG dependency?)")
+                    _sglist = vclient.list_security_groups(ListSecurityGroupsRequest(limit=200))
+                    for _sg2 in (_sglist.security_groups or []):
+                        _sn = getattr(_sg2, 'name', '')
+                        if _sn and _sn != 'default' and _sn in sdk_deleted.get('security_groups', []):
+                            sdk_deleted['security_groups'].remove(_sn)
+                            failed.append(f"SDK SG {_sn}: delete did not stick")
+                except Exception:
+                    pass
         except Exception as sdk_err:
             failed.append(f"SDK init: {str(sdk_err)[:200]}")
 
