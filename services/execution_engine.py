@@ -1153,6 +1153,26 @@ class ExecutionEngine:
                 "status": "pending",
             })
 
+            # Step: Start SMS task replication (API requires explicit start —
+            # skill option 3: UpdateTaskStatus --operation=start)
+            # Without this, tasks sit READY with 0% replication and 4.5 monitors nothing.
+            sid += 1
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_4,
+                "action": "SMS_TASK_START",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "skill",
+                "tool_name": "huawei-cloud-sms-0515-fix (start API task)",
+                "commands": [{"desc": "Start SMS task replication", "cmd": f"hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=start --cli-region={source_region}", "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": fallback,
+                "rollback": {"cmd": f"hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=stop --cli-region={source_region}", "label": "Stop SMS task"},
+                "status": "pending",
+            })
+
             # Step: Monitor SMS subtasks
             # PHASE 4.5 MONITOR: poll replication progress until all subtasks 100%,
             # then transition to continuous/incremental-sync readiness.
