@@ -1564,11 +1564,20 @@ def orchestration_rollback(project_id):
             return jsonify({'success': False, 'error': 'No credentials for rollback'}), 400
 
         env = _os.environ.copy()
-        env.update({'HW_ACCESS_KEY': target_ak, 'HW_SECRET_KEY': target_sk or ''})
+        # NOTE: hcloud CLI ignores HW_ACCESS_KEY/HW_SECRET_KEY env vars. It uses
+        # only its own ~/.hcloud/config.json profile. The only way to bind a
+        # per-customer credential is the --cli-access-key and --cli-secret-key flags.
+        # We inject them into every hcloud call via the h() helper.
+        ak_flag = target_ak.split()[0].strip() if target_ak else ''
+        sk_flag = (target_sk or '').split()[0].strip() if target_sk else ''
+        hcloud_auth_flags = []
+        if ak_flag and sk_flag:
+            hcloud_auth_flags = ['--cli-access-key=' + ak_flag, '--cli-secret-key=' + sk_flag]
 
         def h(cmd, timeout=30, return_rc=False):
             try:
-                r = _sp.run(['hcloud'] + cmd, capture_output=True, text=True, timeout=timeout, env=env)
+                full_cmd = ['hcloud'] + cmd + hcloud_auth_flags
+                r = _sp.run(full_cmd, capture_output=True, text=True, timeout=timeout, env=env)
                 parsed = {}
                 idx = r.stdout.find('{')
                 if idx >= 0:
@@ -1789,19 +1798,20 @@ def orchestration_rollback(project_id):
             if not rid:
                 continue
             if kind in ('vpc', 'vpc-default') or 'vpc' in kind:
-                do_del(['VPC','DeleteVpc',f'--vpc_id={rid}','--cli-region='+target_region], f"VPC {rname}")
-                deleted['vpcs'].append(rname)
+                if do_del(['VPC','DeleteVpc',f'--vpc_id={rid}','--cli-region='+target_region], f"VPC {rname}"):
+                    deleted['vpcs'].append(rname)
             elif kind in ('subnet',):
-                do_del(['VPC','DeleteSubnet',f'--subnet_id={rid}','--vpc_id=<vpc_id>','--cli-region='+target_region], f"Subnet {rname}")
-                deleted['subnets'].append(rname)
+                if do_del(['VPC','DeleteSubnet',f'--subnet_id={rid}','--cli-region='+target_region], f"Subnet {rname}"):
+                    deleted['subnets'].append(rname)
             elif kind in ('sg', 'security_group'):
-                do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={rid}','--cli-region='+target_region], f"SG {rname}")
-                deleted['security_groups'].append(rname)
+                if do_del(['VPC','DeleteSecurityGroup',f'--security_group_id={rid}','--cli-region='+target_region], f"SG {rname}"):
+                    deleted['security_groups'].append(rname)
             elif kind in ('eip', 'publicip'):
-                do_del(['EIP','DeletePublicip',f'--publicip_id={rid}','--cli-region='+target_region], f"EIP {rname}")
-                deleted['eips'].append(rname)
+                if do_del(['EIP','DeletePublicip',f'--publicip_id={rid}','--cli-region='+target_region], f"EIP {rname}"):
+                    deleted['eips'].append(rname)
             elif kind in ('ecs', 'server'):
-                do_del(['ECS','DeleteServer',f'--server_id={rid}','--cli-region='+target_region], f"ECS {rname}")
+                if do_del(['ECS','DeleteServers',f'--servers.1.id={rid}','--delete_publicip=true','--cli-region='+target_region], f"ECS {rname}"):
+                    deleted['ecs'].append(rname)
 
         # Then cloud-enumeration fallback (existing logic) for untracked leftovers
         # ── Plan-driven rollback (tool-agnostic) ──
@@ -1850,6 +1860,24 @@ def orchestration_rollback(project_id):
             pass
 
         # Fall back to cloud enumeration for anything the plan didn't cover
+        # ── ECS FIRST (real dependency order) ──
+        # Target ECS must go BEFORE subnets/SGs/VPC: its NICs occupy the subnet,
+        # its bound EIPs block EIP release, and its SG memberships block SG delete.
+        # hcloud ECS DeleteServers (plural) — DeleteServer does NOT exist and
+        # returns exit 0 with [USE_ERROR], causing silent false-success.
+        # Use the batch delete API with delete_publicip so bound EIPs go too.
+        for sv in found['ecs']:
+            if should_del(sv):
+                sv_id = sv.get('id')
+                if sv_id:
+                    ok = do_del(['ECS','DeleteServers',f'--servers.1.id={sv_id}','--delete_publicip=true','--cli-region='+target_region], f"ECS {sv.get('name')}")
+                    if ok:
+                        deleted['ecs'].append(sv.get('name'))
+                        # If this ECS held one of our EIPs, its EIP is auto-released;
+                        # remove it from the eips list so the later loop skips it.
+                        found['eips'] = [e for e in found['eips'] if str(e.get('id')) != str(sv_id)]
+
+        # Then the network teardown (subnets → SGs → VPC)
         for sub in found['subnets']:
             if should_del(sub):
                 do_del(['VPC','DeleteSubnet',f'--subnet_id={sub["id"]}',f'--vpc_id={sub["vpc_id"]}','--cli-region='+target_region], f"Subnet {sub['name']}")
@@ -1886,6 +1914,11 @@ def orchestration_rollback(project_id):
             if isinstance(pdata, dict):
                 encrypted_ak = pdata.get('target_huawei_ak') or pdata.get('source_huawei_ak')
                 encrypted_sk = pdata.get('target_huawei_sk') or pdata.get('source_huawei_sk')
+            # Fallback: use the already-decrypted Customer-model creds from the
+            # top of this function (project.data usually has NO ak/sk keys —
+            # they live in the Customer vault row, which is where target_ak came from).
+            if not encrypted_ak:
+                encrypted_ak, encrypted_sk = target_ak, target_sk
             master_pw = os.environ.get('VAULT_MASTER_PASSWORD', '')
             if not master_pw:
                 master_pw = getattr(request, 'vault_password', '') or 'LatamCloudAdmin2026!'
@@ -1960,7 +1993,10 @@ def orchestration_rollback(project_id):
         # ── hcloud fallback: if SDK didn't delete the VPC, try direct CLI ──
         # The SDK init may fail silently (missing creds, network, region). The hcloud
         # CLI is always available as a fallback, and works when called from Flask.
-        if found['vpcs'] and not deleted['vpcs'] and not failed:
+        # NOTE: the fallback must NOT be gated on `not failed` — a subnet/EIP failure
+        # earlier must not block the VPC.0112 SG-block retry here; each resource's
+        # failure is reported individually via `failed`.
+        if found['vpcs'] and not deleted['vpcs']:
             for v in found['vpcs']:
                 if should_del(v):
                     for attempt in range(3):
@@ -1993,44 +2029,55 @@ def orchestration_rollback(project_id):
             if should_del(e):
                 do_del(['EIP','DeletePublicip',f'--publicip_id={e["id"]}','--cli-region='+target_region], f"EIP {e['ip']}")
 
-        # Delete target ECS (phase 4.3 rollback: remove the migrated target servers)
-        # NOTE: VPC/subnet/SG deletion below would fail while ECS still exists —
-        # so ECS goes FIRST, before the network teardown path.
-        for sv in found['ecs']:
-            if should_del(sv):
-                sv_id = sv.get('id')
-                if sv_id:
-                    # hcloud ECS DeleteServers (plural) — DeleteServer does NOT exist
-                    # and returns exit 0 with [USE_ERROR], causing silent false-success.
-                    # Use the batch delete API with delete_publicip so bound EIPs go too.
-                    do_del(['ECS','DeleteServers',f'--servers.1.id={sv_id}','--delete_publicip=true','--cli-region='+target_region], f"ECS {sv.get('name')}")
-                    deleted['ecs'].append(sv.get('name'))
-                    # If this ECS held one of our EIPs, its EIP is auto-released;
-                    # remove it from the eips list so the later loop skips it.
-        # Unbind+release EIPs (after ECS deletion, EIPs become unbound)
-        # (the ECS delete auto-detaches; only standalone EIPs need explicit release)
+        # Verify final state — check VPCs, subnets, SGs AND EIPs (network resources
+        # are exactly what the old code missed; a surviving subnet/SG must surface).
+        remaining = []
+        try:
+            final_vpcs, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
+            final_subnets, _ = h(['VPC','ListSubnets','--cli-region='+target_region])
+            final_sgs, _ = h(['VPC','ListSecurityGroups/v3','--cli-region='+target_region])
+            final_eips, _ = h(['EIP','ListPublicips/v3','--cli-region='+target_region])
+            # Only report remaining resources that are OUR target-scope ones
+            # (match the same heuristics used for enumeration: erp tag, erp names,
+            #  or -TARGET ECS). Default SG is system — exclude it.
+            target_vpc_ids = {v['id'] for v in found['vpcs']}
+            for v in final_vpcs.get('vpcs', []):
+                if v['id'] in target_vpc_ids or has_erp_tag(v) or erp_named(v):
+                    remaining.append(f"vpc:{v.get('name')}")
+            for s in final_subnets.get('subnets', []):
+                if s.get('vpc_id') in target_vpc_ids:
+                    remaining.append(f"subnet:{s.get('name')}")
+            for sg in final_sgs.get('security_groups', []):
+                if sg.get('name') != 'default' and (has_erp_tag(sg) or str(sg.get('name','')).startswith(('erp-','latam-erp'))):
+                    remaining.append(f"sg:{sg.get('name')}")
+            for e in final_eips.get('publicips', []):
+                bw = (e.get('bandwidth') or {}).get('name') or ''
+                if has_erp_tag(e) or (bw.endswith('-eip') and '-' in bw):
+                    remaining.append(f"eip:{e.get('public_ip_address')}")
+        except Exception as _re:
+            failed.append(f"final verify: {str(_re)[:120]}")
 
-        # Verify final state
-        final_vpcs, _ = h(['VPC','ListVpcs/v3','--cli-region='+target_region])
-        final_eips, _ = h(['EIP','ListPublicips/v3','--cli-region='+target_region])
-        remaining = [v['name'] for v in final_vpcs.get('vpcs',[])] + [e['public_ip_address'] for e in final_eips.get('publicips',[])]
-
-        # Reset state only on FULL rollback (no phase filter — wipe everything).
-        # Phase-scoped rollback (4.3 only) must NOT clear other phases' completion.
-        if not phase_filter:
-            ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING', 'last_pipeline_log': None})
-            project_record.delegate_tasks = '[]'
-            db.session.commit()
-        else:
-            # Phase-scoped: remove only this phase's delegate_task markers
-            try:
-                import json as _jj
-                remaining_tasks = _jj.loads(project_record.delegate_tasks or '[]')
-                remaining_tasks = [t for t in remaining_tasks if t.get('phase') != phase_filter]
-                project_record.delegate_tasks = _jj.dumps(remaining_tasks, ensure_ascii=False)
+        # Reset state only when the rollback ACTUALLY cleaned the cloud.
+        # If resources remain (network leftovers the user can see in the account),
+        # DO NOT wipe ExecutionState/delegate_tasks — the GUI must keep showing
+        # the live truth instead of a falsely-clean frontend.
+        if not remaining and not failed:
+            if not phase_filter:
+                ExecutionState.query.filter_by(project_id=project_id).update({'current_phase': None, 'status': 'PENDING', 'last_pipeline_log': None})
+                project_record.delegate_tasks = '[]'
                 db.session.commit()
-            except Exception:
-                pass
+            else:
+                # Phase-scoped: remove only this phase's delegate_task markers
+                try:
+                    import json as _jj
+                    remaining_tasks = _jj.loads(project_record.delegate_tasks or '[]')
+                    remaining_tasks = [t for t in remaining_tasks if t.get('phase') != phase_filter]
+                    project_record.delegate_tasks = _jj.dumps(remaining_tasks, ensure_ascii=False)
+                    db.session.commit()
+                except Exception:
+                    pass
+        elif remaining:
+            logger.warning(f"[rollback] {project_id}: resources remain after rollback — state NOT reset: {remaining}")
         if project_id in _running_pipelines:
             _running_pipelines[project_id] = {'status':'idle','completed_phases':[],'failed_phase':None,'log':[],'phase_status':{}}
 
