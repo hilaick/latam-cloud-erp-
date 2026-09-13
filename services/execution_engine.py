@@ -1145,7 +1145,7 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": "mcp",
                 "tool_name": "mcp_server_smsapi (CreateTask with MGC disk mapping)",
-                "commands": [{"desc": "Create SMS task", "cmd": f"hcloud SMS CreateTask --name='migrate-{name}' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=<src_id> --target_server.vm_id=<ecs_id> --use_public_ip=false --start_target_server=true --cli-region={source_region}", "type": "hcloud"}],
+                "commands": [{"desc": "Create SMS task", "cmd": f"hcloud SMS CreateTask --name='migrate-{name}' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=<src_id> --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region={source_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": fallback,

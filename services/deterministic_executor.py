@@ -78,6 +78,7 @@ class DeterministicExecutor:
         source_ips = []
         source_names = {}
         source_sms_ids = {}   # name -> SMS source id (for <src_id>)
+        source_sms_disk_ids = {}  # name -> SMS disk id (for <sms_disk_id>)
         target_ecs_ids = {}   # name -> target ECS id (for <ecs_id>)
         target_eips = {}      # name -> target EIP
         # PRIMARY: executionContext.source_servers — enriched by agent after phase 4.2
@@ -90,10 +91,13 @@ class DeterministicExecutor:
                 sms_id = s.get('sms_id') or s.get('smsId') or ''
                 t_ecs = s.get('target_ecs_id') or s.get('targetEcsId') or s.get('vm_id') or ''
                 t_eip = s.get('target_eip') or ''
+                sms_disk = s.get('sms_disk_id') or s.get('sms_diskid') or ''
                 if name:
                     source_names[name] = ip
                 if sms_id:
                     source_sms_ids[name] = sms_id
+                if sms_disk:
+                    source_sms_disk_ids[name] = sms_disk
                 if t_ecs:
                     target_ecs_ids[name] = t_ecs
                 if t_eip:
@@ -109,6 +113,7 @@ class DeterministicExecutor:
             t_id = t.get('id') or t.get('target_id') or t.get('ecs_id') or t.get('vm_id') or ''
             t_eip = t.get('eip') or t.get('public_ip') or ''
             s_id = t.get('sms_id') or t.get('source_sms_id') or ''
+            d_id = t.get('sms_disk_id') or t.get('disk_id') or ''
             if nm:
                 if t_id:
                     target_ecs_ids.setdefault(nm, t_id)
@@ -116,6 +121,8 @@ class DeterministicExecutor:
                     target_eips.setdefault(nm, t_eip)
                 if s_id:
                     source_sms_ids.setdefault(nm, s_id)
+                if d_id:
+                    source_sms_disk_ids.setdefault(nm, d_id)
         ta = p.get('targetArchitecture', {}) or {}
         for s in (ta.get('compute', []) or []):
             name = s.get('name') or s.get('source_name') or ''
@@ -154,6 +161,7 @@ class DeterministicExecutor:
             'source_ips': source_ips,
             'source_names': source_names,
             'source_sms_ids': source_sms_ids,   # for <src_id>
+            'source_sms_disk_ids': source_sms_disk_ids,  # for <sms_disk_id>
             'target_ecs_ids': target_ecs_ids,   # for <ecs_id>
             'target_eips': target_eips,          # for <target_eip>
             'mig_project_id': mig_project_id,
@@ -179,17 +187,21 @@ class DeterministicExecutor:
             if val:
                 out = re.sub(pattern, str(val), out)
         # Per-target resolution: <src_id> = source's SMS id, <ecs_id> = the
-        # TARGET ECS id, <target_eip> = target EIP — keyed by the source name.
+        # TARGET ECS id, <target_eip> = target EIP, <sms_disk_id> = source disk
+        # id — keyed by the source name.
         if target_name:
             sid = (ctx.get('source_sms_ids') or {}).get(target_name, '')
             tid = (ctx.get('target_ecs_ids') or {}).get(target_name, '')
             teip = (ctx.get('target_eips') or {}).get(target_name, '')
+            sdid = (ctx.get('source_sms_disk_ids') or {}).get(target_name, '')
             if sid:
                 out = out.replace('<src_id>', sid)
             if tid:
                 out = out.replace('<ecs_id>', tid)
             if teip:
                 out = out.replace('<target_eip>', teip)
+            if sdid:
+                out = out.replace('<sms_disk_id>', sdid)
         # <source_ip> per named target: replace name-keyed tokens
         for name, ip in ctx.get('source_names', {}).items():
             out = out.replace(f'<ip_{name}>', ip)
