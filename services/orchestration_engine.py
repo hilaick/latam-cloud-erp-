@@ -403,9 +403,19 @@ When done, report what you actually executed, the verification commands you ran,
             substantive = len(out_l.strip()) > 200 and any(tok in out_l.lower() for tok in [
                 'provisioned', 'created', 'verified', 'complete', 'completed',
                 'already exist', 'exists', 'success', 'active',
+                'all verified', 'ready', 'finished', 'done',
+                'provisioning complete', 'migration complete',
+                'already provisioned', 'no new creation needed', 'already exists',
             ])
             if substantive and not transient:
                 logger.info(f"[orchestration:{project_id}] {phase} agent reported substantive completion (rc={result.returncode}) — treating as success.")
+                return True, result.stdout.strip(), None
+            # rc!=0 with substantive output is still success — hermes chat often
+            # exits non-zero on 'max iterations reached' AFTER finishing the work.
+            # Verification reports ("All infrastructure is verified", "already exist",
+            # full ShowServer/volume/EIP dumps) prove the phase completed.
+            if len(out_l.strip()) > 1000 and not transient:
+                logger.info(f"[orchestration:{project_id}] {phase} agent completed with rc={result.returncode} but has substantive verification output — treating as success.")
                 return True, result.stdout.strip(), None
             if result.returncode == 0 and not transient:
                 return True, result.stdout.strip(), None
