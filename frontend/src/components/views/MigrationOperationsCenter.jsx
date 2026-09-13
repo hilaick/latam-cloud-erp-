@@ -312,6 +312,8 @@ export default function MigrationOperationsCenter() {
     const { projects, customers } = useContext(ERPContext);
     const [selectedProjectId, setSelectedProjectId] = useState('');
     const [activeTab, setActiveTab] = useState('status');
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const activeProjects = (projects || []).filter(p => p.id);
     const sp = activeProjects.find(p => String(p.id) === String(selectedProjectId)) || activeProjects[0];
@@ -328,15 +330,51 @@ export default function MigrationOperationsCenter() {
                         <div><h1 className="text-xl font-black text-slate-800 tracking-tight">Migration Operations Center</h1><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live status across projects · during & after execution</p></div>
                     </div>
                     <div className="flex-1 flex flex-wrap gap-2 lg:justify-end">
-                        <select value={sp?.id || ''} onChange={e => setSelectedProjectId(e.target.value)} className="p-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-cyan-500">
-                            {activeProjects.map(p => <option key={p.id} value={p.id}>{p.projectName || p.name || `P-${String(p.id).slice(-6)}`} · {p.executionMode || p.phase || '—'}</option>)}
-                        </select>
-                        <div className="flex flex-wrap gap-1.5 max-w-full">
-                            {activeProjects.slice(0, 12).map(p => (
-                                <button key={p.id} onClick={() => setSelectedProjectId(p.id)} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border transition-all ${String(p.id) === String(sp?.id) ? 'bg-cyan-600 text-white border-cyan-600 shadow' : 'bg-white text-slate-500 border-slate-200 hover:border-cyan-400'}`}>
-                                    {p.projectName || p.name || `P-${String(p.id).slice(-6)}`}
-                                </button>
-                            ))}
+                        {/* Collapsible project search bar — one control for all tabs */}
+                        <div className="relative min-w-[260px]">
+                            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm cursor-pointer" onClick={() => setSearchOpen(v => !v)}>
+                                <i className={`fas fa-search text-slate-400 ${searchOpen ? '' : ''}`}></i>
+                                <span className="text-sm font-bold text-slate-700 flex-1 truncate">{sp?.projectName || sp?.name || 'Select project…'}</span>
+                                {sp && <span className="px-2 py-0.5 rounded-lg bg-cyan-50 text-cyan-700 text-[9px] font-black uppercase tracking-wider">{sp.executionMode || sp.phase || '—'}</span>}
+                                <i className={`fas ${searchOpen ? 'fa-chevron-up' : 'fa-chevron-down'} text-slate-400 text-xs transition-transform`}></i>
+                            </div>
+                            {searchOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-[380px] max-w-[90vw] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                                    <div className="p-3 border-b border-slate-100">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            placeholder="Search projects by name…"
+                                            className="w-full p-2 bg-slate-100 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-cyan-400"
+                                        />
+                                    </div>
+                                    <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                        {activeProjects.filter(p => {
+                                            const q = searchQuery.toLowerCase();
+                                            if (!q) return true;
+                                            return ((p.projectName || p.name || '') + ' ' + (p.executionMode || '') + ' ' + p.id).toLowerCase().includes(q);
+                                        }).map(p => (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => { setSelectedProjectId(p.id); setSearchOpen(false); setSearchQuery(''); }}
+                                                className={`w-full text-left px-4 py-2.5 hover:bg-cyan-50 transition-colors flex items-center justify-between ${String(p.id) === String(sp?.id) ? 'bg-cyan-50' : ''}`}
+                                            >
+                                                <span>
+                                                    <span className="block text-sm font-bold text-slate-700">{p.projectName || p.name || `Project ${String(p.id).slice(-6)}`}</span>
+                                                    <span className="block text-[9px] text-slate-400 font-mono">id: {String(p.id).slice(0, 14)} · {p.executionMode || p.phase || 'no mode'}</span>
+                                                </span>
+                                                {String(p.id) === String(sp?.id) && <i className="fas fa-check text-cyan-600 text-xs"></i>}
+                                            </button>
+                                        ))}
+                                        {activeProjects.filter(p => searchQuery ? ((p.projectName || p.name || '') + ' ' + (p.executionMode || '') + ' ' + p.id).toLowerCase().includes(searchQuery.toLowerCase()) : true).length === 0 && (
+                                            <div className="px-4 py-6 text-center text-xs text-slate-400">No projects match "{searchQuery}"</div>
+                                        )}
+                                    </div>
+                                    <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[9px] text-slate-400 font-mono">{activeProjects.length} projects</div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -416,7 +416,57 @@ def get_live_inventory():
         encrypted_sk_data = None
         discovery_region = region
         use_source_credentials = data.get('use_source_credentials', False)
-
+        
+        # 🚀 MULTI-REGION SCAN: scan a curated list of Huawei regions, return per-region inventory
+        CORE_REGIONS = [r.strip() for r in (os.environ.get('HUAWEI_SCAN_REGIONS') or 
+                        'la-south-2,la-north-2,af-south-1,ap-southeast-3,sa-brazil-1').split(',')]
+        multi_region = data.get('multi_region', False)
+        
+        if multi_region:
+            logger.info(f"MULTI-REGION scan for customer_id={customer_id}: {len(CORE_REGIONS)} regions")
+            from services.huawei_discovery import HuaweiDiscovery
+            regions_inventory = {}
+            diagnostics = []
+            def _scan_one(mreg, box):
+                """Run discovery for one region, store result in box."""
+                try:
+                    engine = HuaweiDiscovery(
+                        encrypted_ak_data=customer.ak,
+                        encrypted_sk_data=customer.sk,
+                        region=mreg,
+                        master_password=master_password
+                    )
+                    result_inv = engine.discover_all()
+                    if result_inv.get("success"):
+                        inv = result_inv.get("inventory", {})
+                        total = (len(inv.get('compute', []) or []) +
+                                 len(inv.get('network', []) or []) +
+                                 len(inv.get('databases', []) or []))
+                        if total > 0:
+                            regions_inventory[mreg] = inv
+                        else:
+                            box['diagnostic'] = f"{mreg}: no resources"
+                    else:
+                        box['diagnostic'] = f"{mreg}: {str(result_inv.get('error', ''))[:100]}"
+                except Exception as mre:
+                    box['diagnostic'] = f"{mreg}: {str(mre)[:100]}"
+            import threading as _th
+            for mreg in CORE_REGIONS:
+                # Per-region timeout via worker thread: max 40s per region
+                box = {'diagnostic': None}
+                worker = _th.Thread(target=_scan_one, args=(mreg, box), daemon=True)
+                worker.start()
+                worker.join(timeout=40)
+                if worker.is_alive():
+                    diagnostics.append(f"{mreg}: timed out (40s)")
+                elif box['diagnostic']:
+                    diagnostics.append(box['diagnostic'])
+            if not regions_inventory:
+                return jsonify({"success": True, "multi_region": {}, "regions_scanned": CORE_REGIONS,
+                                "message": "No resources found in any scanned region", "diagnostics": diagnostics if diagnostics else None})
+            return jsonify({"success": True, "multi_region": regions_inventory, "regions_scanned": CORE_REGIONS,
+                            "diagnostics": diagnostics if diagnostics else None})
+        
         if use_source_credentials:
             if customer and customer.source_huawei_ak and customer.source_huawei_sk:
                 logger.info(f"EXPLICIT SOURCE DISCOVERY: Using Source Huawei Cloud credentials for customer_id={customer_id}")

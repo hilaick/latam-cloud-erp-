@@ -11,7 +11,10 @@ export default function LiveCloudNOC({ defaultCustomerId, onCustomerChange }) {
   const [selectedCustomerId, setSelectedCustomerId] = useState(defaultCustomerId || '');
   const [inventory, setInventory] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [scanMode, setScanMode] = useState('target'); // 'target' (Master AK/SK) | 'source' (Cross-Account)
+  const [scanMode, setScanMode] = useState('target');
+  const [multiInventory, setMultiInventory] = useState(null);
+  const [scannedRegions, setScannedRegions] = useState([]);
+  const [regionFilter, setRegionFilter] = useState('');
 
   // Sync with the Ops Center project picker when it changes (only the selection — never auto-scan)
   useEffect(() => {
@@ -60,7 +63,17 @@ export default function LiveCloudNOC({ defaultCustomerId, onCustomerChange }) {
 
       const data = await res.json();
       if (data.success) {
-        setInventory({ ...data.inventory, is_source_discovery: data.is_source_discovery, region: data.region });
+        // MULTI-REGION: keep per-region map + derive a flat combined inventory for the current filter
+        if (data.multi_region) {
+          setMultiInventory(data.multi_region);
+          setScannedRegions(Object.keys(data.multi_region));
+          // Default to the first region with resources
+          const first = Object.keys(data.multi_region)[0];
+          setRegionFilter(first || 'all');
+          setInventory({ ...data.multi_region[first], is_source_discovery: false, region: first });
+        } else {
+          setInventory({ ...data.inventory, is_source_discovery: data.is_source_discovery, region: data.region });
+        }
       } else {
         alert('API Error: ' + data.error);
       }
@@ -68,6 +81,57 @@ export default function LiveCloudNOC({ defaultCustomerId, onCustomerChange }) {
       alert('Error: ' + err.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /* ── Multi-region scan: hit the backend multi_region mode ── */
+  const fetchAllRegions = async () => {
+    if (!activeCustomer) { alert('Please select a customer first.'); return; }
+    setIsLoading(true);
+    setMultiInventory(null);
+    setInventory(null);
+    try {
+      const token = sessionStorage.getItem('hermes_access_token');
+      if (!token) throw new Error('Authentication required. Please log in again.');
+      const body = { customer_id: activeCustomer.id, provider: 'Huawei', multi_region: true };
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 300000); // 5 min cap (bounded per-region backend scan)
+      const res = await fetch('/api/cloud/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      clearTimeout(to);
+      if (res.status === 401) throw new Error('Authentication failed. Please log in again.');
+      const data = await res.json();
+      if (data.success && data.multi_region) {
+        setMultiInventory(data.multi_region);
+        setScannedRegions(Object.keys(data.multi_region));
+        const first = Object.keys(data.multi_region)[0];
+        setRegionFilter(first || 'all');
+        setInventory({ ...data.multi_region[first], is_source_discovery: false, region: first });
+      } else {
+        alert(data.message || 'No resources found in any region.');
+      }
+    } catch (err) { alert(err.name === 'AbortError' ? 'Scan timed out after 5 minutes.' : 'Error: ' + err.message); }
+    setIsLoading(false);
+  };
+
+  /* ── Switch region filter across the multi-region map ── */
+  const applyRegionFilter = (r) => {
+    setRegionFilter(r);
+    if (multiInventory && r !== 'all' && multiInventory[r]) {
+      setInventory({ ...multiInventory[r], is_source_discovery: false, region: r });
+    } else if (multiInventory && r === 'all') {
+      // Combine all regions into one flattened inventory
+      const combined = { compute: [], network: [], databases: [] };
+      Object.values(multiInventory).forEach(inv => {
+        combined.compute.push(...(inv.compute || []));
+        combined.network.push(...(inv.network || []));
+        combined.databases.push(...(inv.databases || []));
+      });
+      setInventory({ ...combined, is_source_discovery: false, region: 'all' });
     }
   };
 
@@ -142,7 +206,46 @@ export default function LiveCloudNOC({ defaultCustomerId, onCustomerChange }) {
                 ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning...</>
                 : <><i className="fas fa-search mr-2"></i> Run Cloud Scanner</>}
             </button>
+
+            {/* scan all regions button */}
+            <button
+              onClick={fetchAllRegions}
+              disabled={!activeCustomer || isLoading}
+              className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:from-slate-700 disabled:to-slate-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-500/25 transition-all disabled:cursor-not-allowed"
+            >
+              {isLoading
+                ? <><i className="fas fa-spinner fa-spin mr-2"></i> Scanning...</>
+                : <><i className="fas fa-globe-americas mr-2"></i> Scan All Regions</>}
+            </button>
           </div>
+
+          {/* region filter row (multi-region mode) */}
+          {multiInventory && scannedRegions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                <i className="fas fa-map-marker-alt text-emerald-400 mr-1"></i> Region:
+              </span>
+              <button
+                onClick={() => applyRegionFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
+                  regionFilter === 'all' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+              >
+                All ({scannedRegions.length})
+              </button>
+              {scannedRegions.map(r => (
+                <button
+                  key={r}
+                  onClick={() => applyRegionFilter(r)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all ${
+                    regionFilter === r ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* credential status row */}
           {activeCustomer && (
