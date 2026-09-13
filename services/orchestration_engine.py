@@ -122,6 +122,49 @@ def redact_secrets(text: str) -> str:
         out = re.sub(pat, repl, out)
     return out
 
+
+def _simulate_with_failure(project_id, pdata, phase_key, error_text):
+    """Re-run the simulation with the failure injected as context.
+
+    Returns a short string of alternative approaches mined from the
+    skill registry + execution history (the same sources the simulator
+    uses), scoped to the failed phase. This is the 'pause and go back
+    to simulation' piece of the troubleshoot loop.
+    """
+    import json
+    result_parts = []
+    try:
+        # 1. Query execution history for similar failures
+        from services.agentic_simulator import ExecutionHistoryStore
+        hist = list(getattr(ExecutionHistoryStore, '_history', []) or [])
+        relevant = [h for h in hist[-50:] if any(t in str(h).lower() for t in [
+            '0515', 'blocker', 'fail', phase_key.lower().replace('phase_4_', ''),
+            error_text and error_text[:30].lower() or ''
+        ])]
+        if relevant:
+            result_parts.append(f"Relevant past outcomes ({len(relevant)}):")
+            for h in relevant[-5:]:
+                result_parts.append(f"  - {h.get('project','?')}/{h.get('server_name','?')}: "
+                                    f"{h.get('outcome','?')} [{str(h.get('error',''))[:100]}]")
+    except Exception:
+        pass
+    try:
+        # 2. Read the skill commands relevant to this phase
+        from services.agentic_simulator import SkillRegistry
+        sr = SkillRegistry.get_instance() if hasattr(SkillRegistry, 'get_instance') else SkillRegistry()
+        skills = sr.get_skills_for_server('generic', phase_key) if hasattr(sr, 'get_skills_for_server') else []
+        if not skills:
+            skills = sr.list_skills() if hasattr(sr, 'list_skills') else []
+        if skills:
+            result_parts.append(f"\nRelevant skills ({min(len(skills),3)} shown):")
+            for sk in skills[:3]:
+                cmds = sk.get('commands', []) if isinstance(sk, dict) else []
+                if cmds:
+                    result_parts.append(f"  - {sk.get('name','skill')}: {cmds[0][:120]}")
+    except Exception:
+        pass
+    return '\n'.join(result_parts) if result_parts else ''
+
 def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None):
     """Spawn a Hermes agent for a single phase via the delegate-task API.
 
@@ -806,13 +849,58 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
 
                 if not success:
                     # ── Agent lane (deterministic failed or not applicable) ──
-                    # The project context file was already written before the deterministic lane.
-                    # Agent reads $_ERP_HOME/project_data/context_<project_id>.json — no DB needed.
+                    # Failure-type arbitration: classify the deterministic failure,
+                    # retry per policy (transient/idempotent/learning), and for
+                    # blockers run the bounded troubleshoot loop (simulate-with-error
+                    # -> agent-with-context -> resume or halt for human).
                     log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
-                    success, response, error = _spawn_hermes_agent(
-                        step['goal'], enriched, project_id, phase_key,
-                        log_cb=log  # stream live output to the pipeline log
+                    from services.failure_arbitration import (
+                        classify_failure, should_retry, new_information,
+                        run_troubleshoot_loop,
                     )
+                    failure_class = classify_failure(error or '')
+                    log(f'[arbitration] failure class: {failure_class} — {str(error)[:100]}')
+
+                    # Blocker or unknown: troubleshoot loop (bounded) directly.
+                    if failure_class in ('blocker', 'unknown'):
+                        log(f'[arbitration] {failure_class} — entering troubleshoot loop (simulate-with-error → agent)')
+                        success, response, error = run_troubleshoot_loop(
+                            project_id, phase_key, step, error or 'last attempt failed', log,
+                            pdata,
+                            spawn_agent_fn=lambda goal, pk: _spawn_hermes_agent(goal, enriched, project_id, pk, log_cb=log),
+                            simulate_fn=_simulate_with_failure,
+                        )
+                    else:
+                        # transient / idempotent / learning — retry per policy with backoff
+                        attempt = 1
+                        prev_err = error or ''
+                        while True:
+                            # Agent attempt (bounded by phase-scoped retries)
+                            _ok, _resp, _err = _spawn_hermes_agent(
+                                step['goal'], enriched, project_id, phase_key, log_cb=log)
+                            if _ok:
+                                success, response, error = True, _resp, _err
+                                log(f'[arbitration] agent resolved {phase_key} (attempt {attempt})')
+                                break
+                            # classify the agent failure this round
+                            _cls = classify_failure(_err or '')
+                            retry, delay, reason = should_retry(_cls, attempt, new_information(prev_err, _err or ''))
+                            log(f'[arbitration] attempt {attempt} failed [{_cls}] — {reason}')
+                            if not retry:
+                                if _cls in ('blocker', 'unknown'):
+                                    log(f'[arbitration] attempt {attempt} turned blocker — troubleshoot loop')
+                                    success, response, error = run_troubleshoot_loop(
+                                        project_id, phase_key, step, _err or 'agent failed', log,
+                                        pdata,
+                                        spawn_agent_fn=lambda goal, pk: _spawn_hermes_agent(goal, enriched, project_id, pk, log_cb=log),
+                                        simulate_fn=_simulate_with_failure,
+                                    )
+                                else:
+                                    success, response, error = False, _resp, _err
+                                break
+                            prev_err = _err or prev_err
+                            attempt += 1
+                            time.sleep(delay)
 
                 # ── FEEDBACK LOOP: agent resolutions -> plan updates ──
                 # When the agent lane resolved placeholders (discovered IDs,

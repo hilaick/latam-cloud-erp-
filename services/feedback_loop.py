@@ -123,6 +123,49 @@ def apply_agent_resolutions(project_id, pdata, agent_report=""):
     return substituted
 
 
+def apply_execution_writeback(pdata, phase_key, outcome, error='', resolution='',
+                              duration_s=0, agent_report=''):
+    """Write the ACTUAL execution outcome back into the project's simulation
+    artifact (simulationResult.trace) so the dry-run becomes a living record:
+    each phase gains its real-world timing, error, and resolution.
+
+    This is the 'feedback back to simulation' piece — after the lifecycle
+    (or at any point), re-running the dry-run reflects what execution found.
+    Persisted into pdata (caller commits to DB).
+    """
+    import time as _t
+    sim = pdata.get('simulationResult')
+    if not isinstance(sim, dict):
+        sim = {}
+    trace = sim.get('trace')
+    if not isinstance(trace, list):
+        trace = []
+    sim['trace'] = trace
+
+    entry = {
+        'id': len(trace) + 1000,  # keep separate from simulated ids
+        'phase': phase_key,
+        'action': 'EXECUTION_WRITEBACK',
+        'message': f"{phase_key}: {outcome}"
+                   + (f" — {resolution[:150]}" if resolution else ''),
+        'outcome': outcome,
+        'error': (error or '')[:300],
+        'resolution': (resolution or '')[:300],
+        'duration_s': float(duration_s or 0),
+        'actual': True,  # marker: real-world outcome, not simulated
+        'timestamp': _t.time(),
+    }
+    # Replace any prior writeback for the same phase; append otherwise
+    for i, t_ in enumerate(trace):
+        if isinstance(t_, dict) and t_.get('actual') and t_.get('phase') == phase_key:
+            trace[i] = entry
+            break
+    else:
+        trace.append(entry)
+    pdata['simulationResult'] = sim
+    return entry
+
+
 def record_learning(skill_name, pattern, failure_modes=None):
     """Record an agent-learned pattern into the skill registry (cross-project)."""
     try:
