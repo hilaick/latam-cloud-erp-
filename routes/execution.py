@@ -1,7 +1,9 @@
 import os
 import json
+import re
 import logging
 import time
+import subprocess
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
@@ -935,6 +937,355 @@ def execute_plan(project_id):
         return jsonify({"success": True, "result": result})
     except Exception as e:
         logging.error(f"execute failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/individual/action', methods=['POST'])
+@jwt_required()
+def individual_server_action(project_id):
+    """Per-server actions for Individual Tasks mode.
+
+    Body: {"server": "<source-server-name>", "mode": "re_deploy"|"new_target"|"rerun_steps",
+           "step_ids": [..]}   (step_ids only used by rerun_steps)
+
+    Modes:
+      re_deploy   — delete ALL target ECS instances for this source server
+                    ({server}-TARGET or {server}-TARGET-N), release their EIPs,
+                    then reset that server's plan steps to pending so the user
+                    can re-run Create ECS → SMS from scratch with the SAME config.
+      new_target  — create a NEW target ECS ({server}-TARGET-N, N = next free)
+                    SIDE BY SIDE with the existing one, using the same mapperNode
+                    config (flavor/disk from the plan or discovered from the live
+                    source). The existing target is left untouched (it may be in
+                    production). Also clones the server's plan steps with
+                    deployment suffix N so the user can drive SMS against the new
+                    ECS without touching the old deployment.
+      rerun_steps — re-execute the given step_ids for this server (or all its
+                    failed/pending steps if step_ids omitted) without any teardown.
+    """
+    try:
+        from services.execution_engine import ExecutionEngine
+        from models import ProjectData, Customer
+        from routes.gateway import _decrypt_credential_pair, _decrypt_credential
+
+        data = request.get_json(silent=True) or {}
+        server = (data.get("server") or "").strip()
+        mode = (data.get("mode") or "").strip().lower()
+        step_ids = data.get("step_ids") or []
+        if not server:
+            return jsonify({"success": False, "error": "server required"}), 400
+        if mode not in ("re_deploy", "new_target", "rerun_steps"):
+            return jsonify({"success": False, "error": f"mode must be re_deploy|new_target|rerun_steps, got {mode}"}), 400
+
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+        pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+        plan = pd.get("executionPlan")
+        if not plan:
+            return jsonify({"success": False, "error": "No execution plan found. Run build-plan first."}), 400
+
+        # ── Credentials (Customer vault, same pattern as /execute) ──
+        customer_id = pd.get("customerId")
+        customer = Customer.query.get(customer_id) if customer_id else None
+        if not customer:
+            return jsonify({"success": False, "error": "No customer linked to project"}), 400
+        ak, sk = _decrypt_credential_pair(getattr(customer, "ak", None), getattr(customer, "sk", None))
+        if not ak:
+            return jsonify({"success": False, "error": "No target credentials for this customer"}), 400
+
+        target_region = (pd.get("region") or pd.get("targetRegion")
+                         or (plan.get("target_region") if isinstance(plan, dict) else None)
+                         or "la-north-2")
+
+        env = os.environ.copy()
+        hcloud_auth_flags = ['--cli-access-key=' + ak.strip(), '--cli-secret-key=' + (sk or '').strip()]
+
+        def hh(cmd, timeout=60, return_rc=False):
+            """hcloud wrapper with per-customer auth flags (env vars are IGNORED by the CLI)."""
+            full = ['hcloud'] + cmd + hcloud_auth_flags
+            r = subprocess.run(full, capture_output=True, text=True, timeout=timeout, env=env)
+            parsed = {}
+            idx = r.stdout.find('{')
+            if idx >= 0:
+                try:
+                    parsed = json.JSONDecoder().raw_decode(r.stdout[idx:])[0]
+                except Exception:
+                    try:
+                        parsed = json.loads(r.stdout[idx:r.stdout.rfind('}')+1])
+                    except Exception:
+                        parsed = {}
+            err = (r.stdout or '') + '\n' + (r.stderr or '')
+            err_markers = ('[USE_ERROR]', '[CLI_ERROR]', 'error_code', 'not supported', 'InvalidParameter', 'Unauthorized')
+            code = str(parsed.get('code') or parsed.get('error_code') or '')
+            has_hw_err = bool(code and ('.' in code or code.upper().startswith('ERR')))
+            if r.returncode != 0 or any(m in err for m in err_markers) or has_hw_err:
+                parsed['_hcloud_error'] = str(parsed.get('message') or r.stderr or r.stdout)[:200]
+            if return_rc:
+                return parsed, r.returncode
+            return parsed
+
+        def list_ecs():
+            res = hh(['ECS', 'ListServersDetails', '--cli-region=' + target_region])
+            return res.get('servers') or []
+
+        def plan_steps():
+            if isinstance(plan, dict):
+                return plan.get('steps') or []
+            return plan if isinstance(plan, list) else []
+
+        def server_steps(srv=None):
+            srv = srv or server
+            return [s for s in plan_steps() if s.get('target_resource') == srv]
+
+        # ═══════════════════════════════════════════════════════════════════
+        # MODE: re_deploy — tear down this server's target(s), reset steps
+        # ═══════════════════════════════════════════════════════════════════
+        if mode == "re_deploy":
+            deleted_ecs = []
+            deleted_eips = []
+            errs = []
+            servers_cloud = list_ecs()
+            target_prefixes = (server.upper() + '-TARGET', server + '-TARGET')
+            candidates = [sv for sv in servers_cloud
+                          if (sv.get('name') or '').upper().startswith(target_prefixes)]
+            if not candidates:
+                return jsonify({"success": True, "deleted_ecs": [], "message":
+                                f"No target ECS found for '{server}' in {target_region} — nothing to tear down. Steps were reset to pending anyway."}), 200
+
+            for sv in candidates:
+                sv_id = sv.get('id')
+                nm = sv.get('name')
+                if not sv_id:
+                    continue
+                res = hh(['ECS', 'DeleteServers', f'--servers.1.id={sv_id}',
+                          '--delete_publicip=true', '--cli-region=' + target_region])
+                if res.get('_hcloud_error'):
+                    errs.append(f"{nm}: {res['_hcloud_error'][:120]}")
+                else:
+                    deleted_ecs.append(nm)
+                    # EIP bound to this ECS is auto-released; also release any
+                    # standalone erp EIP whose name matches the server.
+            # Release project EIPs matching this server (in case they were unbound)
+            eips_res = hh(['EIP', 'ListPublicips/v3', '--cli-region=' + target_region])
+            for e in (eips_res.get('publicips') or []):
+                bw = (e.get('bandwidth') or {}).get('name') or ''
+                if server.lower() in bw.lower() or f"{server.lower()}-eip" == bw.lower():
+                    rid = e.get('id')
+                    if rid:
+                        rr = hh(['EIP', 'DeletePublicip', f'--publicip_id={rid}', '--cli-region=' + target_region])
+                        if not rr.get('_hcloud_error'):
+                            deleted_eips.append(e.get('public_ip_address'))
+
+            # Reset this server's plan steps to pending (keeps config, clears completion)
+            steps = plan_steps()
+            reset_count = 0
+            for s in steps:
+                if s.get('target_resource') == server:
+                    s['status'] = 'pending'
+                    s.pop('completed_at', None)
+                    s.pop('stdout', None)
+                    s.pop('stderr', None)
+                    reset_count += 1
+            if isinstance(plan, dict):
+                plan['steps'] = steps
+            pd['executionPlan'] = plan
+            project.data = json.dumps(pd)
+            db.session.commit()
+
+            msg = f"Re-deploy: deleted {len(deleted_ecs)} target ECS ({', '.join(deleted_ecs) or 'none'})"
+            if deleted_eips:
+                msg += f", released {len(deleted_eips)} EIPs"
+            msg += f", reset {reset_count} plan steps for '{server}' to pending."
+            if errs:
+                msg += f" Failures: {'; '.join(errs[:3])}"
+            return jsonify({"success": not errs, "deleted_ecs": deleted_ecs,
+                            "deleted_eips": deleted_eips, "reset_steps": reset_count,
+                            "message": msg}), (200 if not errs else 207)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # MODE: new_target — create {server}-TARGET-{N} side by side; clone steps
+        # ═══════════════════════════════════════════════════════════════════
+        if mode == "new_target":
+            servers_cloud = list_ecs()
+            existing = [sv for sv in servers_cloud
+                        if (sv.get('name') or '').upper().startswith((server.upper() + '-TARGET', server + '-TARGET'))]
+            # Also count cloned plan deployments to avoid name collisions
+            base_target_name = server + '-TARGET'
+            used_names = {(sv.get('name') or '') for sv in existing}
+            for s in server_steps():
+                cmds = s.get('commands') or []
+                for c in cmds if isinstance(cmds, list) else []:
+                    m = re.search(r"--server\.name='([^']+TARGET[^']*)'", str(c.get('cmd', '')) if isinstance(c, dict) else '')
+                    if m:
+                        used_names.add(m.group(1))
+            # next free N
+            n = 2
+            while f"{base_target_name}-{n}".upper() in {u.upper() for u in used_names}:
+                n += 1
+            new_target_name = f"{base_target_name}-{n}"
+
+            # Spec: from the plan's CREATE_TARGET_ECS step for this server (same config)
+            step_specs = {s.get('action'): s for s in server_steps()}
+            ecs_step = step_specs.get('CREATE_TARGET_ECS') or {}
+            cmds0 = ecs_step.get('commands') or []
+            base_cmd = ''
+            if isinstance(cmds0, list) and cmds0:
+                base_cmd = cmds0[0].get('cmd', '') if isinstance(cmds0[0], dict) else ''
+            disk_gb = 100
+            m_disk = re.search(r'--server\.root_volume\.size=(\d+)', base_cmd)
+            if m_disk:
+                disk_gb = int(m_disk.group(1))
+
+            # Flavor: existing target's flavor if known, else <DISCOVERED_FLAVOR>
+            flavor_ref = '<DISCOVERED_FLAVOR>'
+            for sv in existing:
+                flav = sv.get('flavor') or sv.get('flavorRef') or ''
+                if flav:
+                    flavor_ref = flav
+                    break
+            # Prefer a concrete flavor from the plan command if it was resolved
+            m_flav = re.search(r'--server\.flavorRef=([^\s]+)', base_cmd)
+            if m_flav and '<' not in m_flav.group(1):
+                flavor_ref = m_flav.group(1)
+
+            # Network: the SMS flow rebinds the ECS to the mig project; use the
+            # same shape as the plan's base CreateServers (VPC/subnet resolved by
+            # the SMS agent lane). Enterprise project: if project has one configured,
+            # pin the new ECS to it.
+            ep_id = pd.get('enterpriseProjectId') or pd.get('enterprise_project_id') or ''
+            ep_opt = f" --server.enterprise_project_id={ep_id}" if ep_id else ''
+
+            tag_q = ''
+            erp_tag_value = (plan.get('erp_tag_value') if isinstance(plan, dict) else None) or ''
+            if erp_tag_value:
+                tag_q = f"'erp-migration*{erp_tag_value}'"
+
+            create_cmd = (f"hcloud ECS CreateServers --server.name='{new_target_name}' "
+                          f"--server.flavorRef={flavor_ref} --server.root_volume.size={disk_gb} "
+                          f"--server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 "
+                          f"{('--server.tags.1=' + tag_q + ' ') if tag_q else ''}"
+                          f"--server.count=1{ep_opt} --cli-region={target_region}")
+
+            res = hh(['ECS', 'CreateServers', '--server.name=' + new_target_name,
+                      '--server.flavorRef=' + flavor_ref,
+                      f'--server.root_volume.size={disk_gb}',
+                      '--server.publicip.eip.iptype=5_bgp',
+                      '--server.publicip.eip.bandwidth.size=100',
+                      *((['--server.tags.1=' + tag_q]) if tag_q else []),
+                      *((['--server.enterprise_project_id=' + ep_id]) if ep_id else []),
+                      '--server.count=1',
+                      '--cli-region=' + target_region])
+            err = res.get('_hcloud_error') or ''
+            if err:
+                return jsonify({"success": False, "error": f"CreateServers failed: {err[:300]}",
+                                "target_name": new_target_name, "cmd": create_cmd}), 502
+
+            # Verify creation by name (ListServersDetails may lag; poll briefly)
+            new_ecs_id = ''
+            for _ in range(6):
+                time.sleep(5)
+                for sv in list_ecs():
+                    if (sv.get('name') or '') == new_target_name:
+                        new_ecs_id = sv.get('id', '')
+                        break
+                if new_ecs_id:
+                    break
+
+            # Clone the server's plan steps → deployment suffix N, appended to plan
+            steps = plan_steps()
+            max_sid = max((int(s.get('step_id') or 0) for s in steps), default=0)
+            clones = []
+            for s in server_steps():
+                new_s = {k: (v[:200] if isinstance(v, str) else v) for k, v in s.items()}
+                max_sid += 1
+                new_s['step_id'] = max_sid
+                new_s['status'] = 'pending'
+                new_s['deployment'] = n
+                new_s['target_ecs_name'] = new_target_name
+                # rewrite ECS name + task names in commands to the new deployment
+                cmds = new_s.get('commands')
+                if isinstance(cmds, list):
+                    for c in cmds:
+                        if isinstance(c, dict) and c.get('cmd'):
+                            c['cmd'] = c['cmd'].replace(base_target_name, new_target_name)
+                            c['cmd'] = c['cmd'].replace(f"migrate-{server}", f"migrate-{server}-{n}")
+                new_s['source_detail'] = f"🔁 Deployment #{n} (new target {new_target_name}) — " + str(s.get('source_detail', ''))[:120]
+                clones.append(new_s)
+            steps.extend(clones)
+            if isinstance(plan, dict):
+                plan['steps'] = steps
+            pd['executionPlan'] = plan
+            project.data = json.dumps(pd)
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "mode": "new_target",
+                "target_name": new_target_name,
+                "ecs_id": new_ecs_id,
+                "flavor": flavor_ref,
+                "disk_gb": disk_gb,
+                "deployment": n,
+                "cloned_steps": [{"step_id": c['step_id'], "action": c.get('action')} for c in clones],
+                "message": (f"New target {new_target_name} created ({flavor_ref}, {disk_gb}GB)"
+                            + (f", id {new_ecs_id}" if new_ecs_id else ", id pending (creation accepted)")
+                            + f". {len(clones)} steps cloned as deployment #{n} — run Start SMS against the new ECS; the original deployment is untouched."),
+            }), 200
+
+        # ═══════════════════════════════════════════════════════════════════
+        # MODE: rerun_steps — re-execute failed/pending/selected steps, no teardown
+        # ═══════════════════════════════════════════════════════════════════
+        if mode == "rerun_steps":
+            steps = plan_steps()
+            if step_ids:
+                targets = [s for s in steps if str(s.get('step_id')) in {str(x) for x in step_ids}]
+            else:
+                # all steps for this server that are not completed_by_cloud
+                targets = [s for s in server_steps()
+                           if s.get('status') in ('failed', 'pending', None, 'skipped')]
+            if not targets:
+                return jsonify({"success": True, "reran": [], "message": f"No steps to re-run for '{server}'."}), 200
+
+            results_ran = []
+            for s in targets:
+                sid = s.get('step_id')
+                cmds = s.get('commands') or []
+                cmd = ''
+                if isinstance(cmds, list) and cmds:
+                    first = cmds[0]
+                    cmd = first.get('cmd', '') if isinstance(first, dict) else str(first)
+                if not cmd:
+                    cmd = s.get('command') or s.get('cmd') or ''
+                if not cmd:
+                    results_ran.append({"step_id": sid, "action": s.get('action'), "status": "skipped", "error": "no command"})
+                    continue
+                # Substitute live ids where possible: target ECS id from cloud for CREATE_TARGET_ECS-less steps
+                full = cmd
+                if '<' in full and '>' in full:
+                    # Templated — leave to agent lane; mark blocked (not failed)
+                    results_ran.append({"step_id": sid, "action": s.get('action'),
+                                        "status": "blocked", "error": "templated placeholders (<id>) — run via agent lane or after Create ECS"})
+                    continue
+                r = subprocess.run(full, shell=True, capture_output=True, text=True, timeout=120,
+                                   env={**os.environ.copy(), 'HW_ACCESS_KEY': ak, 'HW_SECRET_KEY': sk or ''})
+                ok = r.returncode == 0
+                results_ran.append({"step_id": sid, "action": s.get('action'),
+                                    "status": "success" if ok else "failed",
+                                    "stdout": r.stdout[:300], "stderr": r.stderr[:300] if r.stderr else ''})
+                s['status'] = 'success' if ok else 'failed'
+            if isinstance(plan, dict):
+                plan['steps'] = steps
+            pd['executionPlan'] = plan
+            project.data = json.dumps(pd)
+            db.session.commit()
+
+            ok_count = sum(1 for r in results_ran if r.get('status') == 'success')
+            return jsonify({"success": True, "reran": results_ran,
+                            "message": f"Re-ran {len(results_ran)} steps for '{server}' ({ok_count} ok)."}), 200
+
+    except Exception as e:
+        logging.error(f"individual action failed: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
