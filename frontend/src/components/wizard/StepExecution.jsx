@@ -2360,7 +2360,7 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             </>}
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
-            {isIndividual && <MigrationIndividualView servers={servers} execPlan={execPlan} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} />}
+            {isIndividual && <MigrationIndividualView servers={servers} execPlan={execPlan} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} project={project} onPlanRefresh={buildPlan} />}
         </div>
     );
 }
@@ -2407,8 +2407,11 @@ function MigrationAgenticView({ execPlan, executing, executeAll, execLog, execRe
     );
 }
 
-function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust, cloudState, execPlan }) {
+function MigrationIndividualView({ servers, executeStep, selectedServer, setSelectedServer, isZeroTrust, cloudState, execPlan, project, onPlanRefresh }) {
     const [taskStatus, setTaskStatus] = useState({});
+    const [actionBusy, setActionBusy] = useState(null);   // which server-action is running
+    const [actionResult, setActionResult] = useState(null); // last action feedback {kind, msg}
+    const [confirmRedep, setConfirmRedep] = useState(false); // inline confirm for re-deploy
     const TASKS = [
         { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b', zeroTrust: true },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
@@ -2416,6 +2419,35 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
         { action: 'SMS_TASK_CREATE', label: 'Start SMS', icon: 'fa-sync-alt', color: '#10b981' },
         { action: 'SMS_SUBTASK_MONITOR', label: 'Monitor', icon: 'fa-chart-line', color: '#6366f1' },
         { action: 'MIGRATION_PROJECT_CONFIG', label: 'Config', icon: 'fa-cog', color: '#8b5cf6' },
+    ];
+    const runServerAction = async (mode) => {
+        if (!selectedServer) return;
+        setActionBusy(mode); setActionResult(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const pid = project?.id;
+            if (!pid) { setActionResult({ kind: 'err', msg: 'Cannot determine project ID — reload the page.' }); setActionBusy(null); return; }
+            const res = await fetch(`/api/execution/${pid}/individual/action`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ server: selectedServer.name, mode })
+            });
+            const data = await res.json();
+            setActionResult({ kind: data.success !== false ? 'ok' : 'err', msg: data.message || data.error || JSON.stringify(data).slice(0, 300) });
+            // refresh plan so cloned deployment steps appear
+            if (mode === 'new_target' && data.success !== false && onPlanRefresh) onPlanRefresh();
+        } catch (e) {
+            setActionResult({ kind: 'err', msg: e.message });
+        }
+        setActionBusy(null); setConfirmRedep(false);
+    };
+    const ACTION_BUTTONS = [
+        { mode: 'new_target',  label: 'New Target',     icon: 'fa-plus-circle',  color: '#8b5cf6', confirm: false,
+          desc: 'Deploy a second target ECS alongside the existing one (same config). Original untouched.' },
+        { mode: 're_deploy',   label: 'Re-deploy',      icon: 'fa-rotate',      color: '#f59e0b', confirm: true,
+          desc: 'Delete ALL targets for this server + reset steps, then re-create from scratch.' },
+        { mode: 'rerun_steps', label: 'Re-run Steps',   icon: 'fa-play-circle', color: '#3b82f6', confirm: false,
+          desc: 'Re-execute failed/pending steps without any teardown.' },
     ];
     const handleTask = async (action) => {
         if (!selectedServer) return; setTaskStatus(p => ({ ...p, [action]: 'running' }));
@@ -2509,6 +2541,51 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                             </button>;
                         })}
                     </div>
+                    {/* ── Server Action Bar: New Target / Re-deploy / Re-run Steps ── */}
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                            <i className="fas fa-cog mr-1"></i> Server Actions
+                            <span className="ml-2 text-[9px] font-normal text-slate-400">Deployment management for <b>{selectedServer.name}</b></span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 items-start">
+                            {ACTION_BUTTONS.map(b => (
+                                <div key={b.mode} className="relative">
+                                    {/* Inline confirm for re_deploy (destructive) */}
+                                    {confirmRedep && b.mode === 're_deploy' && (
+                                        <div className="absolute bottom-full mb-2 left-0 z-10 bg-red-50 border border-red-200 rounded-lg p-2 shadow-lg min-w-[260px]">
+                                            <div className="text-[10px] text-red-700 font-bold mb-1.5">⚠ Confirm: delete ALL targets for {selectedServer.name}?</div>
+                                            <div className="flex gap-1.5">
+                                                <button onClick={() => runServerAction('re_deploy')} disabled={actionBusy === 're_deploy'}
+                                                    className="px-2.5 py-1 text-[9px] font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">Yes, delete + reset</button>
+                                                <button onClick={() => setConfirmRedep(false)} className="px-2.5 py-1 text-[9px] bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <button onClick={() => { if (b.confirm) { setConfirmRedep(v => !v); } else { runServerAction(b.mode); } }}
+                                        disabled={actionBusy !== null}
+                                        className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                                        style={{
+                                            background: actionBusy === b.mode ? '#e5e7eb' : (b.color + '15'),
+                                            color: actionBusy === b.mode ? '#6b7280' : b.color,
+                                            border: `1.5px solid ${actionBusy === b.mode ? '#d1d5db' : (b.color + '50')}`
+                                        }}
+                                        title={b.desc}>
+                                        <i className={`fas ${b.icon} mr-1 ${actionBusy === b.mode ? 'fa-spin' : ''}`}></i>
+                                        {actionBusy === b.mode ? `Working...` : b.label}
+                                    </button>
+                                    <div className="text-[8px] text-slate-400 mt-0.5 max-w-[140px] leading-tight">{b.desc}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {/* ── Action Result Feedback ── */}
+                    {actionResult && (
+                        <div className={`mt-2 p-2 rounded-lg text-[10px] font-medium border ${actionResult.kind === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                            <i className={`fas ${actionResult.kind === 'ok' ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-1`}></i>
+                            {actionResult.msg}
+                            <button onClick={() => setActionResult(null)} className="float-right text-[9px] opacity-60 hover:opacity-100"><i className="fas fa-times"></i></button>
+                        </div>
+                    )}
                     {isZeroTrust && <div className="mt-2 text-amber-500 text-[10px] font-medium"><i className="fas fa-lock mr-1"></i> Agent install is customer responsibility — Zero Trust</div>}
                 </div>
             )}
