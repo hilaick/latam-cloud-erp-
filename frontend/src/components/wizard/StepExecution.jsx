@@ -892,6 +892,28 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <span className="text-[8px] text-slate-400 font-mono">{cloudState?.timestamp || ''}</span>
                         </div>
                     )}
+                    {completedOrchPhases.size >= 7 && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={async () => {
+                                    const token = sessionStorage.getItem('hermes_access_token');
+                                    try {
+                                        await fetch(`/api/projects/${project.id}/retroactive-simulate`, {
+                                            method: 'POST',
+                                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({}),
+                                        });
+                                        alert('Retroactive simulation complete — the dry-run now reflects what execution actually did (timing, errors, resolutions). View it in the Execution dashboard.');
+                                    } catch (e) {
+                                        alert('Retroactive simulation failed: ' + e);
+                                    }
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors flex items-center gap-1.5"
+                            >
+                                <i className="fas fa-history"></i> Re-run Simulation for Records
+                            </button>
+                        </div>
+                    )}
                     {completedOrchPhases.size === 0 && !cloudState?.inferred_phase && (
                         <div className="text-[10px] font-medium text-slate-500">
                             <i className="fas fa-circle-notch fa-spin mr-1"></i> Loading phase state...
