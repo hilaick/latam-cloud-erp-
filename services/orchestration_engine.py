@@ -107,6 +107,21 @@ PIPELINE_PHASES = [
 ]
 
 
+REDACT_PATTERNS = [
+    # Huawei Cloud AK/SK pairs + any long secrets inline
+    (r'(HPUAQH|AKIA|LTAI)[A-Za-z0-9]{10,}', '<AK>'),
+    (r'(?i)\b(ak|access[_-]?key)\b\s*[=:]\s*\S+', r'\1=<AK>'),
+    (r'[A-Za-z0-9/_\-+]{24,}', '<SECRET>'),
+]
+def redact_secrets(text: str) -> str:
+    """Redact cloud credentials and long secrets from any log/streamed line."""
+    if not text:
+        return text
+    out = text
+    for pat, repl in REDACT_PATTERNS:
+        out = re.sub(pat, repl, out)
+    return out
+
 def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None):
     """Spawn a Hermes agent for a single phase via the delegate-task API.
 
@@ -365,7 +380,7 @@ When done, report what you actually executed, the verification commands you ran,
                         log_stream = getattr(sys, '_orchestration_log_cb', None)
                         if log_stream:
                             try:
-                                log_stream(f"[agent] {line.strip()[:120]}")
+                                log_stream(f"[agent] {redact_secrets(line.strip()[:120])}")
                             except Exception:
                                 pass
                         emitted_activity = True
@@ -504,8 +519,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             _running_pipelines[project_id] = pipeline_info
 
             def log(msg):
-                pipeline_info['log'].append(msg)
-                logger.info(f"[orchestration:{project_id}] {msg}")
+                redacted = redact_secrets(str(msg))
+                pipeline_info['log'].append(redacted)
+                logger.info(f"[orchestration:{project_id}] {redacted}")
 
             # ── Load project data for context ──
             project = ProjectData.query.get(project_id)
@@ -880,7 +896,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 if success:
                     log(f'[done] {step["label"]} — agent completed.')
                     if response:
-                        log(f'[output] {response[:200]}...' if len(response) > 200 else f'[output] {response}')
+                        log(f'[output] {redact_secrets(response[:200] if response else "")}...' if response and len(response) > 200 else f'[output] {redact_secrets(response or "")}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
                     # Persist log for post-restart hydration

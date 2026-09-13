@@ -1288,8 +1288,8 @@ class ExecutionEngine:
                 "tool_source": "skill",
                 "tool_name": "sms-migration-linux-pattern (service cutover)",
                 "commands": [
-                    {"desc": "Stop source replication — finalize sync (agent detach)",
-                     "cmd": f"hcloud SMS DeleteTask --task_id=<task_id> --cli-region={source_region}",
+                    {"desc": "Stop replication — finalize sync (task record retained for console visibility)",
+                     "cmd": f"hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=stop --cli-region={source_region}",
                      "type": "hcloud"},
                     {"desc": "Uninstall SMS agent from source server",
                      "cmd": f"ssh root@<source_ip> 'bash /opt/SMS-Agent/uninstall.sh'",

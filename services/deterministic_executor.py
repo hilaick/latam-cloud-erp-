@@ -279,7 +279,26 @@ class DeterministicExecutor:
             'results': results,
         }
         if log:
-            log(f'[det] {action} on {target}: {"✓" if all_ok else "✗"}')
+            if all_ok:
+                log(f'[det] {action} on {target}: ✓')
+            else:
+                # Show first meaningful error (skip "blocked" which is expected)
+                first_err = None
+                for r in results:
+                    err = r.get('error', '') or ''
+                    if err and 'blocked' not in err.lower() and 'placeholder' not in err.lower():
+                        first_err = err[:60]
+                        break
+                if not first_err:
+                    for r in results:
+                        err = r.get('error', '') or ''
+                        if err:
+                            first_err = err[:40]
+                            break
+                if first_err:
+                    log(f'[det] {action} on {target}: ✗ ({first_err})')
+                else:
+                    log(f'[det] {action} on {target}: ✗')
         return entry
 
     def run_phase(self, plan, log=None):
