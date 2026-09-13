@@ -56,110 +56,14 @@ def is_pipeline_running(project_id):
 
 
 def get_pipeline_status(project_id):
-    """Get the current status of a pipeline for a project.
-
-    Falls back to PERSISTED state when no pipeline thread is alive:
-      * delegate_tasks COMPLETED rows -> completed_phases (survives restarts)
-      * ExecutionState status/current_phase -> status
-    This makes the GUI show the true lifecycle state even after a
-    Flask restart / server reboot cleared the in-memory _running_pipelines.
-    """
-    pipe = _running_pipelines.get(project_id)
-    if pipe and pipe.get('status') not in (None, 'idle', ''):
-        return pipe
-    # ── Persisted fallback (no live thread) ──
-    status = {
+    """Get the current status of a pipeline for a project."""
+    return _running_pipelines.get(project_id, {
         'status': 'idle',
         'completed_phases': [],
         'failed_phase': None,
         'log': [],
         'phase_status': {},
-        'from_persisted_state': True,
-    }
-    try:
-        from models import db, ProjectData, ExecutionState
-        proj = ProjectData.query.get(str(project_id)) if project_id else None
-        completed = set()
-        if proj:
-            import json as _json
-            # ── SOURCE OF TRUTH: cloud evidence (live resources) ──
-            # The GUI must reflect the real Huawei Cloud state, not persisted
-            # markers that can be cleared / restored / go stale.
-            try:
-                _pd = _json.loads(proj.data) if isinstance(proj.data, str) else (proj.data or {})
-            except Exception:
-                _pd = {}
-            _cloud_ev = None
-            _customer_data = None
-            try:
-                from services.cloud_completion import derive_completed_from_cloud
-                # Decrypt customer credentials for cloud state detection
-                _cid = _pd.get('customerId')
-                if _cid:
-                    from models import Customer
-                    from services.credential_manager import get_credential_manager
-                    _cust = Customer.query.get(str(_cid))
-                    if _cust:
-                        import os as _os
-                        _pw = _os.environ.get('VAULT_MASTER_PASSWORD', 'LatamCloudAdmin2026!')
-                        _cm = get_credential_manager(_pw)
-                        _enc = json.loads(_cust.ak) if isinstance(_cust.ak, str) and _cust.ak.startswith('{') else None
-                        if _enc:
-                            _ak2, _sk2 = _cm.decrypt_credentials(_enc)
-                            _customer_data = {'ak': _ak2, 'sk': _sk2,
-                                              'region': _cust.region or _pd.get('region', 'la-north-2'),
-                                              'source_region': _pd.get('sourceRegion', 'ap-southeast-3')}
-                # Run detect_cloud_state with live cloud data
-                try:
-                    from services.cloud_state_detector import detect_cloud_state
-                    _cs = detect_cloud_state(_pd, customer_data=_customer_data)
-                except Exception:
-                    _cs = None
-                if _cs is not None:
-                    _cloud_ev = derive_completed_from_cloud(str(project_id), _pd, _cs)
-            except Exception:
-                _cloud_ev = None
-            # Fallback if cloud detection failed: delegate_tasks markers
-            _detection_failed = (_cloud_ev is None)
-            if _cloud_ev is not None:
-                completed = set(_cloud_ev)
-            else:
-                # Detection failed (exception) — allow delegate_tasks + ExecutionState
-                # fallbacks, marked so ExecutionState is only a last resort.
-                try:
-                    dt_tasks = _json.loads(proj.delegate_tasks or '[]')
-                    for t in dt_tasks:
-                        if t.get("status") == "COMPLETED" and t.get("phase"):
-                            completed.add(t["phase"])
-                except Exception:
-                    pass
-            _all_ph = [f"PHASE_4_{n}" for n in range(1, 8)]
-            for _ph in reversed(_all_ph):
-                if _ph in completed:
-                    for _n in range(_all_ph.index(_ph)):
-                        completed.add(_all_ph[_n])
-                    break
-            if completed:
-                status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
-                status['phase_status'] = {p: 'completed' for p in completed}
-                status['status'] = 'completed'
-        try:
-            st = ExecutionState.query.filter_by(project_id=str(project_id)).first()
-            # ExecutionState is a STALE-RISK artifact (restored/reset, survives).
-            # Cloud evidence ALWAYS wins. Only use ExecutionState when cloud
-            # detection could not run at all (detection_failed=True) — never as
-            # a way to override an empty-but-valid cloud result.
-            if st and st.status in ('DONE', 'COMPLETED') and not completed and _detection_failed:
-                status['status'] = 'completed'
-                if st.current_phase == 'COMPLETED':
-                    if not status['completed_phases']:
-                        status['completed_phases'] = [f"PHASE_4_{n}" for n in range(1, 8)]
-                    status['phase_status'] = {p: 'completed' for p in status['completed_phases']}
-        except Exception:
-            pass
-    except Exception:
-        pass
-    return status
+    })
 
 
 # ── The 7-phase chain definition ──
@@ -203,13 +107,19 @@ PIPELINE_PHASES = [
 ]
 
 
-def _spawn_hermes_agent(goal, context, project_id, phase):
+def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None):
     """Spawn a Hermes agent for a single phase via the delegate-task API.
 
     This calls the same backend logic as /api/hermes-cli/delegate-task
     but directly as a function call to avoid HTTP self-referencing.
     Returns (success: bool, response: str, error: str)
+
+    log_cb: optional callable(str) — receives live agent output lines so the
+            GUI shows progress during the agent boot window.
     """
+    if log_cb:
+        import sys
+        sys._orchestration_log_cb = log_cb
     from models import db, ProjectData, Customer, HermesConfig
     from services.credential_manager import get_credential_manager
     from services.agentic_simulator import SkillRegistry
@@ -424,16 +334,60 @@ When done, report what you actually executed, the verification commands you ran,
     last_error = None
     for attempt in range(max_spawn_retries + 1):
         try:
-            result = subprocess.run(
+            # Stream the agent's output live to the pipeline log so the GUI shows
+            # progress during the boot window instead of 60-90s of silence.
+            results_buf = []
+            proc = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=PIPELINE_TIMEOUT_SECONDS,
                 env=env,
                 stdin=subprocess.DEVNULL,
                 preexec_fn=os.setsid,
+                bufsize=1,
             )
-            combined = f"{result.stdout[:2000]}\n{result.stderr[:1000]}"
+            emitted_activity = False
+            try:
+                for line in proc.stdout:
+                    if not line.strip():
+                        continue
+                    results_buf.append(line)
+                    combined_l = line.lower()
+                    # Stream meaningful progress lines only (agent actions, tool calls,
+                    # phase markers) — not filler. Show at most one line per burst.
+                    if any(tok in combined_l for tok in [
+                        'provision', 'creat', 'verif', 'complete', 'agent', 'execut',
+                        'run', 'ssh', 'hcloud', 'task', 'sync', 'cutover', 'eip',
+                        'ecs', 'vpc', 'sms', 'migration', 'installing', 'agent',
+                        'start', 'done', '[tool', 'tool call', 'resolv',
+                    ]):
+                        log_stream = getattr(sys, '_orchestration_log_cb', None)
+                        if log_stream:
+                            try:
+                                log_stream(f"[agent] {line.strip()[:120]}")
+                            except Exception:
+                                pass
+                        emitted_activity = True
+            except Exception as _se:
+                last_error = f"stream read: {_se}"
+            proc.wait(timeout=PIPELINE_TIMEOUT_SECONDS)
+            result_rc = proc.returncode
+            result_stdout = ''.join(results_buf)
+            result_stderr = ''
+            result = type('R', (), {
+                'returncode': result_rc,
+                'stdout': result_stdout,
+                'stderr': result_stderr,
+            })()
+            combined = f"{result_stdout[:2000]}\n{result_stderr[:1000]}"
+            if emitted_activity is False and result_stdout.strip():
+                log_stream = getattr(sys, '_orchestration_log_cb', None)
+                if log_stream:
+                    try:
+                        log_stream(f"[agent] run finished ({len(result_stdout)} chars of output)")
+                    except Exception:
+                        pass
             # Transient-failure detection: LB key exhaustion / rate limit / 502
             transient = any(tok in combined.lower() for tok in [
                 'all key allocation routing attempts failed',
@@ -812,7 +766,8 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     # Agent reads $_ERP_HOME/project_data/context_<project_id>.json — no DB needed.
                     log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
                     success, response, error = _spawn_hermes_agent(
-                        step['goal'], enriched, project_id, phase_key
+                        step['goal'], enriched, project_id, phase_key,
+                        log_cb=log  # stream live output to the pipeline log
                     )
 
                 # ── FEEDBACK LOOP: agent resolutions -> plan updates ──

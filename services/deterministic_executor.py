@@ -156,6 +156,13 @@ class DeterministicExecutor:
         chain_vals = chain_vals or {}
         action = step.get('action', 'UNKNOWN')
         target = step.get('target_resource', 'N/A')
+        if not target or target == 'unknown' or str(target).lower() == 'n/a':
+            # plan artifact without a real target (stale/empty data) — the agent
+            # lane handles these; do not waste a deterministic attempt + retry.
+            return {'step_id': step.get('step_id'), 'action': action,
+                    'target_resource': target, 'status': 'blocked',
+                    'results': [{'cmd': '', 'status': 'blocked',
+                                 'error': 'No target resource (unknown) — agent lane discovers this'}]}
         cmds = step.get('commands') or []
         results = []
         for c in cmds:

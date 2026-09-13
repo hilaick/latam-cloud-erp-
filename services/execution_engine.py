@@ -1033,6 +1033,9 @@ class ExecutionEngine:
         steps = []
         sid = step_id_counter
         name = node.get("name", "unknown")
+        if not name or name == "unknown":
+            return []  # skip nodes with no name — agent lane handles them via discovery
+
         disk_gb = float(node.get("storage", node.get("diskGB", 100)))
 
         if strategy == "sms":
