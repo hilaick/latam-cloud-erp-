@@ -17,6 +17,65 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [gateWarnings, setGateWarnings] = useState([]);
     const [gatePassed, setGatePassed] = useState(false);
     const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
+    const [buildPlanLoading, setBuildPlanLoading] = useState(false);
+    const [buildPlanResult, setBuildPlanResult] = useState(null); // { ok, steps, builtAt, message }
+    const [dryRunLoading, setDryRunLoading] = useState(false);
+
+    // 🚨 NEW: Build Execution Plan (Phase 3.5 → Phase 4 handoff contract)
+    // The plan is the template (placeholders: <src_id>, <ecs_id>, <task_id>...)
+    // that Phase 4 execution resolves per-phase; simulation validates it.
+    const handleBuildPlan = async () => {
+        if (!project?.id) return;
+        setBuildPlanLoading(true);
+        setBuildPlanResult(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch(`/api/execution/${project.id}/build-plan`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            const plan = data.plan || {};
+            const steps = plan.steps || [];
+            const actions = {};
+            steps.forEach(s => { actions[s.action] = (actions[s.action] || 0) + 1; });
+            setBuildPlanResult({
+                ok: res.ok,
+                steps: steps.length,
+                builtAt: plan.built_at || '',
+                actions,
+                rawError: data.error || '',
+            });
+        } catch (e) {
+            setBuildPlanResult({ ok: false, steps: 0, builtAt: '', actions: {}, rawError: String(e) });
+        } finally {
+            setBuildPlanLoading(false);
+        }
+    };
+
+    // 🚨 NEW: Dry-run simulation — validates the BUILT PLAN (execution template),
+    // not just raw topology. Runs after build-plan so preflight/modeling reflects
+    // the actual steps Phase 4 would execute.
+    const handleDryRun = async () => {
+        if (!project?.id) return;
+        setDryRunLoading(true);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'agentic' }),
+            });
+            // Simulation results are rendered in the Execution dashboard / constellation;
+            // here we just confirm it ran so the user can click through.
+            setBuildPlanResult(prev => prev ? { ...prev, dryRunDone: true } : { dryRunDone: true, ok: true, steps: 0, builtAt: '', actions: {} });
+        } catch (e) {
+            setBuildPlanResult(prev => prev ? { ...prev, dryRunError: String(e) } : { dryRunError: String(e), ok: false, steps: 0, builtAt: '', actions: {} });
+        } finally {
+            setDryRunLoading(false);
+        }
+    };
 
     // 🚨 SPLIT: 3.4a = Tool Recommendations, 3.4b = Execution Mode (after tools, before runbook)
     const handleRefreshResources = () => {
@@ -349,13 +408,68 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                     
                     {subTab === 'runbook' && (
                         <div className="p-6 h-full flex flex-col animate-fade-in">
-                            <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl mb-6 flex items-start gap-4 text-purple-800 shadow-inner shrink-0">
+                            <div className="bg-purple-50 border border-purple-200 p-5 rounded-xl mb-4 flex items-start gap-4 text-purple-800 shadow-inner shrink-0">
                                 <i className="fas fa-info-circle mt-0.5 text-xl"></i>
                                 <div className="text-xs leading-relaxed">
                                     <strong className="block mb-1 text-sm uppercase tracking-widest">Iterative Wave Planning</strong>
-                                    Migrations are executed in waves, not linearly. Use this interface to group the mapped Blueprint servers into scheduled Cutover Waves based on the customer's accepted downtime SLA.
+                                    Migrations are executed in waves, not linearly. Use this interface to group the mapped Blueprint servers into scheduled Cutover Waves based on the customer's accepted downtime SLA. When waves are defined, <b>build the Execution Plan</b> — the step template Phase 4 will execute — then <b>run the Dry-Run Simulation</b> to validate it before promoting to Execution.
                                 </div>
                             </div>
+
+                            {/* 🚨 NEW: Build Execution Plan + Dry-Run (3.5 → 4 handoff) */}
+                            <div className={`rounded-xl border-2 mb-4 p-4 shrink-0 transition-colors ${
+                                buildPlanResult?.ok ? 'border-emerald-200 bg-emerald-50/50' :
+                                buildPlanResult?.rawError ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-slate-50'
+                            }`}>
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-600">
+                                            <i className="fas fa-sitemap text-indigo-500 mr-1.5"></i> Execution Plan — Phase 4 contract
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                            {buildPlanResult?.ok
+                                                ? <span className="text-emerald-700">✓ Built <b>{buildPlanResult.steps}</b> steps at {buildPlanResult.builtAt}. {buildPlanResult.dryRunDone && <span className="text-indigo-600">✓ Dry-run simulation ran.</span>}</span>
+                                                : buildPlanResult?.rawError
+                                                    ? <span className="text-rose-700">✗ {buildPlanResult.rawError}</span>
+                                                    : 'Generates the step template (with placeholders) that Phase 4 resolves and executes.'}
+                                        </div>
+                                        {buildPlanResult?.ok && buildPlanResult.steps > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                                {Object.entries(buildPlanResult.actions).slice(0, 10).map(([a, n]) => (
+                                                    <span key={a} className="px-1.5 py-px rounded bg-white border border-slate-200 text-[8px] font-bold text-slate-500">{a}×{n}</span>
+                                                ))}
+                                                {Object.keys(buildPlanResult.actions).length > 10 && (
+                                                    <span className="px-1.5 py-px rounded bg-white border border-slate-200 text-[8px] text-slate-400">+{Object.keys(buildPlanResult.actions).length - 10} more</span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            onClick={handleBuildPlan}
+                                            disabled={buildPlanLoading}
+                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                                                buildPlanLoading ? 'bg-slate-200 text-slate-400 cursor-wait' :
+                                                'bg-indigo-600 hover:bg-indigo-700 text-white shadow'
+                                            }`}
+                                        >
+                                            <i className={`fas ${buildPlanLoading ? 'fa-spinner fa-spin' : 'fa-sitemap'}`}></i> {buildPlanLoading ? 'Building...' : 'Build Execution Plan'}
+                                        </button>
+                                        <button
+                                            onClick={handleDryRun}
+                                            disabled={dryRunLoading || !buildPlanResult?.ok}
+                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                                                dryRunLoading ? 'bg-slate-200 text-slate-400 cursor-wait' :
+                                                !buildPlanResult?.ok ? 'bg-slate-100 text-slate-300 cursor-not-allowed' :
+                                                'bg-slate-800 hover:bg-slate-900 text-white shadow'
+                                            }`}
+                                        >
+                                            <i className={`fas ${dryRunLoading ? 'fa-spinner fa-spin' : 'fa-flask'}`}></i> {dryRunLoading ? 'Simulating...' : 'Dry-Run Simulation'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
                             </div>
