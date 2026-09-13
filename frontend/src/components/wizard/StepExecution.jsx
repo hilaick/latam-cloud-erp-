@@ -1405,6 +1405,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                             >
                                                 <i className="fas fa-terminal mr-1"></i> Logs {!collapsedSections.logs ? '▲' : '▼'}
                                             </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); toggleSection('activity'); }}
+                                                className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
+                                                    !collapsedSections.activity ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-500 border-indigo-200'
+                                                }`}
+                                            >
+                                                <i className="fas fa-stream mr-1"></i> Activity {!collapsedSections.activity ? '▲' : '▼'}
+                                            </button>
                                             <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.runbook ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
                                         </span>
                                     </div>
@@ -1516,6 +1524,49 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </button>
                             </div>
                         </div>
+                        {/* 🎬 ACTIVITY FEED — chat-room style live event stream */}
+                        {!collapsedSections.activity && (
+                            <div className="border-t border-slate-200">
+                                <div className="m-3 rounded-xl border border-indigo-200 bg-white max-h-72 overflow-y-auto shadow-inner">
+                                    {orchestrationLog.length === 0 && !autoOrchestrating ? (
+                                        <div className="p-4 text-slate-400 italic text-[10px]">No activity yet — run a phase to see the live event feed.</div>
+                                    ) : (
+                                        <div className="p-3 space-y-1">
+                                            {orchestrationLog.map((line, i) => {
+                                                const s = String(line);
+                                                let icon = 'fa-circle', color = 'text-slate-400', label = s, badge = null;
+                                                if (s.includes('[agent]')) { icon = 'fa-robot'; color = 'text-indigo-500'; label = s.replace('[agent]', '').trim(); }
+                                                else if (s.includes('[det]') && s.includes('✓')) { icon = 'fa-check-circle'; color = 'text-emerald-500'; label = s.replace('[det]', '').trim(); badge = 'det ✓'; }
+                                                else if (s.includes('[det]') && s.includes('✗')) { icon = 'fa-times-circle'; color = 'text-rose-500'; label = s.replace('[det]', '').trim(); badge = 'det ✗'; }
+                                                else if (s.includes('[phase]')) { icon = 'fa-play-circle'; color = 'text-purple-500'; label = s.replace('[phase]', '').trim(); badge = 'phase'; }
+                                                else if (s.includes('[done]')) { icon = 'fa-flag-checkered'; color = 'text-emerald-600'; label = s.replace('[done]', '').trim(); badge = 'done'; }
+                                                else if (s.includes('[fail]')) { icon = 'fa-exclamation-triangle'; color = 'text-rose-600'; label = s.replace('[fail]', '').trim(); badge = 'failed'; }
+                                                else if (s.includes('[ctx]')) { icon = 'fa-file-alt'; color = 'text-slate-400'; label = s.replace('[ctx]', '').trim(); }
+                                                else if (s.includes('[simulator]')) { icon = 'fa-cube'; color = 'text-cyan-500'; label = s.replace('[simulator]', '').trim(); }
+                                                else if (s.includes('[plan]')) { icon = 'fa-sitemap'; color = 'text-cyan-600'; label = s.replace('[plan]', '').trim(); }
+                                                else if (s.includes('[feedback]')) { icon = 'fa-sync'; color = 'text-amber-500'; label = s.replace('[feedback]', '').trim(); }
+                                                return (
+                                                    <div key={i} className={`flex items-start gap-2 p-1.5 rounded-lg text-[10px] ${i === orchestrationLog.length - 1 && autoOrchestrating ? 'bg-indigo-50 animate-pulse' : ''}`}>
+                                                        <i className={`fas ${icon} ${color} mt-0.5 w-3.5 text-center`}></i>
+                                                        <span className={`flex-1 font-mono ${color}`}>{label}</span>
+                                                        {badge && <span className={`shrink-0 text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                                                            badge.includes('✗') || badge === 'failed' ? 'text-rose-500 border-rose-200 bg-rose-50' :
+                                                            badge.includes('✓') || badge === 'done' ? 'text-emerald-600 border-emerald-200 bg-emerald-50' :
+                                                            'text-indigo-500 border-indigo-200 bg-indigo-50'
+                                                        }`}>{badge}</span>}
+                                                    </div>
+                                                );
+                                            })}
+                                            {autoOrchestrating && (
+                                                <div className="flex items-center gap-2 p-1.5 text-[10px] text-indigo-600 font-bold">
+                                                    <i className="fas fa-circle-notch fa-spin"></i> Live — waiting for next event...
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                         {/* Orchestration log — inside runbook, gated by Logs toggle */}
                         {!collapsedSections.logs && (
                             <div className="border-t border-slate-200">
