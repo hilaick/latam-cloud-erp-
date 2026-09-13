@@ -684,7 +684,7 @@ import SimulationConstellation from './SimulationConstellation3D.jsx';
 import SpawnTreeVisualizer from './SpawnTreeVisualizer.jsx';
 
 /* ── Main Component ── */
-export default function AgenticOrchestrationPanel({ project, onUpdateProject }) {
+export default function AgenticOrchestrationPanel({ project, onUpdateProject, modelName = 'glm-5.1' }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(project?.retroactiveSimulation || project?.agenticDryRun || null);
   const [error, setError] = useState(null);
@@ -746,6 +746,11 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
   const timerRef = useRef(null);
 
   const token = sessionStorage.getItem('hermes_access_token');
+
+  // Agent model label for the spawn tree — the simulation trace may carry model info
+  // per step (AgenticSimulator reads HermesConfig.delegation_model); fall back to the
+  // prop passed by the parent (defaults to the configured 'glm-5.1'), never a stale hardcode.
+  const traceModel = (result?.trace || []).find(s => s.model)?.model || result?.model || modelName;
 
   // ── Extract resources from project data — merge mapperNodes + targetArchitecture ──
   const resources = useMemo(() => {
@@ -1758,8 +1763,9 @@ export default function AgenticOrchestrationPanel({ project, onUpdateProject }) 
             <SpawnTreeVisualizer
               projectId={project?.id}
               simulationTrace={result?.trace || []}
-              isActive={!!result || isSimulating}
+              isActive={!!result || loading}
               mode={result ? 'simulation' : 'execution'}
+              modelName={traceModel}
             />
           </div>
 

@@ -27,7 +27,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function TreeNode({ node, children, isRoot }) {
+function TreeNode({ node, children, isRoot, modelName }) {
   const cfg = STATUS_COLORS[node.status?.toLowerCase()] || STATUS_COLORS.pending;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
@@ -61,7 +61,7 @@ function TreeNode({ node, children, isRoot }) {
         )}
         {isRoot && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '4px' }}>
-            <span style={{ fontSize: '8px', color: '#a78bfa' }}>glm-5.2</span>
+            <span style={{ fontSize: '8px', color: '#a78bfa' }}>{node.model || modelName}</span>
             <StatusBadge status={node.status || 'running'} />
           </div>
         )}
@@ -91,7 +91,7 @@ function TreeNode({ node, children, isRoot }) {
   );
 }
 
-export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActive, mode = 'execution' }) {
+export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActive, mode = 'execution', modelName = 'glm-5.1' }) {
   const [progress, setProgress] = useState({ operations: [], spawnTree: { nodes: [], edges: [] } });
   const [loading, setLoading] = useState(false);
   const intervalRef = useRef(null);
@@ -120,12 +120,12 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
   const executionTree = useMemo(() => {
     const { nodes, edges } = progress.spawnTree;
     if (!nodes?.length) return null;
-    const rootNode = nodes.find(n => n.id === 'main') || { id: 'main', label: 'Main Orchestrator', status: 'running', model: 'glm-5.2' };
+    const rootNode = nodes.find(n => n.id === 'main') || { id: 'main', label: 'Main Orchestrator', status: 'running', model: modelName };
     const children = nodes
       .filter(n => n.id !== 'main')
       .map(n => ({ node: n, children: [] }));
     return { node: rootNode, children };
-  }, [progress]);
+  }, [progress, modelName]);
 
   // Build tree from simulation trace
   const simulationTree = useMemo(() => {
@@ -138,7 +138,7 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
           id: agent,
           label: agent,
           status: step.result === 'fail' ? 'failed' : step.result === 'simulated' ? 'simulated' : 'pass',
-          model: 'glm-5.2',
+          model: step.model || modelName,
           server: step.target || '',
           operations: [],
         };
@@ -153,10 +153,10 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
     });
     const childNodes = Object.values(agents).filter(a => a.id !== 'Main Orchestrator' && a.id !== 'System');
     return {
-      node: { id: 'main', label: 'Main Orchestrator', status: 'running', model: 'glm-5.2' },
+      node: { id: 'main', label: 'Main Orchestrator', status: 'running', model: modelName },
       children: childNodes.map(n => ({ node: n, children: [] })),
     };
-  }, [simulationTrace]);
+  }, [simulationTrace, modelName]);
 
   const tree = mode === 'simulation' ? simulationTree : executionTree;
 
@@ -194,7 +194,7 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
       {/* Spawn Tree */}
       {tree ? (
         <div style={{ overflowX: 'auto', padding: '8px 0', minHeight: '120px', display: 'flex', justifyContent: 'center' }}>
-          <TreeNode node={tree.node} children={tree.children} isRoot />
+          <TreeNode node={tree.node} children={tree.children} isRoot modelName={modelName} />
         </div>
       ) : (
         <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '11px', padding: '20px' }}>
