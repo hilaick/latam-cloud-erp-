@@ -400,13 +400,17 @@ When done, report what you actually executed, the verification commands you ran,
             # fully successful provision/verify run, and a successful idempotent
             # re-run reports 'already exists / verified'. Both ARE success.
             out_l = (result.stdout or '')
+            failure_markers = ['❌', 'blocker', 'cannot create', 'consistently fails',
+                               'all failed', 'exhausted', 'unable to', 'no success',
+                               'failed to create', 'FAILED:', 'ERROR:']
+            explicit_failure = any(fm in out_l.lower() for fm in failure_markers)
             substantive = len(out_l.strip()) > 200 and any(tok in out_l.lower() for tok in [
                 'provisioned', 'created', 'verified', 'complete', 'completed',
                 'already exist', 'exists', 'success', 'active',
                 'all verified', 'ready', 'finished', 'done',
                 'provisioning complete', 'migration complete',
                 'already provisioned', 'no new creation needed', 'already exists',
-            ])
+            ]) and not explicit_failure
             if substantive and not transient:
                 logger.info(f"[orchestration:{project_id}] {phase} agent reported substantive completion (rc={result.returncode}) — treating as success.")
                 return True, result.stdout.strip(), None
@@ -414,7 +418,9 @@ When done, report what you actually executed, the verification commands you ran,
             # exits non-zero on 'max iterations reached' AFTER finishing the work.
             # Verification reports ("All infrastructure is verified", "already exist",
             # full ShowServer/volume/EIP dumps) prove the phase completed.
-            if len(out_l.strip()) > 1000 and not transient:
+            # BUT: an explicit blocker/failure in the report MUST override this —
+            # the agent saying "❌ BLOCKER: API cannot..." is NOT success.
+            if len(out_l.strip()) > 1000 and not transient and not explicit_failure:
                 logger.info(f"[orchestration:{project_id}] {phase} agent completed with rc={result.returncode} but has substantive verification output — treating as success.")
                 return True, result.stdout.strip(), None
             if result.returncode == 0 and not transient:
