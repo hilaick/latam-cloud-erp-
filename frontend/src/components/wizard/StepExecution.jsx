@@ -271,8 +271,23 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
     const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
     const [phaseStatus, setPhaseStatus] = useState({}); // { PHASE_4_X: 'completed'|'failed'|'running' }
+    const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
+    const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
+    const [dryRunResult, setDryRunResult] = useState(null);
+    const [showDryRunModal, setShowDryRunModal] = useState(false);
+    const [dryRunLoading, setDryRunLoading] = useState(false);
+    const [externalExecutions, setExternalExecutions] = useState(null);
+    const [activeHermesSessions, setActiveHermesSessions] = useState(null);
+    const [liveFeed, setLiveFeed] = useState([]);
+    const [inferredPhase, setInferredPhase] = useState(null);
+    const [sessionStats, setSessionStats] = useState(null);
+    const [lastToolCall, setLastToolCall] = useState(null);
+    const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
+    const [polledAt, setPolledAt] = useState(null); // last poll timestamp
+    const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
     // ── Animated Story (Cortex XSIAM) derived values ──
-    // Parse liveCurrentPhase, fallback to last '[phase]' log line
+    // ALL required state (phaseContent, phaseStatus, completedOrchPhases, etc.)
+    // is declared above — safe from TDZ.
     const storyCurrentPhase = (() => {
         if (liveCurrentPhase) return liveCurrentPhase;
         if (!orchestrationLog?.length) return null;
@@ -322,21 +337,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
             };
         });
     })();
-    const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
-    const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
-    const [dryRunResult, setDryRunResult] = useState(null);
-    const [showDryRunModal, setShowDryRunModal] = useState(false);
-    const [dryRunLoading, setDryRunLoading] = useState(false);
-    const [externalExecutions, setExternalExecutions] = useState(null);
-    const [activeHermesSessions, setActiveHermesSessions] = useState(null);
-    const [liveFeed, setLiveFeed] = useState([]);
-    const [inferredPhase, setInferredPhase] = useState(null);
-    const [sessionStats, setSessionStats] = useState(null);
-    const [lastToolCall, setLastToolCall] = useState(null);
-    const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
-    const [polledAt, setPolledAt] = useState(null); // last poll timestamp
-    const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
-
     // Detect migration services active for this project from targetArchitecture
     // Categories match Phase 3.4a Strategic Tooling:
     //   Compute Migration → SMS (Server Migration Service) — includes EVS volumes of servers
