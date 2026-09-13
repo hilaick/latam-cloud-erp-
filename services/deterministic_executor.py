@@ -77,6 +77,9 @@ class DeterministicExecutor:
         p = self.pdata
         source_ips = []
         source_names = {}
+        source_sms_ids = {}   # name -> SMS source id (for <src_id>)
+        target_ecs_ids = {}   # name -> target ECS id (for <ecs_id>)
+        target_eips = {}      # name -> target EIP
         # PRIMARY: executionContext.source_servers — enriched by agent after phase 4.2
         # (has EIP, private_ip, sms_id, disk info per source server)
         ec = p.get('executionContext', {}) or {}
@@ -84,10 +87,35 @@ class DeterministicExecutor:
             for s in (ec.get('source_servers') or []):
                 name = s.get('name') or ''
                 ip = s.get('eip') or s.get('public_ip_address') or s.get('public_ip') or ''
+                sms_id = s.get('sms_id') or s.get('smsId') or ''
+                t_ecs = s.get('target_ecs_id') or s.get('targetEcsId') or s.get('vm_id') or ''
+                t_eip = s.get('target_eip') or ''
                 if name:
                     source_names[name] = ip
+                if sms_id:
+                    source_sms_ids[name] = sms_id
+                if t_ecs:
+                    target_ecs_ids[name] = t_ecs
+                if t_eip:
+                    target_eips[name] = t_eip
                 if ip and ip not in source_ips:
                     source_ips.append(ip)
+        # executionContext.target_servers / target_ecs_map — the 4.3 agent's
+        # authoritative source->target mapping (persisted by the feedback loop)
+        for t in (ec.get('target_servers') or ec.get('target_ecs_map') or []):
+            if not isinstance(t, dict):
+                continue
+            nm = t.get('source_name') or t.get('name') or t.get('source') or ''
+            t_id = t.get('id') or t.get('target_id') or t.get('ecs_id') or t.get('vm_id') or ''
+            t_eip = t.get('eip') or t.get('public_ip') or ''
+            s_id = t.get('sms_id') or t.get('source_sms_id') or ''
+            if nm:
+                if t_id:
+                    target_ecs_ids.setdefault(nm, t_id)
+                if t_eip:
+                    target_eips.setdefault(nm, t_eip)
+                if s_id:
+                    source_sms_ids.setdefault(nm, s_id)
         ta = p.get('targetArchitecture', {}) or {}
         for s in (ta.get('compute', []) or []):
             name = s.get('name') or s.get('source_name') or ''
@@ -125,6 +153,9 @@ class DeterministicExecutor:
             'source_ip': source_ips[0] if source_ips else '',
             'source_ips': source_ips,
             'source_names': source_names,
+            'source_sms_ids': source_sms_ids,   # for <src_id>
+            'target_ecs_ids': target_ecs_ids,   # for <ecs_id>
+            'target_eips': target_eips,          # for <target_eip>
             'mig_project_id': mig_project_id,
             'region': self.target_region,
             'profile': f"erp-{self.project_id[:8]}" if self.project_id else '',
@@ -136,10 +167,29 @@ class DeterministicExecutor:
     def resolve_cmd(self, cmd, ctx=None):
         ctx = ctx or self._resolve_ctx()
         out = cmd
+        # Determine WHICH source server this command targets — the plan's
+        # target_resource (source server name) or the task name embedded in the cmd.
+        target_name = ''
+        for _tn in list(ctx.get('source_names', {}).keys()):
+            if _tn in cmd or f"migrate-{_tn}" in cmd:
+                target_name = _tn
+                break
         for pattern, key in PLACEHOLDER_PATTERNS:
             val = ctx.get(key, '')
             if val:
                 out = re.sub(pattern, str(val), out)
+        # Per-target resolution: <src_id> = source's SMS id, <ecs_id> = the
+        # TARGET ECS id, <target_eip> = target EIP — keyed by the source name.
+        if target_name:
+            sid = (ctx.get('source_sms_ids') or {}).get(target_name, '')
+            tid = (ctx.get('target_ecs_ids') or {}).get(target_name, '')
+            teip = (ctx.get('target_eips') or {}).get(target_name, '')
+            if sid:
+                out = out.replace('<src_id>', sid)
+            if tid:
+                out = out.replace('<ecs_id>', tid)
+            if teip:
+                out = out.replace('<target_eip>', teip)
         # <source_ip> per named target: replace name-keyed tokens
         for name, ip in ctx.get('source_names', {}).items():
             out = out.replace(f'<ip_{name}>', ip)
