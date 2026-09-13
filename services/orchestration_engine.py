@@ -463,9 +463,21 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
 
         try:
             # ── Initialize pipeline state ──
+            # Seed completed_phases from persisted delegate_tasks so a resumed
+            # chain (after Flask restart/crash) knows which phases already ran
+            # and skips them — instead of starting empty and re-running them.
+            completed_seed = []
+            try:
+                _proj_seed = ProjectData.query.get(project_id)
+                if _proj_seed:
+                    _dt_seed = json.loads(_proj_seed.delegate_tasks or "[]")
+                    completed_seed = [t.get("phase") for t in _dt_seed
+                                      if t.get("status") == "COMPLETED" and t.get("phase")]
+            except Exception:
+                completed_seed = []
             pipeline_info = {
                 'status': 'running',
-                'completed_phases': [],
+                'completed_phases': completed_seed,
                 'failed_phase': None,
                 'current_phase': None,
                 'log': [],

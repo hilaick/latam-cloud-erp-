@@ -80,8 +80,7 @@ def resume_stale_pipelines(app):
                         token = create_access_token(identity=str(User.query.first().id))
                         resp = requests.post(
                             f"http://127.0.0.1:9119/api/execution/{st.project_id}/orchestrate",
-                            json={"start_from": start_from,
-                                   "restart_phase": st.current_phase if st.current_phase in all_phases else None},
+                            json={"start_from": start_from},
                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                             timeout=10,
                         )
