@@ -62,6 +62,44 @@ def apply_agent_resolutions(project_id, pdata, agent_report=""):
             vid = m.group(1)
             key = f'<task_id>' if 'task' in m.group(0).lower() else f'<ecs_id>'
             values.setdefault(key, vid)
+        # ── 2b. Mine the agent's explicit source→target mapping table ──
+        # Agents output lines like:
+        #   SOURCE_1_SMS_ID=496639ff-...   TARGET_1_ECS_ID=35e88084-...
+        #   | ecs-...-0001 | 496639ff-... | 111.119.235.186 | 35e88084-... | 149.232.132.31 | ...
+        # Parse NAMED pairs (SOURCE_1/TARGET_1) and pipe-table rows; persist to
+        # executionContext.target_ecs_map so later phases resolve <ecs_id>
+        # correctly (this is the systemic handoff the factory was missing).
+        pattern_named = re.findall(r'(SOURCE|TARGET)_(\d+)_(SMS_ID|ECS_ID|EIP)\s*=\s*([A-Za-z0-9.\-]{8,40})', agent_report)
+        if pattern_named:
+            mapping = []
+            groups = {}
+            for m in pattern_named:
+                groups.setdefault(m[1], {})[m[2]] = m[3]
+            # also match source-name pipe rows (generic — any server name token)
+            pipe_rows = re.findall(r'\|[^|]*\|([0-9a-f\-]{32,36})\|[^|]*\|([0-9a-f\-]{32,36})\|[^|]*\|([0-9.]+)\|', agent_report)
+            row_sms = {}
+            for i, (sms, ecs, eip) in enumerate(pipe_rows, 1):
+                if i not in groups:
+                    groups[str(i)] = {'SMS_ID': sms, 'ECS_ID': ecs, 'EIP': eip}
+            # map source server names from source_servers order
+            src_names = [s.get('name', '') for s in src_servers]
+            for num, g in groups.items():
+                idx = int(num) - 1
+                nm = src_names[idx] if idx < len(src_names) and src_names[idx] else f'source-{num}'
+                mapping.append({
+                    'source_name': nm,
+                    'sms_id': g.get('SMS_ID', ''),
+                    'ecs_id': g.get('ECS_ID', ''),
+                    'eip': g.get('EIP', ''),
+                })
+            if mapping:
+                ctx['target_ecs_map'] = mapping
+                # per-name placeholder values
+                for en in mapping:
+                    if en.get('sms_id'):
+                        values[f'<src_id_{en["source_name"]}>'] = en['sms_id']
+                    if en.get('ecs_id'):
+                        values[f'<ecs_id_{en["source_name"]}>'] = en['ecs_id']
 
     # ── 3. Substitute into plan step commands (only where placeholder still present) ──
     substituted = 0
