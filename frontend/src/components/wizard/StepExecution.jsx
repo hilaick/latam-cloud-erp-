@@ -248,6 +248,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [crState, setCrState] = useState('idle'); // idle, pending, approved
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
+    const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Phase-level resume state (Fix #4)
     const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
@@ -455,6 +456,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (st.phase_status) setPhaseStatus(st.phase_status);
                 // Update completed phases
                 if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                // Track live current phase (from status — authoritative, survives
+                // the parent's slower /api/execution/<id> poll)
+                if (st.current_phase || st.status === 'running') {
+                    setLiveCurrentPhase(st.current_phase || null);
+                }
                 // Update failed phase
                 setFailedOrchPhaseIdx(st.failed_phase ?? null);
                 // Update log — only append new lines
@@ -858,6 +864,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     if (st.status === 'completed') updatePhase('COMPLETED', 'DONE');
                                     if (st.phase_status) setPhaseStatus(st.phase_status);
                                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
+                                    if (st.current_phase) setLiveCurrentPhase(st.current_phase); else if (st.status !== 'running') setLiveCurrentPhase(null);
                                     if (st.log) setOrchestrationLog(st.log);
                                     if (st.external_executions) setExternalExecutions(st.external_executions);
                                     else setExternalExecutions(null);
@@ -1404,11 +1411,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                             { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: 'fa-chart-line', color: '#06b6d4', done: completedOrchPhases.has('PHASE_4_5') },
                                             { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', done: completedOrchPhases.has('PHASE_4_6') },
                                             { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: 'fa-trash-alt', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') },
-                                        ].map(ph => (
-                                            <div key={ph.n} className={`rounded-lg border-2 p-3 flex items-center justify-between transition-all ${ph.done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white hover:border-purple-300'}`}>
+                                        ].map(ph => {
+                                            const isRunning = liveCurrentPhase === `PHASE_4_${ph.n}` && autoOrchestrating;
+                                            return (
+                                            <div key={ph.n} className={`rounded-lg border-2 p-3 flex items-center justify-between transition-all ${
+                                                ph.done ? 'border-emerald-200 bg-emerald-50' :
+                                                isRunning ? 'border-indigo-300 bg-indigo-50' :
+                                                'border-slate-200 bg-white hover:border-purple-300'
+                                            }`}>
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0" style={{ background: ph.done ? '#10b981' : ph.color }}>
-                                                        {ph.done ? <i className="fas fa-check text-[8px]"></i> : ph.n}
+                                                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0" style={{ background: ph.done ? '#10b981' : isRunning ? '#6366f1' : ph.color }}>
+                                                        {ph.done ? <i className="fas fa-check text-[8px]"></i> : isRunning ? <i className="fas fa-circle-notch fa-spin text-[8px]"></i> : ph.n}
                                                     </span>
                                                     <div className="min-w-0">
                                                         <div className="text-[9px] font-black text-slate-600 truncate">4.{ph.n} {ph.label}</div>
@@ -1428,6 +1441,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                             </button>
                                                         )}
                                                     </div>
+                ) : isRunning ? (
+                                                    <span className="flex items-center gap-1 text-[8px] font-black uppercase text-indigo-600 shrink-0">
+                                                        <i className="fas fa-circle-notch fa-spin"></i> Running
+                                                    </span>
                 ) : (
                                                     <button
                                                         onClick={() => handleOrchestrateAll(ph.n - 1, `PHASE_4_${ph.n}`)}
@@ -1439,7 +1456,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     </button>
                                                     )}
                                             </div>
-                                        ))}
+                                        );
+                                        })}
                                     </div>
                                     </div>
                                     )}
