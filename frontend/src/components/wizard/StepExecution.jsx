@@ -249,7 +249,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
+    const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Most recent meaningful activity line (agent/det) for the running-phase card
+    // MUST be declared after orchestrationLog (TDZ) — the minifier renames
+    // cross-references and a use-before-init becomes `Cannot access 'Me'`.
     const lastActivityLine = (() => {
         if (!liveCurrentPhase || !orchestrationLog?.length) return '';
         for (let i = orchestrationLog.length - 1; i >= 0; i--) {
@@ -260,7 +263,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         }
         return '';
     })();
-    const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Phase-level resume state (Fix #4)
     const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
     const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
@@ -1524,46 +1526,76 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </button>
                             </div>
                         </div>
-                        {/* 🎬 ACTIVITY FEED — chat-room style live event stream */}
+                        {/* 🎬 ACTIVITY CONSOLE — observability-style live ops view */}
                         {!collapsedSections.activity && (
-                            <div className="border-t border-slate-200">
-                                <div className="m-3 rounded-xl border border-indigo-200 bg-white max-h-72 overflow-y-auto shadow-inner">
-                                    {orchestrationLog.length === 0 && !autoOrchestrating ? (
-                                        <div className="p-4 text-slate-400 italic text-[10px]">No activity yet — run a phase to see the live event feed.</div>
-                                    ) : (
-                                        <div className="p-3 space-y-1">
-                                            {orchestrationLog.map((line, i) => {
-                                                const s = String(line);
-                                                let icon = 'fa-circle', color = 'text-slate-400', label = s, badge = null;
-                                                if (s.includes('[agent]')) { icon = 'fa-robot'; color = 'text-indigo-500'; label = s.replace('[agent]', '').trim(); }
-                                                else if (s.includes('[det]') && s.includes('✓')) { icon = 'fa-check-circle'; color = 'text-emerald-500'; label = s.replace('[det]', '').trim(); badge = 'det ✓'; }
-                                                else if (s.includes('[det]') && s.includes('✗')) { icon = 'fa-times-circle'; color = 'text-rose-500'; label = s.replace('[det]', '').trim(); badge = 'det ✗'; }
-                                                else if (s.includes('[phase]')) { icon = 'fa-play-circle'; color = 'text-purple-500'; label = s.replace('[phase]', '').trim(); badge = 'phase'; }
-                                                else if (s.includes('[done]')) { icon = 'fa-flag-checkered'; color = 'text-emerald-600'; label = s.replace('[done]', '').trim(); badge = 'done'; }
-                                                else if (s.includes('[fail]')) { icon = 'fa-exclamation-triangle'; color = 'text-rose-600'; label = s.replace('[fail]', '').trim(); badge = 'failed'; }
-                                                else if (s.includes('[ctx]')) { icon = 'fa-file-alt'; color = 'text-slate-400'; label = s.replace('[ctx]', '').trim(); }
-                                                else if (s.includes('[simulator]')) { icon = 'fa-cube'; color = 'text-cyan-500'; label = s.replace('[simulator]', '').trim(); }
-                                                else if (s.includes('[plan]')) { icon = 'fa-sitemap'; color = 'text-cyan-600'; label = s.replace('[plan]', '').trim(); }
-                                                else if (s.includes('[feedback]')) { icon = 'fa-sync'; color = 'text-amber-500'; label = s.replace('[feedback]', '').trim(); }
-                                                return (
-                                                    <div key={i} className={`flex items-start gap-2 p-1.5 rounded-lg text-[10px] ${i === orchestrationLog.length - 1 && autoOrchestrating ? 'bg-indigo-50 animate-pulse' : ''}`}>
-                                                        <i className={`fas ${icon} ${color} mt-0.5 w-3.5 text-center`}></i>
-                                                        <span className={`flex-1 font-mono ${color}`}>{label}</span>
-                                                        {badge && <span className={`shrink-0 text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
-                                                            badge.includes('✗') || badge === 'failed' ? 'text-rose-500 border-rose-200 bg-rose-50' :
-                                                            badge.includes('✓') || badge === 'done' ? 'text-emerald-600 border-emerald-200 bg-emerald-50' :
-                                                            'text-indigo-500 border-indigo-200 bg-indigo-50'
-                                                        }`}>{badge}</span>}
+                            <div className="border-t border-slate-200 p-3">
+                                <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl">
+                                    {/* Header strip */}
+                                    <div className="px-3 py-2 bg-slate-900/80 border-b border-slate-800 flex items-center gap-2 flex-wrap">
+                                        <i className="fas fa-radar text-emerald-400 text-xs"></i>
+                                        <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-300">AI Engine</span>
+                                        <span className="text-[7px] font-bold uppercase tracking-widest text-slate-500">Correlation · Dedupe · Root Cause</span>
+                                        <span className="ml-auto flex items-center gap-1 text-[7px] font-mono text-emerald-400">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                            {autoOrchestrating ? 'LIVE' : 'IDLE'}
+                                        </span>
+                                    </div>
+                                    {/* Stat tiles */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-800/60">
+                                        {[
+                                            { label: 'CONCURRENCE', value: completedOrchPhases?.size || 0, sub: `${completedOrchPhases?.size || 0}/7 phases`, cls: 'text-emerald-400' },
+                                            { label: 'AGENT TASKS', value: orchestrationLog.filter(l => String(l).includes('[agent]')).length, sub: 'live actions', cls: 'text-indigo-400' },
+                                            { label: 'DET STEPS', value: orchestrationLog.filter(l => String(l).includes('[det]')).length, sub: 'deterministic', cls: 'text-cyan-400' },
+                                            { label: 'FAILURES', value: orchestrationLog.filter(l => String(l).includes('✗') || String(l).includes('[fail]')).length, sub: 'in window', cls: orchestrationLog.some(l => String(l).includes('[fail]')) ? 'text-rose-400' : 'text-amber-400' },
+                                        ].map(t => (
+                                            <div key={t.label} className="bg-slate-950 px-3 py-2">
+                                                <div className="text-[6.5px] font-black uppercase tracking-[0.18em] text-slate-500">{t.label}</div>
+                                                <div className={`text-lg font-black font-mono leading-tight ${t.cls}`}>{t.value}</div>
+                                                <div className="text-[6.5px] font-mono text-slate-600">{t.sub}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {/* Streaming event feed */}
+                                    <div className="max-h-60 overflow-y-auto font-mono">
+                                        {orchestrationLog.length === 0 && !autoOrchestrating ? (
+                                            <div className="p-4 text-slate-500 italic text-[10px]">No events yet — run a phase to see the live ops stream.</div>
+                                        ) : (
+                                            <div className="p-2 space-y-px">
+                                                {orchestrationLog.map((line, i) => {
+                                                    const s = String(line);
+                                                    let icon = 'fa-circle', color = 'text-slate-500', label = s, badge = null;
+                                                    if (s.includes('[agent]')) { icon = 'fa-robot'; color = 'text-indigo-400'; label = s.replace('[agent]', '').trim(); badge = 'agent'; }
+                                                    else if (s.includes('[det]') && s.includes('✓')) { icon = 'fa-check-circle'; color = 'text-emerald-400'; label = s.replace('[det]', '').trim(); badge = 'det ✓'; }
+                                                    else if (s.includes('[det]') && s.includes('✗')) { icon = 'fa-times-circle'; color = 'text-rose-400'; label = s.replace('[det]', '').trim(); badge = 'det ✗'; }
+                                                    else if (s.includes('[phase]')) { icon = 'fa-play-circle'; color = 'text-purple-400'; label = s.replace('[phase]', '').trim(); badge = 'phase'; }
+                                                    else if (s.includes('[done]')) { icon = 'fa-flag-checkered'; color = 'text-emerald-300'; label = s.replace('[done]', '').trim(); badge = 'done'; }
+                                                    else if (s.includes('[fail]')) { icon = 'fa-exclamation-triangle'; color = 'text-rose-400'; label = s.replace('[fail]', '').trim(); badge = 'failed'; }
+                                                    else if (s.includes('[ctx]')) { icon = 'fa-file-alt'; color = 'text-slate-500'; label = s.replace('[ctx]', '').trim(); }
+                                                    else if (s.includes('[simulator]')) { icon = 'fa-cube'; color = 'text-cyan-400'; label = s.replace('[simulator]', '').trim(); }
+                                                    else if (s.includes('[plan]')) { icon = 'fa-sitemap'; color = 'text-cyan-500'; label = s.replace('[plan]', '').trim(); }
+                                                    else if (s.includes('[feedback]')) { icon = 'fa-sync'; color = 'text-amber-400'; label = s.replace('[feedback]', '').trim(); }
+                                                    return (
+                                                        <div key={i} className={`flex items-start gap-2 px-2 py-1 rounded text-[9px] ${
+                                                            i === orchestrationLog.length - 1 && autoOrchestrating ? 'bg-slate-900/80' : ''
+                                                        }`}>
+                                                            <i className={`fas ${icon} ${color} mt-0.5 w-3 text-center`}></i>
+                                                            <span className={`flex-1 ${color}`}>{label}</span>
+                                                            {badge && <span className={`shrink-0 text-[6.5px] font-black uppercase px-1 py-px rounded border ${
+                                                                badge.includes('✗') || badge === 'failed' ? 'text-rose-400 border-rose-900 bg-rose-950' :
+                                                                badge.includes('✓') || badge === 'done' ? 'text-emerald-400 border-emerald-900 bg-emerald-950' :
+                                                                'text-indigo-400 border-indigo-900 bg-indigo-950'
+                                                            }`}>{badge}</span>}
+                                                        </div>
+                                                    );
+                                                })}
+                                                {autoOrchestrating && (
+                                                    <div className="flex items-center gap-2 px-2 py-1 text-[9px] text-emerald-400 font-bold">
+                                                        <i className="fas fa-circle-notch fa-spin"></i> Streaming — waiting for next event...
                                                     </div>
-                                                );
-                                            })}
-                                            {autoOrchestrating && (
-                                                <div className="flex items-center gap-2 p-1.5 text-[10px] text-indigo-600 font-bold">
-                                                    <i className="fas fa-circle-notch fa-spin"></i> Live — waiting for next event...
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
