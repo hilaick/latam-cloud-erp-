@@ -249,7 +249,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
-    const [lifecycleTab, setLifecycleTab] = useState('story'); // 'circle' | 'story' — Cortex-style animation default
+    const [lifecycleTab, setLifecycleTab] = useState('circle'); // 'circle' | 'story' — Lifecycle Story (Cortex-style) second
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Most recent meaningful activity line (agent/det) for the running-phase card
     // MUST be declared after orchestrationLog (TDZ) — the minifier renames
@@ -285,7 +285,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [phaseContent, setPhaseContent] = useState(null); // dynamic phase content from execution plan
     const [polledAt, setPolledAt] = useState(null); // last poll timestamp
     const [activeService, setActiveService] = useState('all'); // service filter: all | sms | drs | oms
-    // ── Animated Story (Cortex XSIAM) derived values ──
+    // ── Lifecycle Story (Cortex XSIAM) derived values ──
     // ALL required state (phaseContent, phaseStatus, completedOrchPhases, etc.)
     // is declared above — safe from TDZ.
     const storyCurrentPhase = (() => {
@@ -1121,16 +1121,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </button>
                         {!collapsedSections.lifecycle && (
                         <div className="px-2 pb-4">
-                        {/* Tabs: Cortex-style animated story (default) | classic circle graph */}
+                        {/* Tabs: Circle Graph (default) | Lifecycle Story (XSIAM-style) */}
                         <div className="flex items-center gap-1 px-1 pb-2">
-                            <button
-                                onClick={() => setLifecycleTab('story')}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                                    lifecycleTab === 'story' ? 'bg-slate-900 text-emerald-300 shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                }`}
-                            >
-                                <i className={`fas ${lifecycleTab === 'story' ? 'fa-route' : 'fa-route'} text-[8px]`}></i> Animated Story
-                            </button>
                             <button
                                 onClick={() => setLifecycleTab('circle')}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
@@ -1138,6 +1130,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 }`}
                             >
                                 <i className="fas fa-chart-pie text-[8px]"></i> Circle Graph
+                            </button>
+                            <button
+                                onClick={() => setLifecycleTab('story')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                    lifecycleTab === 'story' ? 'bg-slate-900 text-emerald-300 shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                }`}
+                            >
+                                <i className="fas fa-route text-[8px]"></i> Lifecycle Story
                             </button>
                         </div>
 
@@ -1236,7 +1236,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="flex items-center gap-2 min-w-0">
                                         <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-400 xs-live-dot shadow-[0_0_8px_rgba(52,211,153,0.9)]"></span>
                                         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-200 truncate">
-                                            <i className="fas fa-route text-emerald-400 mr-1.5"></i>Attack Story — Migration Lifecycle
+                                            <i className="fas fa-route text-emerald-400 mr-1.5"></i>Lifecycle Story — Migration Journey
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -1607,17 +1607,9 @@ t					</div>
                                         </div>
                                         <span className="flex items-center gap-2">
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); toggleSection('logs'); }}
-                                                className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
-                                                    !collapsedSections.logs ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'
-                                                }`}
-                                            >
-                                                <i className="fas fa-terminal mr-1"></i> Logs {!collapsedSections.logs ? '▲' : '▼'}
-                                            </button>
-                                            <button
                                                 onClick={(e) => { e.stopPropagation(); toggleSection('activity'); }}
                                                 className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
-                                                    !collapsedSections.activity ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-500 border-indigo-200'
+                                                    !collapsedSections.activity ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'
                                                 }`}
                                             >
                                                 <i className="fas fa-stream mr-1"></i> Activity {!collapsedSections.activity ? '▲' : '▼'}
@@ -1806,8 +1798,8 @@ t					</div>
                                 </div>
                             </div>
                         )}
-                        {/* Orchestration log — inside runbook, gated by Logs toggle */}
-                        {!collapsedSections.logs && (
+                        {/* Orchestration log — inside runbook, part of the unified Activity view */}
+                        {!collapsedSections.activity && (
                             <div className="border-t border-slate-200">
                                 <div className="bg-slate-900 rounded-xl m-3 p-4 max-h-64 overflow-y-auto font-mono text-[10px] border border-slate-700 shadow-inner">
                                     {orchestrationLog.length === 0 && !autoOrchestrating ? (
