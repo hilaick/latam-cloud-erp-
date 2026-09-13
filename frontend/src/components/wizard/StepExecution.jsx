@@ -249,6 +249,17 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
+    // Most recent meaningful activity line (agent/det) for the running-phase card
+    const lastActivityLine = (() => {
+        if (!liveCurrentPhase || !orchestrationLog?.length) return '';
+        for (let i = orchestrationLog.length - 1; i >= 0; i--) {
+            const l = String(orchestrationLog[i]);
+            if (l.includes('[agent]') || l.includes('[det]') || l.includes('[phase]')) {
+                return l.replace(/^\[(agent|det|phase)\] ?/i, '').slice(0, 110);
+            }
+        }
+        return '';
+    })();
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Phase-level resume state (Fix #4)
     const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
@@ -1092,14 +1103,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     const y = 190 + 155 * Math.sin(angle);
                                     const phaseKey = `PHASE_4_${ph.n}`;
                                     let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
-                                    // Only mark phases as 'running' if the pipeline is ACTUALLY running
-                                    // (not from stale inferred_phase which defaults to PHASE_4_1 after a halt/failure)
-                                    if (autoOrchestrating && status === 'pending' && inferredPhase === phaseKey) status = 'running';
-                                    if (autoOrchestrating && status === 'pending' && inferredPhase && inferredPhase > phaseKey) status = 'completed';
-                                    if (autoOrchestrating && cloudState?.inferred_phase) {
-                                        if (status === 'pending' && cloudState.inferred_phase === phaseKey) status = 'running';
-                                        if (status === 'pending' && cloudState.inferred_phase > phaseKey) status = 'completed';
-                                    }
+                                    // Authoritative live status: phaseStatus (from status poll)
+                                    // + liveCurrentPhase. The old inferredPhase/cloudState
+                                    // detectors lag and mark WRONG phases as active.
+                                    if (autoOrchestrating && liveCurrentPhase === phaseKey) status = 'running';
+                                    if (autoOrchestrating && liveCurrentPhase && liveCurrentPhase > phaseKey && status !== 'running') status = 'completed';
                                     const bgColor = status === 'completed' ? '#10b981' : status === 'running' ? '#8b5cf6' : status === 'failed' ? '#ef4444' : '#fff';
                                     const txtColor = status === 'pending' ? ph.color : '#fff';
                                     const ringClass = status === 'running' ? 'animate-pulse' : '';
@@ -1425,6 +1433,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     </span>
                                                     <div className="min-w-0">
                                                         <div className="text-[9px] font-black text-slate-600 truncate">4.{ph.n} {ph.label}</div>
+                                                        {isRunning && (
+                                                            <div className="text-[7px] text-indigo-500 font-mono truncate max-w-[130px]">
+                                                                {lastActivityLine || 'agent working…'}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 {ph.done ? (
