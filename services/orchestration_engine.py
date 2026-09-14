@@ -36,7 +36,7 @@ _project_locks_guard = threading.Lock()
 # Maps project_id → { phase, status, log, started_at, thread }
 _running_pipelines = {}
 
-PIPELINE_TIMEOUT_SECONDS = 1800  # 30 minutes per phase
+PIPELINE_TIMEOUT_SECONDS = 3600  # 60 minutes per phase (was 1800/30min — too tight for SMS monitor/cutover)
 
 
 def _get_project_lock(project_id):

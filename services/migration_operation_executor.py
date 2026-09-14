@@ -92,7 +92,10 @@ MIGRATION_OPERATIONS = {
     },
     "SMS_TASK_CREATE": {
         "objective": "Create an SMS migration task and return the task_id. The task maps source server to target ECS with correct disk configuration.",
+        "deterministic_first": True,  # Try sms_task_creator before agent
         "approach": [
+            "DETERMINISTIC PATH: sms_task_creator.create_sms_task() queries source disks via ShowServer, target volumes via ShowServer, builds exact 1:1 disk payload with physical_volumes[] and --syncing=false. This is the PROVEN fix for SMS.0515.",
+            "If deterministic fails (source not registered, no EIP, etc): fall back to agent lane",
             "Search /root/.hermes/skills/ for 'SMS CreateTask' and read sms-api-cli-reference + huawei-cloud-sms-migration skills",
             "Read /root/.hermes/skills/devops/huawei-cloud-sms-migration/scripts/configure_sms_target.py — shows correct REST API approach with HMAC-SHA256",
             "IMPORTANT: Disk size in SMS API must be in GB (integer 80), NOT bytes (85899345920)",
@@ -102,12 +105,13 @@ MIGRATION_OPERATIONS = {
             "Get target EIP: hcloud EIP ListPublicips → match by device_id",
             "Create task: hcloud SMS CreateTask --cli-region={source_region} --cli-profile=erp-target",
             "  --source_server.id={source_server_id} --target_server.vm_id={target_server_id}",
-            "  --use_public_ip=true --migration_ip=<EIP> --type=MIGRATE_BLOCK --os_type=LINUX",
+            "  --use_public_ip=true --migration_ip=<EIP> --type=MIGRATE_FILE --os_type=LINUX",
+            "  --syncing=false (MANDATORY for no-LVM Linux — prevents vols_map NoneType crash)",
             "  --target_server.disks.1.name=/dev/vda --target_server.disks.1.device_use=BOOT",
             "  --target_server.disks.1.disk_id=<EVS_volume_id> --target_server.disks.1.size=80",
             "  --target_server.disks.1.physical_volumes.1.name=/dev/vda1 --target_server.disks.1.physical_volumes.1.device_use=OS",
             "  --target_server.disks.1.physical_volumes.1.mount_point=/ --target_server.disks.1.physical_volumes.1.file_system=ext4",
-            "  --auto_start=false --start_target_server=true",
+            "  --auto_start=false --start_target_server=true --exist_server=true",
         ],
         "troubleshooting": [
             "SMS.0202 (AK/SK auth failed): the SMS task uses the TARGET account's MASTER AK/SK. The source server's migproject must target the destination region. Update with: hcloud SMS UpdateServerName --source_id={source_server_id} --migprojectid=<migproject_id> --cli-region={source_region} --cli-profile=erp-target",
@@ -133,7 +137,9 @@ MIGRATION_OPERATIONS = {
     },
     "SMS_TASK_START": {
         "objective": "Start the SMS migration task. Task state must change from NOT_STARTED to RUNNING or SYNCING.",
+        "deterministic_first": True,
         "approach": [
+            "DETERMINISTIC PATH: sms_task_creator.start_sms_task() calls hcloud SMS UpdateTaskStatus --operation=start",
             "Run: hcloud SMS UpdateTaskStatus --task_id={task_id} --operation=start --cli-region={source_region} --cli-profile=erp-source",
         ],
         "troubleshooting": [
@@ -402,7 +408,67 @@ class MigrationOperationExecutor:
 
     @staticmethod
     def execute_operation(operation: str, context: dict, timeout: int = 600) -> dict:
-        """Execute an operation by delegating to the ERP's Hermes agent with warmed-up prompt."""
+        """Execute an operation — try deterministic first if available, then agent."""
+        op_def = MIGRATION_OPERATIONS.get(operation, {})
+
+        # ── DETERMINISTIC-FIRST PATH ──
+        # For SMS_TASK_CREATE, try sms_task_creator before spawning agent.
+        # This builds the exact 1:1 disk payload from live cloud state,
+        # preventing SMS.0515 (disk mismatch) and vols_map crash.
+        if op_def.get('deterministic_first') and operation == 'SMS_TASK_CREATE':
+            try:
+                from services.sms_task_creator import create_sms_task
+                src_id = context.get('source_server_id', '')
+                tgt_id = context.get('target_server_id', '')
+                src_region = context.get('source_region', 'ap-southeast-3')
+                tgt_region = context.get('target_region', 'la-north-2')
+                task_name = context.get('task_name', 'MigrationTask01')
+                mig_proj_id = context.get('mig_project_id', '')
+                mig_proj_name = context.get('mig_project_name', '')
+                os_type = context.get('os_type', 'LINUX')
+                migrate_type = context.get('migrate_type', 'MIGRATE_FILE')
+
+                if src_id and tgt_id:
+                    logger.info(f"[OP-EXEC] {operation}: trying deterministic sms_task_creator")
+                    MigrationOperationExecutor._emit_progress(operation, "deterministic_attempt", context)
+                    det_result = create_sms_task(
+                        source_sms_id=src_id,
+                        target_ecs_id=tgt_id,
+                        source_region=src_region,
+                        target_region=tgt_region,
+                        task_name=task_name,
+                        mig_project_id=mig_proj_id,
+                        mig_project_name=mig_proj_name,
+                        os_type=os_type,
+                        migrate_type=migrate_type,
+                    )
+                    if det_result.get('success'):
+                        logger.info(f"[OP-EXEC] {operation}: deterministic succeeded — task_id={det_result.get('task_id','')[:12]}")
+                        MigrationOperationExecutor._emit_progress(operation, "deterministic_succeeded", context,
+                            f"task_id={det_result.get('task_id','')[:12]}")
+                        return {
+                            'success': True,
+                            'operation': operation,
+                            'output': json.dumps({
+                                'task_id': det_result.get('task_id', ''),
+                                'command': det_result.get('command', ''),
+                                'source_disks': det_result.get('source_disks', []),
+                            }),
+                            'error': None,
+                            'tool': 'sms_task_creator (deterministic)',
+                        }
+                    else:
+                        logger.warning(f"[OP-EXEC] {operation}: deterministic failed — "
+                                     f"{det_result.get('error', 'unknown')[:100]}. Falling to agent lane.")
+                        MigrationOperationExecutor._emit_progress(operation, "deterministic_failed", context,
+                            det_result.get('error', '')[:100])
+                else:
+                    logger.warning(f"[OP-EXEC] {operation}: missing source_server_id or target_server_id — "
+                                 f"falling to agent lane")
+            except Exception as det_err:
+                logger.warning(f"[OP-EXEC] {operation}: deterministic exception: {det_err}. Falling to agent lane.")
+
+        # ── AGENT LANE (fallback or default) ──
         prompt = MigrationOperationExecutor.build_prompt(operation, context)
         logger.info(f"[OP-EXEC] Delegating {operation} to Hermes agent (prompt: {len(prompt)} chars)")
         
