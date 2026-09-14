@@ -1,0 +1,39 @@
+{
+  "name": "migrate0002",
+  "type": "MIGRATE_FILE",
+  "os_type": "LINUX",
+  "auto_start": false,
+  "start_target_server": true,
+  "use_public_ip": true,
+  "migration_ip": "101.44.185.232",
+  "source_server": {
+    "id": "6accd089-5664-44db-a4d3-398d3f124834"
+  },
+  "target_server": {
+    "name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "vm_id": "efa914b6-fce9-47c6-a51c-0e6d52d39c9d",
+    "disks": [
+      {
+        "name": "/dev/vda",
+        "device_use": "BOOT",
+        "size": 85899345920,
+        "used_size": 85898279936,
+        "disk_id": "5399391",
+        "physical_volumes": [
+          {
+            "name": "/dev/vda1",
+            "device_use": "OS",
+            "file_system": "ext4",
+            "size": 85898279936,
+            "used_size": 5837082624,
+            "index": 0
+          }
+        ]
+      }
+    ]
+  },
+  "project_id": "2413708833e14626b37a8da5edf92d8f",
+  "project_name": "CROSS_INTERNAL",
+  "region_id": "la-north-2",
+  "region_name": "la-north-2"
+}
