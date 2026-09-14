@@ -722,6 +722,18 @@ class ExecutionEngine:
         plan['erp_tag_value'] = erp_tag
 
         network_nodes = [n for n in migration_resources if _categorize_resource(n) == "network"]
+        # Enterprise Project scoping for Phase 4.1 network provisioning
+        eps_id_prov = ''
+        try:
+            _epv = project.get("enterpriseProjectId") or project.get("enterprise_project_id") or ''
+            if _epv:
+                eps_id_prov = str(_epv).strip()
+        except Exception:
+            eps_id_prov = ''
+        ep_vpc_opt = f' --vpc.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
+        ep_subnet_opt = f' --subnet.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
+        ep_sg_opt = f' --security_group.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
+        ep_eip_opt = f' --publicip.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
         for node in network_nodes:
             step_id += 1
             ntype = str(node.get("type", "")).upper()
@@ -735,24 +747,24 @@ class ExecutionEngine:
                     cmd = (f"hcloud VPC CreateSubnet --subnet.name={node.get('name','subnet-target')} "
                            f"--subnet.cidr={node.get('cidr','192.168.1.0/24')} "
                            f"--subnet.gateway_ip={node.get('gateway_ip','192.168.1.1')} "
-                           f"--subnet.vpc_id=<vpc_id> --cli-region={target_region}")
+                           f"--subnet.vpc_id=<vpc_id>{ep_subnet_opt} --cli-region={target_region}")
                     rollback = {"cmd": "hcloud VPC DeleteSubnet --subnet_id=<subnet_id>", "label": "Delete subnet"}
                 else:
                     action = "CREATE_VPC"
                     cmd = (f"hcloud VPC CreateVpc --vpc.name={node.get('name','vpc-target')} --vpc.cidr={node.get('cidr','192.168.0.0/16')} "
-                              f"--vpc.tags.1={erp_tag_q} --cli-region={target_region}")
+                              f"--vpc.tags.1={erp_tag_q}{ep_vpc_opt} --cli-region={target_region}")
                     rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
             elif ntype in ("SG", "SECURITY"):
                 action = "CREATE_SG"
                 cmd = (f"hcloud VPC CreateSecurityGroup --security_group.name={node.get('name','sg-target')} "
-              f"--cli-region={target_region}")
+              f"{ep_sg_opt}--cli-region={target_region}")
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"
                 cmd = (f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 "
                        f"--bandwidth.name={node.get('name','target-eip')}-eip "
                        f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic "
-                       f"--tags.1={erp_tag_q} --cli-region={target_region}")
+                       f"--tags.1={erp_tag_q}{ep_eip_opt} --cli-region={target_region}")
                 rollback = {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Delete EIP"}
             elif ntype == "ELB":
                 action = "CREATE_ELB"
@@ -825,6 +837,7 @@ class ExecutionEngine:
                 is_zero_trust=is_zero_trust, is_vmware=is_vmware,
                 data_gb=data_gb, os_type=os_type,
                 erp_tag_q=erp_tag_q,
+                enterprise_project_id=eps_id_prov,
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1028,7 +1041,8 @@ class ExecutionEngine:
     def _build_resource_steps(step_id_counter: int, node: dict, pillar: str, strategy: str,
                               fallback: str, source_region: str, target_region: str,
                               is_zero_trust: bool, is_vmware: bool, data_gb: float,
-                              os_type: str, erp_tag_q: str = None) -> List[dict]:
+                              os_type: str, erp_tag_q: str = None,
+                              enterprise_project_id: str = '') -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
@@ -1037,6 +1051,12 @@ class ExecutionEngine:
             return []  # skip nodes with no name — agent lane handles them via discovery
 
         disk_gb = float(node.get("storage", node.get("diskGB", 100)))
+        # Enterprise Project scoping: when the gateway bound an EP to the project,
+        # every created resource must carry its id — this is the EPS isolation the
+        # user requires (Migration-Workspace EP on production accounts).
+        ep_opt = f' --server.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
+        ep_vpc_opt = f' --vpc.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
+        ep_eip_opt = f' --publicip.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
 
         if strategy == "sms":
             # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
@@ -1062,7 +1082,7 @@ class ExecutionEngine:
                 "strategy": "sms",
                 "tool_source": ecs_resolution["tool_source"],
                 "tool_name": ecs_resolution["tool_name"],
-                "commands": _kb_cmds or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 {('--server.tags.1=' + erp_tag_q + ' ') if erp_tag_q else ''}--cli-region={target_region}", "type": "hcloud"}],
+                "commands": _kb_cmds or [{"desc": "Create target ECS with EIP (flavor discovered at runtime)", "cmd": f"hcloud ECS CreateServers --server.name='{name}-TARGET' --server.flavorRef={flavor_ref} --server.root_volume.size={int(disk_gb)} --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 {('--server.tags.1=' + erp_tag_q + ' ') if erp_tag_q else ''}{ep_opt}--cli-region={target_region}", "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,

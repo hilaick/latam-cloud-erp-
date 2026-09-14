@@ -10,6 +10,7 @@ from services.huawei_eps import HuaweiEPSClient
 import logging
 import os
 import sys
+import json
 
 gateway_bp = Blueprint('gateway', __name__, url_prefix='/api/gateway')
 logger = logging.getLogger(__name__)
@@ -129,17 +130,19 @@ def check_realname_auth():
     try:
         client = HuaweiIAMClient(ak, sk, customer.region or 'la-north-2')
         auth_status = client.check_realname_auth()
-        # auth_status: {verified: bool, name: str, type: 'individual'|'enterprise'}
+        # auth_status: {verified: bool, name: str, type: 'individual'|'enterprise', eps: [...]}
+        eps = auth_status.get('eps', [])
         return jsonify({
             'success': True,
             'check': 'realname_auth',
             'verified': auth_status.get('verified', False),
             'auth_type': auth_status.get('type'),
             'account_name': auth_status.get('name'),
+            'eps': eps,
             'message': (
-                'Real-name authentication verified.'
+                f'Real-name authentication verified. {len(eps)} enterprise project(s) available.'
                 if auth_status.get('verified')
-                else 'Real-name authentication NOT complete. EPS + Tier 2 isolation unavailable.'
+                else f"Real-name authentication NOT complete. EPS + Tier 2 isolation unavailable. {auth_status.get('error', '')[:120]}"
             ),
             'requires_action': not auth_status.get('verified'),
             'action': 'Notify commercial team to complete real-name authentication.'
@@ -154,6 +157,70 @@ def check_realname_auth():
             'requires_action': True,
             'action': 'Notify commercial team to complete real-name authentication.'
         }), 500
+
+
+# ─────────────────────────────────────────────
+# 2b. ENTERPRISE PROJECT SELECTION (gateway sub-step)
+# ─────────────────────────────────────────────
+@gateway_bp.route('/select-eps', methods=['POST'])
+def select_enterprise_project():
+    """Bind an existing Enterprise Project to the project (pre-Phase-4 sub-step).
+
+    Body: {"customer_id": "...", "project_id": "...", "eps_id": "...", "eps_name": "..."}
+    Verifies the EP belongs to the customer's account (live EPS list), then writes
+    enterpriseProject + enterpriseProjectId into project.data. This is the gate
+    BEFORE Phase 4: resources created later (VPC/ECS/EIP) must carry this EP id.
+    """
+    data = request.get_json() or {}
+    customer_id = data.get('customer_id')
+    project_id = data.get('project_id')
+    eps_id = (data.get('eps_id') or '').strip()
+    eps_name = (data.get('eps_name') or '').strip()
+    if not eps_id or not project_id:
+        return jsonify({'success': False, 'error': 'eps_id and project_id required'}), 400
+
+    project = ProjectData.query.get(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    if not customer_id:
+        pd0 = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+        customer_id = pd0.get('customerId')
+    customer, err = _get_customer(customer_id)
+    if err:
+        return err
+
+    # Live-verify the EP exists in this customer's account
+    ak, sk = _decrypt_credential_pair(customer.ak, customer.sk)
+    if not ak:
+        return jsonify({'success': False, 'error': 'Master AK/SK required'}), 400
+    try:
+        client = HuaweiIAMClient(ak, sk, customer.region or 'la-north-2')
+        rn = client.check_realname_auth()
+        eps_list = rn.get('eps', [])
+        match = next((e for e in eps_list if str(e.get('id')) == eps_id), None)
+        if not match:
+            return jsonify({
+                'success': False,
+                'error': f"EP '{eps_id}' not found in the customer's account. Available: {[e.get('name') for e in eps_list]}"
+            }), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'EP verification failed: {str(e)[:150]}'}), 500
+
+    # Persist selection
+    pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+    pd['enterpriseProject'] = match.get('name') or eps_name
+    pd['enterpriseProjectId'] = eps_id
+    project.data = json.dumps(pd)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'check': 'eps_selection',
+        'status': 'configured',
+        'eps_id': eps_id,
+        'eps_name': match.get('name') or eps_name,
+        'message': f"Enterprise Project '{match.get('name')}' bound to project. Phase 4 provisioning will be scoped to it."
+    })
 
 
 # ─────────────────────────────────────────────
@@ -561,18 +628,48 @@ def full_readiness_check():
         overall_ready = False
         requires_action.append('Configure Master AK/SK in Customer Directory.')
 
-    # 2. Real-name auth — check stored status only (no API call at readiness gate)
-    realname_status = getattr(customer, 'realname_auth_status', None)
-    if realname_status == 'verified':
-        checks['realname_auth'] = {'status': 'valid', 'auth_type': getattr(customer, 'realname_auth_type', None)}
-    elif realname_status == 'unverified':
-        checks['realname_auth'] = {
-            'status': 'unverified',
-            'warning': 'Real-name authentication not complete. EPS + Tier 2 isolation unavailable. Proceeding with Master AK/SK — commercial team notified.'
-        }
-        requires_action.append('Notify commercial team: real-name authentication required.')
+    # 2. Real-name auth — LIVE check via EPS listing (real-name required for EPS)
+    #    The old code read `customer.realname_auth_status` (DB column, never set).
+    #    Now we call the proven path: EPS list = credential liveness + real-name proof.
+    live_realname = {'verified': False, 'eps': [], 'status': 'unknown', 'message': 'Real-name auth status not checked yet.'}
+    if has_ak and has_sk:
+        try:
+            from services.huawei_iam import HuaweiIAMClient
+            ak_raw_c, sk_raw_c = _decrypt_credential_pair(customer.ak, customer.sk)
+            if ak_raw_c and len(str(ak_raw_c)) > 10:
+                client = HuaweiIAMClient(ak_raw_c, sk_raw_c, customer.region or 'la-north-2')
+                rn = client.check_realname_auth()
+                live_realname = rn
+                # Persist live result to project.data (no customer schema change)
+                if rn.get('verified'):
+                    checks['realname_auth'] = {
+                        'status': 'valid',
+                        'auth_type': rn.get('type'),
+                        'eps': rn.get('eps', []),
+                        'message': f"Real-name verified. {len(rn.get('eps', []))} enterprise project(s) available."
+                    }
+                    # Auto-set enterpriseProject from the first non-default EP if not set
+                    if project:
+                        pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+                        if not pd.get('enterpriseProject'):
+                            eps_list = rn.get('eps', [])
+                            if eps_list:
+                                pd['enterpriseProject'] = eps_list[0].get('name', '')
+                                pd['enterpriseProjectId'] = eps_list[0].get('id', '')
+                                project.data = json.dumps(pd)
+                                db.session.commit()
+                else:
+                    checks['realname_auth'] = {
+                        'status': 'unverified',
+                        'warning': f"EPS listing failed — real-name authentication not complete or EPS access denied: {rn.get('error', '?')[:120]}",
+                        'eps': []
+                    }
+                    requires_action.append('Notify commercial team: complete real-name authentication + EPS access.')
+        except Exception as rne:
+            logger.warning(f"Real-name live check failed: {rne}")
+            checks['realname_auth'] = {'status': 'unknown', 'message': f'Live check unavailable: {str(rne)[:80]}', 'eps': []}
     else:
-        checks['realname_auth'] = {'status': 'unknown', 'message': 'Real-name auth status not checked yet.'}
+        checks['realname_auth'] = {'status': 'blocked', 'message': 'Master AK/SK required before checking real-name auth.'}
 
     # 3. Tier 2 (EPS Admin) — only if real-name verified
     if checks.get('realname_auth', {}).get('status') == 'valid':

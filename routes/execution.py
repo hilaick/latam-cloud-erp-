@@ -845,6 +845,7 @@ def build_execution_plan(project_id):
             "accountId": pd.get("accountId", ""),
             "huaweiAccountName": pd.get("huaweiAccountName", ""),
             "enterpriseProject": pd.get("enterpriseProject", ""),
+            "enterpriseProjectId": pd.get("enterpriseProjectId", pd.get("enterprise_project_id", "")),
             "realNameVerification": pd.get("realNameVerification", ""),
             "isPartner": pd.get("isPartner", ""),
             "mgcData": pd.get("mgcData", {}),
