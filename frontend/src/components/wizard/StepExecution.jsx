@@ -933,49 +933,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <i className="fas fa-play mr-1"></i> Run Pipeline
                         </button>
                     )}
-                    {autoOrchestrating && (
-                        <div className="flex items-center gap-1.5">
-                            <button
-                                onClick={async () => {
-                                    const token = sessionStorage.getItem('hermes_access_token');
-                                    try {
-                                        const res = await fetch(`/api/execution/${project.id}/orchestrate/pause`, {
-                                            method: 'POST',
-                                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({}),
-                                        });
-                                        const data = await res.json();
-                                        if (data.success) window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
-                                    } catch (e) { console.error('[pause] error', e); }
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
-                                title="Pause before the next phase (current phase completes first)"
-                            >
-                                <i className="fas fa-pause mr-1"></i> Pause
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    const token = sessionStorage.getItem('hermes_access_token');
-                                    try {
-                                        const res = await fetch(`/api/execution/${project.id}/orchestrate/stop`, {
-                                            method: 'POST',
-                                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({}),
-                                        });
-                                        const data = await res.json();
-                                        if (data.success) {
-                                            setAutoOrchestrating(false);
-                                            window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
-                                        }
-                                    } catch (e) { console.error('[stop] error', e); }
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
-                                title="Stop the pipeline — halts at the next phase boundary"
-                            >
-                                <i className="fas fa-stop mr-1"></i> Stop
-                            </button>
-                        </div>
-                    )}
                     <button
                         onClick={async () => {
                             // Refresh BOTH cloud state and pipeline status in one click
@@ -1020,28 +977,6 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     {failedOrchPhaseIdx !== null && (
                         <button onClick={handleResumePipeline} className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors">
                             <i className="fas fa-forward mr-1"></i> Resume
-                        </button>
-                    )}
-                    {execState?.status === 'PAUSED' && (
-                        <button
-                            onClick={async () => {
-                                const token = sessionStorage.getItem('hermes_access_token');
-                                try {
-                                    const res = await fetch(`/api/execution/${project.id}/orchestrate/pause-resume`, {
-                                        method: 'POST',
-                                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({}),
-                                    });
-                                    const data = await res.json();
-                                    if (data.success) {
-                                        setAutoOrchestrating(true);
-                                        window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
-                                    }
-                                } catch (e) { console.error('[resume-pause] error', e); }
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
-                        >
-                            <i className="fas fa-play mr-1"></i> Resume Pipeline
                         </button>
                     )}
                 </div>
@@ -2754,6 +2689,30 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
     const [gatewayResult, setGatewayResult] = useState(null);
     const [riskAcknowledged, setRiskAcknowledged] = useState(false);
     const [notifyCommercial, setNotifyCommercial] = useState(false);
+    const [selectedEps, setSelectedEps] = useState(null);   // bound EP id
+    const [epsBusy, setEpsBusy] = useState(null);           // which EP id is binding
+    const [epsError, setEpsError] = useState(null);
+
+    const selectEps = async (epsId, epsName) => {
+        setEpsBusy(epsId); setEpsError(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch('/api/gateway/select-eps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ customer_id: project?.customerId, project_id: project?.id, eps_id: epsId, eps_name: epsName })
+            });
+            const data = await res.json();
+            if (data.success !== false) {
+                setSelectedEps(epsId);
+            } else {
+                setEpsError(data.error || data.message || 'EP binding failed');
+            }
+        } catch (e) {
+            setEpsError(e.message);
+        }
+        setEpsBusy(null);
+    };
 
     const runFullCheck = async () => {
         setLoading(true);
@@ -2872,6 +2831,68 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
                         />
                     </div>
                 </div>
+
+                {/* ── EPS Selection Sub-step (visible when real-name verified + EPS available) ── */}
+                {checks.realname_auth?.status === 'valid' && Array.isArray(checks.realname_auth?.eps) && (
+                    <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+                        <div className="bg-slate-900 px-5 py-3 border-b border-slate-700 flex items-center justify-between">
+                            <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                                <i className="fas fa-building mr-2 text-amber-400"></i>Enterprise Project Selection
+                            </h4>
+                            {selectedEps && <span className="text-[10px] text-emerald-400 font-bold bg-emerald-900/30 px-2 py-0.5 rounded-full border border-emerald-700/50">✓ Bound</span>}
+                        </div>
+                        <div className="px-5 py-3">
+                            <div className="text-[10px] text-slate-400 mb-3">
+                                Select an Enterprise Project to scope Phase 4 resources. Isolation requires an EP — without one, resources will use the account default (full-account visibility).
+                            </div>
+                            {checks.realname_auth.eps.length === 1 ? (
+                                <div className="bg-slate-700/30 border border-slate-600/50 rounded-xl p-3 flex items-center gap-3">
+                                    <i className="fas fa-check-circle text-emerald-400"></i>
+                                    <div>
+                                        <div className="text-sm font-bold text-white">{checks.realname_auth.eps[0].name}</div>
+                                        <div className="text-[9px] text-slate-400 font-mono">{checks.realname_auth.eps[0].id}</div>
+                                    </div>
+                                    {selectedEps === checks.realname_auth.eps[0].id
+                                        ? <span className="ml-auto text-[9px] text-emerald-400 font-bold">Bound ✓</span>
+                                        : <button onClick={() => selectEps(checks.realname_auth.eps[0].id, checks.realname_auth.eps[0].name)}
+                                            disabled={epsBusy}
+                                            className="ml-auto px-3 py-1.5 text-[9px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 transition-colors">
+                                            {epsBusy === checks.realname_auth.eps[0].id ? <i className="fas fa-spinner fa-spin mr-1"></i> : null}
+                                            Bind this EP
+                                        </button>
+                                    }
+                                </div>
+                            ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                                    {checks.realname_auth.eps.map(ep => (
+                                        <div key={ep.id} className={`bg-slate-700/30 border rounded-xl p-3 flex items-center gap-3 transition-all ${selectedEps === ep.id ? 'border-emerald-600/70 ring-1 ring-emerald-600/30' : 'border-slate-600/50 hover:border-indigo-600/50'}`}>
+                                            <i className={`fas ${ep.type === 'enterprise' || ep.type === 'prod' ? 'fa-building' : 'fa-flask'} ${selectedEps === ep.id ? 'text-emerald-400' : 'text-slate-400'}`}></i>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-bold text-white truncate">{ep.name}</div>
+                                                <div className="text-[9px] text-slate-400 font-mono truncate">{ep.id}</div>
+                                                {ep.type && <div className="text-[8px] text-slate-500 mt-0.5 uppercase tracking-wider">{ep.type}</div>}
+                                            </div>
+                                            {selectedEps === ep.id
+                                                ? <span className="text-[9px] text-emerald-400 font-bold whitespace-nowrap">Bound ✓</span>
+                                                : <button onClick={() => selectEps(ep.id, ep.name)}
+                                                    disabled={epsBusy === ep.id}
+                                                    className="px-3 py-1.5 text-[9px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 transition-colors whitespace-nowrap">
+                                                    {epsBusy === ep.id ? <i className="fas fa-spinner fa-spin mr-1"></i> : null}
+                                                    Use
+                                                </button>
+                                            }
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {epsError && (
+                                <div className="mt-2 text-[10px] text-rose-400 bg-rose-900/20 border border-rose-800/50 rounded-lg p-2">
+                                    <i className="fas fa-exclamation-triangle mr-1"></i> {epsError}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Risk Warning (Path B) */}
                 {showRiskWarning && (
