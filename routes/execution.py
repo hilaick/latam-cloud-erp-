@@ -1592,13 +1592,88 @@ def get_server_action_log(project_id):
 
 @execution_bp.route('/api/execution/<project_id>/progress', methods=['GET'])
 def get_execution_progress(project_id):
-    """Get live execution progress including spawn tree for GUI visualization. No JWT — GUI polls this."""
-    project = ProjectData.query.get(project_id)
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-    data = project.data if isinstance(project.data, dict) else json.loads(project.data or "{}")
-    progress = data.get("executionProgress", {"operations": [], "spawnTree": {"nodes": [], "edges": []}})
-    return jsonify({"progress": progress})
+    """Get live execution progress including spawn tree for GUI visualization.
+
+    AUTHORITATIVE SOURCE: the orchestration engine's in-memory pipeline state
+    (phase_status / current_phase / completed_phases) — one agent node per phase,
+    real status. This is NOT stored in project data because the GUI autosave
+    (POST /api/erp/projects) overwrites the whole data blob with a stale copy,
+    silently erasing engine-written fields like executionProgress.
+    """
+    try:
+        from services.orchestration_engine import get_pipeline_status
+        status = get_pipeline_status(project_id) or {}
+        import re as _re
+        # ── DB HYDRATION: if in-memory registry is empty (Flask restarted or
+        # page refreshed mid-run), fall back to the persisted ExecutionState +
+        # last_pipeline_log so the spawn tree still shows real progress.
+        if not status.get('log') and not (status.get('completed_phases') or []):
+            try:
+                import json as _pj
+                from models import ExecutionState
+                _row = ExecutionState.query.filter_by(project_id=project_id).first()
+                if _row:
+                    status['current_phase'] = _row.current_phase
+                    if _row.current_phase and _row.status in ('IN_PROGRESS', 'RUNNING', 'PAUSED'):
+                        status['status'] = 'running' if _row.status != 'PAUSED' else 'paused'
+                    db_status = (getattr(_row, 'status', '') or '').upper()
+                    if db_status == 'PAUSED':
+                        status['status'] = 'paused'
+                    if _row.last_pipeline_log:
+                        try:
+                            _plog = _pj.loads(_row.last_pipeline_log)
+                            if isinstance(_plog, list):
+                                status['log'] = _plog
+                                # derive completed phases from [done] lines
+                                _done = set()
+                                for _l in _plog:
+                                    _s = str(_l)
+                                    if '[done]' in _s:
+                                        for _n in range(1, 8):
+                                            if f'PHASE_4_{_n}' in _s or f'4.{_n}' in _s:
+                                                _done.add(f'PHASE_4_{_n}')
+                                if _done:
+                                    status['completed_phases'] = sorted(_done, key=lambda p: int(p.split('_')[-1]))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        # Build spawn tree from real pipeline state: main -> one node per phase
+        phases = []
+        for n in range(1, 8):
+            pk = f'PHASE_4_{n}'
+            ps = (status.get('phase_status') or {}).get(pk)
+            st = (status.get('completed_phases') or [])
+            if pk in st:
+                st_ = 'succeeded'
+            elif ps == 'failed' or pk == status.get('failed_phase'):
+                st_ = 'failed'
+            elif pk == status.get('current_phase') and status.get('status') in ('running', 'running_external'):
+                st_ = 'running'
+            else:
+                st_ = 'pending'
+            phases.append({'id': f'agent_{pk.lower()}', 'label': f'4.{n}', 'status': st_})
+        nodes = [{'id': 'main', 'label': 'Main Orchestrator', 'status': 'running', 'model': 'glm-5.1'}]
+        edges = []
+        for ph in phases:
+            nodes.append({**ph, 'model': 'glm-5.1'})
+            edges.append({'from': 'main', 'to': ph['id']})
+        # Operations from the live log (last 20 entries, tagged)
+        ops = []
+        for l in (status.get('log') or [])[-20:]:
+            s = str(l)
+            tag = 'started'
+            if '[done]' in s:
+                tag = 'succeeded'
+            elif '[fail]' in s or '[gate]' in s:
+                tag = 'failed'
+            elif '[det]' in s:
+                tag = 'info'
+            ops.append({'operation': s[:90], 'status': tag, 'server': '', 'detail': ''})
+        return jsonify({"progress": {"spawnTree": {"nodes": nodes, "edges": edges}, "operations": ops}})
+    except Exception as e:
+        logger.warning(f"progress endpoint failed: {e}")
+        return jsonify({"progress": {"spawnTree": {"nodes": [], "edges": []}, "operations": []}})
 
 @execution_bp.route('/api/execution/<project_id>/progress', methods=['POST'])
 def post_execution_progress(project_id):
