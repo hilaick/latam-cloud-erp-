@@ -973,6 +973,7 @@ def individual_server_action(project_id):
         server = (data.get("server") or "").strip()
         mode = (data.get("mode") or "").strip().lower()
         step_ids = data.get("step_ids") or []
+        dry_run = data.get("dry_run", False)
         if not server:
             return jsonify({"success": False, "error": "server required"}), 400
         if mode not in ("re_deploy", "new_target", "rerun_steps"):
@@ -1053,6 +1054,34 @@ def individual_server_action(project_id):
             if not candidates:
                 return jsonify({"success": True, "deleted_ecs": [], "message":
                                 f"No target ECS found for '{server}' in {target_region} — nothing to tear down. Steps were reset to pending anyway."}), 200
+
+            # ── SIMULATION: list what WOULD be deleted, make zero changes ──
+            if dry_run:
+                # also scan matching EIPs for the preview
+                sim_eips = []
+                try:
+                    eips_res = hh(['EIP', 'ListPublicips/v3', '--cli-region=' + target_region])
+                    for e in (eips_res.get('publicips') or []):
+                        bw = (e.get('bandwidth') or {}).get('name') or ''
+                        if server.lower() in bw.lower() or f"{server.lower()}-eip" == bw.lower():
+                            sim_eips.append(e.get('public_ip_address'))
+                except Exception:
+                    pass
+                steps_to_reset = len(server_steps())
+                return jsonify({
+                    "success": True,
+                    "mode": "simulation",
+                    "deleted_ecs": [sv.get('name') for sv in candidates],
+                    "deleted_eips": sim_eips,
+                    "reset_steps": steps_to_reset,
+                    "message": (
+                        f"✅ SIMULATION: Re-deploy would delete {len(candidates)} target ECS "
+                        f"({', '.join(sv.get('name', '?') for sv in candidates)})"
+                        + (f" + {len(sim_eips)} EIP" if sim_eips else "")
+                        + f" and reset {steps_to_reset} plan steps for '{server}' to pending. "
+                          f"Click '▶ Execute Live' to perform the teardown or cancel."
+                    ),
+                }), 200
 
             for sv in candidates:
                 sv_id = sv.get('id')
@@ -1246,6 +1275,45 @@ def individual_server_action(project_id):
                           f"{('--server.tags.1=' + tag_q + ' ') if tag_q else ''}"
                           f"--server.count=1{ep_opt} --cli-region={target_region}")
 
+            # ── SIMULATION MODE (dry_run=true): resolve everything, return preview, NO changes ──
+            if dry_run:
+                # Clone plan steps into simulation preview without executing anything
+                steps = plan_steps()
+                max_sid = max((int(s.get('step_id') or 0) for s in steps), default=0)
+                sim_clones = []
+                for s in server_steps():
+                    new_s = dict(s)
+                    max_sid += 1
+                    new_s['step_id'] = max_sid
+                    new_s['deployment'] = n
+                    new_s['target_ecs_name'] = new_target_name
+                    new_s['status'] = 'simulated'
+                    cmds = new_s.get('commands')
+                    if isinstance(cmds, list):
+                        for c in cmds:
+                            if isinstance(c, dict) and c.get('cmd'):
+                                c['cmd'] = c['cmd'].replace(base_target_name, new_target_name)
+                                c['cmd'] = c['cmd'].replace(f"migrate-{server}", f"migrate-{server}-{n}")
+                    sim_clones.append({'step_id': new_s['step_id'], 'action': new_s.get('action')})
+                return jsonify({
+                    "success": True,
+                    "mode": "simulation",
+                    "target_name": new_target_name,
+                    "deployment": n,
+                    "resolved": {"imageRef": image_ref, "flavor": flavor_ref, "vpcid": vpc_id_res,
+                                 "subnet_id": subnet_id_res, "volumetype": vol_type, "disk_gb": disk_gb},
+                    "cmd": create_cmd,
+                    "cloned_steps": sim_clones,
+                    "message": (
+                        f"✅ SIMULATION: New target {new_target_name} resolved successfully. "
+                        f"Params: {flavor_ref}, {disk_gb}GB, image={image_ref[:12]}..., "
+                        f"vpc={vpc_id_res[:12]}..., subnet={subnet_id_res[:12]}..., vol={vol_type}. "
+                        f"{len(sim_clones)} plan steps ready for deployment #{n}. "
+                        f"Click '▶ Execute Live' to provision or cancel."
+                    ),
+                }), 200
+
+            # ── EXECUTION MODE (default): actually create the ECS ──
             res = hh(['ECS', 'CreateServers', '--server.name=' + new_target_name,
                       '--server.imageRef=' + image_ref,
                       '--server.flavorRef=' + flavor_ref,
@@ -1266,12 +1334,14 @@ def individual_server_action(project_id):
                                 "resolved": {"imageRef": image_ref, "vpcid": vpc_id_res,
                                              "subnet_id": subnet_id_res, "volumetype": vol_type}}), 502
 
-            # Verify creation by name (ListServersDetails may lag; poll briefly)
+            # Verify creation by name (ListServersDetails may lag; poll up to ~60s).
+            # Compare case-insensitively — Huawei may normalize the ECS name casing.
             new_ecs_id = ''
-            for _ in range(6):
+            wanted_upper = (new_target_name or '').upper()
+            for _ in range(12):
                 time.sleep(5)
                 for sv in list_ecs():
-                    if (sv.get('name') or '') == new_target_name:
+                    if (sv.get('name') or '').upper() == wanted_upper:
                         new_ecs_id = sv.get('id', '')
                         break
                 if new_ecs_id:
@@ -1331,6 +1401,38 @@ def individual_server_action(project_id):
                            if s.get('status') in ('failed', 'pending', None, 'skipped')]
             if not targets:
                 return jsonify({"success": True, "reran": [], "message": f"No steps to re-run for '{server}'."}), 200
+
+            # ── SIMULATION: list which steps would re-run, execute nothing ──
+            if dry_run:
+                preview = []
+                for s in targets:
+                    cmds = s.get('commands') or []
+                    cmd = ''
+                    if isinstance(cmds, list) and cmds:
+                        first = cmds[0]
+                        cmd = first.get('cmd', '') if isinstance(first, dict) else str(first)
+                    if not cmd:
+                        cmd = s.get('command') or s.get('cmd') or ''
+                    templated = ('<' in cmd and '>' in cmd)
+                    preview.append({
+                        'step_id': s.get('step_id'),
+                        'action': s.get('action'),
+                        'phase': s.get('phase'),
+                        'status': s.get('status'),
+                        'would_run': bool(cmd and not templated),
+                        'blocked_templated': templated,
+                    })
+                n_run = sum(1 for p in preview if p['would_run'])
+                n_block = sum(1 for p in preview if p['blocked_templated'])
+                return jsonify({
+                    "success": True,
+                    "mode": "simulation",
+                    "reran_preview": preview,
+                    "message": (
+                        f"✅ SIMULATION: Re-run Steps for '{server}' — {len(preview)} steps queued "
+                        f"({n_run} would execute, {n_block} templated→agent lane). Click '▶ Execute Live' to run them or cancel."
+                    ),
+                }), 200
 
             results_ran = []
             for s in targets:

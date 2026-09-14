@@ -2413,6 +2413,7 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
     const [actionResult, setActionResult] = useState(null); // last action feedback {kind, msg}
     const [confirmRedep, setConfirmRedep] = useState(false); // inline confirm for re-deploy
     const [actionLog, setActionLog] = useState([]);        // live log entries during action execution
+    const [simResult, setSimResult] = useState(null);      // {mode, data} from simulation, offers Execute Live
     const TASKS = [
         { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b', zeroTrust: true },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
@@ -2424,28 +2425,46 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
     const logLine = (msg, kind = 'info') => {
         setActionLog(prev => [...prev, { t: new Date().toLocaleTimeString(), msg, kind }]);
     };
-    const runServerAction = async (mode) => {
+    const runServerAction = async (mode, opts = {}) => {
         if (!selectedServer) return;
-        setActionBusy(mode); setActionResult(null); setActionLog([]);
+        const isDry = !!opts.dry_run;
+        if (!isDry) { setActionResult(null); setActionLog([]); }
+        setActionBusy(mode + (isDry ? '_sim' : '_exec'));
         const srv = selectedServer.name;
         const modeLabel = mode === 'new_target' ? 'New Target' : mode === 're_deploy' ? 'Re-deploy' : 'Re-run Steps';
-        logLine(`▶ ${modeLabel} for ${srv}...`, 'run');
+        // Preserve simulation log when executing live so the user sees the full
+        // simulate → execute chain in one window
+        if (isDry) logLine(`▶ SIMULATION: ${modeLabel} for ${srv}...`, 'run');
+        else logLine(`▶ EXECUTE LIVE: ${modeLabel} for ${srv}...`, 'run');
         try {
             const token = sessionStorage.getItem('hermes_access_token');
             const pid = project?.id;
             if (!pid) { setActionResult({ kind: 'err', msg: 'Cannot determine project ID — reload the page.' }); setActionBusy(null); return; }
-            logLine('POST /individual/action → ' + mode, 'info');
+            logLine(`POST /individual/action → ${mode}${isDry ? ' (dry_run)' : ''}`, 'info');
             const res = await fetch(`/api/execution/${pid}/individual/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ server: srv, mode })
+                body: JSON.stringify({ server: srv, mode, dry_run: isDry })
             });
             logLine(`Response HTTP ${res.status}`, 'info');
             const data = await res.json();
             if (data.success === false || res.status >= 400) {
                 logLine('✗ ' + (data.error || data.message || `HTTP ${res.status}`), 'err');
                 setActionResult({ kind: 'err', msg: data.error || data.message || `HTTP ${res.status}` });
+            } else if (isDry && data.mode === 'simulation') {
+                // SIMULATION RESULT — show what would happen, offer Execute Live
+                logLine('✓ ' + (data.message || 'simulation ok'), 'ok');
+                if (data.cmd) logLine(`cmd: ${data.cmd.slice(0, 240)}`, 'info');
+                if (data.resolved) {
+                    const r = data.resolved;
+                    logLine(`resolved: flavor=${r.flavor} disk=${r.disk_gb}GB image=${String(r.imageRef||'').slice(0,12)}... vpc=${String(r.vpcid||'').slice(0,12)}... subnet=${String(r.subnet_id||'').slice(0,12)}... vol=${r.volumetype}`, 'info');
+                }
+                if (data.deleted_ecs?.length) logLine(`would delete ECS: ${data.deleted_ecs.join(', ')}`, 'warn');
+                if (data.cloned_steps?.length) logLine(`would clone ${data.cloned_steps.length} steps (deployment #${data.deployment})`, 'info');
+                setSimResult({ mode, data });
+                setActionResult({ kind: 'sim', msg: data.message, sim: true, mode, data });
             } else {
+                // EXECUTE RESULT
                 logLine('✓ ' + (data.message || 'done'), 'ok');
                 if (data.deleted_ecs?.length) logLine(`Deleted ECS: ${data.deleted_ecs.join(', ')}`, 'ok');
                 if (data.target_name) logLine(`New target ECS: ${data.target_name}`, 'ok');
@@ -2456,10 +2475,11 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                     const blockN = data.reran.filter(r => r.status === 'blocked').length;
                     logLine(`Re-ran: ${okN} ok, ${failN} failed, ${blockN} blocked (templated→agent lane)`, okN === 0 ? 'warn' : 'ok');
                 }
+                setSimResult(null);
                 setActionResult({ kind: 'ok', msg: data.message || 'done' });
             }
-            // refresh plan so cloned deployment steps appear
-            if (mode === 'new_target' && data.success !== false && onPlanRefresh) { logLine('Refreshing execution plan...', 'info'); onPlanRefresh(); }
+            // refresh plan so cloned deployment steps appear (execution only)
+            if (!isDry && mode === 'new_target' && data.success !== false && onPlanRefresh) { logLine('Refreshing execution plan...', 'info'); onPlanRefresh(); }
         } catch (e) {
             logLine('✗ Exception: ' + e.message, 'err');
             setActionResult({ kind: 'err', msg: e.message });
@@ -2575,28 +2595,29 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                         <div className="flex flex-wrap gap-2 items-start">
                             {ACTION_BUTTONS.map(b => (
                                 <div key={b.mode} className="relative">
-                                    {/* Inline confirm for re_deploy (destructive) */}
+                                    {/* Inline confirm for re_deploy (destructive) — simulate first, then confirmed execute */}
                                     {confirmRedep && b.mode === 're_deploy' && (
                                         <div className="absolute bottom-full mb-2 left-0 z-10 bg-red-50 border border-red-200 rounded-lg p-2 shadow-lg min-w-[260px]">
-                                            <div className="text-[10px] text-red-700 font-bold mb-1.5">⚠ Confirm: delete ALL targets for {selectedServer.name}?</div>
+                                            <div className="text-[10px] text-red-700 font-bold mb-1.5">⚠ Re-deploy: destroys ALL targets for {selectedServer.name}</div>
+                                            <div className="text-[9px] text-red-500 mb-1.5">First runs a simulation (lists what will be deleted, no changes), then Execute Live performs the real teardown.</div>
                                             <div className="flex gap-1.5">
-                                                <button onClick={() => runServerAction('re_deploy')} disabled={actionBusy === 're_deploy'}
-                                                    className="px-2.5 py-1 text-[9px] font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">Yes, delete + reset</button>
+                                                <button onClick={() => runServerAction('re_deploy', { dry_run: true })} disabled={actionBusy !== null}
+                                                    className="px-2.5 py-1 text-[9px] font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">Simulate teardown</button>
                                                 <button onClick={() => setConfirmRedep(false)} className="px-2.5 py-1 text-[9px] bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
                                             </div>
                                         </div>
                                     )}
-                                    <button onClick={() => { if (b.confirm) { setConfirmRedep(v => !v); } else { runServerAction(b.mode); } }}
+                                    <button onClick={() => { if (b.confirm) { setConfirmRedep(v => !v); } else { runServerAction(b.mode, { dry_run: true }); } }}
                                         disabled={actionBusy !== null}
                                         className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
                                         style={{
-                                            background: actionBusy === b.mode ? '#e5e7eb' : (b.color + '15'),
-                                            color: actionBusy === b.mode ? '#6b7280' : b.color,
-                                            border: `1.5px solid ${actionBusy === b.mode ? '#d1d5db' : (b.color + '50')}`
+                                            background: actionBusy === b.mode + '_sim' || actionBusy === b.mode + '_exec' ? '#e5e7eb' : (b.color + '15'),
+                                            color: actionBusy === b.mode + '_sim' || actionBusy === b.mode + '_exec' ? '#6b7280' : b.color,
+                                            border: `1.5px solid ${actionBusy === b.mode + '_sim' || actionBusy === b.mode + '_exec' ? '#d1d5db' : (b.color + '50')}`
                                         }}
-                                        title={b.desc}>
-                                        <i className={`fas ${b.icon} mr-1 ${actionBusy === b.mode ? 'fa-spin' : ''}`}></i>
-                                        {actionBusy === b.mode ? `Working...` : b.label}
+                                        title={`${b.desc} (click = simulate first, then Execute Live)`}>
+                                        <i className={`fas ${b.icon} mr-1 ${actionBusy === b.mode + '_sim' || actionBusy === b.mode + '_exec' ? 'fa-spin' : ''}`}></i>
+                                        {actionBusy === b.mode + '_sim' ? `Simulating...` : actionBusy === b.mode + '_exec' ? `Executing...` : b.label}
                                     </button>
                                     <div className="text-[8px] text-slate-400 mt-0.5 max-w-[140px] leading-tight">{b.desc}</div>
                                 </div>
@@ -2605,10 +2626,23 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                     </div>
                     {/* ── Action Result Feedback ── */}
                     {actionResult && (
-                        <div className={`mt-2 p-2 rounded-lg text-[10px] font-medium border ${actionResult.kind === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                            <i className={`fas ${actionResult.kind === 'ok' ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-1`}></i>
+                        <div className={`mt-2 p-2 rounded-lg text-[10px] font-medium border ${actionResult.kind === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : actionResult.kind === 'sim' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                            <i className={`fas ${actionResult.kind === 'ok' ? 'fa-check-circle' : actionResult.kind === 'sim' ? 'fa-microscope' : 'fa-exclamation-triangle'} mr-1`}></i>
                             {actionResult.msg}
                             <button onClick={() => setActionResult(null)} className="float-right text-[9px] opacity-60 hover:opacity-100"><i className="fas fa-times"></i></button>
+                            {/* EXECUTE LIVE — appears after a successful simulation */}
+                            {actionResult.kind === 'sim' && actionResult.mode && (
+                                <div className="mt-2 pt-2 border-t border-indigo-200 flex flex-wrap items-center gap-2">
+                                    <button
+                                        onClick={() => runServerAction(actionResult.mode, { dry_run: false })}
+                                        disabled={actionBusy !== null}
+                                        className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg text-white shadow transition-all disabled:opacity-50 ${actionResult.mode === 're_deploy' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                                        <i className={`fas ${actionBusy === actionResult.mode + '_exec' ? 'fa-circle-notch fa-spin' : 'fa-play'} mr-1`}></i>
+                                        {actionBusy === actionResult.mode + '_exec' ? 'Executing...' : '▶ Execute Live'}
+                                    </button>
+                                    <span className="text-[9px] text-indigo-500 italic">Simulation passed — nothing was created yet. Execute Live deploys it for real.</span>
+                                </div>
+                            )}
                         </div>
                     )}
                     {/* ── Server Action Activity Log ── */}
