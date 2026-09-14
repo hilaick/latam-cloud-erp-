@@ -1363,6 +1363,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 .xs-pulse-ring { animation: xsPulseRing 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) infinite; }
                                 .xs-orbit { animation: xsOrbit 3.2s linear infinite; }
                                 .xs-live-dot { animation: xsPulseDot 1.2s ease-in-out infinite; }
+                                .xs-packet { filter: drop-shadow(0 0 4px currentColor); }
+                                .xs-scan { animation: xsPulseDot 2.4s ease-in-out infinite; }
                             `}</style>
                             <div className="relative rounded-xl overflow-hidden bg-slate-950 text-slate-100 border border-slate-800 shadow-[0_0_45px_rgba(16,185,129,0.12),0_8px_30px_rgba(2,6,23,0.5)]">
                                 {/* subtle grid + radial tint */}
@@ -1400,95 +1402,217 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 ? <span className="text-emerald-300"><i className="fas fa-flag-checkered mr-1"></i>Migration complete — all 7 phases green</span>
                                                 : <span className="text-slate-500">Pipeline idle — story replaying last known state</span>}
                                 </div>
-                                {/* Horizontal arc of 7 phase orbs (XSIAM-style), min-width → scroll on small screens */}
-                                <div className="relative overflow-x-auto">
-                                    <div className="relative shrink-0" style={{ width: 720, height: 168 }}>
-                                        {/* Connector lines: static base + animated accented flow */}
-                                        <svg width="700" height="150" className="absolute top-[9px] left-[10px] overflow-visible" style={{ zIndex: 1 }}>
-                                            {storyPhases.slice(0, -1).map((ph, idx) => {
-                                                const nx = storyPhases[idx + 1];
-                                                const cx = (ph.x + nx.x) / 2;
-                                                const move = Math.min(ph.x, nx.x), d = Math.max(ph.x, nx.x);
-                                                const dip = 78 + (65 - Math.abs(move + d - 700) / 700 * 65) * 0.55;
-                                                const p = `M ${ph.x} ${ph.y} Q ${cx} ${dip} ${nx.x} ${nx.y}`;
-                                                const lineColor = ph.st === 'completed' ? '#34d399' : ph.st === 'running' ? '#818cf8' : ph.st === 'failed' ? '#fb7185' : '#334155';
-                                                const flows = autoOrchestrating && (ph.st === 'completed' || ph.st === 'running');
-                                                return (
-                                                    <g key={idx}>
-                                                        <path d={p} fill="none" stroke="#1e293b" strokeWidth="4.5" strokeLinecap="round" />
-                                                        <path d={p} fill="none" stroke={lineColor} strokeWidth="2" strokeLinecap="round" opacity={ph.st === 'pending' ? 0.5 : 0.92} />
-                                                        {flows && (
-                                                            <path d={p} fill="none" stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" className="xs-flow" style={{ opacity: ph.st === 'running' ? 0.85 : 0.5 }} />
-                                                        )}
-                                                    </g>
-                                                );
-                                            })}
-                                        </svg>
-                                        {/* Nodes — click to inspect phase resource direction */}
-                                        {storyPhases.map(ph => (
-                                            <div key={ph.n} className="absolute flex flex-col items-center" style={{ zIndex: storySelectedPhase === ph.n ? 4 : 2, left: ph.x - 28, top: ph.y - 28, width: 56 }}>
-                                                <button
-                                                    onClick={() => setStorySelectedPhase(storySelectedPhase === ph.n ? null : ph.n)}
-                                                    className={`group relative w-14 h-14 flex items-center justify-center rounded-full focus:outline-none transition-transform duration-200 ${storySelectedPhase === ph.n ? 'scale-110' : 'hover:scale-105'}`}
-                                                    title={`Inspect Phase 4.${ph.n}: ${ph.label} — what it creates/directs`}
-                                                >
-                                                    {/* check badge */}
-                                                    <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-white text-[8px] flex items-center justify-center border-2 border-slate-950 shadow z-[4] ${ph.st === 'completed' ? '' : 'hidden'}`}><i className="fas fa-check"></i></div>
-                                                    {/* pulsing ring + orbiting dot on current phase */}
-                                                    {ph.st === 'running' && autoOrchestrating && (
-                                                        <>
-                                                            <div className="absolute inset-0 rounded-full border-2 border-indigo-400 xs-pulse-ring"></div>
-                                                            <div className="absolute inset-0 xs-orbit">
-                                                                <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_rgba(103,232,249,1)]"></span>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                    {/* selection ring */}
-                                                    {storySelectedPhase === ph.n && (
-                                                        <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.6)]"></div>
-                                                    )}
-                                                    {/* orb */}
-                                                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-base border transition-all duration-300"
-                                                        style={{
-                                                            background: ph.st === 'completed' ? 'radial-gradient(circle at 32% 28%, rgba(52,211,153,0.35), rgba(4,120,87,0.25) 60%, rgba(6,78,59,0.35))' :
-                                                                ph.st === 'running' ? 'radial-gradient(circle at 32% 28%, rgba(129,140,248,0.4), rgba(99,102,241,0.3) 60%, rgba(49,46,129,0.45))' :
-                                                                ph.st === 'failed' ? 'radial-gradient(circle at 32% 28%, rgba(251,113,133,0.35), rgba(190,18,60,0.3) 60%, rgba(76,5,25,0.45))' :
-                                                                'radial-gradient(circle at 32% 28%, rgba(51,65,85,0.5), rgba(30,41,59,0.6) 60%, rgba(15,23,42,0.7))',
-                                                            borderColor: ph.st === 'completed' ? 'rgba(52,211,153,0.7)' : ph.st === 'running' ? 'rgba(129,140,248,0.85)' : ph.st === 'failed' ? 'rgba(251,113,133,0.7)' : 'rgba(71,85,105,0.6)',
-                                                            color: ph.st === 'pending' ? '#64748b' : '#f8fafc',
-                                                            boxShadow: ph.st === 'completed' ? '0 0 18px rgba(16,185,129,0.45), inset 0 0 10px rgba(52,211,153,0.2)' :
-                                                                ph.st === 'running' ? '0 0 22px rgba(99,102,241,0.55), inset 0 0 10px rgba(129,140,248,0.25)' :
-                                                                ph.st === 'failed' ? '0 0 16px rgba(244,63,94,0.45), inset 0 0 10px rgba(251,113,133,0.2)' :
-                                                                '0 0 8px rgba(2,6,23,0.6), inset 0 0 6px rgba(30,41,59,0.5)',
-                                                        }}
-                                                    >
-                                                        <i className={`fas ${ph.icon}`} style={{ filter: 'drop-shadow(0 0 6px currentColor)' }}></i>
-                                                    </div>
-                                                    {/* hover tooltip */}
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl border border-slate-700">
-                                                        <div className="font-bold text-amber-300">Phase 4.{ph.n}: {ph.label}</div>
-                                                        <div className="text-slate-300">{phaseContent?.[`PHASE_4_${ph.n}`]?.desc || 'Inspect resources this phase creates/directs'}</div>
-                                                        <div className="text-amber-200/80 mt-0.5">Click to inspect →</div>
-                                                    </div>
-                                                </button>
-                                                <div className="mt-1.5 text-center leading-tight">
-                                                    <div className="text-[7px] font-black uppercase tracking-widest text-slate-500">4.{ph.n}</div>
-                                                    <div className={`text-[8px] font-extrabold uppercase tracking-wide ${storySelectedPhase === ph.n ? 'text-amber-300' : ''}`} style={{ color: storySelectedPhase === ph.n ? undefined : (ph.st === 'completed' ? '#6ee7b7' : ph.st === 'running' ? '#c7d2fe' : ph.st === 'failed' ? '#fda4af' : '#94a3b8') }}>{ph.label}</div>
+                                {/* ═══ CORTEX ASPM 3-COLUMN DASHBOARD ═══ */}
+                                <div className="relative flex flex-row items-stretch gap-2 px-2 py-2">
+                                    {/* ── LEFT: OPERATIONS STAT PANEL ── */}
+                                    <div className="w-[170px] shrink-0 flex flex-col justify-between gap-1.5">
+                                        {(() => {
+                                            const agents = orchestrationLog.filter(l => /spawning agent/i.test(String(l)) || String(l).includes('[agent]')).length;
+                                            const dets = orchestrationLog.filter(l => String(l).includes('[det]')).length;
+                                            const fails = orchestrationLog.filter(l => String(l).includes('[fail]') || String(l).includes('✗')).length;
+                                            const cards = [
+                                                { icon: 'fa-flag-checkered', label: 'PHASES DONE', value: `${completedOrchPhases.size}/7`, color: 'text-emerald-400' },
+                                                { icon: 'fa-bullseye', label: 'ACTIVE', value: storyCurrentN ? `4.${storyCurrentN}` : '—', color: storyCurrentN ? 'text-indigo-300' : 'text-slate-500' },
+                                                { icon: storyStatus === 'running' ? 'fa-broadcast-tower' : 'fa-power-off', label: 'STATUS', live: autoOrchestrating, value: autoOrchestrating ? 'LIVE' : storyStatus === 'failed' ? 'FAULT' : storyStatus === 'completed' ? 'DONE' : 'IDLE', color: storyStatus === 'failed' ? 'text-rose-400' : autoOrchestrating ? 'text-emerald-400' : 'text-slate-400' },
+                                                { icon: 'fa-robot', label: 'AGENTS', value: agents, color: 'text-indigo-400' },
+                                                { icon: 'fa-list-check', label: 'DET STEPS', value: dets, color: 'text-cyan-400' },
+                                                { icon: 'fa-triangle-exclamation', label: 'FAILURES', value: fails, color: fails > 0 ? 'text-rose-400' : 'text-slate-500' },
+                                            ];
+                                            return cards.map(c => (
+                                                <div key={c.label} className="flex items-center justify-between rounded-md border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm px-2 py-1.5">
+                                                    <span className="flex items-center gap-1.5 text-[7px] font-black uppercase tracking-widest text-slate-500 min-w-0">
+                                                        <i className={`fas ${c.icon} ${c.color} text-[8px]`}></i>
+                                                        <span className="truncate">{c.label}</span>
+                                                    </span>
+                                                    <span className={`flex items-center gap-1 text-[11px] font-black font-mono ml-1 ${c.color}`}>
+                                                        {c.live && <span className="w-1 h-1 rounded-full bg-emerald-400 xs-live-dot shadow-[0_0_6px_rgba(52,211,153,1)]"></span>}
+                                                        {c.value}
+                                                    </span>
                                                 </div>
+                                            ));
+                                        })()}
+                                        {/* tiny compass-note footer */}
+                                        <div className="text-[6.5px] font-mono text-slate-600 text-center leading-tight px-1">ops telemetry · {new Date().toTimeString().slice(0, 8)}</div>
+                                    </div>
+                                    {/* ── CENTER: ANIMATED FLOW GRAPH ── */}
+                                    <div className="flex-1 min-w-0 overflow-hidden rounded-lg border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
+                                        <div className="relative overflow-x-auto">
+                                            <div className="relative shrink-0" style={{ width: 720, height: 168 }}>
+                                                {/* Connector lines + animated data packets */}
+                                                <svg width="700" height="150" className="absolute top-[9px] left-[10px] overflow-visible" style={{ zIndex: 1 }}>
+                                                    {storyPhases.slice(0, -1).map((ph, idx) => {
+                                                        const nx = storyPhases[idx + 1];
+                                                        const cx = (ph.x + nx.x) / 2;
+                                                        const move = Math.min(ph.x, nx.x), d = Math.max(ph.x, nx.x);
+                                                        const dip = 78 + (65 - Math.abs(move + d - 700) / 700 * 65) * 0.55;
+                                                        const p = `M ${ph.x} ${ph.y} Q ${cx} ${dip} ${nx.x} ${nx.y}`;
+                                                        const lineColor = ph.st === 'completed' ? '#34d399' : ph.st === 'running' ? '#818cf8' : ph.st === 'failed' ? '#fb7185' : '#334155';
+                                                        const flows = autoOrchestrating && (ph.st === 'completed' || ph.st === 'running');
+                                                        const pktColor = ph.st === 'completed' ? '#6ee7b7' : ph.st === 'running' ? '#67e8f9' : ph.st === 'failed' ? '#fda4af' : null;
+                                                        const pktCount = ph.st === 'completed' ? 2 : ph.st === 'running' ? 3 : ph.st === 'failed' ? 1 : 0;
+                                                        const pktDur = ph.st === 'running' ? 1.1 : 1.8;
+                                                        return (
+                                                            <g key={idx}>
+                                                                <path d={p} fill="none" stroke="#1e293b" strokeWidth="4.5" strokeLinecap="round" />
+                                                                <path d={p} fill="none" stroke={lineColor} strokeWidth="2" strokeLinecap="round" opacity={ph.st === 'pending' ? 0.5 : 0.92} />
+                                                                {flows && (
+                                                                    <path d={p} fill="none" stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" className="xs-flow" style={{ opacity: ph.st === 'running' ? 0.85 : 0.5 }} />
+                                                                )}
+                                                                {/* data packets travelling along the bezier (SMIL animateMotion) */}
+                                                                {pktCount > 0 && pktColor && Array.from({ length: pktCount }).map((_, pi) => (
+                                                                    <circle key={pi} r={ph.st === 'running' ? 3 : 2.5} fill="currentColor" className="xs-packet" style={{ color: pktColor, opacity: ph.st === 'failed' ? 0.7 : 0.95 }}>
+                                                                        <animateMotion dur={`${pktDur}s`} begin={`${-(pktDur / pktCount) * pi}s`} repeatCount="indefinite" path={p} />
+                                                                    </circle>
+                                                                ))}
+                                                            </g>
+                                                        );
+                                                    })}
+                                                </svg>
+                                                {/* Nodes — click to inspect phase resource direction */}
+                                                {storyPhases.map(ph => (
+                                                    <div key={ph.n} className="absolute flex flex-col items-center" style={{ zIndex: storySelectedPhase === ph.n ? 4 : 2, left: ph.x - 28, top: ph.y - 28, width: 56 }}>
+                                                        <button
+                                                            onClick={() => setStorySelectedPhase(storySelectedPhase === ph.n ? null : ph.n)}
+                                                            className={`group relative w-14 h-14 flex items-center justify-center rounded-full focus:outline-none transition-transform duration-200 ${storySelectedPhase === ph.n ? 'scale-110' : 'hover:scale-105'}`}
+                                                            title={`Inspect Phase 4.${ph.n}: ${ph.label} — what it creates/directs`}
+                                                        >
+                                                            {/* check badge */}
+                                                            <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-white text-[8px] flex items-center justify-center border-2 border-slate-950 shadow z-[4] ${ph.st === 'completed' ? '' : 'hidden'}`}><i className="fas fa-check"></i></div>
+                                                            {/* pulsing ring + orbiting dot on current phase */}
+                                                            {ph.st === 'running' && autoOrchestrating && (
+                                                                <>
+                                                                    <div className="absolute inset-0 rounded-full border-2 border-indigo-400 xs-pulse-ring"></div>
+                                                                    <div className="absolute inset-0 xs-orbit">
+                                                                        <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_rgba(103,232,249,1)]"></span>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                            {/* selection ring */}
+                                                            {storySelectedPhase === ph.n && (
+                                                                <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.6)]"></div>
+                                                            )}
+                                                            {/* orb */}
+                                                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-base border transition-all duration-300"
+                                                                style={{
+                                                                    background: ph.st === 'completed' ? 'radial-gradient(circle at 32% 28%, rgba(52,211,153,0.35), rgba(4,120,87,0.25) 60%, rgba(6,78,59,0.35))' :
+                                                                        ph.st === 'running' ? 'radial-gradient(circle at 32% 28%, rgba(129,140,248,0.4), rgba(99,102,241,0.3) 60%, rgba(49,46,129,0.45))' :
+                                                                        ph.st === 'failed' ? 'radial-gradient(circle at 32% 28%, rgba(251,113,133,0.35), rgba(190,18,60,0.3) 60%, rgba(76,5,25,0.45))' :
+                                                                        'radial-gradient(circle at 32% 28%, rgba(51,65,85,0.5), rgba(30,41,59,0.6) 60%, rgba(15,23,42,0.7))',
+                                                                    borderColor: ph.st === 'completed' ? 'rgba(52,211,153,0.7)' : ph.st === 'running' ? 'rgba(129,140,248,0.85)' : ph.st === 'failed' ? 'rgba(251,113,133,0.7)' : 'rgba(71,85,105,0.6)',
+                                                                    color: ph.st === 'pending' ? '#64748b' : '#f8fafc',
+                                                                    boxShadow: ph.st === 'completed' ? '0 0 18px rgba(16,185,129,0.45), inset 0 0 10px rgba(52,211,153,0.2)' :
+                                                                        ph.st === 'running' ? '0 0 22px rgba(99,102,241,0.55), inset 0 0 10px rgba(129,140,248,0.25)' :
+                                                                        ph.st === 'failed' ? '0 0 16px rgba(244,63,94,0.45), inset 0 0 10px rgba(251,113,133,0.2)' :
+                                                                        '0 0 8px rgba(2,6,23,0.6), inset 0 0 6px rgba(30,41,59,0.5)',
+                                                                }}
+                                                            >
+                                                                <i className={`fas ${ph.icon}`} style={{ filter: 'drop-shadow(0 0 6px currentColor)' }}></i>
+                                                            </div>
+                                                            {/* hover tooltip */}
+                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl border border-slate-700">
+                                                                <div className="font-bold text-amber-300">Phase 4.{ph.n}: {ph.label}</div>
+                                                                <div className="text-slate-300">{phaseContent?.[`PHASE_4_${ph.n}`]?.desc || 'Inspect resources this phase creates/directs'}</div>
+                                                                <div className="text-amber-200/80 mt-0.5">Click to inspect →</div>
+                                                            </div>
+                                                        </button>
+                                                        <div className="mt-1.5 text-center leading-tight">
+                                                            <div className="text-[7px] font-black uppercase tracking-widest text-slate-500">4.{ph.n}</div>
+                                                            <div className={`text-[8px] font-extrabold uppercase tracking-wide ${storySelectedPhase === ph.n ? 'text-amber-300' : ''}`} style={{ color: storySelectedPhase === ph.n ? undefined : (ph.st === 'completed' ? '#6ee7b7' : ph.st === 'running' ? '#c7d2fe' : ph.st === 'failed' ? '#fda4af' : '#94a3b8') }}>{ph.label}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        </div>
+                                        {/* flow legend */}
+                                        <div className="relative flex items-center gap-3 px-3 py-1.5 border-t border-slate-800/70 text-[7px] font-black uppercase tracking-widest text-slate-500">
+                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400/80"></span>done</span>
+                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400/80 xs-live-dot"></span>running</span>
+                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400/80"></span>failed</span>
+                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-700"></span>pending</span>
+                                            <span className="ml-auto flex items-center gap-1 text-cyan-400/80"><i className="fas fa-circle text-[5px] xs-live-dot"></i>packet = data flow</span>
+                                        </div>
+                                    </div>
+                                    {/* ── RIGHT: RESOURCE COMPASS ── */}
+                                    <div className="w-[200px] shrink-0 flex flex-col gap-1.5">
+                                        {(() => {
+                                            const n = (storySelectedPhase ?? storyCurrentN) || 1;
+                                            const sel = storyPhaseResources.find(r => r.n === n) || storyPhaseResources[0] || null;
+                                            const actionMeta = (a) => {
+                                                const u = String(a || '').toUpperCase();
+                                                if (u.startsWith('CREATE_VPC')) return { icon: 'fa-network-wired', short: 'VPC' };
+                                                if (u.startsWith('CREATE_SUBNET')) return { icon: 'fa-diagram-project', short: 'SUBNET' };
+                                                if (u.startsWith('CREATE_SG') || u.includes('SECURITY_GROUP')) return { icon: 'fa-shield', short: 'SEC GROUP' };
+                                                if (u.startsWith('CREATE_EIP') || u.includes('EIP')) return { icon: 'fa-globe', short: 'EIP' };
+                                                if (u.includes('AGENT_INSTALL')) return { icon: 'fa-download', short: 'AGENT' };
+                                                if (u.includes('TARGET_ECS') || u.includes('CREATE_ECS')) return { icon: 'fa-server', short: 'TARGET ECS' };
+                                                if (u.includes('TASK_CREATE')) return { icon: 'fa-sync-alt', short: 'TASK' };
+                                                if (u.includes('TASK_START')) return { icon: 'fa-play', short: 'START' };
+                                                if (u.includes('SUBTASK') || u.includes('MONITOR')) return { icon: 'fa-chart-line', short: 'MONITOR' };
+                                                if (u.includes('CUTOVER')) return { icon: 'fa-exchange-alt', short: 'CUTOVER' };
+                                                if (u.includes('SMOKE_TEST')) return { icon: 'fa-vial', short: 'SMOKE' };
+                                                if (u.startsWith('RELEASE')) return { icon: 'fa-trash', short: 'RELEASE' };
+                                                return { icon: 'fa-cube', short: u.replace(/_/g, ' ').slice(0, 14) };
+                                            };
+                                            if (!sel) return <div className="text-[7px] text-slate-600 italic px-1 py-2">No plan data.</div>;
+                                            const totalTargets = sel.actions.reduce((acc, a) => acc + Math.max(a.targets.length, 1), 0);
+                                            const focusStatus = storyPhases.find(ph => ph.n === sel.n)?.st || 'pending';
+                                            return (
+                                                <>
+                                                    <div className="flex items-center justify-between px-2 py-1.5 rounded-md border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm">
+                                                        <span className="flex items-center gap-1.5 text-[7px] font-black uppercase tracking-widest text-slate-400">
+                                                            <i className={`fas fa-compass text-cyan-400 text-[9px] ${focusStatus === 'running' ? 'xs-live-dot' : ''}`}></i>Resource Compass
+                                                        </span>
+                                                        <span className={`text-[9px] font-black font-mono ${storySelectedPhase === sel.n ? 'text-amber-300' : 'text-cyan-300'}`}>4.{sel.n}</span>
+                                                    </div>
+                                                    <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5 custom-scrollbar">
+                                                        {sel.actions.length === 0 && (
+                                                            <div className="text-[7px] text-slate-600 italic px-1 py-2">No plan actions mapped for this phase.</div>
+                                                        )}
+                                                        {sel.actions.map((a, i) => {
+                                                            const meta = actionMeta(a.action);
+                                                            return (
+                                                                <div key={i} className="flex items-center gap-1.5 rounded-md border border-slate-800/80 bg-slate-900/50 backdrop-blur-sm px-2 py-1">
+                                                                    <i className={`fas ${meta.icon} text-[8px] text-cyan-400/90 w-3.5 text-center shrink-0`}></i>
+                                                                    <span className="text-[8px] font-bold text-slate-300 uppercase tracking-wide truncate flex-1">{meta.short}</span>
+                                                                    <span className="text-[7px] font-mono text-slate-500 shrink-0">×{Math.max(a.targets.length, 1)}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <div className="text-[6.5px] font-mono text-slate-600 px-1 text-center leading-tight">
+                                                        {sel.actions.length} actions · {totalTargets} targets · {sel.label}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
-                                {/* INTERACTIVE detail panel — selected phase resource direction */}
+                                {/* INTERACTIVE detail panel — selected phase resource direction (dashboard drawer) */}
                                 {storySelectedPhase !== null && (() => {
                                     const sel = storyPhaseResources.find(r => r.n === storySelectedPhase) || null;
                                     if (!sel) return null;
                                     const sta = storyPhases.find(p => p.n === storySelectedPhase)?.st || 'pending';
+                                    const actionMeta = (a) => {
+                                        const u = String(a || '').toUpperCase();
+                                        if (u.startsWith('CREATE_VPC')) return 'fa-network-wired';
+                                        if (u.startsWith('CREATE_SUBNET')) return 'fa-diagram-project';
+                                        if (u.startsWith('CREATE_SG') || u.includes('SECURITY_GROUP')) return 'fa-shield';
+                                        if (u.startsWith('CREATE_EIP') || u.includes('EIP')) return 'fa-globe';
+                                        if (u.includes('AGENT_INSTALL')) return 'fa-download';
+                                        if (u.includes('TARGET_ECS') || u.includes('CREATE_ECS')) return 'fa-server';
+                                        if (u.includes('TASK_CREATE')) return 'fa-sync-alt';
+                                        if (u.includes('TASK_START')) return 'fa-play';
+                                        if (u.includes('SUBTASK') || u.includes('MONITOR')) return 'fa-chart-line';
+                                        if (u.includes('CUTOVER')) return 'fa-exchange-alt';
+                                        if (u.includes('SMOKE_TEST')) return 'fa-vial';
+                                        if (u.startsWith('RELEASE')) return 'fa-trash';
+                                        return 'fa-cube';
+                                    };
                                     return (
-                                        <div className="relative mx-3 my-2 rounded-xl border border-amber-500/40 bg-slate-900/80 backdrop-blur-sm overflow-hidden animate-fade-in" style={{ animation: 'xsSlideIn 0.3s ease' }}>
+                                        <div className="relative mx-3 my-2 rounded-xl border border-amber-500/40 bg-slate-900/85 backdrop-blur-sm overflow-hidden animate-fade-in" style={{ animation: 'xsSlideIn 0.3s ease' }}>
                                             <div className="flex items-center justify-between px-3 py-2 border-b border-amber-500/20 bg-slate-900/90">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <i className={`fas ${sel.label === 'Network' ? 'fa-network-wired' : sel.label === 'Source Prep' ? 'fa-download' : sel.label === 'Target' ? 'fa-server' : sel.label === 'Data Sync' ? 'fa-sync-alt' : sel.label === 'Monitor' ? 'fa-chart-line' : sel.label === 'Cutover' ? 'fa-exchange-alt' : 'fa-trash-alt'} text-amber-300 text-xs`}></i>
+                                                    <i className={`fas ${sel.actions[0] ? actionMeta(sel.actions[0].action) : 'fa-cube'} text-amber-300 text-xs`}></i>
                                                     <span className="text-[10px] font-black uppercase tracking-widest text-amber-200">Phase 4.{sel.n} — {sel.label}</span>
                                                     <span className={`px-1.5 py-px rounded-full text-[7px] font-black uppercase tracking-widest border ${sta === 'completed' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : sta === 'running' ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : sta === 'failed' ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'bg-slate-700/40 border-slate-600 text-slate-400'}`}>{sta}</span>
                                                 </div>
@@ -1499,6 +1623,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 {sel.actions.map((a, ai) => (
                                                     <div key={ai} className="rounded-lg border border-slate-700/70 bg-slate-950/60 p-2">
                                                         <div className="flex items-center gap-2 flex-wrap">
+                                                            <i className={`fas ${actionMeta(a.action)} text-cyan-400/90 text-[9px]`}></i>
                                                             <span className="px-1.5 py-px rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[8px] font-black tracking-wider">{a.action}</span>
                                                             {a.targets.length > 0 && (
                                                                 <span className="text-[8px] text-slate-400 font-mono">{a.targets.join(', ')}</span>
@@ -1515,19 +1640,46 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         </div>
                                     );
                                 })()}
-                                {/* Live event ticker — latest orchestrationLog line, slide-in on change */}
-                                <div className="relative px-3 py-2 border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-sm">
+                                {/* Live activity stream — command-line style tail, colored prefixes */}
+                                <div className="relative px-3 py-2 border-t border-slate-800/80 bg-slate-950/80 backdrop-blur-sm">
                                     <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-[0.18em] text-slate-500 mb-1">
-                                        <i className="fas fa-wave-square text-indigo-400"></i> Live Event Ticker
+                                        <i className="fas fa-terminal text-emerald-400"></i> Activity Stream
+                                        <span className="ml-auto text-[7px] font-mono text-slate-600 normal-case tracking-normal">tail -f orchestration.log</span>
                                     </div>
-                                    <div key={`ticker-${orchestrationLog.length}`} className="flex items-center gap-2" style={{ animation: 'xsSlideIn 0.45s cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
-                                        <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${autoOrchestrating ? 'bg-emerald-400 xs-live-dot shadow-[0_0_8px_rgba(52,211,153,0.9)]' : 'bg-slate-600'}`}></span>
-                                        <i className={`fas ${storyStatus === 'running' ? 'fa-satellite-dish text-indigo-400' : storyStatus === 'failed' ? 'fa-triangle-exclamation text-rose-400' : 'fa-circle-check text-emerald-400'} text-[10px] shrink-0`}></i>
-                                        <div className="font-mono text-[10px] text-slate-300 leading-snug truncate">
-                                            <span className="text-slate-500 mr-1">›</span>
-                                            {storyLatestLog || <span className="text-slate-500 italic">Standing by for orchestration events…</span>}
-                                        </div>
-                                    </div>
+                                    {(() => {
+                                        const last4 = orchestrationLog.slice(-4);
+                                        if (!last4.length) return (
+                                            <div key={`ticker-${orchestrationLog.length}`} className="flex items-center gap-2" style={{ animation: 'xsSlideIn 0.45s cubic-bezier(0.2, 0.7, 0.3, 1)' }}>
+                                                <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${autoOrchestrating ? 'bg-emerald-400 xs-live-dot shadow-[0_0_8px_rgba(52,211,153,0.9)]' : 'bg-slate-600'}`}></span>
+                                                <i className={`fas ${storyStatus === 'running' ? 'fa-satellite-dish text-indigo-400' : storyStatus === 'failed' ? 'fa-triangle-exclamation text-rose-400' : 'fa-circle-check text-emerald-400'} text-[10px] shrink-0`}></i>
+                                                <div className="font-mono text-[10px] text-slate-300 leading-snug truncate">
+                                                    <span className="text-slate-500 mr-1">›</span>
+                                                    <span className="text-slate-500 italic">Standing by for orchestration events…</span>
+                                                </div>
+                                            </div>
+                                        );
+                                        return last4.map((line, li) => {
+                                            const s = String(line);
+                                            let tag = '…', cls = 'text-slate-400', tagCls = 'text-slate-400 bg-slate-800/60 border-slate-700';
+                                            if (s.includes('[agent]')) { tag = 'agent'; cls = 'text-indigo-300'; tagCls = 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30'; }
+                                            else if (s.includes('[det]') && s.includes('✗')) { tag = 'det ✗'; cls = 'text-rose-300'; tagCls = 'text-rose-300 bg-rose-500/10 border-rose-500/30'; }
+                                            else if (s.includes('[det]')) { tag = 'det ✓'; cls = 'text-emerald-300'; tagCls = 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'; }
+                                            else if (s.includes('[phase]')) { tag = 'phase'; cls = 'text-indigo-300'; tagCls = 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30'; }
+                                            else if (s.includes('[done]')) { tag = 'done'; cls = 'text-emerald-300'; tagCls = 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'; }
+                                            else if (s.includes('[fail]')) { tag = 'fail'; cls = 'text-rose-300'; tagCls = 'text-rose-300 bg-rose-500/10 border-rose-500/30'; }
+                                            else if (s.includes('[start]')) { tag = 'start'; cls = 'text-cyan-300'; tagCls = 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30'; }
+                                            else if (s.includes('[ctx]')) { tag = 'ctx'; cls = 'text-slate-400'; tagCls = 'text-slate-400 bg-slate-800/60 border-slate-700'; }
+                                            const shown = s.replace(/^\[(agent|det|phase|done|fail|start|restart|ctx)\]\s*/i, '');
+                                            const isLast = li === last4.length - 1;
+                                            return (
+                                                <div key={`stream-${orchestrationLog.length - last4.length + li}`} className={`flex items-center gap-1.5 font-mono text-[9px] leading-snug truncate ${cls} ${isLast ? 'bg-slate-900/80 rounded-md px-1.5 py-0.5' : ''}`} style={isLast ? { animation: 'xsSlideIn 0.45s cubic-bezier(0.2, 0.7, 0.3, 1)' } : undefined}>
+                                                    <span className={`shrink-0 px-1 py-px rounded text-[7px] font-black uppercase border ${tagCls}`}>{tag}</span>
+                                                    <span className="truncate">{shown}</span>
+                                                    {isLast && <i className="fas fa-caret-right text-emerald-400 shrink-0 text-[8px]"></i>}
+                                                </div>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             </div>
                         </div>
