@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { formatShortDate, EditableCell } from '../../utils/helpers';
 import { ERPContext } from '../../context/ERPContext';
 import WaveZeroConfigModal from './WaveZeroConfigModal';
@@ -2414,6 +2414,8 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
     const [confirmRedep, setConfirmRedep] = useState(false); // inline confirm for re-deploy
     const [actionLog, setActionLog] = useState([]);        // live log entries during action execution
     const [simResult, setSimResult] = useState(null);      // {mode, data} from simulation, offers Execute Live
+    const [persistLog, setPersistLog] = useState([]);      // persistent server_action_log from backend
+    const simPayloadRef = useRef(null);                    // sim-resolved payload → Execute Live uses it
     const TASKS = [
         { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b', zeroTrust: true },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
@@ -2428,12 +2430,12 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
     const runServerAction = async (mode, opts = {}) => {
         if (!selectedServer) return;
         const isDry = !!opts.dry_run;
-        if (!isDry) { setActionResult(null); setActionLog([]); }
+        // NEVER clear the whole log on execute — preserve simulate → execute chain.
+        // Only clear on a fresh simulation.
+        if (isDry) setActionLog([]);
         setActionBusy(mode + (isDry ? '_sim' : '_exec'));
         const srv = selectedServer.name;
         const modeLabel = mode === 'new_target' ? 'New Target' : mode === 're_deploy' ? 'Re-deploy' : 'Re-run Steps';
-        // Preserve simulation log when executing live so the user sees the full
-        // simulate → execute chain in one window
         if (isDry) logLine(`▶ SIMULATION: ${modeLabel} for ${srv}...`, 'run');
         else logLine(`▶ EXECUTE LIVE: ${modeLabel} for ${srv}...`, 'run');
         try {
@@ -2441,10 +2443,20 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
             const pid = project?.id;
             if (!pid) { setActionResult({ kind: 'err', msg: 'Cannot determine project ID — reload the page.' }); setActionBusy(null); return; }
             logLine(`POST /individual/action → ${mode}${isDry ? ' (dry_run)' : ''}`, 'info');
+            // Execute Live reuses the SIMULATION-resolved payload (params already
+            // verified against the live cloud) so the command cannot drift if the
+            // plan was rebuilt between simulate and execute.
+            const extraBody = { server: srv, mode, dry_run: isDry };
+            if (!isDry && simPayloadRef.current && simPayloadRef.current.mode === mode) {
+                extraBody.sim_resolved = simPayloadRef.current.data?.resolved || null;
+                extraBody.sim_target = simPayloadRef.current.data?.target_name || null;
+                extraBody.sim_deployment = simPayloadRef.current.data?.deployment ?? null;
+                logLine('using simulation-resolved params (no re-resolve)', 'info');
+            }
             const res = await fetch(`/api/execution/${pid}/individual/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ server: srv, mode, dry_run: isDry })
+                body: JSON.stringify(extraBody)
             });
             logLine(`Response HTTP ${res.status}`, 'info');
             const data = await res.json();
@@ -2452,7 +2464,6 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                 logLine('✗ ' + (data.error || data.message || `HTTP ${res.status}`), 'err');
                 setActionResult({ kind: 'err', msg: data.error || data.message || `HTTP ${res.status}` });
             } else if (isDry && data.mode === 'simulation') {
-                // SIMULATION RESULT — show what would happen, offer Execute Live
                 logLine('✓ ' + (data.message || 'simulation ok'), 'ok');
                 if (data.cmd) logLine(`cmd: ${data.cmd.slice(0, 240)}`, 'info');
                 if (data.resolved) {
@@ -2462,9 +2473,9 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                 if (data.deleted_ecs?.length) logLine(`would delete ECS: ${data.deleted_ecs.join(', ')}`, 'warn');
                 if (data.cloned_steps?.length) logLine(`would clone ${data.cloned_steps.length} steps (deployment #${data.deployment})`, 'info');
                 setSimResult({ mode, data });
+                simPayloadRef.current = { mode, data };
                 setActionResult({ kind: 'sim', msg: data.message, sim: true, mode, data });
             } else {
-                // EXECUTE RESULT
                 logLine('✓ ' + (data.message || 'done'), 'ok');
                 if (data.deleted_ecs?.length) logLine(`Deleted ECS: ${data.deleted_ecs.join(', ')}`, 'ok');
                 if (data.target_name) logLine(`New target ECS: ${data.target_name}`, 'ok');
@@ -2476,9 +2487,11 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                     logLine(`Re-ran: ${okN} ok, ${failN} failed, ${blockN} blocked (templated→agent lane)`, okN === 0 ? 'warn' : 'ok');
                 }
                 setSimResult(null);
+                simPayloadRef.current = null;
                 setActionResult({ kind: 'ok', msg: data.message || 'done' });
             }
-            // refresh plan so cloned deployment steps appear (execution only)
+            // refresh persistent server-action log from backend after any action
+            if (data.success !== false) loadPersistentLog();
             if (!isDry && mode === 'new_target' && data.success !== false && onPlanRefresh) { logLine('Refreshing execution plan...', 'info'); onPlanRefresh(); }
         } catch (e) {
             logLine('✗ Exception: ' + e.message, 'err');
@@ -2486,6 +2499,19 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
         }
         setActionBusy(null); setConfirmRedep(false);
     };
+    const loadPersistentLog = async () => {
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const pid = project?.id;
+            if (!pid) return;
+            const res = await fetch(`/api/execution/${pid}/action-log`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            const data = await res.json();
+            if (data.success !== false) setPersistLog(data.log || []);
+        } catch (e) { /* non-fatal */ }
+    };
+    useEffect(() => { loadPersistentLog(); /* eslint-disable-next-line */ }, [selectedServer?.name, project?.id]);
     const ACTION_BUTTONS = [
         { mode: 'new_target',  label: 'New Target',     icon: 'fa-plus-circle',  color: '#8b5cf6', confirm: false,
           desc: 'Deploy a second target ECS alongside the existing one (same config). Original untouched.' },
@@ -2672,6 +2698,30 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                         </div>
                     )}
                     {isZeroTrust && <div className="mt-2 text-amber-500 text-[10px] font-medium"><i className="fas fa-lock mr-1"></i> Agent install is customer responsibility — Zero Trust</div>}
+                    {/* ── Persistent Deployment History (server_action_log from backend) ── */}
+                    {persistLog.length > 0 && (
+                        <div className="mt-2 bg-slate-900/40 rounded-lg border border-slate-700/60 overflow-hidden">
+                            <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-800/60 border-b border-slate-700/60">
+                                <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                                    <i className="fas fa-history mr-1 text-sky-400"></i>Deployment History <span className="text-slate-500 normal-case">(persisted in project data)</span>
+                                </span>
+                                <button onClick={() => loadPersistentLog()} className="text-[9px] text-slate-400 hover:text-slate-200"><i className="fas fa-sync-alt"></i></button>
+                            </div>
+                            <div className="max-h-44 overflow-y-auto custom-scrollbar">
+                                {[...persistLog].reverse().map((e, i) => (
+                                    <div key={i} className="px-2.5 py-1.5 border-b border-slate-800/50 last:border-b-0 flex items-start gap-2">
+                                        <i className={`fas mt-0.5 text-[9px] ${e.kind === 're_deploy' && e.ok ? 'fa-trash' : e.ok ? 'fa-check-circle' : 'fa-exclamation-circle'} ${e.ok ? 'text-emerald-500' : 'text-rose-500'}`}></i>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-[9px] text-slate-300 leading-tight">{e.summary}</div>
+                                            <div className="text-[8px] text-slate-500 font-mono mt-0.5">
+                                                {e.ts} · {e.server} · {e.kind}{e.dry_run ? ' · SIMULATION' : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
             {/* 📋 EXECUTION PLAN PANEL — validate what will execute against the 188-step plan */}

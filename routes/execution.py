@@ -974,6 +974,10 @@ def individual_server_action(project_id):
         mode = (data.get("mode") or "").strip().lower()
         step_ids = data.get("step_ids") or []
         dry_run = data.get("dry_run", False)
+        # Execute Live may ship the simulation-resolved payload so we skip re-resolving
+        sim_resolved = data.get("sim_resolved") or None
+        sim_target = (data.get("sim_target") or "").strip() or None
+        sim_deployment = data.get("sim_deployment")
         if not server:
             return jsonify({"success": False, "error": "server required"}), 400
         if mode not in ("re_deploy", "new_target", "rerun_steps"):
@@ -1040,6 +1044,39 @@ def individual_server_action(project_id):
             srv = srv or server
             return [s for s in plan_steps() if s.get('target_resource') == srv]
 
+        def log_activity(kind, summary, detail=None, ok=True):
+            """Persist a per-server action into project.data['server_action_log'].
+            Survives reloads — this is the ERP-app-visible deployment log."""
+            try:
+                log = pd.get('server_action_log') or []
+                if not isinstance(log, list):
+                    log = []
+                import datetime as _dt
+                entry = {
+                    'ts': _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'server': server,
+                    'kind': kind,
+                    'summary': summary[:400],
+                    'ok': bool(ok),
+                    'mode': mode,
+                    'dry_run': bool(dry_run),
+                }
+                if detail:
+                    entry['detail'] = str(detail)[:800]
+                log.append(entry)
+                # keep last 100 entries
+                pd['server_action_log'] = log[-100:]
+                if isinstance(plan, dict):
+                    plan['steps'] = plan_steps()
+                pd['executionPlan'] = plan
+                project.data = json.dumps(pd)
+                db.session.commit()
+            except Exception as le:
+                try:
+                    logging.error(f"log_activity failed: {le}")
+                except Exception:
+                    pass
+
         # ═══════════════════════════════════════════════════════════════════
         # MODE: re_deploy — tear down this server's target(s), reset steps
         # ═══════════════════════════════════════════════════════════════════
@@ -1068,6 +1105,14 @@ def individual_server_action(project_id):
                 except Exception:
                     pass
                 steps_to_reset = len(server_steps())
+                log_activity('re_deploy',
+                             f"SIMULATION: Re-deploy would delete {len(candidates)} ECS "
+                             f"({', '.join(sv.get('name', '?') for sv in candidates) or 'none'})"
+                             + (f" + {len(sim_eips)} EIP" if sim_eips else "")
+                             + f", reset {steps_to_reset} steps for '{server}' (no changes made).",
+                             detail={'candidates': [sv.get('name') for sv in candidates],
+                                     'eips': sim_eips, 'reset_steps': steps_to_reset},
+                             ok=True)
                 return jsonify({
                     "success": True,
                     "mode": "simulation",
@@ -1125,10 +1170,14 @@ def individual_server_action(project_id):
 
             msg = f"Re-deploy: deleted {len(deleted_ecs)} target ECS ({', '.join(deleted_ecs) or 'none'})"
             if deleted_eips:
-                msg += f", released {len(deleted_eips)} EIPs"
+                msg += f", released {len(deleted_eips)} EIPs ({', '.join(deleted_eips)})"
             msg += f", reset {reset_count} plan steps for '{server}' to pending."
             if errs:
                 msg += f" Failures: {'; '.join(errs[:3])}"
+            log_activity('re_deploy', msg,
+                         detail={'deleted_ecs': deleted_ecs, 'deleted_eips': deleted_eips,
+                                 'reset_steps': reset_count, 'errors': errs},
+                         ok=not errs)
             return jsonify({"success": not errs, "deleted_ecs": deleted_ecs,
                             "deleted_eips": deleted_eips, "reset_steps": reset_count,
                             "message": msg}), (200 if not errs else 207)
@@ -1154,6 +1203,15 @@ def individual_server_action(project_id):
             while f"{base_target_name}-{n}".upper() in {u.upper() for u in used_names}:
                 n += 1
             new_target_name = f"{base_target_name}-{n}"
+            # Execute Live ships the sim-resolved deployment — honor it verbatim
+            # (avoids drift if the plan was rebuilt between simulate and execute).
+            if sim_target and not dry_run:
+                new_target_name = sim_target
+            if sim_deployment and not dry_run:
+                try:
+                    n = int(sim_deployment)
+                except Exception:
+                    pass
 
             # Spec: from the plan's CREATE_TARGET_ECS step for this server (same config)
             step_specs = {s.get('action'): s for s in server_steps()}
@@ -1221,6 +1279,21 @@ def individual_server_action(project_id):
                 vpc_id_res = md.get('vpc_id') or det.get('vpc_id') or ''
                 if image_ref and vpc_id_res:
                     break
+            # Execute Live ships the simulation-resolved params — prefer them verbatim
+            # (they were verified against live cloud moments earlier and the plan may
+            # have been rebuilt since; re-resolving could select a different VPC).
+            if sim_resolved and not dry_run and isinstance(sim_resolved, dict):
+                image_ref = sim_resolved.get('imageRef') or image_ref
+                vpc_id_res = sim_resolved.get('vpcid') or vpc_id_res
+                subnet_id_res = sim_resolved.get('subnet_id') or subnet_id_res
+                vol_type = sim_resolved.get('volumetype') or vol_type
+                if sim_resolved.get('flavor'):
+                    flavor_ref = sim_resolved.get('flavor')
+                if sim_resolved.get('disk_gb'):
+                    try:
+                        disk_gb = int(sim_resolved.get('disk_gb'))
+                    except Exception:
+                        pass
             # Fallbacks: image from list, vpc from account (project's own vpc or default)
             if not image_ref:
                 imgs = hh(['IMS', 'ListImages', '--cli-region=' + target_region])
@@ -1295,6 +1368,15 @@ def individual_server_action(project_id):
                                 c['cmd'] = c['cmd'].replace(base_target_name, new_target_name)
                                 c['cmd'] = c['cmd'].replace(f"migrate-{server}", f"migrate-{server}-{n}")
                     sim_clones.append({'step_id': new_s['step_id'], 'action': new_s.get('action')})
+                log_activity('new_target',
+                             f"SIMULATION: New target {new_target_name} resolved — {flavor_ref}, {disk_gb}GB, "
+                             f"image={image_ref[:12]}..., vpc={vpc_id_res[:12]}..., vol={vol_type}. "
+                             f"{len(sim_clones)} steps staged for deployment #{n} (no resources created).",
+                             detail={'resolved': {'imageRef': image_ref, 'flavor': flavor_ref,
+                                                  'vpcid': vpc_id_res, 'subnet_id': subnet_id_res,
+                                                  'volumetype': vol_type, 'disk_gb': disk_gb},
+                                     'cmd': create_cmd, 'deployment': n},
+                             ok=True)
                 return jsonify({
                     "success": True,
                     "mode": "simulation",
@@ -1374,6 +1456,16 @@ def individual_server_action(project_id):
             project.data = json.dumps(pd)
             db.session.commit()
 
+            log_activity('new_target',
+                         f"New target {new_target_name} created ({flavor_ref}, {disk_gb}GB)"
+                         + (f", id {new_ecs_id}" if new_ecs_id else ", id pending (creation accepted)")
+                         + f". {len(clones)} steps cloned as deployment #{n}.",
+                         detail={'target_name': new_target_name, 'ecs_id': new_ecs_id,
+                                 'flavor': flavor_ref, 'disk_gb': disk_gb,
+                                 'resolved': {'imageRef': image_ref, 'vpcid': vpc_id_res,
+                                              'subnet_id': subnet_id_res, 'volumetype': vol_type},
+                                 'deployment': n, 'cloned_steps': len(clones)})
+
             return jsonify({
                 "success": True,
                 "mode": "new_target",
@@ -1424,6 +1516,10 @@ def individual_server_action(project_id):
                     })
                 n_run = sum(1 for p in preview if p['would_run'])
                 n_block = sum(1 for p in preview if p['blocked_templated'])
+                log_activity('rerun_steps',
+                             f"SIMULATION: {len(preview)} steps queued for '{server}' "
+                             f"({n_run} would execute, {n_block} templated→agent lane, no changes made).",
+                             detail={'preview': preview}, ok=True)
                 return jsonify({
                     "success": True,
                     "mode": "simulation",
@@ -1468,12 +1564,30 @@ def individual_server_action(project_id):
             db.session.commit()
 
             ok_count = sum(1 for r in results_ran if r.get('status') == 'success')
+            log_activity('rerun_steps',
+                         f"Re-ran {len(results_ran)} steps for '{server}' ({ok_count} ok).",
+                         detail={'results': results_ran, 'ok': ok_count, 'total': len(results_ran)})
             return jsonify({"success": True, "reran": results_ran,
                             "message": f"Re-ran {len(results_ran)} steps for '{server}' ({ok_count} ok)."}), 200
 
     except Exception as e:
         logging.error(f"individual action failed: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/action-log', methods=['GET'])
+@jwt_required()
+def get_server_action_log(project_id):
+    """Return the persistent server action log for this project."""
+    project = ProjectData.query.get(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+    log = pd.get('server_action_log') or []
+    server = request.args.get('server')
+    if server:
+        log = [e for e in log if e.get('server', '').lower() == server.lower()]
+    return jsonify({'success': True, 'log': log[-100:]})
 
 
 @execution_bp.route('/api/execution/<project_id>/progress', methods=['GET'])
