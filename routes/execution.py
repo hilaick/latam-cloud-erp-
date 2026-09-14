@@ -1438,7 +1438,21 @@ def orchestration_status(project_id):
             st_row = ExecutionState.query.filter_by(project_id=project_id).first()
             if st_row:
                 status['current_phase'] = st_row.current_phase
-                if st_row.last_pipeline_log:
+                # Status authority: the DB row's explicit lifecycle status wins.
+                # A persisted log from a PREVIOUS run must not resurrect
+                # "completed" phases when the pipeline is IDLE/STOPPED/PAUSED.
+                db_status = (st_row.status or '').upper()
+                from services.orchestration_engine import is_pipeline_running as _ipr
+                _in_mem = _ipr(project_id)
+                if db_status in ('IDLE', 'STOPPED', 'PENDING') and not _in_mem:
+                    status['status'] = 'idle'
+                    status['log'] = []
+                    status['completed_phases'] = []
+                    status['phase_status'] = {}
+                    status['current_phase'] = None
+                elif db_status == 'PAUSED' and not _in_mem:
+                    status['status'] = 'paused'
+                if st_row.last_pipeline_log and status['status'] not in ('idle', 'paused'):
                     try:
                         plog = _j.loads(st_row.last_pipeline_log)
                         if isinstance(plog, list):
