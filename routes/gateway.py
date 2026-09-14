@@ -203,6 +203,13 @@ def select_enterprise_project():
                 'success': False,
                 'error': f"EP '{eps_id}' not found in the customer's account. Available: {[e.get('name') for e in eps_list]}"
             }), 400
+        # Default EP (id=0) is the whole-account scope — binding it provides NO
+        # isolation. Refuse it so the user cannot accidentally "confirm" a no-op.
+        if str(eps_id) == '0':
+            return jsonify({
+                'success': False,
+                'error': "'default' (id=0) is the account-wide scope — it provides no Enterprise Project isolation. Create a dedicated EP (e.g. Migration-Workspace) first, then bind it."
+            }), 400
     except Exception as e:
         return jsonify({'success': False, 'error': f'EP verification failed: {str(e)[:150]}'}), 500
 
@@ -632,6 +639,8 @@ def full_readiness_check():
     #    The old code read `customer.realname_auth_status` (DB column, never set).
     #    Now we call the proven path: EPS list = credential liveness + real-name proof.
     live_realname = {'verified': False, 'eps': [], 'status': 'unknown', 'message': 'Real-name auth status not checked yet.'}
+    eps_available = []
+    eps_project_bound = None
     if has_ak and has_sk:
         try:
             from services.huawei_iam import HuaweiIAMClient
@@ -640,24 +649,35 @@ def full_readiness_check():
                 client = HuaweiIAMClient(ak_raw_c, sk_raw_c, customer.region or 'la-north-2')
                 rn = client.check_realname_auth()
                 live_realname = rn
-                # Persist live result to project.data (no customer schema change)
+                eps_available = rn.get('eps', [])
                 if rn.get('verified'):
                     checks['realname_auth'] = {
                         'status': 'valid',
                         'auth_type': rn.get('type'),
-                        'eps': rn.get('eps', []),
-                        'message': f"Real-name verified. {len(rn.get('eps', []))} enterprise project(s) available."
+                        'eps': eps_available,
+                        'eps_count': len(eps_available),
+                        'message': f"Real-name verified. {len(eps_available)} enterprise project(s) available."
                     }
-                    # Auto-set enterpriseProject from the first non-default EP if not set
+                    # Check if project already has a bound EP
                     if project:
                         pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
-                        if not pd.get('enterpriseProject'):
-                            eps_list = rn.get('eps', [])
-                            if eps_list:
-                                pd['enterpriseProject'] = eps_list[0].get('name', '')
-                                pd['enterpriseProjectId'] = eps_list[0].get('id', '')
-                                project.data = json.dumps(pd)
-                                db.session.commit()
+                        eps_project_bound = pd.get('enterpriseProjectId') or ''
+                        if not eps_project_bound:
+                            # Auto-suggest single-EP case if user hasn't explicitly bound
+                            # (allows the EP selection sub-step to pre-fill)
+                            pass
+                    # EP ISOLATION GATE: if real-name verified and EPs exist in the account
+                    # but NONE is bound to this project, the gateway is NOT fully ready.
+                    # The user must either bind an EP (recommended) or acknowledge default.
+                    if eps_available and not eps_project_bound:
+                        checks['realname_auth']['needs_eps_selection'] = True
+                        checks['realname_auth']['warning'] = (
+                            f"Real-name is verified ({len(eps_available)} EP(s) available) but "
+                            f"no Enterprise Project is bound to this project. "
+                            f"Resources will use the account default scope unless an EP is selected below."
+                        )
+                        requires_action.append('Select an Enterprise Project from the list below to scope Phase 4 resources, or acknowledge default-scope usage.')
+                        overall_ready = False
                 else:
                     checks['realname_auth'] = {
                         'status': 'unverified',
@@ -670,6 +690,7 @@ def full_readiness_check():
             checks['realname_auth'] = {'status': 'unknown', 'message': f'Live check unavailable: {str(rne)[:80]}', 'eps': []}
     else:
         checks['realname_auth'] = {'status': 'blocked', 'message': 'Master AK/SK required before checking real-name auth.'}
+        overall_ready = False
 
     # 3. Tier 2 (EPS Admin) — only if real-name verified
     if checks.get('realname_auth', {}).get('status') == 'valid':

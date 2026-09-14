@@ -123,7 +123,9 @@ class HuaweiIAMClient:
                     idx = r2.stdout.find('{')
                     parsed = _json.JSONDecoder().raw_decode(r2.stdout[idx:])[0] if idx >= 0 else {}
                     eps = [{'id': e.get('id'), 'name': e.get('name'), 'type': e.get('type'), 'status': e.get('status')}
-                           for e in (parsed.get('enterprise_projects') or []) if e.get('id') != '0']
+                           for e in (parsed.get('enterprise_projects') or [])]
+                    # "default" (id=0) is auto-created; it proves real-name and is selectable.
+                    # Accounts with NON-default EPs have more separation options.
                 except Exception:
                     eps = []
                 # Account that can list EPS is real-name verified (Huawei policy).

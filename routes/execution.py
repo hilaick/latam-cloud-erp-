@@ -1139,11 +1139,15 @@ def individual_server_action(project_id):
                 disk_gb = int(m_disk.group(1))
 
             # Flavor: existing target's flavor if known, else <DISCOVERED_FLAVOR>
+            # NOTE: Huawei ListServersDetails returns 'flavor' as an OBJECT
+            # {id, name, vcpus, ram} — string-concat crashes if we take it raw.
             flavor_ref = '<DISCOVERED_FLAVOR>'
             for sv in existing:
                 flav = sv.get('flavor') or sv.get('flavorRef') or ''
+                if isinstance(flav, dict):
+                    flav = flav.get('id') or flav.get('name') or ''
                 if flav:
-                    flavor_ref = flav
+                    flavor_ref = str(flav)
                     break
             # Prefer a concrete flavor from the plan command if it was resolved
             m_flav = re.search(r'--server\.flavorRef=([^\s]+)', base_cmd)
