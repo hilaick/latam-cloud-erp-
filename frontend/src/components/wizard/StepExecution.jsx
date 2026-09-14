@@ -2412,6 +2412,7 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
     const [actionBusy, setActionBusy] = useState(null);   // which server-action is running
     const [actionResult, setActionResult] = useState(null); // last action feedback {kind, msg}
     const [confirmRedep, setConfirmRedep] = useState(false); // inline confirm for re-deploy
+    const [actionLog, setActionLog] = useState([]);        // live log entries during action execution
     const TASKS = [
         { action: 'SMS_AGENT_INSTALL', label: 'Install Agent', icon: 'fa-download', color: '#f59e0b', zeroTrust: true },
         { action: 'CREATE_TARGET_ECS', label: 'Create ECS', icon: 'fa-server', color: '#3b82f6' },
@@ -2420,23 +2421,47 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
         { action: 'SMS_SUBTASK_MONITOR', label: 'Monitor', icon: 'fa-chart-line', color: '#6366f1' },
         { action: 'MIGRATION_PROJECT_CONFIG', label: 'Config', icon: 'fa-cog', color: '#8b5cf6' },
     ];
+    const logLine = (msg, kind = 'info') => {
+        setActionLog(prev => [...prev, { t: new Date().toLocaleTimeString(), msg, kind }]);
+    };
     const runServerAction = async (mode) => {
         if (!selectedServer) return;
-        setActionBusy(mode); setActionResult(null);
+        setActionBusy(mode); setActionResult(null); setActionLog([]);
+        const srv = selectedServer.name;
+        const modeLabel = mode === 'new_target' ? 'New Target' : mode === 're_deploy' ? 'Re-deploy' : 'Re-run Steps';
+        logLine(`▶ ${modeLabel} for ${srv}...`, 'run');
         try {
             const token = sessionStorage.getItem('hermes_access_token');
             const pid = project?.id;
             if (!pid) { setActionResult({ kind: 'err', msg: 'Cannot determine project ID — reload the page.' }); setActionBusy(null); return; }
+            logLine('POST /individual/action → ' + mode, 'info');
             const res = await fetch(`/api/execution/${pid}/individual/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ server: selectedServer.name, mode })
+                body: JSON.stringify({ server: srv, mode })
             });
+            logLine(`Response HTTP ${res.status}`, 'info');
             const data = await res.json();
-            setActionResult({ kind: data.success !== false ? 'ok' : 'err', msg: data.message || data.error || JSON.stringify(data).slice(0, 300) });
+            if (data.success === false || res.status >= 400) {
+                logLine('✗ ' + (data.error || data.message || `HTTP ${res.status}`), 'err');
+                setActionResult({ kind: 'err', msg: data.error || data.message || `HTTP ${res.status}` });
+            } else {
+                logLine('✓ ' + (data.message || 'done'), 'ok');
+                if (data.deleted_ecs?.length) logLine(`Deleted ECS: ${data.deleted_ecs.join(', ')}`, 'ok');
+                if (data.target_name) logLine(`New target ECS: ${data.target_name}`, 'ok');
+                if (data.cloned_steps?.length) logLine(`Cloned ${data.cloned_steps.length} steps (deployment #${data.deployment})`, 'ok');
+                if (data.reran?.length) {
+                    const okN = data.reran.filter(r => r.status === 'success').length;
+                    const failN = data.reran.filter(r => r.status === 'failed').length;
+                    const blockN = data.reran.filter(r => r.status === 'blocked').length;
+                    logLine(`Re-ran: ${okN} ok, ${failN} failed, ${blockN} blocked (templated→agent lane)`, okN === 0 ? 'warn' : 'ok');
+                }
+                setActionResult({ kind: 'ok', msg: data.message || 'done' });
+            }
             // refresh plan so cloned deployment steps appear
-            if (mode === 'new_target' && data.success !== false && onPlanRefresh) onPlanRefresh();
+            if (mode === 'new_target' && data.success !== false && onPlanRefresh) { logLine('Refreshing execution plan...', 'info'); onPlanRefresh(); }
         } catch (e) {
+            logLine('✗ Exception: ' + e.message, 'err');
             setActionResult({ kind: 'err', msg: e.message });
         }
         setActionBusy(null); setConfirmRedep(false);
@@ -2584,6 +2609,32 @@ function MigrationIndividualView({ servers, executeStep, selectedServer, setSele
                             <i className={`fas ${actionResult.kind === 'ok' ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-1`}></i>
                             {actionResult.msg}
                             <button onClick={() => setActionResult(null)} className="float-right text-[9px] opacity-60 hover:opacity-100"><i className="fas fa-times"></i></button>
+                        </div>
+                    )}
+                    {/* ── Server Action Activity Log ── */}
+                    {(actionBusy || actionLog.length > 0) && (
+                        <div className="mt-2 bg-slate-900/90 rounded-lg border border-slate-700 overflow-hidden">
+                            <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-800/80 border-b border-slate-700">
+                                <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                                    <i className="fas fa-terminal mr-1 text-emerald-400"></i>Server Action Log
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    {actionBusy && <span className="text-[9px] text-amber-400 font-bold"><i className="fas fa-circle-notch fa-spin mr-1"></i>working...</span>}
+                                    {actionLog.length > 0 && <button onClick={() => setActionLog([])} className="text-[9px] text-slate-400 hover:text-slate-200"><i className="fas fa-broom"></i></button>}
+                                </div>
+                            </div>
+                            <div className="p-2 font-mono text-[9px] leading-relaxed max-h-40 overflow-y-auto custom-scrollbar">
+                                {actionLog.map((l, i) => (
+                                    <div key={i} className={
+                                        l.kind === 'ok' ? 'text-emerald-400' :
+                                        l.kind === 'err' ? 'text-rose-400' :
+                                        l.kind === 'run' ? 'text-amber-300 font-bold' :
+                                        l.kind === 'warn' ? 'text-yellow-400' : 'text-slate-300'}>
+                                        <span className="text-slate-500 mr-1.5">[{l.t}]</span>{l.msg}
+                                    </div>
+                                ))}
+                                {actionLog.length === 0 && <div className="text-slate-500 italic">Waiting for action output...</div>}
+                            </div>
                         </div>
                     )}
                     {isZeroTrust && <div className="mt-2 text-amber-500 text-[10px] font-medium"><i className="fas fa-lock mr-1"></i> Agent install is customer responsibility — Zero Trust</div>}

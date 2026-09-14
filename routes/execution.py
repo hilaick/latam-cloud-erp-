@@ -1157,9 +1157,11 @@ def individual_server_action(project_id):
             # Network: the SMS flow rebinds the ECS to the mig project; use the
             # same shape as the plan's base CreateServers (VPC/subnet resolved by
             # the SMS agent lane). Enterprise project: if project has one configured,
-            # pin the new ECS to it.
+            # pin the new ECS to it. NOTE: hcloud ECS CreateServers uses
+            # --server.extendparam.enterprise_project_id (NOT --server.enterprise_project_id
+            # which returns [USE_ERROR]Invalid parameter).
             ep_id = pd.get('enterpriseProjectId') or pd.get('enterprise_project_id') or ''
-            ep_opt = f" --server.enterprise_project_id={ep_id}" if ep_id else ''
+            ep_opt = f" --server.extendparam.enterprise_project_id={ep_id}" if ep_id else ''
 
             tag_q = ''
             erp_tag_value = (plan.get('erp_tag_value') if isinstance(plan, dict) else None) or ''
@@ -1178,7 +1180,7 @@ def individual_server_action(project_id):
                       '--server.publicip.eip.iptype=5_bgp',
                       '--server.publicip.eip.bandwidth.size=100',
                       *((['--server.tags.1=' + tag_q]) if tag_q else []),
-                      *((['--server.enterprise_project_id=' + ep_id]) if ep_id else []),
+                      *((['--server.extendparam.enterprise_project_id=' + ep_id]) if ep_id else []),
                       '--server.count=1',
                       '--cli-region=' + target_region])
             err = res.get('_hcloud_error') or ''
@@ -1438,21 +1440,7 @@ def orchestration_status(project_id):
             st_row = ExecutionState.query.filter_by(project_id=project_id).first()
             if st_row:
                 status['current_phase'] = st_row.current_phase
-                # Status authority: the DB row's explicit lifecycle status wins.
-                # A persisted log from a PREVIOUS run must not resurrect
-                # "completed" phases when the pipeline is IDLE/STOPPED/PAUSED.
-                db_status = (st_row.status or '').upper()
-                from services.orchestration_engine import is_pipeline_running as _ipr
-                _in_mem = _ipr(project_id)
-                if db_status in ('IDLE', 'STOPPED', 'PENDING') and not _in_mem:
-                    status['status'] = 'idle'
-                    status['log'] = []
-                    status['completed_phases'] = []
-                    status['phase_status'] = {}
-                    status['current_phase'] = None
-                elif db_status == 'PAUSED' and not _in_mem:
-                    status['status'] = 'paused'
-                if st_row.last_pipeline_log and status['status'] not in ('idle', 'paused'):
+                if st_row.last_pipeline_log:
                     try:
                         plog = _j.loads(st_row.last_pipeline_log)
                         if isinstance(plog, list):

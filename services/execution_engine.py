@@ -733,7 +733,9 @@ class ExecutionEngine:
         ep_vpc_opt = f' --vpc.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
         ep_subnet_opt = f' --subnet.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
         ep_sg_opt = f' --security_group.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
-        ep_eip_opt = f' --publicip.enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
+        # NOTE: EIP CreatePublicip takes top-level --enterprise_project_id
+        # (NOT --publicip.enterprise_project_id — [USE_ERROR]Invalid parameter)
+        ep_eip_opt = f' --enterprise_project_id={eps_id_prov}' if eps_id_prov else ''
         for node in network_nodes:
             step_id += 1
             ntype = str(node.get("type", "")).upper()
@@ -1054,9 +1056,11 @@ class ExecutionEngine:
         # Enterprise Project scoping: when the gateway bound an EP to the project,
         # every created resource must carry its id — this is the EPS isolation the
         # user requires (Migration-Workspace EP on production accounts).
-        ep_opt = f' --server.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
+        # NOTE: ECS CreateServers uses --server.extendparam.enterprise_project_id
+        # (NOT --server.enterprise_project_id — [USE_ERROR]Invalid parameter)
+        ep_opt = f' --server.extendparam.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
         ep_vpc_opt = f' --vpc.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
-        ep_eip_opt = f' --publicip.enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
+        ep_eip_opt = f' --enterprise_project_id={enterprise_project_id}' if enterprise_project_id else ''
 
         if strategy == "sms":
             # ── SMS Migration (compute) — resolve commands from knowledge tree + MCP ──
