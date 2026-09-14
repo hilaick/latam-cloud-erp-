@@ -251,6 +251,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
     const [lifecycleTab, setLifecycleTab] = useState('circle'); // 'circle' | 'story' | 'spawn' — spawn tree third
     const [storySelectedPhase, setStorySelectedPhase] = useState(null); // clicked phase N (interactive Journey)
+    const [lifecycleFullscreen, setLifecycleFullscreen] = useState(false); // fullscreen overlay for all 3 lifecycle tabs
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Most recent meaningful activity line (agent/det) for the running-phase card
     // MUST be declared after orchestrationLog (TDZ) — the minifier renames
@@ -334,7 +335,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 icon: phaseContent?.[phaseKey]?.icon || icons[idx],
                 st,
                 x: 24 + gap * idx + gap / 2,
-                y: 86,
+                y: 120,
             };
         });
     })();
@@ -1236,16 +1237,30 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         </div>
                     )}
                     {/* Lifecycle Circle Chart — 7 phases as circular nodes (collapsible) */}
-                    <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div className={`${lifecycleFullscreen
+                        ? 'fixed inset-0 z-50 bg-slate-950 overflow-y-auto overflow-x-hidden'
+                        : 'mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden'}`}>
+                        {lifecycleFullscreen && (
+                            <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+                                <h4 className="font-black text-slate-200 text-xs uppercase tracking-widest"><i className="fas fa-sync-alt text-indigo-400 mr-2"></i>Migration Lifecycle — Fullscreen</h4>
+                                <button onClick={() => setLifecycleFullscreen(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black uppercase tracking-widest">
+                                    <i className="fas fa-compress mr-1"></i> Close Fullscreen
+                                </button>
+                            </div>
+                        )}
                         <button
                             onClick={() => toggleSection('lifecycle')}
-                            className="w-full flex items-center justify-between p-3 cursor-pointer"
+                            className={`${lifecycleFullscreen ? 'hidden' : ''} w-full flex items-center justify-between p-3 cursor-pointer`}
                         >
                             <div className="flex items-center gap-2">
                                 <i className="fas fa-sync-alt text-indigo-500"></i>
                                 <h4 className="font-black text-slate-700 text-xs uppercase tracking-widest">Migration Lifecycle</h4>
                             </div>
-                            <span className="text-[10px] text-slate-400"><i className={`fas ${collapsedSections.lifecycle ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i></span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-2">
+                                <i className={`fas ${lifecycleFullscreen ? 'fa-compress' : 'fa-expand'} cursor-pointer hover:text-slate-600 transition-colors`}
+                                   onClick={(e) => { e.stopPropagation(); setLifecycleFullscreen(v => { if (!v) setCollapsedSections(prev => ({ ...prev, lifecycle: false })); return !v; }); }}></i>
+                                <i className={`fas ${collapsedSections.lifecycle ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i>
+                            </span>
                         </button>
                         {!collapsedSections.lifecycle && (
                         <div className="px-2 pb-4">
@@ -1437,14 +1452,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     {/* ── CENTER: ANIMATED FLOW GRAPH ── */}
                                     <div className="flex-1 min-w-0 overflow-hidden rounded-lg border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
                                         <div className="relative overflow-x-auto">
-                                            <div className="relative shrink-0" style={{ width: 720, height: 168 }}>
+                                            <div className="relative shrink-0" style={{ width: 720, height: 240 }}>
                                                 {/* Connector lines + animated data packets */}
-                                                <svg width="700" height="150" className="absolute top-[9px] left-[10px] overflow-visible" style={{ zIndex: 1 }}>
+                                                <svg width="700" height="220" className="absolute top-[10px] left-[10px] overflow-visible" style={{ zIndex: 1 }}>
                                                     {storyPhases.slice(0, -1).map((ph, idx) => {
                                                         const nx = storyPhases[idx + 1];
                                                         const cx = (ph.x + nx.x) / 2;
                                                         const move = Math.min(ph.x, nx.x), d = Math.max(ph.x, nx.x);
-                                                        const dip = 78 + (65 - Math.abs(move + d - 700) / 700 * 65) * 0.55;
+                                                        const dip = 112 + (65 - Math.abs(move + d - 700) / 700 * 65) * 0.55;
                                                         const p = `M ${ph.x} ${ph.y} Q ${cx} ${dip} ${nx.x} ${nx.y}`;
                                                         const lineColor = ph.st === 'completed' ? '#34d399' : ph.st === 'running' ? '#818cf8' : ph.st === 'failed' ? '#fb7185' : '#334155';
                                                         const flows = autoOrchestrating && (ph.st === 'completed' || ph.st === 'running');

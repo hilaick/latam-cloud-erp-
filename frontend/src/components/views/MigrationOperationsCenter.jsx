@@ -92,12 +92,16 @@ function MigrationOpsDashboard({ project }) {
     const cap = profileInfo?.capabilities || {};
     const realDelegation = cap.delegation || 'zai/glm-5.1';
     const realModel = cap.model || 'deepseek/pro';
-    // ── PHASE AUTHORITY: cloud evidence wins over engine state ──
-    // The engine status can lag (in-memory registry after restart, stale
-    // current_phase) while the cloud already advanced. The Status Dashboard
-    // must show the REAL phase: cloudState.inferred_phase (derived from live
-    // cloud resources) > engine current_phase.
-    const phase = (cloudState?.inferred_phase || executionState?.current_phase || executionState?.currentPhase || 'PHASE_4_1').replace('PHASE_4_', '4.');
+    // ── PHASE AUTHORITY: engine COMPLETED > cloud evidence > engine phase ──
+    // A completed lifecycle (all 7 phases) is FINAL — cloud inference may
+    // under-report afterwards (e.g. source agents removed at teardown making
+    // cloud-state say 4.3 while the migration actually finished). Check the
+    // engine's completion FIRST, then cloud evidence, then engine phase.
+    const _engDone = String(executionState?.current_phase || executionState?.currentPhase || '').toUpperCase() === 'COMPLETED'
+        || (Array.isArray(executionState?.completed_phases) && executionState.completed_phases.length >= 7);
+    const phase = _engDone
+        ? 'COMPLETED'
+        : (cloudState?.inferred_phase || executionState?.current_phase || executionState?.currentPhase || 'PHASE_4_1').replace('PHASE_4_', '4.');
     const servers = [...new Set((execPlan?.steps || []).map(s => s.target_resource).filter(Boolean))];
     const actions = [...new Set((execPlan?.steps || []).filter(s => s.target_resource === selectedServer).map(s => s.action))];
     const reconciled = cloudState?.reconciled_steps || {};
