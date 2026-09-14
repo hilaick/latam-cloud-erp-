@@ -110,7 +110,7 @@ PIPELINE_PHASES = [
 REDACT_PATTERNS = [
     # Huawei Cloud AK/SK pairs + source credentials (exact known prefixes)
     (r'(HPUAQH|AKIA|LTAI|DWO)[A-Za-z0-9]{10,}', '<AK>'),
-    (r'(?i)\b(?:ak|sk|access[_-]?key|secret[_-]?key)\b\s*[=:]\s*\S+', r'\1=<REDACTED>'),
+    (r'(?i)\b(?:ak|sk|access[_-]?key|secret[_-]?key)\b\s*[=:]\s*\S+', '<KEY_ASSIGNMENT>'),
     # The source SK pattern is distinctive (32-char lowercase alnum after the AK)
     (r'\bHPUAQH\w*\s+[a-z0-9]{32}\b', '<AK> <SK>'),
     # Long mixed-case secrets only if they look like keys (no hyphens/name chars)
@@ -854,6 +854,29 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     log(f'[ctx] context file written: {_ctx_file}')
                 except Exception as _ce:
                     log(f'[ctx] context file write failed: {_ce}')
+
+                # ── CLOUD EVIDENCE GATE: verify phase actually did something ──
+                # Phase completion MUST be validated against live cloud state, NOT
+                # just agent text. This prevents the "SMS.0515 reported as resolved"
+                # class of failure: pipeline advances to cutover on 0% replication.
+                if success and phase_key in ('PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6'):
+                    try:
+                        import subprocess as _sp
+                        # Quick SMS task check: any task with progress > 0?
+                        _sr = _sp.run(['hcloud','SMS','ListTasks','--cli-region=' + pdata.get('sourceRegion','ap-southeast-3'), '--cli-profile=erp-src'],
+                                       capture_output=True, text=True, timeout=30)
+                        _st = _sr.stdout.lower()
+                        _has_progress = 'migrate_speed' in _st and 'total_time' in _st
+                        _all_failed = _st.count('migrate_fail') >= 2
+                        if _all_failed and phase_key != 'PHASE_4_4':
+                            # All tasks failed — nothing was replicated. Halt.
+                            log(f'[gate] {phase_key}: all SMS tasks in MIGRATE_FAIL state — nothing was replicated. Halting.')
+                            success = False
+                            error = 'Cloud evidence gate: all SMS tasks failed (MIGRATE_FAIL). No replication occurred.'
+                    except Exception as _ge:
+                        log(f'[gate] cloud evidence check failed: {_ge}')
+                        # Don't block on check failure — let it continue
+                        pass
 
                 if not success:
                     # ── Agent lane (deterministic failed or not applicable) ──

@@ -141,6 +141,19 @@ def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,
         except Exception as ae:
             ok, resp, err = False, '', f'troubleshoot spawn crashed: {ae}'
         if ok:
+            # Agent returned success — but did it ACTUALLY resolve the phase?
+            # The agent may admit "blocked, console required, 0% transferred" and
+            # STILL return ok (because it successfully reported). Check for
+            # explicit blocker markers in the agent output.
+            ERR_IF_IN_RESP = ['❌', 'blocked', 'only proven path', 'cannot resolve',
+                             'no data transferred', '0%', 'Check failed', 'Not ready',
+                             'SMS.0515', 'consistently fails', 'impossible via API']
+            if resp and any(t in str(resp).lower() for t in ['blocker', 'cannot resolve', 'impossible via api']):
+                log(f'[troubleshoot] round {rnd} agent admited blocker — halting for human review')
+                return False, resp, 'troubleshoot agent reported blocker: ' + str(resp)[:200]
+            if resp and any(t in str(resp) for t in ERR_IF_IN_RESP):
+                log(f'[troubleshoot] round {rnd} agent output has failure markers — halting for human review')
+                return False, resp, 'troubleshoot agent reported unresolved failure: ' + str(resp)[:200]
             log(f'[troubleshoot] round {rnd} RESOLVED by troubleshoot agent')
             return True, resp or '', err or ''
         # not resolved — did we learn anything new?
