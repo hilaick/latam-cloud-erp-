@@ -455,7 +455,12 @@ When done, report what you actually executed, the verification commands you ran,
                     except Exception:
                         pass
             # Transient-failure detection: LB key exhaustion / rate limit / 502
-            transient = any(tok in combined.lower() for tok in [
+            # NOTE: Only check stdout for transient markers, NOT stderr.
+            # hermes chat -q outputs LB routing noise (502/429 retries) to stderr
+            # even when the agent completed its task successfully. A completed
+            # task with LB noise is still a completed task.
+            out_l = (result.stdout or '')
+            transient = any(tok in out_l.lower() for tok in [
                 'all key allocation routing attempts failed',
                 '502', '503', 'rate limit', '429',
                 'max_retries_exhausted', 'internal server error',
@@ -465,7 +470,6 @@ When done, report what you actually executed, the verification commands you ran,
             # hermes chat exits rc!=0 on 'max iterations reached' even after a
             # fully successful provision/verify run, and a successful idempotent
             # re-run reports 'already exists / verified'. Both ARE success.
-            out_l = (result.stdout or '')
             failure_markers = ['❌', 'blocker', 'cannot create', 'consistently fails',
                                'all failed', 'exhausted', 'unable to', 'no success',
                                'failed to create', 'FAILED:', 'ERROR:']
@@ -477,8 +481,10 @@ When done, report what you actually executed, the verification commands you ran,
                 'provisioning complete', 'migration complete',
                 'already provisioned', 'no new creation needed', 'already exists',
             ]) and not explicit_failure
-            if substantive and not transient:
-                logger.info(f"[orchestration:{project_id}] {phase} agent reported substantive completion (rc={result.returncode}) — treating as success.")
+            # If the agent produced substantive success output, that OVERRIDES
+            # any transient LB noise in stderr. The task is done.
+            if substantive:
+                logger.info(f"[orchestration:{project_id}] {phase} agent reported substantive completion (rc={result.returncode}, transient_stderr={transient}) — treating as success regardless of LB noise.")
                 return True, result.stdout.strip(), None
             # rc!=0 with substantive output is still success — hermes chat often
             # exits non-zero on 'max iterations reached' AFTER finishing the work.
@@ -486,13 +492,13 @@ When done, report what you actually executed, the verification commands you ran,
             # full ShowServer/volume/EIP dumps) prove the phase completed.
             # BUT: an explicit blocker/failure in the report MUST override this —
             # the agent saying "❌ BLOCKER: API cannot..." is NOT success.
-            if len(out_l.strip()) > 1000 and not transient and not explicit_failure:
+            if len(out_l.strip()) > 500 and not explicit_failure:
                 logger.info(f"[orchestration:{project_id}] {phase} agent completed with rc={result.returncode} but has substantive verification output — treating as success.")
                 return True, result.stdout.strip(), None
             if result.returncode == 0 and not transient:
                 return True, result.stdout.strip(), None
             if result.returncode == 0 and transient:
-                # 0 exit but LB error inside — treat as retryable
+                # 0 exit but LB error in stdout — treat as retryable
                 last_error = f"LB transient error: {combined[:300]}"
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} hit transient LLM error, retrying...")
