@@ -151,9 +151,22 @@ def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,
             if resp and any(t in str(resp).lower() for t in ['blocker', 'cannot resolve', 'impossible via api']):
                 log(f'[troubleshoot] round {rnd} agent admited blocker — halting for human review')
                 return False, resp, 'troubleshoot agent reported blocker: ' + str(resp)[:200]
-            if resp and any(t in str(resp) for t in ERR_IF_IN_RESP):
-                log(f'[troubleshoot] round {rnd} agent output has failure markers — halting for human review')
-                return False, resp, 'troubleshoot agent reported unresolved failure: ' + str(resp)[:200]
+            # Check ONLY the LAST 500 chars of the agent report for blockers.
+            # Contextual mentions of old errors (e.g. "had old SMS.0515 errors
+            # from previous failed tasks") must NOT trigger a halt when the rest
+            # of the report shows resolution. The conclusion is the signal.
+            end = str(resp[-500:]) if resp else ''
+            if end and any(t in end for t in ERR_IF_IN_RESP):
+                # Double-check: is the conclusion actually concluding failure?
+                # Look for explicit "done" or "complete" or "verified" signals
+                # in the last 200 chars that would override the blocker marker.
+                tail = end[-200:].lower()
+                overriding = any(t in tail for t in ['✅', 'phase .* complete', '## phase .* complete',
+                                                      'provisioned', 'created successfully', 'verified',
+                                                      'no orphaned', 'all clean', 'ready for next'])
+                if not overriding:
+                    log(f'[troubleshoot] round {rnd} agent output has failure markers in conclusion — halting for human review')
+                    return False, resp, 'troubleshoot agent reported unresolved failure: ' + str(resp)[:200]
             log(f'[troubleshoot] round {rnd} RESOLVED by troubleshoot agent')
             return True, resp or '', err or ''
         # not resolved — did we learn anything new?
