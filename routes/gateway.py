@@ -176,12 +176,32 @@ def select_enterprise_project():
     project_id = data.get('project_id')
     eps_id = (data.get('eps_id') or '').strip()
     eps_name = (data.get('eps_name') or '').strip()
-    if not eps_id or not project_id:
-        return jsonify({'success': False, 'error': 'eps_id and project_id required'}), 400
+    deselect = bool(data.get('deselect'))
+    if not project_id:
+        return jsonify({'success': False, 'error': 'project_id required'}), 400
 
     project = ProjectData.query.get(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    # ── DESELECT: user explicitly chooses account-default scope (no EP) ──
+    if deselect:
+        pd = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+        pd.pop('enterpriseProject', None)
+        pd.pop('enterpriseProjectId', None)
+        pd['enterpriseProjectMode'] = 'default'
+        project.data = json.dumps(pd)
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'check': 'eps_selection',
+            'status': 'default_scope',
+            'message': "Enterprise Project deselected — Phase 4 will use the account-default scope (no EP isolation). Bind an EP later to scope resources."
+        })
+
+    if not eps_id:
+        return jsonify({'success': False, 'error': 'eps_id required (or deselect: true)'}), 400
+
     if not customer_id:
         pd0 = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
         customer_id = pd0.get('customerId')
@@ -669,7 +689,16 @@ def full_readiness_check():
                     # EP ISOLATION GATE: if real-name verified and EPs exist in the account
                     # but NONE is bound to this project, the gateway is NOT fully ready.
                     # The user must either bind an EP (recommended) or acknowledge default.
-                    if eps_available and not eps_project_bound:
+                    # An EXPLICIT deselect (enterpriseProjectMode='default') is the
+                    # acknowledgement — resources use account-default scope knowingly.
+                    explicit_default = False
+                    if project and eps_project_bound is None:
+                        try:
+                            pd2 = json.loads(project.data) if isinstance(project.data, str) else (project.data or {})
+                            explicit_default = pd2.get('enterpriseProjectMode') == 'default'
+                        except Exception:
+                            explicit_default = False
+                    if eps_available and not eps_project_bound and not explicit_default:
                         checks['realname_auth']['needs_eps_selection'] = True
                         checks['realname_auth']['warning'] = (
                             f"Real-name is verified ({len(eps_available)} EP(s) available) but "
@@ -678,6 +707,12 @@ def full_readiness_check():
                         )
                         requires_action.append('Select an Enterprise Project from the list below to scope Phase 4 resources, or acknowledge default-scope usage.')
                         overall_ready = False
+                    elif eps_available and not eps_project_bound and explicit_default:
+                        checks['realname_auth']['needs_eps_selection'] = False
+                        checks['realname_auth']['warning'] = (
+                            "Real-name verified, but the project is set to use the ACCOUNT-DEFAULT scope "
+                            "(no Enterprise Project isolation). Bind an EP below to scope Phase 4 resources."
+                        )
                 else:
                     checks['realname_auth'] = {
                         'status': 'unverified',

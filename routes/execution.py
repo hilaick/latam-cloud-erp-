@@ -1168,15 +1168,91 @@ def individual_server_action(project_id):
             if erp_tag_value:
                 tag_q = f"'erp-migration*{erp_tag_value}'"
 
+            # ── RESOLVE REQUIRED PARAMS FROM LIVE CLOUD (simulate → execute) ──
+            # ECS CreateServers REQUIRES: imageRef, root_volume.volumetype, vpcid.
+            # Derive each from the existing target ECS + the account, so the command
+            # is complete BEFORE executing — same data the agent lane would discover.
+            def _ecs_detail(ecs_id):
+                det = hh(['ECS', 'ShowServer', f'--server_id={ecs_id}', '--cli-region=' + target_region])
+                return det.get('server') or det
+
+            image_ref = ''
+            vpc_id_res = ''
+            subnet_id_res = ''
+            vol_type = 'SAS'
+            for sv in existing:
+                sid = sv.get('id')
+                if not sid:
+                    continue
+                det = _ecs_detail(sid)
+                img = det.get('image') or {}
+                if isinstance(img, dict):
+                    image_ref = img.get('id') or img.get('image_id') or ''
+                md = det.get('metadata') or {}
+                vpc_id_res = md.get('vpc_id') or det.get('vpc_id') or ''
+                if image_ref and vpc_id_res:
+                    break
+            # Fallbacks: image from list, vpc from account (project's own vpc or default)
+            if not image_ref:
+                imgs = hh(['IMS', 'ListImages', '--cli-region=' + target_region])
+                for im in (imgs.get('images') or [])[:1]:
+                    image_ref = im.get('id', '')
+            if not vpc_id_res:
+                vpcs_r = hh(['VPC', 'ListVpcs/v3', '--cli-region=' + target_region])
+                vpcs_list = vpcs_r.get('vpcs') or []
+                # prefer a project-named vpc, else first
+                for v in vpcs_list:
+                    if 'codelpa' in (v.get('name') or '').lower() or 'erp' in (v.get('name') or '').lower():
+                        vpc_id_res = v.get('id', '')
+                        break
+                if not vpc_id_res and vpcs_list:
+                    vpc_id_res = vpcs_list[0].get('id', '')
+            if vpc_id_res and not subnet_id_res:
+                subs_r = hh(['VPC', 'ListSubnets', '--cli-region=' + target_region])
+                for s in (subs_r.get('subnets') or []):
+                    if s.get('vpc_id') == vpc_id_res:
+                        subnet_id_res = s.get('id', '')
+                        break
+            # Volume type from the existing boot volume (else default SAS)
+            if existing:
+                det = _ecs_detail(existing[0].get('id', ''))
+                vols = det.get('os-extended-volumes:volumes_attached') or []
+                if vols:
+                    vid = vols[0].get('id', '')
+                    if vid:
+                        vr = hh(['EVS', 'ShowVolume', f'--volume_id={vid}', '--cli-region=' + target_region])
+                        vol = vr.get('volume') or vr
+                        vt = vol.get('volume_type') or vol.get('volumetype')
+                        if vt:
+                            vol_type = vt
+
+            missing = [k for k, v in (('imageRef', image_ref), ('vpcid', vpc_id_res),
+                                      ('root_volume.volumetype', vol_type)) if not v]
+            if missing:
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot build complete CreateServers command — missing required params (resolved from live cloud): {', '.join(missing)}. Check the account has an existing target ECS or image to clone from (project VPC + image).",
+                    "target_name": new_target_name,
+                    "resolved": {"imageRef": image_ref or None, "vpcid": vpc_id_res or None,
+                                 "subnet_id": subnet_id_res or None, "volumetype": vol_type},
+                }), 502
+
             create_cmd = (f"hcloud ECS CreateServers --server.name='{new_target_name}' "
-                          f"--server.flavorRef={flavor_ref} --server.root_volume.size={disk_gb} "
+                          f"--server.imageRef={image_ref} --server.flavorRef={flavor_ref} "
+                          f"--server.vpcid={vpc_id_res} "
+                          f"--server.root_volume.volumetype={vol_type} --server.root_volume.size={disk_gb} "
+                          f"{('--server.nics.1.subnet_id=' + subnet_id_res + ' ') if subnet_id_res else ''}"
                           f"--server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 "
                           f"{('--server.tags.1=' + tag_q + ' ') if tag_q else ''}"
                           f"--server.count=1{ep_opt} --cli-region={target_region}")
 
             res = hh(['ECS', 'CreateServers', '--server.name=' + new_target_name,
+                      '--server.imageRef=' + image_ref,
                       '--server.flavorRef=' + flavor_ref,
+                      '--server.vpcid=' + vpc_id_res,
+                      '--server.root_volume.volumetype=' + vol_type,
                       f'--server.root_volume.size={disk_gb}',
+                      *((['--server.nics.1.subnet_id=' + subnet_id_res]) if subnet_id_res else []),
                       '--server.publicip.eip.iptype=5_bgp',
                       '--server.publicip.eip.bandwidth.size=100',
                       *((['--server.tags.1=' + tag_q]) if tag_q else []),
@@ -1186,7 +1262,9 @@ def individual_server_action(project_id):
             err = res.get('_hcloud_error') or ''
             if err:
                 return jsonify({"success": False, "error": f"CreateServers failed: {err[:300]}",
-                                "target_name": new_target_name, "cmd": create_cmd}), 502
+                                "target_name": new_target_name, "cmd": create_cmd,
+                                "resolved": {"imageRef": image_ref, "vpcid": vpc_id_res,
+                                             "subnet_id": subnet_id_res, "volumetype": vol_type}}), 502
 
             # Verify creation by name (ListServersDetails may lag; poll briefly)
             new_ecs_id = ''

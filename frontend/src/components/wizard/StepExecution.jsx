@@ -2764,6 +2764,26 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
         }
         setEpsBusy(null);
     };
+    const deselectEps = async () => {
+        setEpsBusy('deselect'); setEpsError(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const res = await fetch('/api/gateway/select-eps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ project_id: project?.id, deselect: true })
+            });
+            const data = await res.json();
+            if (data.success !== false) {
+                setSelectedEps(null);
+            } else {
+                setEpsError(data.error || data.message || 'EP deselect failed');
+            }
+        } catch (e) {
+            setEpsError(e.message);
+        }
+        setEpsBusy(null);
+    };
 
     const runFullCheck = async () => {
         setLoading(true);
@@ -2895,6 +2915,22 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
                         <div className="px-5 py-3">
                             <div className="text-[10px] text-slate-400 mb-3">
                                 Select an Enterprise Project to scope Phase 4 resources. Isolation requires an EP — without one, resources will use the account default (full-account visibility).
+                            </div>
+                            {/* Default-scope / deselect row (explicit choice) */}
+                            <div className={`mb-2 bg-slate-700/20 border rounded-xl p-3 flex items-center gap-3 ${selectedEps ? 'border-slate-600/50' : 'border-amber-600/60 ring-1 ring-amber-600/20'}`}>
+                                <i className={`fas fa-circle ${selectedEps ? 'text-slate-500' : 'text-amber-400'}`}></i>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-bold text-slate-200">Account-Default scope</div>
+                                    <div className="text-[9px] text-slate-400">No Enterprise Project isolation — full-account visibility. Use only for non-production.</div>
+                                </div>
+                                {selectedEps
+                                    ? <button onClick={deselectEps} disabled={epsBusy === 'deselect'}
+                                        className="px-3 py-1.5 text-[9px] font-bold bg-slate-600 hover:bg-slate-500 text-white rounded-lg disabled:opacity-50 transition-colors whitespace-nowrap">
+                                        {epsBusy === 'deselect' ? <i className="fas fa-spinner fa-spin mr-1"></i> : null}
+                                        Deselect EP
+                                    </button>
+                                    : <span className="text-[9px] text-amber-400 font-bold whitespace-nowrap">Active (no EP)</span>
+                                }
                             </div>
                             {checks.realname_auth.eps.length === 1 ? (
                                 <div className="bg-slate-700/30 border border-slate-600/50 rounded-xl p-3 flex items-center gap-3">
