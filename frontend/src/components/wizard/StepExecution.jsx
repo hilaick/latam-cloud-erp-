@@ -1224,7 +1224,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     lifecycleTab === 'story' ? 'bg-slate-900 text-emerald-300 shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                                 }`}
                             >
-                                <i className="fas fa-route text-[8px]"></i> Lifecycle Story
+                                <i className="fas fa-route text-[8px]"></i> Journey
                             </button>
                             <button
                                 onClick={() => setLifecycleTab('spawn')}
@@ -1331,7 +1331,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="flex items-center gap-2 min-w-0">
                                         <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-400 xs-live-dot shadow-[0_0_8px_rgba(52,211,153,0.9)]"></span>
                                         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-200 truncate">
-                                            <i className="fas fa-route text-emerald-400 mr-1.5"></i>Lifecycle Story — Migration Journey
+                                            <i className="fas fa-route text-emerald-400 mr-1.5"></i>Migration Journey
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1.5">
