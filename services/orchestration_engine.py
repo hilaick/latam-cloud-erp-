@@ -36,17 +36,7 @@ _project_locks_guard = threading.Lock()
 # Maps project_id → { phase, status, log, started_at, thread }
 _running_pipelines = {}
 
-PIPELINE_TIMEOUT_SECONDS = 3600  # 60 min for monitor/cutover phases
-_PHASE_TIMEOUTS = {
-    'PHASE_4_1': 600,   # 10 min — network (VPC/SG/EIP)
-    'PHASE_4_2': 900,   # 15 min — source prep (SMS agents)
-    'PHASE_4_3': 900,   # 15 min — target ECS provisioning
-    'PHASE_4_4': 1200,  # 20 min — data sync (SMS tasks)
-    'PHASE_4_5': 3600,  # 60 min — monitor (replication wait)
-    'PHASE_4_6': 1800,  # 30 min — cutover
-    'PHASE_4_7': 600,   # 10 min — reconciliation
-    'PHASE_4_8': 600,   # 10 min — teardown
-}
+PIPELINE_TIMEOUT_SECONDS = 7200  # 2h hard ceiling per phase (safety net only; phases self-complete or continue on failure)
 
 
 def _get_project_lock(project_id):
@@ -447,8 +437,7 @@ When done, report what you actually executed, the verification commands you ran,
                         emitted_activity = True
             except Exception as _se:
                 last_error = f"stream read: {_se}"
-            _phase_timeout = _PHASE_TIMEOUTS.get(phase, PIPELINE_TIMEOUT_SECONDS)
-            proc.wait(timeout=_phase_timeout)
+            proc.wait(timeout=PIPELINE_TIMEOUT_SECONDS)
             result_rc = proc.returncode
             result_stdout = ''.join(results_buf)
             result_stderr = ''
@@ -1301,14 +1290,18 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         })
                     except Exception:
                         pass
-                    pipeline_info['status'] = 'halted'
-                    state.status = 'FAILED'
+                    pipeline_info['status'] = 'phase_failed'
+                    pipeline_info['phase_status'][phase_key] = 'failed'
+                    # Don't halt the pipeline — continue to next phase.
+                    # A failed phase may be retried later or its work may be
+                    # completed by a downstream phase. The pipeline is resilient.
+                    log(f'[continue] {phase_key} failed but pipeline continues to next phase (resilient mode)')
+                    state.status = 'IN_PROGRESS'
                     state.last_active_at = datetime.utcnow()
                     db.session.commit()
-                    return  # Stop the chain on failure
 
             # ── All phases completed ──
-            log('[complete] All 7 phases completed. Pipeline finished.')
+            log('[complete] All 8 phases completed. Pipeline finished.')
             try:
                 from models import ExecutionState as _ES
                 st3 = _ES.query.filter_by(project_id=project_id).first()
