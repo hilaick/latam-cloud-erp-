@@ -156,6 +156,51 @@ class DeterministicExecutor:
             except Exception as e:
                 logger.warning(f"[det-exec] cred decrypt failed: {e}")
 
+        # ── CLOUD-BACKED FALLBACK (durable resolver) ──
+        # If context is missing values (e.g. source_servers=[] after a reset, or a
+        # fresh project), the live cloud is the authoritative answer. Query
+        # SMS ListServers / ListTasks / ECS ListServersDetails / VPC ListVpcs and
+        # populate the same maps. This closes the phase-output-persistence gap:
+        # placeholders are resolved from reality, not from agent text formats.
+        if not source_sms_ids or not source_ips or not target_ecs_ids or not target_eips:
+            try:
+                from services.cloud_resolver import (
+                    list_sms_servers, list_ecs, list_vpcs,
+                    resolve_placeholders_from_cloud,
+                )
+                _values = {}
+                resolve_placeholders_from_cloud(p, _values)
+                # Merge cloud-discovered values into the per-name maps
+                for srv_c in list_sms_servers():
+                    nm_c = srv_c.get('name', '')
+                    if nm_c:
+                        if srv_c.get('id') and nm_c not in source_sms_ids:
+                            source_sms_ids[nm_c] = srv_c['id']
+                            source_sms_ids.setdefault(nm_c, srv_c['id'])
+                        ip_c = srv_c.get('ip', '') or srv_c.get('ipv4', '')
+                        if ip_c and ip_c not in source_ips:
+                            source_ips.append(ip_c)
+                        if ip_c:
+                            source_names.setdefault(nm_c, ip_c)
+                        for d in (srv_c.get('disks') or []):
+                            if d.get('id') and nm_c not in source_sms_disk_ids:
+                                source_sms_disk_ids[nm_c] = str(d['id'])
+                for e_c in list_ecs():
+                    nm_e = e_c.get('name', '')
+                    if nm_e and 'TARGET' in nm_e.upper():
+                        if e_c.get('id'):
+                            target_ecs_ids.setdefault(nm_e, e_c['id'])
+                        for a in ((e_c.get('addresses') or {}).get('vpc', []) or []):
+                            if a.get('addr'):
+                                target_eips.setdefault(nm_e, a['addr'])
+                if _values.get('<vpc_id>') and '<vpc_id>' not in p.get('executionContext', {}):
+                    pass  # vpc id used at command level; chain_vals handles it
+                logger.info(f"[det-exec] cloud-backed resolution filled "
+                            f"{len(source_sms_ids)} src_ids, {len(target_ecs_ids)} target_ecs, "
+                            f"{len(source_ips)} source_ips")
+            except Exception as cbr_err:
+                logger.warning(f"[det-exec] cloud-backed resolution failed: {cbr_err}")
+
         return {
             'source_ip': source_ips[0] if source_ips else '',
             'source_ips': source_ips,
