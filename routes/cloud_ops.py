@@ -424,7 +424,12 @@ def get_live_inventory():
         
         if multi_region:
             logger.info(f"MULTI-REGION scan for customer_id={customer_id}: {len(CORE_REGIONS)} regions")
-            from services.huawei_discovery import HuaweiDiscovery
+            # NOTE: do NOT re-import HuaweiDiscovery here — Python treats a local
+            # import as a local variable for the ENTIRE function scope. When the
+            # multi_region=False path hits line 516, it sees "local variable
+            # HuaweiDiscovery referenced before assignment" because the import
+            # at this line never executed. The module-level import at line 13
+            # is sufficient for both paths.
             regions_inventory = {}
             diagnostics = []
             def _scan_one(mreg, box):
