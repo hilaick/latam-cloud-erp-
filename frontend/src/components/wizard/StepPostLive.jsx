@@ -49,18 +49,32 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
     
     const [matrixFilter, setMatrixFilter] = useState('ALL');
     
-    const storedFinops = useMemo(() => {
-        if (!activeProject?.data) return null;
-        try { return JSON.parse(activeProject.data).finops_matrix || null; } catch(e) { return null; }
-    }, [activeProject]);
+    // ── PERSISTENCE READER ──
+    // /api/erp/state serves each project as parsed JSON with every persisted key at the TOP
+    // level (onUpdateProject writes top-level keys). Some legacy records carried the same
+    // payload under a nested 'data' blob — fall back to that for backward compatibility.
+    const readProjectField = (p, field) => {
+        if (!p) return undefined;
+        if (p[field] !== undefined && p[field] !== null) return p[field];
+        try {
+            const nested = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+            if (nested && nested[field] !== undefined && nested[field] !== null) return nested[field];
+        } catch (e) { /* malformed payload — ignore */ }
+        return undefined;
+    };
+
+    const storedFinops = useMemo(() => readProjectField(activeProject, 'finops_matrix') || null, [activeProject]);
+    const storedQuotation = useMemo(() => readProjectField(activeProject, 'ri_quotation') || null, [activeProject]);
+    // Backend stores console_ri_export AS the summary object itself ({file_path, servers, total_ris})
+    const storedConsoleExport = useMemo(() => readProjectField(activeProject, 'console_ri_export') || null, [activeProject]);
 
     const [matrix, setMatrix] = useState(storedFinops?.matrix || null);
-    const [unquotedMatrix, setUnquotedMatrix] = useState(storedFinops?.unquoted_matrix || []);
+    const [unquotedMatrix, setUnquotedMatrix] = useState(storedFinops?.unquoted_matrix || []); //
     const [apiDiagnostics, setApiDiagnostics] = useState(storedFinops?.diagnostics || []);
     const [showDiagnostics, setShowDiagnostics] = useState(false);
     
-    const [riQuotationSummary, setRIQuotationSummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.ri_quotation?.summary : null);
-    const [consoleRISummary, setConsoleRISummary] = useState(activeProject?.data ? JSON.parse(activeProject.data)?.console_ri_export?.summary : null);
+    const [riQuotationSummary, setRIQuotationSummary] = useState(storedQuotation?.summary || null);
+    const [consoleRISummary, setConsoleRISummary] = useState(storedConsoleExport || null);
     const [detailsModal, setDetailsModal] = useState({ show: false, title: '', items: [] });
 
     // TECHNICAL TAG PARSER
@@ -268,8 +282,7 @@ function CommercialTrueUpView({ activeProject, onUpdateProject }) {
             const data = await res.json();
             if (data.success) {
                 alert(`Imported ${data.count} servers.`);
-                const updated = { ...activeProject.ri_quotation, summary: data.summary, count: data.count };
-                onUpdateProject(activeProject.id, 'ri_quotation', updated);
+                // Backend already persisted ri_quotation (servers + summary) — just refresh UI + matrix
                 setRIQuotationSummary(data.summary); setRawData(''); if (matrix) handleRunTrueUp();
             } else alert(`Import Error: ${data.error}`);
         } catch (err) { alert(`Network error: ${err.message}`); } finally { setIsRawImporting(false); }
