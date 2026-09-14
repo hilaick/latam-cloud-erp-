@@ -1061,6 +1061,97 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 except Exception as fb_err:
                     log(f"[feedback] loop failed: {fb_err}")
 
+                # ── CLOUD-BACKED ID WRITEBACK ──
+                # After agent succeeds, query live cloud for target ECS IDs and
+                # SMS source IDs. Persist to executionContext so downstream
+                # deterministic phases (4.4, 4.5, 4.6) can resolve <ecs_id>,
+                # <src_id>, <target_eip> without falling to agent lane.
+                if success:
+                    try:
+                        from services.cloud_resolver import list_ecs, list_sms_servers
+                        ctx = pdata.get('executionContext') or {}
+                        if not isinstance(ctx, dict):
+                            ctx = {}
+                        updated = False
+
+                        # Target ECS IDs
+                        _ecs_list = list_ecs()
+                        _target_map = ctx.get('target_ecs_map') or []
+                        _existing_names = {e.get('source_name', '') for e in _target_map if isinstance(e, dict)}
+                        for _e in _ecs_list:
+                            _nm = _e.get('name', '')
+                            _eid = _e.get('id', '')
+                            if _nm and _eid and _nm not in _existing_names:
+                                _target_map.append({
+                                    'source_name': _nm.replace('-TARGET', ''),
+                                    'ecs_name': _nm,
+                                    'ecs_id': _eid,
+                                    'status': _e.get('status', 'UNKNOWN'),
+                                })
+                                updated = True
+                        ctx['target_ecs_map'] = _target_map
+
+                        # Target servers (for deterministic <ecs_id> resolution)
+                        _target_srv = ctx.get('target_servers') or []
+                        _existing_srv = {t.get('name', '') for t in _target_srv if isinstance(t, dict)}
+                        for _e in _ecs_list:
+                            _nm = _e.get('name', '')
+                            _eid = _e.get('id', '')
+                            if _nm and _eid and _nm not in _existing_srv:
+                                _addrs = _e.get('addresses', {}) or {}
+                                _vpc_ips = [a.get('addr', '') for a in (_addrs.get('vpc', []) or []) if a.get('addr')]
+                                _target_srv.append({
+                                    'name': _nm,
+                                    'id': _eid,
+                                    'status': _e.get('status', 'UNKNOWN'),
+                                    'vpc_ip': _vpc_ips[0] if _vpc_ips else '',
+                                })
+                                updated = True
+                        ctx['target_servers'] = _target_srv
+
+                        # Source SMS IDs (if source_servers is empty)
+                        _src_srv = ctx.get('source_servers') or []
+                        if not _src_srv:
+                            _sms_list = list_sms_servers()
+                            for _s in _sms_list:
+                                _nm = _s.get('name', '')
+                                _sid = _s.get('id', '')
+                                _ip = _s.get('ip', '') or _s.get('ipv4', '')
+                                if _nm and _sid:
+                                    _src_srv.append({
+                                        'name': _nm,
+                                        'sms_id': _sid,
+                                        'eip': _ip,
+                                        'public_ip_address': _ip,
+                                    })
+                                    updated = True
+                            ctx['source_servers'] = _src_srv
+
+                        # Write target_ecs_id back to targetArchitecture.compute[]
+                        _compute = (pdata.get('targetArchitecture') or {}).get('compute') or []
+                        if isinstance(_compute, list):
+                            for _c in _compute:
+                                if not _c.get('target_ecs_id'):
+                                    _src_nm = _c.get('source_name', '')
+                                    for _tm in _target_map:
+                                        if isinstance(_tm, dict) and _tm.get('source_name', '') == _src_nm:
+                                            _c['target_ecs_id'] = _tm.get('ecs_id', '')
+                                            updated = True
+                                            break
+
+                        if updated:
+                            pdata['executionContext'] = ctx
+                            try:
+                                _proj_wb = ProjectData.query.get(project_id)
+                                if _proj_wb:
+                                    _proj_wb.data = json.dumps(pdata, ensure_ascii=False)
+                                    db.session.commit()
+                                    log(f"[cloud-writeback] persisted {len(_target_map)} target ECS, {len(_src_srv)} source SMS to executionContext")
+                            except Exception as _wbe:
+                                log(f"[cloud-writeback] persist failed: {_wbe}")
+                    except Exception as _cwb_err:
+                        log(f"[cloud-writeback] failed: {_cwb_err}")
+
                 # ── Create delegate task record ──
                 # Persist success outcome to Postgres
                 if success:

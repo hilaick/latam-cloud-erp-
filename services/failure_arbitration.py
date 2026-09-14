@@ -145,26 +145,45 @@ def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,
             # The agent may admit "blocked, console required, 0% transferred" and
             # STILL return ok (because it successfully reported). Check for
             # explicit blocker markers in the agent output.
-            ERR_IF_IN_RESP = ['❌', 'blocked', 'only proven path', 'cannot resolve',
-                             'no data transferred', '0%', 'Check failed', 'Not ready',
-                             'SMS.0515', 'consistently fails', 'impossible via API']
-            if resp and any(t in str(resp).lower() for t in ['blocker', 'cannot resolve', 'impossible via api']):
-                log(f'[troubleshoot] round {rnd} agent admited blocker — halting for human review')
-                return False, resp, 'troubleshoot agent reported blocker: ' + str(resp)[:200]
-            # Check ONLY the LAST 500 chars of the agent report for blockers.
-            # Contextual mentions of old errors (e.g. "had old SMS.0515 errors
-            # from previous failed tasks") must NOT trigger a halt when the rest
-            # of the report shows resolution. The conclusion is the signal.
-            end = str(resp[-500:]) if resp else ''
-            if end and any(t in end for t in ERR_IF_IN_RESP):
-                # Double-check: is the conclusion actually concluding failure?
-                # Look for explicit "done" or "complete" or "verified" signals
-                # in the last 200 chars that would override the blocker marker.
-                tail = end[-200:].lower()
-                overriding = any(t in tail for t in ['✅', 'phase .* complete', '## phase .* complete',
-                                                      'provisioned', 'created successfully', 'verified',
-                                                      'no orphaned', 'all clean', 'ready for next'])
-                if not overriding:
+            # Hard blockers: agent explicitly says it cannot proceed.
+            # Only match these in the LAST 300 chars (the conclusion),
+            # not in diagnostic context that references past errors.
+            HARD_BLOCKERS = ['cannot resolve', 'impossible via api', 'only proven path',
+                             'console only', 'console-only', 'no credentials',
+                             'missing credential', 'authentication failed']
+            # Soft markers that appear in diagnostic context (past tense)
+            # and should NOT trigger a halt if the conclusion shows success.
+            SOFT_MARKERS = ['❌', 'blocked', 'no data transferred', '0%',
+                            'Check failed', 'Not ready', 'SMS.0515',
+                            'consistently fails', 'impossible via API']
+            # Success override signals — if ANY of these appear in the
+            # conclusion, soft markers are ignored (they're just context).
+            SUCCESS_OVERRIDES = ['✅', 'complete', 'completed', 'success',
+                                 'provisioned', 'created successfully', 'verified',
+                                 'all.*ok', 'all.*check', 'no orphaned', 'all clean',
+                                 'ready for next', 'no new creation needed',
+                                 'already exist', 'already provisioned']
+            tail = str(resp[-300:]).lower() if resp else ''
+            # 1. Hard blockers in conclusion → halt immediately
+            if tail and any(t in tail for t in HARD_BLOCKERS):
+                # But even hard blockers can be overridden by explicit success
+                if not any(re.search(pat, tail) for pat in SUCCESS_OVERRIDES if any(c in pat for c in ['.', '*'])):
+                    if not any(t in tail for t in ['✅', 'complete', 'verified', 'success', 'provisioned']):
+                        log(f'[troubleshoot] round {rnd} agent admits hard blocker — halting for human review')
+                        return False, resp, 'troubleshoot agent reported blocker: ' + str(resp)[:200]
+            # 2. Soft markers in conclusion → halt ONLY if no success override
+            if tail and any(t in tail for t in SOFT_MARKERS):
+                has_override = False
+                for pat in SUCCESS_OVERRIDES:
+                    if any(c in pat for c in ['.', '*']):
+                        if re.search(pat, tail):
+                            has_override = True
+                            break
+                    else:
+                        if pat in tail:
+                            has_override = True
+                            break
+                if not has_override:
                     log(f'[troubleshoot] round {rnd} agent output has failure markers in conclusion — halting for human review')
                     return False, resp, 'troubleshoot agent reported unresolved failure: ' + str(resp)[:200]
             log(f'[troubleshoot] round {rnd} RESOLVED by troubleshoot agent')
