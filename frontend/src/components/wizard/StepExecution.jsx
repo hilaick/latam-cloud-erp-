@@ -249,7 +249,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [crForm, setCrForm] = useState({ approver: '', ticket: '' });
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
-    const [lifecycleTab, setLifecycleTab] = useState('circle'); // 'circle' | 'story' — Lifecycle Story (Cortex-style) second
+    const [lifecycleTab, setLifecycleTab] = useState('circle'); // 'circle' | 'story' | 'spawn' — spawn tree third
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Most recent meaningful activity line (agent/det) for the running-phase card
     // MUST be declared after orchestrationLog (TDZ) — the minifier renames
@@ -1161,6 +1161,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             >
                                 <i className="fas fa-route text-[8px]"></i> Lifecycle Story
                             </button>
+                            <button
+                                onClick={() => setLifecycleTab('spawn')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                    lifecycleTab === 'spawn' ? 'bg-slate-900 text-amber-300 shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                }`}
+                            >
+                                <i className="fas fa-code-branch text-[8px]"></i> Agent Spawn Tree
+                            </button>
                         </div>
 
                         {lifecycleTab === 'circle' && (
@@ -1369,7 +1377,21 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                         )}
                         </div>
                         )}
-t					</div>
+
+                    {/* 🚨 NEW: Spawn Tree tab (third lifecycle view) */}
+                    {lifecycleTab === 'spawn' && (
+                        <div className="p-2 sm:p-3">
+                            <SpawnTreeVisualizer
+                                projectId={project?.id}
+                                mode="execution"
+                                modelName="glm-5.1"
+                                isActive={autoOrchestrating}
+                                simulationTrace={[]}
+                            />
+                        </div>
+                    )}
+                    </div>
+                    )}
 
                     {/* What Will Happen — Phase Legend (collapsible) */}
                     <div className="mb-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
