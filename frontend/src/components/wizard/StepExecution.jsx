@@ -250,6 +250,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [autoOrchestrating, setAutoOrchestrating] = useState(false);
     const [liveCurrentPhase, setLiveCurrentPhase] = useState(null); // from /orchestrate/status
     const [lifecycleTab, setLifecycleTab] = useState('circle'); // 'circle' | 'story' | 'spawn' — spawn tree third
+    const [storySelectedPhase, setStorySelectedPhase] = useState(null); // clicked phase N (interactive Journey)
     const [orchestrationLog, setOrchestrationLog] = useState([]);
     // Most recent meaningful activity line (agent/det) for the running-phase card
     // MUST be declared after orchestrationLog (TDZ) — the minifier renames
@@ -336,6 +337,46 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 y: 86,
             };
         });
+    })();
+    // ── INTERACTIVE JOURNEY: per-phase resource mapping ──
+    // Each phase directs resources = the execution plan steps tagged with that
+    // phase (action + target_resource + commands). Derive once from project data.
+    const storyPhaseResources = (() => {
+        let plan = {};
+        try {
+            const pd = JSON.parse(project?.data || '{}');
+            plan = pd?.executionPlan || project?.executionPlan || {};
+        } catch (e) { plan = project?.executionPlan || {}; }
+        const planSteps = Array.isArray(plan?.steps) ? plan.steps : [];
+        const lines = [1,2,3,4,5,6,7].map(n => {
+            const pk = `PHASE_4_${n}`;
+            const steps = planSteps.filter(s => s?.phase === pk);
+            // Unique action types + their targets — the "resources directed" by this phase
+            const actions = {};
+            steps.forEach(s => {
+                const a = s?.action || 'STEP';
+                if (!actions[a]) {
+                    actions[a] = {
+                        action: a,
+                        targets: new Set(),
+                        commands: (s?.commands || []).map(c => (typeof c === 'string' ? c : (c?.cmd || c?.desc || ''))).filter(Boolean).slice(0, 2),
+                    };
+                }
+                if (s?.target_resource) actions[a].targets.add(String(s.target_resource));
+            });
+            const actList = Object.values(actions).map(a => ({
+                action: a.action,
+                targets: [...a.targets].slice(0, 6),
+                commands: a.commands,
+            }));
+            // Fallback when no plan steps exist: describe from phaseContent
+            if (!actList.length) {
+                const desc = phaseContent?.[pk]?.desc || '';
+                actList.push({ action: 'PHASE', targets: [], commands: desc ? [desc] : [] });
+            }
+            return { n, key: pk, label: phaseContent?.[pk]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'][n-1], actions: actList };
+        });
+        return lines;
     })();
     // Detect migration services active for this project from targetArchitecture
     // Categories match Phase 3.4a Strategic Tooling:
@@ -1336,6 +1377,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                         <span className="px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-[8px] font-black uppercase tracking-widest text-slate-300">7 Phases</span>
+                                        <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[8px] font-black uppercase tracking-widest text-amber-300/80 hidden sm:flex items-center gap-1"><i className="fas fa-hand-pointer"></i>Click a phase to inspect</span>
                                         {failedOrchPhaseIdx !== null ? (
                                             <span className="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/40 text-[8px] font-black uppercase tracking-widest text-rose-400 flex items-center gap-1"><i className="fas fa-exclamation-triangle"></i>Failed</span>
                                         ) : (
@@ -1382,10 +1424,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                 );
                                             })}
                                         </svg>
-                                        {/* Nodes */}
+                                        {/* Nodes — click to inspect phase resource direction */}
                                         {storyPhases.map(ph => (
-                                            <div key={ph.n} className="absolute flex flex-col items-center" style={{ zIndex: 2, left: ph.x - 28, top: ph.y - 28, width: 56 }}>
-                                                <div className="relative w-14 h-14 flex items-center justify-center">
+                                            <div key={ph.n} className="absolute flex flex-col items-center" style={{ zIndex: storySelectedPhase === ph.n ? 4 : 2, left: ph.x - 28, top: ph.y - 28, width: 56 }}>
+                                                <button
+                                                    onClick={() => setStorySelectedPhase(storySelectedPhase === ph.n ? null : ph.n)}
+                                                    className={`group relative w-14 h-14 flex items-center justify-center rounded-full focus:outline-none transition-transform duration-200 ${storySelectedPhase === ph.n ? 'scale-110' : 'hover:scale-105'}`}
+                                                    title={`Inspect Phase 4.${ph.n}: ${ph.label} — what it creates/directs`}
+                                                >
                                                     {/* check badge */}
                                                     <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-white text-[8px] flex items-center justify-center border-2 border-slate-950 shadow z-[4] ${ph.st === 'completed' ? '' : 'hidden'}`}><i className="fas fa-check"></i></div>
                                                     {/* pulsing ring + orbiting dot on current phase */}
@@ -1396,6 +1442,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                                 <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_rgba(103,232,249,1)]"></span>
                                                             </div>
                                                         </>
+                                                    )}
+                                                    {/* selection ring */}
+                                                    {storySelectedPhase === ph.n && (
+                                                        <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.6)]"></div>
                                                     )}
                                                     {/* orb */}
                                                     <div className="w-12 h-12 rounded-full flex items-center justify-center text-base border transition-all duration-300"
@@ -1414,15 +1464,57 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     >
                                                         <i className={`fas ${ph.icon}`} style={{ filter: 'drop-shadow(0 0 6px currentColor)' }}></i>
                                                     </div>
-                                                </div>
+                                                    {/* hover tooltip */}
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl border border-slate-700">
+                                                        <div className="font-bold text-amber-300">Phase 4.{ph.n}: {ph.label}</div>
+                                                        <div className="text-slate-300">{phaseContent?.[`PHASE_4_${ph.n}`]?.desc || 'Inspect resources this phase creates/directs'}</div>
+                                                        <div className="text-amber-200/80 mt-0.5">Click to inspect →</div>
+                                                    </div>
+                                                </button>
                                                 <div className="mt-1.5 text-center leading-tight">
                                                     <div className="text-[7px] font-black uppercase tracking-widest text-slate-500">4.{ph.n}</div>
-                                                    <div className="text-[8px] font-extrabold uppercase tracking-wide" style={{ color: ph.st === 'completed' ? '#6ee7b7' : ph.st === 'running' ? '#c7d2fe' : ph.st === 'failed' ? '#fda4af' : '#94a3b8' }}>{ph.label}</div>
+                                                    <div className={`text-[8px] font-extrabold uppercase tracking-wide ${storySelectedPhase === ph.n ? 'text-amber-300' : ''}`} style={{ color: storySelectedPhase === ph.n ? undefined : (ph.st === 'completed' ? '#6ee7b7' : ph.st === 'running' ? '#c7d2fe' : ph.st === 'failed' ? '#fda4af' : '#94a3b8') }}>{ph.label}</div>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
+                                {/* INTERACTIVE detail panel — selected phase resource direction */}
+                                {storySelectedPhase !== null && (() => {
+                                    const sel = storyPhaseResources.find(r => r.n === storySelectedPhase) || null;
+                                    if (!sel) return null;
+                                    const sta = storyPhases.find(p => p.n === storySelectedPhase)?.st || 'pending';
+                                    return (
+                                        <div className="relative mx-3 my-2 rounded-xl border border-amber-500/40 bg-slate-900/80 backdrop-blur-sm overflow-hidden animate-fade-in" style={{ animation: 'xsSlideIn 0.3s ease' }}>
+                                            <div className="flex items-center justify-between px-3 py-2 border-b border-amber-500/20 bg-slate-900/90">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <i className={`fas ${sel.label === 'Network' ? 'fa-network-wired' : sel.label === 'Source Prep' ? 'fa-download' : sel.label === 'Target' ? 'fa-server' : sel.label === 'Data Sync' ? 'fa-sync-alt' : sel.label === 'Monitor' ? 'fa-chart-line' : sel.label === 'Cutover' ? 'fa-exchange-alt' : 'fa-trash-alt'} text-amber-300 text-xs`}></i>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-200">Phase 4.{sel.n} — {sel.label}</span>
+                                                    <span className={`px-1.5 py-px rounded-full text-[7px] font-black uppercase tracking-widest border ${sta === 'completed' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : sta === 'running' ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : sta === 'failed' ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'bg-slate-700/40 border-slate-600 text-slate-400'}`}>{sta}</span>
+                                                </div>
+                                                <button onClick={() => setStorySelectedPhase(null)} className="text-slate-500 hover:text-slate-300 text-xs px-1"><i className="fas fa-times"></i></button>
+                                            </div>
+                                            <div className="px-3 py-2 max-h-44 overflow-y-auto custom-scrollbar space-y-2">
+                                                <div className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-1"><i className="fas fa-sitemap mr-1 text-amber-400"></i>Resources this phase directs</div>
+                                                {sel.actions.map((a, ai) => (
+                                                    <div key={ai} className="rounded-lg border border-slate-700/70 bg-slate-950/60 p-2">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="px-1.5 py-px rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[8px] font-black tracking-wider">{a.action}</span>
+                                                            {a.targets.length > 0 && (
+                                                                <span className="text-[8px] text-slate-400 font-mono">{a.targets.join(', ')}</span>
+                                                            )}
+                                                        </div>
+                                                        {a.commands.length > 0 && (
+                                                            <div className="mt-1.5 font-mono text-[8px] text-slate-500 leading-relaxed truncate">
+                                                                {a.commands[0].length > 110 ? a.commands[0].slice(0, 110) + '…' : a.commands[0]}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                                 {/* Live event ticker — latest orchestrationLog line, slide-in on change */}
                                 <div className="relative px-3 py-2 border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-sm">
                                     <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-[0.18em] text-slate-500 mb-1">
