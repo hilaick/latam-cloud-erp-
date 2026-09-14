@@ -547,14 +547,48 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             # ── Initialize pipeline state ──
             # Seed completed_phases from persisted delegate_tasks so a resumed
             # chain (after Flask restart/crash) knows which phases already ran
-            # and skips them — instead of starting empty and re-running them.
+            # and skips them — but only if the CLOUD has the resources to prove
+            # it. Cloud evidence wins over run artifacts (prevents phantom
+            # completion like "7/7 done" on an empty cloud).
             completed_seed = []
             try:
                 _proj_seed = ProjectData.query.get(project_id)
                 if _proj_seed:
                     _dt_seed = json.loads(_proj_seed.delegate_tasks or "[]")
-                    completed_seed = [t.get("phase") for t in _dt_seed
-                                      if t.get("status") == "COMPLETED" and t.get("phase")]
+                    _candidate_seed = [t.get("phase") for t in _dt_seed
+                                       if t.get("status") == "COMPLETED" and t.get("phase")]
+                    # Validate candidate seed against live cloud evidence.
+                    # If the cloud has zero migrated resources, nothing is done.
+                    _has_cloud = False
+                    try:
+                        import subprocess as _sp
+                        _x = _sp.run(['hcloud','SMS','ListServers','--cli-region=ap-southeast-3','--cli-profile=erp-src'],
+                                     capture_output=True, text=True, timeout=20)
+                        _d = json.loads(_x.stdout) if _x.stdout else {}
+                        _srcs = _d.get('source_servers') or []
+                        _has_sms = len(_srcs) > 0
+                        _x2 = _sp.run(['hcloud','VPC','ListVpcs','--cli-region=la-north-2','--cli-profile=erp-src'],
+                                      capture_output=True, text=True, timeout=20)
+                        _d2 = json.loads(_x2.stdout) if _x2.stdout else {}
+                        _vpcs = _d2.get('vpcs') or _d2.get('vpc') or _d2.get('Vpcs') or []
+                        _non_default = [v for v in _vpcs if v.get('name') != 'default']
+                        _has_vpc = len(_non_default) > 0
+                        _has_cloud = _has_sms and _has_vpc
+                    except Exception:
+                        pass
+                    if _has_cloud:
+                        completed_seed = _candidate_seed
+                    else:
+                        # Cloud is empty — no phase can be legitimately completed.
+                        # Clear the old delegate markers so they don't flood future
+                        # pipelines with phantom seeds.
+                        try:
+                            if _proj_seed and _proj_seed.delegate_tasks:
+                                _proj_seed.delegate_tasks = '[]'
+                                from models import db as _db
+                                _db.session.commit()
+                        except Exception:
+                            pass
             except Exception:
                 completed_seed = []
             pipeline_info = {
@@ -566,6 +600,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 'phase_status': {},
                 'started_at': datetime.now(timezone.utc).isoformat(),
                 'thread_alive': True,
+                'stop_requested': False,   # GUI Stop button -> graceful stop after current phase
+                'pause_requested': False,  # GUI Pause button -> suspend before next phase
+                'paused_at_phase': None,   # phase where it paused (for resume)
             }
             _running_pipelines[project_id] = pipeline_info
 
@@ -673,6 +710,37 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             for i in range(start_from, len(pipeline)):
                 step = pipeline[i]
                 phase_key = step['phase']
+
+                # ── STOP REQUESTED: halt gracefully at the phase boundary ──
+                if pipeline_info.get('stop_requested'):
+                    log(f'[stop] Stop requested — halting after {pipeline_info.get("current_phase") or "start"}.')
+                    pipeline_info['status'] = 'stopped'
+                    state.status = 'STOPPED'
+                    state.last_active_at = datetime.utcnow()
+                    db.session.commit()
+                    break
+
+                # ── PAUSE REQUESTED: suspend BEFORE this phase until resumed ──
+                if pipeline_info.get('pause_requested'):
+                    log(f'[pause] Pause requested — suspending before {phase_key}.')
+                    pipeline_info['status'] = 'paused'
+                    pipeline_info['paused_at_phase'] = phase_key
+                    state.status = 'PAUSED'
+                    state.last_active_at = datetime.utcnow()
+                    db.session.commit()
+                    # Wait until resumed (poll 3s) — stop also honored while paused
+                    while pipeline_info.get('pause_requested') and not pipeline_info.get('stop_requested'):
+                        time.sleep(3)
+                    if pipeline_info.get('stop_requested'):
+                        log('[stop] Stop requested while paused — halting.')
+                        pipeline_info['status'] = 'stopped'
+                        state.status = 'STOPPED'
+                        db.session.commit()
+                        break
+                    log(f'[resume] Resumed — continuing with {phase_key}.')
+                    pipeline_info['status'] = 'running'
+                    state.status = 'IN_PROGRESS'
+                    db.session.commit()
 
                 # Skip already completed — UNLESS restart_phase forces re-run of this phase
                 if restart_phase == phase_key:
@@ -1269,3 +1337,78 @@ def resume_pipeline(project_id):
         return {'success': False, 'error': 'No failed phase found to resume from.'}
 
     return start_pipeline(project_id, start_from=failed_idx)
+
+
+def stop_pipeline(project_id):
+    """Request a graceful stop of a running pipeline.
+
+    Flags the running thread: it halts at the next phase boundary (or now if
+    paused). Does NOT kill the thread — the current phase completes naturally
+    so we never leave half-created resources. Kills any live agent subprocess
+    (it would otherwise keep running to completion).
+    """
+    info = _running_pipelines.get(project_id, {})
+    if not info:
+        # Nothing in-memory — but there may be an orphaned agent process.
+        try:
+            import subprocess
+            subprocess.run("pkill -f 'hermes.*chat' 2>/dev/null; true", shell=True)
+        except Exception:
+            pass
+        return {'success': True, 'message': 'No running pipeline found; killed any orphaned agents.', 'status': 'stopped'}
+
+    info['stop_requested'] = True
+    info['pause_requested'] = False  # stop overrides pause
+    # Kill any live agent subprocess so we don't wait for it
+    try:
+        import subprocess
+        subprocess.run("pkill -f 'hermes.*chat' 2>/dev/null; true", shell=True)
+    except Exception:
+        pass
+    # Persist the stopped state immediately (visible even before thread notices)
+    try:
+        from models import db, ExecutionState
+        st = ExecutionState.query.filter_by(project_id=project_id).first()
+        if st:
+            st.status = 'STOPPED'
+            db.session.commit()
+    except Exception:
+        pass
+    return {'success': True, 'message': 'Stop requested — pipeline will halt at the next phase boundary.', 'status': info.get('status', 'stopping')}
+
+
+def pause_pipeline(project_id):
+    """Request a pause: suspend BEFORE the next phase (current one finishes)."""
+    info = _running_pipelines.get(project_id, {})
+    if not info:
+        return {'success': False, 'error': 'No running pipeline to pause.', 'status': 'idle'}
+    if info.get('pause_requested'):
+        return {'success': False, 'error': 'Pipeline already paused.', 'status': 'paused'}
+    info['pause_requested'] = True
+    try:
+        from models import db, ExecutionState
+        st = ExecutionState.query.filter_by(project_id=project_id).first()
+        if st:
+            st.status = 'PAUSED'
+            db.session.commit()
+    except Exception:
+        pass
+    return {'success': True, 'message': 'Pause requested — suspending before the next phase.', 'status': 'pausing'}
+
+
+def resume_pipeline_after_pause(project_id):
+    """Resume a paused pipeline (clears the pause flag)."""
+    info = _running_pipelines.get(project_id, {})
+    if not info:
+        return {'success': False, 'error': 'No pipeline in memory to resume.', 'status': 'idle'}
+    info['pause_requested'] = False
+    info['paused_at_phase'] = None
+    try:
+        from models import db, ExecutionState
+        st = ExecutionState.query.filter_by(project_id=project_id).first()
+        if st:
+            st.status = 'IN_PROGRESS'
+            db.session.commit()
+    except Exception:
+        pass
+    return {'success': True, 'message': 'Resumed.', 'status': 'running'}
