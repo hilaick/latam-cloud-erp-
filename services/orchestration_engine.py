@@ -380,7 +380,7 @@ When done, report what you actually executed, the verification commands you ran,
         '--quiet',
         '--model', delegation_model,
         '--provider', 'custom',
-        '--toolsets', 'terminal,file',
+        '--toolsets', 'terminal,file,web,mcp',
         '--reasoning', 'medium',
     ]
     # ── SKILL PRELOAD (phase-specific) ──
@@ -835,25 +835,10 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 pass
                             log(f'[det] {phase_key}: all {len(entries)} steps completed deterministically ✓')
                         else:
-                            log(f'[det] {phase_key}: {len(failures)}/{len(entries)} steps failed, retrying...')
-                            # Retry ×2 (same deterministic path)
-                            time.sleep(3)
-                            det_ok2, entries2, failures2 = det.run_phase(plan, log=log)
-                            if det_ok2:
-                                try:
-                                    _hs3 = ExecutionState.query.filter_by(project_id=project_id).first()
-                                    if _hs3:
-                                        _hs3.last_active_at = datetime.utcnow()
-                                        db.session.commit()
-                                except Exception:
-                                    pass
-                                response = f"Deterministic (retry): {len(entries2)} steps succeeded."
-                                log(f'[det] {phase_key}: retry succeeded ✓')
-                            else:
-                                log(f'[det] {phase_key}: deterministic failed after retry — falling through to agent lane')
-                                success = False
-                                error = f"Deterministic: {len(failures2)} steps failed after retry"
-                                # Fall through to agent spawn below
+                            log(f'[det] {phase_key}: {len(failures)}/{len(entries)} steps failed — falling directly to agent lane (deterministic is pure-function; same input = same result, retry is useless)')
+                            success = False
+                            error = f"Deterministic: {len(failures)} steps failed"
+                            # Fall through to agent spawn below
                     except Exception as det_err:
                         log(f'[det] {phase_key}: deterministic executor error: {det_err}')
                         success = False
@@ -1120,6 +1105,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 if _nm and _sid:
                                     _src_srv.append({
                                         'name': _nm,
+                                        'id': _sid,       # Alias for deterministic path compatibility
                                         'sms_id': _sid,
                                         'eip': _ip,
                                         'public_ip_address': _ip,

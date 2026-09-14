@@ -418,7 +418,7 @@ class MigrationOperationExecutor:
         if op_def.get('deterministic_first') and operation == 'SMS_TASK_CREATE':
             try:
                 from services.sms_task_creator import create_sms_task
-                src_id = context.get('source_server_id', '')
+                src_id = context.get('source_server_id', '') or context.get('source_sms_id', '')
                 tgt_id = context.get('target_server_id', '')
                 src_region = context.get('source_region', 'ap-southeast-3')
                 tgt_region = context.get('target_region', 'la-north-2')
@@ -478,13 +478,14 @@ class MigrationOperationExecutor:
         binary = "/usr/local/lib/hermes-agent/venv/bin/hermes"
         if not os.path.isfile(binary):
             return {"success": False, "error": "Hermes binary not found", "operation": operation}
-        
+
         cmd = [
             binary, "chat", "-q",
             prompt,
             "--profile", "default",
             "--model", "glm-5.2",
             "--yolo",
+            "--toolsets", "terminal,file,web,mcp",
         ]
         
         try:
@@ -510,7 +511,6 @@ class MigrationOperationExecutor:
         except Exception as e:
             MigrationOperationExecutor._emit_progress(operation, "error", context, str(e)[:200])
             return {"success": False, "error": str(e), "operation": operation, "tool": "hermes_agent"}
-
     @staticmethod
     def _emit_progress(operation: str, status: str, context: dict, detail: str = ""):
         """Write progress to project data so GUI can show live status."""
@@ -587,8 +587,8 @@ class MigrationOperationExecutor:
                 continue
             
             src_name = src.get("name", f"source-{i}")
-            src_id = src.get("id", "")
-            ssh_ip = source_eip_map.get(src_id, "") or src.get("public_ip", "") or src.get("ip", "")
+            src_id = src.get("id", "") or src.get("sms_id", "")  # sms_id is the SMS server ID from executionContext
+            ssh_ip = source_eip_map.get(src_id, "") or src.get("eip", "") or src.get("public_ip", "") or src.get("ip", "")
             target_id = target.get("id", "")
             
             ctx = {
