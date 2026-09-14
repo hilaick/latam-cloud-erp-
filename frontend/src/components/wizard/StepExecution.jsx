@@ -933,6 +933,49 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <i className="fas fa-play mr-1"></i> Run Pipeline
                         </button>
                     )}
+                    {autoOrchestrating && (
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={async () => {
+                                    const token = sessionStorage.getItem('hermes_access_token');
+                                    try {
+                                        const res = await fetch(`/api/execution/${project.id}/orchestrate/pause`, {
+                                            method: 'POST',
+                                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({}),
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                                    } catch (e) { console.error('[pause] error', e); }
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
+                                title="Pause before the next phase (current phase completes first)"
+                            >
+                                <i className="fas fa-pause mr-1"></i> Pause
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const token = sessionStorage.getItem('hermes_access_token');
+                                    try {
+                                        const res = await fetch(`/api/execution/${project.id}/orchestrate/stop`, {
+                                            method: 'POST',
+                                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({}),
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            setAutoOrchestrating(false);
+                                            window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                                        }
+                                    } catch (e) { console.error('[stop] error', e); }
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
+                                title="Stop the pipeline — halts at the next phase boundary"
+                            >
+                                <i className="fas fa-stop mr-1"></i> Stop
+                            </button>
+                        </div>
+                    )}
                     <button
                         onClick={async () => {
                             // Refresh BOTH cloud state and pipeline status in one click
@@ -977,6 +1020,28 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     {failedOrchPhaseIdx !== null && (
                         <button onClick={handleResumePipeline} className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors">
                             <i className="fas fa-forward mr-1"></i> Resume
+                        </button>
+                    )}
+                    {execState?.status === 'PAUSED' && (
+                        <button
+                            onClick={async () => {
+                                const token = sessionStorage.getItem('hermes_access_token');
+                                try {
+                                    const res = await fetch(`/api/execution/${project.id}/orchestrate/pause-resume`, {
+                                        method: 'POST',
+                                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({}),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        setAutoOrchestrating(true);
+                                        window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                                    }
+                                } catch (e) { console.error('[resume-pause] error', e); }
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
+                        >
+                            <i className="fas fa-play mr-1"></i> Resume Pipeline
                         </button>
                     )}
                 </div>
