@@ -409,10 +409,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                     </div>
                                 </div>
 
-                                {/* Agentic Orchestration Panel — shown when agentic selected */}
-                                {executionMode === 'agentic' && (
-                                    <AgenticOrchestrationPanel project={project} onUpdateProject={onUpdateProject} modelName={agentModelName} />
-                                )}
+                                {/* Execution Mode selector panels — NO simulation, NO constellation, NO spawn tree here.
+                                    Those belong in 3.5 Wave & Runbook Planning after build-plan. */}
                             </div>
                         </div>
                     )}

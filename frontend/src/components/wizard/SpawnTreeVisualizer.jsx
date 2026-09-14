@@ -169,21 +169,29 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
       }))
     : progress.operations || [];
 
+  const [timelineCollapsed, setTimelineCollapsed] = useState(true); // collapsed by default
+  // REPLAY/LIVE badge should ONLY show when an agent is actually running — not
+  // merely because a trace exists. Simulation trace = replayed result, not live.
+  const hasLiveActivity = mode === 'execution' && isActive && (operations.length > 0 || !!tree);
+
   return (
     <div style={{ background: '#0f172a', borderRadius: '12px', padding: '16px', border: '1px solid #1e293b' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h3 style={{ color: '#e0e7ff', fontSize: '13px', fontWeight: 700, margin: 0 }}>
           🌳 Agent Spawn Tree {mode === 'simulation' && '(Simulation)'} {mode === 'execution' && '(Execution)'}
         </h3>
-        {isActive && (operations.length > 0 || tree) && (
+        {hasLiveActivity && (
           <span style={{ fontSize: '9px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '6px', height: '6px', background: '#f59e0b', borderRadius: '50%', animation: 'pulse 1.5s infinite' }} />
-            {mode === 'simulation' ? 'REPLAY' : 'LIVE'}
+            LIVE
           </span>
+        )}
+        {hasLiveActivity === false && (operations.length > 0 || tree) && mode === 'simulation' && (
+          <span style={{ fontSize: '9px', color: '#6366f1' }}>✓ SIMULATION RESULT</span>
         )}
         {isActive && !operations.length && !tree && (
           <span style={{ fontSize: '9px', color: '#6b7280' }}>
-            {mode === 'simulation' ? 'WAITING FOR SIMULATION...' : 'WAITING FOR EXECUTION...'}
+            {mode === 'simulation' ? 'RUN SIMULATION TO POPULATE' : 'WAITING FOR EXECUTION...'}
           </span>
         )}
         {!isActive && operations.length > 0 && (
@@ -202,10 +210,17 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
         </div>
       )}
 
-      {/* Operation Timeline */}
+      {/* Operation Timeline — collapsed by default */}
       {operations.length > 0 && (
         <div style={{ marginTop: '12px', borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
-          <div style={{ fontSize: '10px', color: '#818cf8', fontWeight: 600, marginBottom: '6px' }}>OPERATION TIMELINE</div>
+          <div
+            onClick={() => setTimelineCollapsed(c => !c)}
+            style={{ fontSize: '10px', color: '#818cf8', fontWeight: 600, marginBottom: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <i className={`fas fa-chevron-${timelineCollapsed ? 'right' : 'down'}`} style={{ fontSize: '8px' }} />
+            OPERATION TIMELINE ({operations.length})
+          </div>
+          {!timelineCollapsed && (
           <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {operations.slice(-20).map((op, i) => (
               <div key={i} style={{
@@ -225,6 +240,7 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 

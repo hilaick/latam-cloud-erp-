@@ -108,13 +108,21 @@ PIPELINE_PHASES = [
 
 
 REDACT_PATTERNS = [
-    # Huawei Cloud AK/SK pairs + any long secrets inline
-    (r'(HPUAQH|AKIA|LTAI)[A-Za-z0-9]{10,}', '<AK>'),
-    (r'(?i)\b(ak|access[_-]?key)\b\s*[=:]\s*\S+', r'\1=<AK>'),
-    (r'[A-Za-z0-9/_\-+]{24,}', '<SECRET>'),
+    # Huawei Cloud AK/SK pairs + source credentials (exact known prefixes)
+    (r'(HPUAQH|AKIA|LTAI|DWO)[A-Za-z0-9]{10,}', '<AK>'),
+    (r'(?i)\b(?:ak|sk|access[_-]?key|secret[_-]?key)\b\s*[=:]\s*\S+', r'\1=<REDACTED>'),
+    # The source SK pattern is distinctive (32-char lowercase alnum after the AK)
+    (r'\bHPUAQH\w*\s+[a-z0-9]{32}\b', '<AK> <SK>'),
+    # Long mixed-case secrets only if they look like keys (no hyphens/name chars)
+    (r'\b[A-Za-z0-9]{32,40}\b(?![\w\-]*\-(?:TARGET|REFRESH))', '<SECRET>'),
 ]
 def redact_secrets(text: str) -> str:
-    """Redact cloud credentials and long secrets from any log/streamed line."""
+    """Redact cloud credentials and long secrets from any log/streamed line.
+
+    Deliberately conservative: does NOT redact UUIDs, server names
+    (ecs-...-0001), paths, or task ids — only tokens that look like
+    credentials (AK/SK pairs, long mixed-case alnum keys).
+    """
     if not text:
         return text
     out = text
@@ -902,6 +910,44 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                             attempt += 1
                             time.sleep(delay)
 
+                # ── SPAWN TREE RECORDING: persist agent node (in project data) ──
+                # So the SpawnTreeVisualizer poll shows real spawns (one agent per
+                # phase, sequential) instead of empty/phantom state.
+                try:
+                    _sp = pdata.get('executionProgress') or {}
+                    if not isinstance(_sp, dict):
+                        _sp = {}
+                    if 'spawnTree' not in _sp or not isinstance(_sp.get('spawnTree'), dict):
+                        _sp['spawnTree'] = {"nodes": [], "edges": []}
+                    if 'operations' not in _sp or not isinstance(_sp.get('operations'), list):
+                        _sp['operations'] = []
+                    _node_id = f"agent_{phase_key.lower()}"
+                    if not any(n.get("id") == _node_id for n in _sp['spawnTree'].get("nodes", [])):
+                        _sp['spawnTree']["nodes"].append({
+                            "id": _node_id, "label": phase_key.replace("PHASE_4_", "4.") + f" ({step.get('label','')})",
+                            "status": "running", "model": delegation_model,
+                        })
+                        if not any(n.get("id") == "main" for n in _sp['spawnTree'].get("nodes", [])):
+                            _sp['spawnTree']["nodes"].insert(0, {"id": "main", "label": "Main Orchestrator", "status": "running", "model": delegation_model})
+                        _sp['spawnTree']["edges"].append({"from": "main", "to": _node_id})
+                    if success:
+                        for n in _sp['spawnTree'].get("nodes", []):
+                            if n.get("id") == _node_id:
+                                n["status"] = "succeeded"
+                    _sp['operations'].append({
+                        "operation": phase_key.replace("PHASE_4_", "4.") + " agent",
+                        "status": "succeeded" if success else "failed",
+                        "server": step.get('target_resource', ''),
+                        "detail": (response or error or '')[:100],
+                    })
+                    pdata['executionProgress'] = _sp
+                    _proj_sp = ProjectData.query.get(project_id)
+                    if _proj_sp:
+                        _proj_sp.data = json.dumps(pdata, ensure_ascii=False)
+                        db.session.commit()
+                except Exception as _ste:
+                    pass
+
                 # ── FEEDBACK LOOP: agent resolutions -> plan updates ──
                 # When the agent lane resolved placeholders (discovered IDs,
                 # picked flavors, found the mig project), write those values
@@ -941,6 +987,35 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         })
                     except Exception:
                         pass
+
+                # ── EXECUTION WRITEBACK: actual outcome -> simulation artifact ──
+                # Each phase's real result (timing, error, resolution) lands in
+                # simulationResult.trace so the dry-run becomes a living record and
+                # post-lifecycle re-runs show sim-vs-actual side by side.
+                try:
+                    from services.feedback_loop import apply_execution_writeback
+                    _phase_start = pipeline_info.get('_phase_started_at', {}).get(phase_key)
+                    _dur = 0
+                    if _phase_start:
+                        try:
+                            _dur = max(0, int((datetime.utcnow() - _phase_start).total_seconds()))
+                        except Exception:
+                            _dur = 0
+                    apply_execution_writeback(
+                        pdata, phase_key,
+                        outcome='completed' if success else 'failed',
+                        error='' if success else str(error or '')[:300],
+                        resolution=response if success else '',
+                        duration_s=_dur,
+                        agent_report=response or '',
+                    )
+                    _proj_wb = ProjectData.query.get(project_id)
+                    if _proj_wb:
+                        _proj_wb.data = json.dumps(pdata, ensure_ascii=False)
+                        db.session.commit()
+                    log(f'[writeback] {phase_key} outcome written to simulation artifact ({_dur}s)')
+                except Exception as wb_err:
+                    log(f'[writeback] failed: {wb_err}')
                 task_record = {
                     'goal': step['goal'][:200],
                     'phase': phase_key,
@@ -1063,6 +1138,31 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             state.status = 'DONE'
             state.last_active_at = datetime.utcnow()
             db.session.commit()
+
+            # ── EXEMPLAR PROMOTION: successful lifecycle -> resource kit ──
+            # A completed 7-phase run is the highest-value learning artifact.
+            # Promote the per-phase resolutions + outcomes into the skill registry
+            # (cross-project), so future simulations & executions start from
+            # "known to work" patterns instead of rediscovering them.
+            try:
+                from services.feedback_loop import record_learning
+                from services.agentic_simulator import SkillRegistry
+                _pc = 0
+                for _ph in pipeline_info.get('completed_phases', []):
+                    if isinstance(_ph, str) and _ph.startswith('PHASE_4_'):
+                        _pc += 1
+                record_learning(
+                    skill_name='erp-execution-orchestration',
+                    pattern=f"Full lifecycle success exemplar (project {project_id[:8]}, {_pc} phases): "
+                            f"deterministic-first → agent lane healed placeholders → feedback persisted "
+                            f"resolutions → phases completed in sequence. Reuse this pattern for similar "
+                            f"cross-region projects (source {pdata.get('sourceRegion','?')} → "
+                            f"{pdata.get('region','?')}).",
+                    failure_modes=["SMS.0515 → disk overrides or console path", "API tasks require explicit start"],
+                )
+                logger.info(f"[exemplar] lifecycle success +{_pc} phases promoted to resource kit")
+            except Exception as ex_ex:
+                logger.warning(f"[exemplar] promotion failed: {ex_ex}")
 
         except Exception as e:
             logger.error(f"[orchestration:{project_id}] Pipeline thread crashed: {e}", exc_info=True)
