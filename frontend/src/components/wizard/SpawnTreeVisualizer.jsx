@@ -118,7 +118,7 @@ export default function SpawnTreeVisualizer({ projectId, simulationTrace, isActi
 
   // Build tree from execution progress
   const executionTree = useMemo(() => {
-    const { nodes, edges } = progress.spawnTree;
+    const { nodes = [], edges = [] } = progress.spawnTree || {};
     if (!nodes?.length) return null;
     const rootNode = nodes.find(n => n.id === 'main') || { id: 'main', label: 'Main Orchestrator', status: 'running', model: modelName };
     const children = nodes
