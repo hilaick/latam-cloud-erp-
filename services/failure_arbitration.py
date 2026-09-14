@@ -104,7 +104,7 @@ def new_information(prev_error: str, new_error: str) -> bool:
 
 # ── Troubleshoot loop (pause -> simulate-with-error -> agent -> resume/halt) ──
 
-TROUBLESHOOT_MAX_ROUNDS = 3
+TROUBLESHOOT_MAX_ROUNDS = 2  # was 3 — each round spawns an agent; 2 is enough (simulate → fix)
 
 
 def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,

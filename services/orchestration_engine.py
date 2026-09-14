@@ -36,7 +36,17 @@ _project_locks_guard = threading.Lock()
 # Maps project_id → { phase, status, log, started_at, thread }
 _running_pipelines = {}
 
-PIPELINE_TIMEOUT_SECONDS = 3600  # 60 minutes per phase (was 1800/30min — too tight for SMS monitor/cutover)
+PIPELINE_TIMEOUT_SECONDS = 3600  # 60 min for monitor/cutover phases
+_PHASE_TIMEOUTS = {
+    'PHASE_4_1': 600,   # 10 min — network (VPC/SG/EIP)
+    'PHASE_4_2': 900,   # 15 min — source prep (SMS agents)
+    'PHASE_4_3': 900,   # 15 min — target ECS provisioning
+    'PHASE_4_4': 1200,  # 20 min — data sync (SMS tasks)
+    'PHASE_4_5': 3600,  # 60 min — monitor (replication wait)
+    'PHASE_4_6': 1800,  # 30 min — cutover
+    'PHASE_4_7': 600,   # 10 min — reconciliation
+    'PHASE_4_8': 600,   # 10 min — teardown
+}
 
 
 def _get_project_lock(project_id):
@@ -396,7 +406,7 @@ When done, report what you actually executed, the verification commands you ran,
     logger.info(f"[orchestration] Spawning Hermes agent for {phase}: {goal[:100]}...")
 
     # ── Auto-heal: retry on transient LLM failures (LB 502 key-cooldown, 429 rate limit) ──
-    max_spawn_retries = 3
+    max_spawn_retries = 2  # was 3 — transient detection fixed, fewer retries needed
     last_error = None
     for attempt in range(max_spawn_retries + 1):
         try:
@@ -437,7 +447,8 @@ When done, report what you actually executed, the verification commands you ran,
                         emitted_activity = True
             except Exception as _se:
                 last_error = f"stream read: {_se}"
-            proc.wait(timeout=PIPELINE_TIMEOUT_SECONDS)
+            _phase_timeout = _PHASE_TIMEOUTS.get(phase, PIPELINE_TIMEOUT_SECONDS)
+            proc.wait(timeout=_phase_timeout)
             result_rc = proc.returncode
             result_stdout = ''.join(results_buf)
             result_stderr = ''

@@ -2231,6 +2231,14 @@ def orchestration_status(project_id):
     except Exception as e:
         logger.warning(f"Failed to detect external processes: {e}")
 
+    # ── Add started_at timestamp for elapsed timer ──
+    try:
+        _es = ExecutionState.query.filter_by(project_id=project_id).first()
+        if _es and _es.last_active_at:
+            status['started_at'] = _es.last_active_at.isoformat()
+    except Exception:
+        pass
+
     return jsonify({'success': True, 'status': status})
 
 
