@@ -253,6 +253,9 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [storySelectedPhase, setStorySelectedPhase] = useState(null); // clicked phase N (interactive Journey)
     const [lifecycleFullscreen, setLifecycleFullscreen] = useState(false); // fullscreen overlay for all 3 lifecycle tabs
     const [orchestrationLog, setOrchestrationLog] = useState([]);
+    const [liveElapsedDisplay, setLiveElapsedDisplay] = useState(null);
+    const [liveEtaDisplay, setLiveEtaDisplay] = useState(null);
+    const [liveProgressPct, setLiveProgressPct] = useState(0);
     // Most recent meaningful activity line (agent/det) for the running-phase card
     // MUST be declared after orchestrationLog (TDZ) — the minifier renames
     // cross-references and a use-before-init becomes `Cannot access 'Me'`.
@@ -592,6 +595,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 if (st.session_stats) setSessionStats(st.session_stats);
                 if (st.last_tool_call) setLastToolCall(st.last_tool_call);
                 if (st.polled_at) setPolledAt(st.polled_at);
+
+                // Update elapsed/ETA/progress from top-level fields
+                if (data.elapsed_display) setLiveElapsedDisplay(data.elapsed_display);
+                if (data.eta_display) setLiveEtaDisplay(data.eta_display);
+                if (data.progress_pct !== undefined) setLiveProgressPct(data.progress_pct);
 
                 // Check if pipeline finished
                 if (st.status === 'completed' || st.status === 'halted' || st.status === 'idle' || st.status === 'pending' || st.status === '') {
@@ -1304,11 +1312,11 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         autoOrchestrating && execState?.currentPhase ? `${execState.currentPhase.replace('PHASE_4_', '4.')} active` :
                                         'Ready'
                                     }</div>
-                                    {autoOrchestrating && execState?.elapsed_display && (
-                                    <div className="text-[7px] text-purple-300 mt-0.5">⏱ {execState.elapsed_display}</div>
+                                    {autoOrchestrating && liveElapsedDisplay && (
+                                    <div className="text-[7px] text-purple-300 mt-0.5">⏱ {liveElapsedDisplay}</div>
                                     )}
-                                    {autoOrchestrating && execState?.eta_display && execState.eta_display !== '—' && (
-                                    <div className="text-[7px] text-purple-300">ETA {execState.eta_display}</div>
+                                    {autoOrchestrating && liveEtaDisplay && liveEtaDisplay !== '—' && (
+                                    <div className="text-[7px] text-purple-300">ETA {liveEtaDisplay}</div>
                                     )}
                                 </div>
                                 {/* SVG connecting circle */}

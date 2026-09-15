@@ -151,10 +151,10 @@ function MigrationOpsDashboard({ project }) {
                         <div className="text-[9px] font-black uppercase text-slate-400">Elapsed</div>
                         <div className="text-sm font-black text-white">{executionState.elapsed_display || '—'}</div>
                     </div>
-                    {executionState.elapsed_seconds > 0 && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
+                    {executionState.eta_display && executionState.eta_display !== '—' && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
                     <div className="text-right shrink-0">
                         <div className="text-[9px] font-black uppercase text-slate-400">ETA</div>
-                        <div className="text-sm font-black text-amber-400">{(() => { const rem = (executionState.elapsed_seconds / executionState.progress_pct) * (100 - executionState.progress_pct); return `${Math.floor(rem/60)}m ${Math.floor(rem%60)}s`; })()}</div>
+                        <div className="text-sm font-black text-amber-400">{executionState.eta_display}</div>
                     </div>
                     )}
                 </div>
