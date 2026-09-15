@@ -905,6 +905,7 @@ class ExecutionEngine:
                 data_gb=data_gb, os_type=os_type,
                 erp_tag_q=erp_tag_q,
                 enterprise_project_id=eps_id_prov,
+                flavor_cache=project.get("target_flavor_cache", {}),
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1109,7 +1110,8 @@ class ExecutionEngine:
                               fallback: str, source_region: str, target_region: str,
                               is_zero_trust: bool, is_vmware: bool, data_gb: float,
                               os_type: str, erp_tag_q: str = None,
-                              enterprise_project_id: str = '') -> List[dict]:
+                              enterprise_project_id: str = '',
+                              flavor_cache: dict = None) -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
@@ -1147,7 +1149,7 @@ class ExecutionEngine:
             source_ram_mb = int(node.get("ram", 0) or 0)
             flavor_ref = _resolve_target_flavor(
                 source_flavor, source_vcpus, source_ram_mb,
-                target_region, project.get("target_flavor_cache", {})
+                target_region, (flavor_cache or {})
             )
 
             sid += 1
