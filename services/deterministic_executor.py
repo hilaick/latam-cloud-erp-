@@ -53,11 +53,19 @@ def _run_shell(cmd, timeout=180, env_extra=None):
 
 
 class DeterministicExecutor:
-    def __init__(self, project_data, project_id, phase_key, target_region='la-north-2'):
+    def __init__(self, project_data, project_id, phase_key, target_region=None, source_region=None):
         self.pdata = project_data or {}
         self.project_id = project_id
         self.phase_key = phase_key
-        self.target_region = target_region
+        # Derive regions from project data — NEVER hardcode
+        proj = self.pdata if isinstance(self.pdata, dict) else {}
+        self.source_region = source_region or proj.get('sourceRegion', proj.get('source_region', 'ap-southeast-3'))
+        self.target_region = target_region or proj.get('region', proj.get('targetRegion', proj.get('target_region', 'la-north-2')))
+        # Derive CLI profiles from project data — each project may have different credentials
+        self.source_profile = proj.get('sourceProfile', proj.get('source_profile', 'erp-source'))
+        self.target_profile = proj.get('targetProfile', proj.get('target_profile', 'internal'))
+        # Target naming convention — some projects use -TARGET suffix, others use different patterns
+        self.target_suffix = proj.get('targetSuffix', proj.get('target_suffix', '-TARGET'))
 
     # ── placeholder resolution ────────────────────────────────────────────
     def _resolve_ctx(self):
@@ -303,9 +311,9 @@ class DeterministicExecutor:
             # SMS_TASK_CREATE: check if SMS task already exists for this server
             _preflight_skip = False
             if action == 'CREATE_TARGET_ECS' and cmd.startswith('hcloud'):
-                _target_name = f"{target}-TARGET"
-                _pf_region = 'la-north-2'
-                _pf_profile = 'internal'  # target region always uses internal profile
+                _target_name = f"{target}{self.target_suffix}"
+                _pf_region = self.target_region
+                _pf_profile = self.target_profile
                 _pf = _run_shell(f"hcloud ECS ListServersDetails --cli-region={_pf_region} --cli-profile={_pf_profile} --limit=100")
                 if _pf[0] == 0:
                     import json as _json
@@ -327,7 +335,7 @@ class DeterministicExecutor:
                         pass  # Fall through to normal execution
             elif action == 'SMS_TASK_CREATE':
                 # Check if SMS tasks already exist for this source server
-                _pf = _run_shell("hcloud SMS ListTasks --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50")
+                _pf = _run_shell(f"hcloud SMS ListTasks --cli-region={self.source_region} --cli-profile={self.source_profile} --limit=50")
                 if _pf[0] == 0:
                     import json as _json
                     try:
@@ -353,7 +361,7 @@ class DeterministicExecutor:
                         pass
             elif action == 'SMS_TASK_START':
                 # Check if SMS task is already running/succeeded
-                _pf = _run_shell("hcloud SMS ListTasks --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50")
+                _pf = _run_shell(f"hcloud SMS ListTasks --cli-region={self.source_region} --cli-profile={self.source_profile} --limit=50")
                 if _pf[0] == 0:
                     import json as _json
                     try:
@@ -377,10 +385,14 @@ class DeterministicExecutor:
             if _preflight_skip:
                 continue  # Skip the actual creation command
             if cmd.startswith('hcloud') and '--cli-profile' not in cmd:
-                if '--cli-region=la-north-2' in cmd or '--cli-region=sa-brazil-1' in cmd:
-                    cmd = cmd.replace('hcloud', 'hcloud --cli-profile=internal', 1)
-                elif '--cli-region=ap-southeast-3' in cmd:
-                    cmd = cmd.replace('hcloud', 'hcloud --cli-profile=erp-source', 1)
+                # Derive profile from region using project config, not hardcoded mapping
+                if f'--cli-region={self.target_region}' in cmd:
+                    cmd = cmd.replace('hcloud', f'hcloud --cli-profile={self.target_profile}', 1)
+                elif f'--cli-region={self.source_region}' in cmd:
+                    cmd = cmd.replace('hcloud', f'hcloud --cli-profile={self.source_profile}', 1)
+                else:
+                    # Fallback: unknown region → use target profile
+                    cmd = cmd.replace('hcloud', f'hcloud --cli-profile={self.target_profile}', 1)
             if '<' in cmd and '>' in cmd:
                 resolved = cmd
                 # First substitute chained values from prior steps
@@ -424,10 +436,10 @@ class DeterministicExecutor:
                 ok = True
                 # For "already exists", query the resource to get its ID for chain extraction
                 _lookup_id = ''
-                _region = (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2')
+                _region = (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else self.target_region)
                 if 'CREATE_SG' in action or 'CreateSecurityGroup' in resolved:
                     # Find the migration SG by name (sg-migration), not the default SG
-                    _lr = _run_shell(f'hcloud VPC ListSecurityGroups --cli-region={_region} --cli-profile=internal --limit=50')
+                    _lr = _run_shell(f'hcloud VPC ListSecurityGroups --cli-region={_region} --cli-profile={self.target_profile} --limit=50')
                     if _lr[0] == 0:
                         import re as _re
                         # Look for sg-migration specifically
@@ -440,13 +452,13 @@ class DeterministicExecutor:
                                 if _m.group(1) != 'default':
                                     _lookup_id = _m.group(2); break
                 elif 'CREATE_VPC' in action:
-                    _lr = _run_shell(f'hcloud VPC ListVpcs --cli-region={_region} --cli-profile=internal --limit=50')
+                    _lr = _run_shell(f'hcloud VPC ListVpcs --cli-region={_region} --cli-profile={self.target_profile} --limit=50')
                     if _lr[0] == 0:
                         import re as _re
                         _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])
                         if _m: _lookup_id = _m.group(1)
                 elif 'CREATE_EIP' in action:
-                    _lr = _run_shell(f'hcloud EIP ListPublicips --cli-region={_region} --cli-profile=internal --limit=50')
+                    _lr = _run_shell(f'hcloud EIP ListPublicips --cli-region={_region} --cli-profile={self.target_profile} --limit=50')
                     if _lr[0] == 0:
                         import re as _re
                         _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])

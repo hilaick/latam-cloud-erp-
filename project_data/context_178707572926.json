@@ -85,6 +85,78 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
     "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
    }
   ],
   "target_servers": [
@@ -605,7 +677,7 @@
     "commands": [
      {
       "desc": "Query source ECS specs for rightsizing",
-      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=<ecs_id>",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      }
     ],
@@ -683,7 +755,7 @@
     "commands": [
      {
       "desc": "Create SMS task",
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=7dc6e435-2379-4451-a44f-87c0848629bf --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -711,7 +783,7 @@
     "commands": [
      {
       "desc": "Start SMS task replication",
-      "cmd": "hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=start --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTaskStatus --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --operation=start --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -739,7 +811,7 @@
     "commands": [
      {
       "desc": "Poll SMS task status",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -773,7 +845,7 @@
     "commands": [
      {
       "desc": "Verify migration task reached full replication (100%)",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
@@ -805,7 +877,7 @@
     "commands": [
      {
       "desc": "Boot/verify target ECS is ACTIVE with migrated data",
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      },
      {
@@ -837,12 +909,12 @@
     "commands": [
      {
       "desc": "Resume agent for incremental sync during cutover window",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
       "desc": "Trigger final incremental sync (catch-up after target test)",
-      "cmd": "hcloud SMS UpdateTask --task_id=<task_id> --syncing=false --speed_limit=0 --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --syncing=false --speed_limit=0 --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -868,7 +940,7 @@
     "commands": [
      {
       "desc": "Stop replication \u2014 finalize sync (task record retained for console visibility)",
-      "cmd": "hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=stop --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTaskStatus --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --operation=stop --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
@@ -878,7 +950,7 @@
      },
      {
       "desc": "Confirm target ECS ACTIVE (production promoted)",
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      }
     ],
@@ -973,7 +1045,7 @@
     "commands": [
      {
       "desc": "Query source ECS specs for rightsizing",
-      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=<ecs_id>",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      }
     ],
@@ -1051,7 +1123,7 @@
     "commands": [
      {
       "desc": "Create SMS task",
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=7dc6e435-2379-4451-a44f-87c0848629bf --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -1079,7 +1151,7 @@
     "commands": [
      {
       "desc": "Start SMS task replication",
-      "cmd": "hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=start --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTaskStatus --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --operation=start --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -1107,7 +1179,7 @@
     "commands": [
      {
       "desc": "Poll SMS task status",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -1141,7 +1213,7 @@
     "commands": [
      {
       "desc": "Verify migration task reached full replication (100%)",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
@@ -1173,7 +1245,7 @@
     "commands": [
      {
       "desc": "Boot/verify target ECS is ACTIVE with migrated data",
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      },
      {
@@ -1205,12 +1277,12 @@
     "commands": [
      {
       "desc": "Resume agent for incremental sync during cutover window",
-      "cmd": "hcloud SMS ShowTask --task_id=<task_id> --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS ShowTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
       "desc": "Trigger final incremental sync (catch-up after target test)",
-      "cmd": "hcloud SMS UpdateTask --task_id=<task_id> --syncing=false --speed_limit=0 --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTask --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --syncing=false --speed_limit=0 --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -1236,7 +1308,7 @@
     "commands": [
      {
       "desc": "Stop replication \u2014 finalize sync (task record retained for console visibility)",
-      "cmd": "hcloud SMS UpdateTaskStatus --task_id=<task_id> --operation=stop --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS UpdateTaskStatus --task_id=dde32f11-2a04-4973-a3d9-ff84f7b11097 --operation=stop --cli-region=ap-southeast-3",
       "type": "hcloud"
      },
      {
@@ -1246,7 +1318,7 @@
      },
      {
       "desc": "Confirm target ECS ACTIVE (production promoted)",
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=7dc6e435-2379-4451-a44f-87c0848629bf",
       "type": "hcloud"
      }
     ],

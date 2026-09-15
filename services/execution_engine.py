@@ -494,10 +494,13 @@ class ExecutionEngine:
         # When we have source access, resolve placeholder IDs to real resource IDs
         # This runs ONCE at plan build time, not during execution
         source_region = project.get("sourceRegion", "ap-southeast-3")
+        source_profile = project.get("sourceProfile", "erp-source")
+        target_profile = project.get("targetProfile", "internal")
+        target_suffix = project.get("targetSuffix", "-TARGET")
         source_resource_map = {}  # {sow_name: {id, flavor, ips, ...}}
         try:
             import subprocess as _sp
-            _src_profile = "erp-source"  # working profile for source region
+            _src_profile = source_profile
             _r = _sp.run(
                 f"hcloud ECS ListServersDetails --cli-region={source_region} --cli-profile={_src_profile} --limit=100",
                 shell=True, capture_output=True, text=True, timeout=30)
@@ -581,6 +584,9 @@ class ExecutionEngine:
             "project_id": project.get("id", f"erp-{int(time.time())}"),
             "source_region": source_region,
             "target_region": target_region,
+            "source_profile": source_profile,
+            "target_profile": target_profile,
+            "target_suffix": target_suffix,
             "execution_mode": execution_mode,
             "is_zero_trust": is_zero_trust,
             "is_vmware": is_vmware,
@@ -1343,7 +1349,7 @@ class ExecutionEngine:
                 "tool_source": "deterministic",
                 "tool_name": "hcloud ECS ShowServer (source specs discovery)",
                 "commands": [{"desc": "Query source ECS specs for rightsizing",
-                              "cmd": f"hcloud ECS ShowServer --cli-region={source_region} --cli-profile=erp-source --server_id={_src_ecs_id}",
+                              "cmd": f"hcloud ECS ShowServer --cli-region={source_region} --cli-profile={source_profile} --server_id={_src_ecs_id}",
                               "type": "hcloud"}],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
@@ -1364,7 +1370,7 @@ class ExecutionEngine:
                 "tool_source": "skill",
                 "tool_name": "huawei-sms-cross-region-migration (agent check via ListServers)",
                 "commands": [
-                    {"desc": f"Check SMS agent status (connected + checks OK)", "cmd": f"hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-source --limit=50", "type": "hcloud"},
+                    {"desc": f"Check SMS agent status (connected + checks OK)", "cmd": f"hcloud SMS ListServers --cli-region={source_region} --cli-profile={source_profile} --limit=50", "type": "hcloud"},
                 ],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": is_zero_trust,
@@ -1385,7 +1391,7 @@ class ExecutionEngine:
                 "tool_source": "skill",
                 "tool_name": "huawei-sms-cross-region-migration (project check via ListMigprojects)",
                 "commands": [
-                    {"desc": "Check migration project config", "cmd": f"hcloud SMS ListMigprojects --cli-region={source_region} --cli-profile=erp-source --limit=10", "type": "hcloud"},
+                    {"desc": "Check migration project config", "cmd": f"hcloud SMS ListMigprojects --cli-region={source_region} --cli-profile={source_profile} --limit=10", "type": "hcloud"},
                 ],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
