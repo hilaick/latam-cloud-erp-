@@ -218,25 +218,51 @@ class PhasePreWarmer:
             t.start()
     
     def _prewarm_phase(self, phase_key, skills):
-        """Run hermes chat -q with --skills to warm the model context."""
+        """Pre-warm next phase by loading skills into a lightweight hermes session.
+        
+        Strategy: Use a MINIMAL hermes invocation — just --skills with the top 3
+        most critical skills (not all 14). Full skill loading happens when the
+        actual phase agent spawns. This pre-warm just primes the model context
+        with domain knowledge so the first LLM call of the real agent is faster.
+        """
         try:
             import subprocess as sp
             binary = sp.run(['which', 'hermes'], capture_output=True, text=True).stdout.strip()
             if not binary:
                 binary = '/usr/local/bin/hermes'
             
-            skill_str = ','.join(skills) if skills else ''
-            cmd = [binary, 'chat', '-q', f'Preload skills for {phase_key}. Acknowledge.',
+            # Top 3 critical skills per phase — enough to warm context,
+            # not so many that the session takes 2+ min to load
+            CRITICAL_SKILLS = {
+                'PHASE_4_1': ['huawei-cloud-migration-workflow', 'hcloud-cli-workarounds'],
+                'PHASE_4_2': ['huawei-cloud-sms-migration', 'huawei-cloud-sms-api-only', 'sms-migration-best-practices'],
+                'PHASE_4_3': ['huawei-cloud-migration-workflow', 'hcloud-cli-workarounds'],
+                'PHASE_4_4': ['huawei-cloud-sms-migration', 'sms-migration-complete-reference', 'sms-migration-best-practices'],
+                'PHASE_4_5': ['huawei-cloud-sms-migration', 'sms-migration-best-practices'],
+                'PHASE_4_6': ['huawei-cloud-migration-workflow', 'huawei-cloud-sms-migration'],
+                'PHASE_4_7': ['huawei-cloud-migration-workflow', 'sms-migration-best-practices'],
+                'PHASE_4_8': ['huawei-cloud-migration-workflow', 'hcloud-cli-workarounds'],
+            }
+            top_skills = CRITICAL_SKILLS.get(phase_key, skills[:3] if skills else [])
+            skill_str = ','.join(top_skills)
+            
+            cmd = [binary, 'chat', '-q',
+                   f'You are pre-warming for {phase_key}. Skills loaded. Reply: READY',
                    '--profile', 'default', '--model', 'glm-5.2', '--yolo']
             if skill_str:
                 cmd += ['--skills', skill_str]
-            cmd += ['--toolsets', 'terminal,file,web']
+            cmd += ['--toolsets', 'terminal,file']  # No web — lighter
             
-            result = sp.run(cmd, capture_output=True, text=True, timeout=120)
+            result = sp.run(cmd, capture_output=True, text=True, timeout=90)
             self._sessions[phase_key] = True  # Mark as pre-warmed
-            self._log(f'[minion:prewarm] {phase_key} skills pre-loaded ({len(result.stdout)} chars)')
+            ready = 'READY' in result.stdout
+            self._log(f'[minion:prewarm] {phase_key} pre-warmed (top {len(top_skills)} skills, {len(result.stdout)} chars, ready={ready})')
         except Exception as e:
-            self._log(f'[minion:prewarm] {phase_key} failed: {e}')
+            if 'TimeoutExpired' in type(e).__name__:
+                self._log(f'[minion:prewarm] {phase_key} timed out (90s) — skills too heavy, will load on phase start')
+                self._sessions[phase_key] = False
+            else:
+                self._log(f'[minion:prewarm] {phase_key} failed: {e}')
         finally:
             self._active.pop(phase_key, None)
     

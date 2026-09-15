@@ -179,7 +179,7 @@ def _simulate_with_failure(project_id, pdata, phase_key, error_text):
         pass
     return '\n'.join(result_parts) if result_parts else ''
 
-def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None):
+def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None, prewarmer=None, prewarm_skills=None):
     """Spawn a Hermes agent for a single phase via the delegate-task API.
 
     This calls the same backend logic as /api/hermes-cli/delegate-task
@@ -188,6 +188,8 @@ def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None):
 
     log_cb: optional callable(str) — receives live agent output lines so the
             GUI shows progress during the agent boot window.
+    prewarmer: optional PhasePreWarmer — triggers next-phase pre-warm at 70% output
+    prewarm_skills: list of skills for the next phase (for prewarmer)
     """
     if log_cb:
         import sys
@@ -420,11 +422,19 @@ When done, report what you actually executed, the verification commands you ran,
                 bufsize=1,
             )
             emitted_activity = False
+            _output_len = 0  # Track output length for pre-warm trigger
             try:
                 for line in proc.stdout:
                     if not line.strip():
                         continue
                     results_buf.append(line)
+                    _output_len += len(line)
+                    # ── Pre-warm next phase at 70% of estimated output ──
+                    if prewarmer and prewarm_skills and _output_len % 500 < 50:
+                        try:
+                            prewarmer.check_and_prewarm(phase, _output_len, prewarm_skills)
+                        except Exception:
+                            pass
                     combined_l = line.lower()
                     # Stream meaningful progress lines only (agent actions, tool calls,
                     # phase markers) — not filler. Show at most one line per burst.
@@ -747,7 +757,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     if len(_pending) > 1:
                         log(f'[concurrent] Running {len(_pending)} phases in parallel: {_pending}')
                         _runner = ConcurrentPhaseRunner(
-                            spawn_fn=lambda goal, ctx, pid, pk, log_cb=None: _spawn_hermes_agent(goal, ctx, pid, pk, log_cb=log_cb),
+                            spawn_fn=lambda goal, ctx, pid, pk, log_cb=None: _spawn_hermes_agent(goal, ctx, pid, pk, log_cb=log_cb, prewarmer=prewarmer),
                             log_cb=log,
                         )
                         _cresults = _runner.run_group(
@@ -821,6 +831,16 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 # Build enriched context
                 phase_ctx = build_phase_context(phase_key)
                 enriched = f"ERP Migration Project ID: {project_id}. Current pipeline phase: {phase_key}. Customer: {pdata.get('customerName', 'N/A')}. Target region: {pdata.get('region', 'la-south-2')}. Execution mode: agentic orchestration."
+
+                # ── Compute next-phase skills for pre-warming during streaming ──
+                _next_skills = []
+                try:
+                    from services.skill_preload import skills_for_phase
+                    _next_phases = PHASE_PREWARM_MAP.get(phase_key, [])
+                    for _npk in _next_phases:
+                        _next_skills.extend(skills_for_phase(_npk))
+                except Exception:
+                    pass
 
                 # ── Inject cached cloud state (avoids redundant hcloud calls by agent) ──
                 _cached_state = cloud_cache.prefetch_for_phase(phase_key)
@@ -1023,7 +1043,8 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         while True:
                             # Agent attempt (bounded by phase-scoped retries)
                             _ok, _resp, _err = _spawn_hermes_agent(
-                                step['goal'], enriched, project_id, phase_key, log_cb=log)
+                                step['goal'], enriched, project_id, phase_key, log_cb=log,
+                                prewarmer=prewarmer, prewarm_skills=_next_skills)
                             if _ok:
                                 success, response, error = True, _resp, _err
                                 log(f'[arbitration] agent resolved {phase_key} (attempt {attempt})')
