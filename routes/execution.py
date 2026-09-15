@@ -2233,7 +2233,8 @@ def orchestration_status(project_id):
 
     # ── Add started_at timestamp for elapsed timer ──
     try:
-        _es = ExecutionState.query.filter_by(project_id=project_id).first()
+        from models import ExecutionState as _ES
+        _es = _ES.query.filter_by(project_id=project_id).first()
         if _es and _es.last_active_at:
             from datetime import datetime, timezone
             _started = _es.last_active_at
