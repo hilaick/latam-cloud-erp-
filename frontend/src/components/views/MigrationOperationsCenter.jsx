@@ -11,7 +11,8 @@ import LiveCloudNOC from './LiveCloudNOC';
 
 const MIG_PHASES = [
     ['4.1', 'Network'], ['4.2', 'Source Prep'], ['4.3', 'Target ECS'],
-    ['4.4', 'Data Sync'], ['4.5', 'Cutover'], ['4.6', 'Harden'], ['4.7', 'Test'],
+    ['4.4', 'Data Sync'], ['4.5', 'Monitor'], ['4.6', 'Cutover'], ['4.7', 'Reconcile'],
+    ['4.8', 'Teardown'],
 ];
 
 function MigrationOpsDashboard({ project }) {
@@ -99,7 +100,7 @@ function MigrationOpsDashboard({ project }) {
     // cloud-state say 4.3 while the migration actually finished). Check the
     // engine's completion FIRST, then cloud evidence, then engine phase.
     const _engDone = String(executionState?.current_phase || executionState?.currentPhase || '').toUpperCase() === 'COMPLETED'
-        || (Array.isArray(executionState?.completed_phases) && executionState.completed_phases.length >= 7);
+        || (Array.isArray(executionState?.completed_phases) && executionState.completed_phases.length >= 8);
     const phase = _engDone
         ? 'COMPLETED'
         : (cloudState?.inferred_phase || executionState?.current_phase || executionState?.currentPhase || 'PHASE_4_1').replace('PHASE_4_', '4.');
@@ -125,7 +126,7 @@ function MigrationOpsDashboard({ project }) {
                         <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300"><i className="fas fa-network-wired mr-1 text-amber-400"></i>VPC: {cloudState?.vpc_count || 0} · ECS: {cloudState?.ecs_count || 0}</span>
                     </div>
                 </div>
-                <div className="grid grid-cols-7 gap-1.5 mt-3">
+                <div className="grid grid-cols-8 gap-1.5 mt-3">
                     {MIG_PHASES.map(([pk, label]) => {
                         const curIdx = parseInt(String(phase).replace('4.', '') || '1');
                         const idx = parseInt(pk.split('.')[1]);
@@ -134,6 +135,30 @@ function MigrationOpsDashboard({ project }) {
                         return <div key={pk} className={`p-2 rounded-lg text-center border ${done ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : active ? 'bg-purple-500/20 border-purple-500 text-purple-300 animate-pulse' : 'bg-slate-800/60 border-slate-700 text-slate-500'}`}><div className="text-[9px] font-black">{pk.split('.')[1]}</div><div className="text-[8px] font-medium truncate">{label}</div><i className={`fas ${done ? 'fa-check' : active ? 'fa-spinner fa-spin' : 'fa-circle'} text-[7px] mt-0.5`}></i></div>;
                     })}
                 </div>
+                {/* ── ELAPSED TIMER + PROGRESS BAR + ETA ── */}
+                {executionState && (
+                <div className="mt-3 flex items-center gap-3">
+                    <div className="flex-1">
+                        <div className="flex justify-between mb-1">
+                            <span className="text-[9px] font-black uppercase text-slate-400">Progress</span>
+                            <span className="text-[9px] font-bold text-slate-600">{executionState.progress_pct ?? 0}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div className="bg-purple-500 h-2 rounded-full transition-all duration-500" style={{ width: `${executionState.progress_pct ?? 0}%` }}></div>
+                        </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                        <div className="text-[9px] font-black uppercase text-slate-400">Elapsed</div>
+                        <div className="text-sm font-black text-slate-800">{executionState.elapsed_display || '—'}</div>
+                    </div>
+                    {executionState.elapsed_seconds > 0 && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
+                    <div className="text-right shrink-0">
+                        <div className="text-[9px] font-black uppercase text-slate-400">ETA</div>
+                        <div className="text-sm font-black text-amber-600">{(() => { const rem = (executionState.elapsed_seconds / executionState.progress_pct) * (100 - executionState.progress_pct); return `${Math.floor(rem/60)}m ${Math.floor(rem%60)}s`; })()}</div>
+                    </div>
+                    )}
+                </div>
+                )}
             </div>
 
             {/* ── SUMMARY CARDS ── */}
