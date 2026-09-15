@@ -828,6 +828,25 @@ class ExecutionEngine:
         _sandbox_prefix = f"erp-migration-{(project.get('projectId') or 'erp')[-8:]}"
 
         network_nodes = [n for n in migration_resources if _categorize_resource(n) == "network"]
+
+        # ── Wave 0 Service-Aware Topology ──
+        # Detect dependent services and build provisioning order:
+        # VPN → VPC → Subnet → RDS/DWS subnets+SGs → SG rules → EIPs → SMS/IMS
+        _has_vpn = any(n.get('type', '').upper() == 'VPN' for n in migration_resources)
+        _has_rds = any(n.get('type', '').upper() == 'RDS' for n in migration_resources)
+        _has_dws = any(n.get('type', '').upper() == 'DWS' for n in migration_resources)
+        _has_dds = any(n.get('type', '').upper() == 'DDS' for n in migration_resources)
+        _is_cross_region = source_region != target_region
+        wave0_services = []
+        if _is_cross_region and _has_vpn:
+            wave0_services.append('VPN')  # VPN gateway must be up before any cross-region traffic
+        if _has_rds or _has_dds:
+            wave0_services.append('RDS')  # RDS/DDS needs dedicated subnet + SG (3306/5432)
+        if _has_dws:
+            wave0_services.append('DWS')  # DWS needs dedicated subnet + SG (DB port)
+        if wave0_services:
+            logger.info(f"[WAVE0] Service-aware topology: {wave0_services} (cross_region={_is_cross_region})")
+            plan['wave0_services'] = wave0_services
         # Enterprise Project scoping for Phase 4.1 network provisioning
         eps_id_prov = ''
         try:
@@ -1015,6 +1034,75 @@ class ExecutionEngine:
             "rollback": None,
             "status": "pending",
         })
+
+        # ── Wave 0 Service-Aware Steps (VPN, RDS, DWS) ──
+        # These run AFTER VPC+Subnet+SG+EIPs but BEFORE SMS/IMS migration
+        # OUTSIDE the per-server loop — runs once for the whole project
+        for svc in wave0_services:
+            if svc == 'VPN':
+                # VPN gateway for cross-region connectivity
+                sid += 1
+                steps.append({
+                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "action": "CREATE_VPN_GATEWAY",
+                    "target_resource": f"{_sandbox_prefix}-vpn-gw",
+                    "pillar": "network",
+                    "strategy": "vpn",
+                    "tool_source": "skill",
+                    "tool_name": "huawei-cloud-operations (VPN provisioning)",
+                    "commands": [
+                        {"desc": "Create VPN gateway", "cmd": f"hcloud VPN CreateVpnGateway --name={_sandbox_prefix}-vpn-gw --vpc_id=<vpc_id> --flavor=V1 --cli-region={target_region}", "type": "hcloud"},
+                    ],
+                    "credentials_needed": ["ak", "sk"],
+                    "zero_trust": False,
+                    "fallback_strategy": None,
+                    "rollback": {"cmd": "hcloud VPN DeleteVpnGateway --vpn_gateway_id=<vpn_gw_id>", "label": "Delete VPN gateway"},
+                    "status": "pending",
+                })
+            elif svc == 'RDS':
+                # RDS needs dedicated subnet + SG with MySQL/PostgreSQL ports
+                sid += 1
+                steps.append({
+                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "action": "CREATE_RDS_SUBNET_SG",
+                    "target_resource": f"{_sandbox_prefix}-rds",
+                    "pillar": "database",
+                    "strategy": "rds",
+                    "tool_source": "skill",
+                    "tool_name": "huawei-cloud-operations (RDS subnet+SG)",
+                    "commands": [
+                        {"desc": "Create RDS subnet", "cmd": f"hcloud VPC CreateSubnet --subnet.name={_sandbox_prefix}-rds-subnet --subnet.cidr=192.168.1.0/24 --vpc_id=<vpc_id> --cli-region={target_region}", "type": "hcloud"},
+                        {"desc": "Create RDS SG", "cmd": f"hcloud VPC CreateSecurityGroup --security_group.name={_sandbox_prefix}-rds-sg --cli-region={target_region}", "type": "hcloud"},
+                        {"desc": "Add RDS MySQL port 3306", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=tcp --security_group_rule.multiport=3306 --security_group_rule.remote_ip_prefix=192.168.0.0/16 --cli-region={target_region}", "type": "hcloud"},
+                        {"desc": "Add RDS PostgreSQL port 5432", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=tcp --security_group_rule.multiport=5432 --security_group_rule.remote_ip_prefix=192.168.0.0/16 --cli-region={target_region}", "type": "hcloud"},
+                    ],
+                    "credentials_needed": ["ak", "sk"],
+                    "zero_trust": False,
+                    "fallback_strategy": None,
+                    "status": "pending",
+                })
+            elif svc == 'DWS':
+                # DWS needs dedicated subnet + SG with DB port
+                sid += 1
+                steps.append({
+                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "action": "CREATE_DWS_SUBNET_SG",
+                    "target_resource": f"{_sandbox_prefix}-dws",
+                    "pillar": "database",
+                    "strategy": "dws",
+                    "tool_source": "skill",
+                    "tool_name": "huawei-cloud-operations (DWS subnet+SG)",
+                    "commands": [
+                        {"desc": "Create DWS subnet", "cmd": f"hcloud VPC CreateSubnet --subnet.name={_sandbox_prefix}-dws-subnet --subnet.cidr=192.168.2.0/24 --vpc_id=<vpc_id> --cli-region={target_region}", "type": "hcloud"},
+                        {"desc": "Create DWS SG", "cmd": f"hcloud VPC CreateSecurityGroup --security_group.name={_sandbox_prefix}-dws-sg --cli-region={target_region}", "type": "hcloud"},
+                        {"desc": "Add DWS port 8000", "cmd": f"hcloud VPC CreateSecurityGroupRule --security_group_rule.direction=ingress --security_group_rule.security_group_id=<sg_id> --security_group_rule.protocol=tcp --security_group_rule.multiport=8000 --security_group_rule.remote_ip_prefix=192.168.0.0/16 --cli-region={target_region}", "type": "hcloud"},
+                    ],
+                    "credentials_needed": ["ak", "sk"],
+                    "zero_trust": False,
+                    "fallback_strategy": None,
+                    "status": "pending",
+                })
+
 
         # Summary
         plan["summary"] = {

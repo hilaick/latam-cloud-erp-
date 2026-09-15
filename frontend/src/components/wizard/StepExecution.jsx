@@ -1379,11 +1379,14 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                                     style={{ background: bgColor, borderColor: ph.color, color: txtColor }}>
                                                     <i className={`fas ${ph.icon} text-sm`}></i>
                                                     <div className="text-[7px] font-black uppercase mt-0.5">{ph.label}</div>
+                                                    {phaseDurations[phaseKey] && (
+                                                    <div className="text-[6px] text-purple-200 mt-0.5">⏱{phaseDurations[phaseKey]}</div>
+                                                    )}
                                                 </div>
                                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
                                                     <div className="font-bold">Phase 4.{ph.n}: {ph.label}</div>
                                                     <div className="text-slate-300">{ph.desc}</div>
-                                                    <div className="text-purple-300 mt-0.5">{status.toUpperCase()}</div>
+                                                    <div className="text-purple-300 mt-0.5">{status.toUpperCase()}{phaseDurations[phaseKey] ? ` · ${phaseDurations[phaseKey]}` : ''}</div>
                                                 </div>
                                                 <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-800 text-white text-[8px] font-black flex items-center justify-center border border-white shadow">
                                                     {ph.n}
