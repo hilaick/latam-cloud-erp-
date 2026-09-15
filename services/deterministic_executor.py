@@ -232,16 +232,17 @@ class DeterministicExecutor:
             'ak_sk': f"{ak}:{sk}",
         }
 
-    def resolve_cmd(self, cmd, ctx=None):
+    def resolve_cmd(self, cmd, ctx=None, target_override=None):
         ctx = ctx or self._resolve_ctx()
         out = cmd
         # Determine WHICH source server this command targets — the plan's
         # target_resource (source server name) or the task name embedded in the cmd.
-        target_name = ''
-        for _tn in list(ctx.get('source_names', {}).keys()):
-            if _tn in cmd or f"migrate-{_tn}" in cmd:
-                target_name = _tn
-                break
+        target_name = target_override or ''
+        if not target_name:
+            for _tn in list(ctx.get('source_names', {}).keys()):
+                if _tn in cmd or f"migrate-{_tn}" in cmd:
+                    target_name = _tn
+                    break
         for pattern, key in PLACEHOLDER_PATTERNS:
             val = ctx.get(key, '')
             if val:
@@ -313,7 +314,7 @@ class DeterministicExecutor:
                         if val:
                             resolved = resolved.replace(ph, val)
                 # Then context-based substitution
-                resolved = self.resolve_cmd(resolved, ctx)
+                resolved = self.resolve_cmd(resolved, ctx, target_override=target)
                 # Classify any remaining placeholders — secrets/env NEVER run
                 remaining = re.findall(r'<[^>]+>', resolved)
                 blocked_reason = None
