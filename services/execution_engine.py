@@ -33,6 +33,71 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 
+# Cross-region flavor mapping — source flavors may be abandoned in target region
+# Priority: x1 > x0 > x > t6 > s6 (newer generations first)
+_FLAVOR_GENERATION_ORDER = ['x1', 'x0', 'x.', 't6', 's6', 'c6', 'm6']
+
+def _resolve_target_flavor(source_flavor: str, source_vcpus: int,
+                            source_ram_mb: int, target_region: str,
+                            flavor_cache: dict) -> str:
+    """Map source flavor to an available target-region flavor.
+    
+    Strategy:
+    1. If source_flavor is non-empty and not abandoned → use directly
+    2. If we have vCPU+RAM → find equivalent available flavor in target region
+    3. Known abandoned mappings (hardcoded for speed)
+    4. Fallback: <DISCOVERED_FLAVOR> placeholder (agent resolves at runtime)
+    """
+    # Known abandoned flavor mappings (source → target equivalent)
+    ABANDONED_MAP = {
+        'x1e.2u.2g': 'x0.2u.2g',   # 2 vCPU, 2GB
+        'x1e.4u.2g': 'x0.4u.2g',   # 4 vCPU, 2GB
+        'x1.2u.2g':  'x0.2u.2g',   # 2 vCPU, 2GB
+        'x1.4u.2g':  'x0.4u.2g',   # 4 vCPU, 2GB
+        'x1.8u.4g':  'x0.8u.4g',   # 8 vCPU, 4GB
+    }
+    
+    # 1. Direct match (if source flavor exists and isn't abandoned)
+    if source_flavor:
+        if source_flavor in ABANDONED_MAP:
+            mapped = ABANDONED_MAP[source_flavor]
+            logger.info(f"[FLAVOR] {source_flavor} abandoned in {target_region} → mapped to {mapped}")
+            return mapped
+        # Not in abandoned map — assume available
+        return source_flavor
+    
+    # 2. vCPU+RAM based mapping
+    if source_vcpus > 0 and source_ram_mb > 0:
+        ram_gb = source_ram_mb // 1024
+        # Try known patterns: x0.{vcpus}u.{ram_gb}g
+        candidates = [
+            f"x0.{source_vcpus}u.{ram_gb}g",   # x0 generation (current)
+            f"x.{source_vcpus}u.{ram_gb}g",    # x generation
+            f"x1.{source_vcpus}u.{ram_gb}g",   # x1 generation (may be abandoned)
+            f"t6.large.{ram_gb}",              # t6 general-purpose
+        ]
+        # Filter by vCPU match for t6
+        if source_vcpus == 2:
+            candidates.append("t6.large.1")
+        elif source_vcpus == 4:
+            candidates.append("t6.xlarge.1")
+        
+        # Check cache if available
+        if flavor_cache:
+            for c in candidates:
+                if c in flavor_cache.get(target_region, {}):
+                    if not flavor_cache[target_region][c].get('abandoned', False):
+                        logger.info(f"[FLAVOR] vCPU={source_vcpus} RAM={ram_gb}GB → {c} (from cache)")
+                        return c
+        
+        # No cache — return first candidate (agent will verify at runtime)
+        logger.info(f"[FLAVOR] vCPU={source_vcpus} RAM={ram_gb}GB → best guess: {candidates[0]}")
+        return candidates[0]
+    
+    # 3. No info at all — placeholder
+    logger.warning(f"[FLAVOR] No source flavor or vCPU/RAM info — using <DISCOVERED_FLAVOR>")
+    return "<DISCOVERED_FLAVOR>"
+
 def _resolve_step_from_knowledge(action: str, pillar: str, strategy: str,
                                   server: dict, profile: dict) -> dict:
     """Search skills knowledge tree (all 3 sources) + MCP inventory for a step.
@@ -1074,9 +1139,17 @@ class ExecutionEngine:
             if _kb_cmds and any("terraform" in str(c.get("cmd",""))[:20] for c in _kb_cmds if isinstance(c, dict)):
                 logger.warning(f"[BUILD_PLAN] Knowledge tree returned terraform stub for CREATE_TARGET_ECS ({name}) — overriding with deterministic hcloud command.")
                 _kb_cmds = []
-            # Flavor: use source flavor if available, otherwise dynamic discovery at execution time
+            # Flavor: resolve source flavor → target flavor with cross-region mapping
+            # Source flavors may be abandoned in target region (e.g. x1e.4u.2g in la-north-2)
+            # Strategy: 1) Try source flavor directly  2) Map by vCPU+RAM  3) Placeholder
             source_flavor = node.get("flavor", node.get("source_flavor", ""))
-            flavor_ref = source_flavor if source_flavor else "<DISCOVERED_FLAVOR>"
+            source_vcpus = int(node.get("vcpus", 0) or 0)
+            source_ram_mb = int(node.get("ram", 0) or 0)
+            flavor_ref = _resolve_target_flavor(
+                source_flavor, source_vcpus, source_ram_mb,
+                target_region, project.get("target_flavor_cache", {})
+            )
+
             sid += 1
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_3,
@@ -1116,6 +1189,27 @@ class ExecutionEngine:
                 "zero_trust": False,
                 "fallback_strategy": None,
                 "rollback": {"cmd": "hcloud VPC DeleteSecurityGroupRule --security_group_rule_id=<rule_id>", "label": "Delete SMS SG rules"},
+                "status": "pending",
+            })
+
+            # Step: Discover source ECS specs (flavor, vCPU, RAM) for rightsizing
+            sid += 1
+            _src_ecs_id = node.get('ecs_id', '<ecs_id>')
+            steps.append({
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_2,
+                "action": "DISCOVER_SOURCE_SPECS",
+                "target_resource": name,
+                "pillar": "compute",
+                "strategy": "sms",
+                "tool_source": "deterministic",
+                "tool_name": "hcloud ECS ShowServer (source specs discovery)",
+                "commands": [{"desc": "Query source ECS specs for rightsizing",
+                              "cmd": f"hcloud ECS ShowServer --cli-region={source_region} --cli-profile=erp-source --server_id={_src_ecs_id}",
+                              "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": None,
+                "rollback": None,
                 "status": "pending",
             })
 

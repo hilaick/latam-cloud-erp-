@@ -857,7 +857,8 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         enriched += "\n\n=== SOURCE SERVERS (from executionContext — authoritative) ==="
                         for srv in src_servers:
                             enriched += ("\n- {name}: eip={eip} private={private_ip} sms_id={sms_id} "
-                                         "state={state} agent={agent_version} disk={disk_name} {disk_size}B").format(
+                                         "state={state} agent={agent_version} disk={disk_name} {disk_size}B"
+                                         " flavor={flavor} vcpus={vcpus} ram_mb={ram_mb}").format(
                                 name=srv.get('name','?'),
                                 eip=srv.get('eip',''),
                                 private_ip=srv.get('private_ip',''),
@@ -865,7 +866,10 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 state=srv.get('state',''),
                                 agent_version=srv.get('agent_version',''),
                                 disk_name=srv.get('disk_name',''),
-                                disk_size=srv.get('disk_size',''))
+                                disk_size=srv.get('disk_size',''),
+                                flavor=srv.get('flavor', srv.get('source_flavor','')),
+                                vcpus=srv.get('vcpus',''),
+                                ram_mb=srv.get('ram',''))
                         enriched += "\n=== END SOURCE SERVERS ==="
                     mp_id = ec.get('sms_migration_project_id') or ec.get('mig_project_id') or ''
                     if mp_id:
