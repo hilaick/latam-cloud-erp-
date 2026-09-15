@@ -179,6 +179,153 @@ def _simulate_with_failure(project_id, pdata, phase_key, error_text):
         pass
     return '\n'.join(result_parts) if result_parts else ''
 
+
+# ═══════════════════════════════════════════════════════════════════
+#  PHASE OUTPUTS — Checkpoint-Resilience Layer
+#  Each phase persists its outputs to the PhaseState table on completion.
+#  The next phase reads these outputs from DB instead of in-memory state.
+#  Resume sweep reads the last completed phase and starts from the next.
+# ═══════════════════════════════════════════════════════════════════
+
+def _extract_phase_outputs(phase_key, agent_response, enriched_context, project_id):
+    """Extract structured outputs from a completed phase.
+    
+    Parses the agent response and enriched context to capture resource IDs,
+    specs, and other outputs that the next phase needs.
+    """
+    outputs = {'phase': phase_key}
+    resp = (agent_response or '').lower()
+    
+    try:
+        ec = enriched_context or {}
+        
+        if phase_key == 'PHASE_4_1':
+            # Network: VPC, Subnet, SG, EIPs
+            outputs['vpc_id'] = ec.get('vpc_id', '')
+            outputs['subnet_id'] = ec.get('subnet_id', '')
+            outputs['sg_id'] = ec.get('sg_id', '')
+            outputs['eip_ids'] = ec.get('eip_ids', [])
+            outputs['eip_addresses'] = ec.get('eip_addresses', [])
+            
+        elif phase_key == 'PHASE_4_2':
+            # Source Prep: SMS source servers, migration project
+            outputs['source_servers'] = ec.get('source_servers', [])
+            outputs['sms_migration_project_id'] = ec.get('sms_migration_project_id', '')
+            # Extract SMS IDs from agent response
+            import re as _re
+            sms_ids = _re.findall(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', agent_response or '')
+            if sms_ids:
+                outputs['sms_source_ids'] = sms_ids
+                
+        elif phase_key == 'PHASE_4_3':
+            # Target ECS: server IDs, flavors, EIPs
+            outputs['target_servers'] = ec.get('target_servers', [])
+            outputs['target_ecs_ids'] = ec.get('target_ecs_ids', [])
+            outputs['target_eip_ids'] = ec.get('target_eip_ids', [])
+            
+        elif phase_key == 'PHASE_4_4':
+            # Data Sync: SMS task IDs
+            outputs['sms_tasks'] = ec.get('sms_tasks', [])
+            import re as _re
+            task_ids = _re.findall(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', agent_response or '')
+            if task_ids:
+                outputs['sms_task_ids'] = task_ids
+                
+        elif phase_key == 'PHASE_4_5':
+            # Monitor: final sync status
+            outputs['sync_complete'] = 'migrate_success' in resp or 'replications complete' in resp
+            outputs['final_sync_status'] = ec.get('sms_sync_status', {})
+            
+        elif phase_key == 'PHASE_4_6':
+            # Cutover: target server status
+            outputs['cutover_complete'] = 'cutover' in resp and ('success' in resp or 'complete' in resp)
+            
+        elif phase_key == 'PHASE_4_7':
+            # Reconciliation: spec comparison results
+            outputs['reconciliation'] = ec.get('reconciliation_results', {})
+            
+        elif phase_key == 'PHASE_4_8':
+            # Teardown: resources cleaned
+            outputs['teardown_complete'] = True
+            
+    except Exception as e:
+        outputs['_extraction_error'] = str(e)
+    
+    return outputs
+
+
+def _load_phase_outputs(project_id, phase_key):
+    """Load persisted outputs for a specific phase from DB."""
+    try:
+        from models import PhaseState
+        ps = PhaseState.query.filter_by(
+            project_id=project_id, phase=phase_key
+        ).first()
+        if ps and ps.status == 'completed':
+            return ps.get_outputs()
+    except Exception:
+        pass
+    return {}
+
+
+def _load_all_phase_outputs(project_id):
+    """Load ALL persisted phase outputs for a project from DB.
+    Returns dict of phase_key → outputs_dict.
+    """
+    result = {}
+    try:
+        from models import PhaseState
+        for ps in PhaseState.query.filter_by(
+            project_id=project_id
+        ).all():
+            if ps.status == 'completed':
+                result[ps.phase] = ps.get_outputs()
+    except Exception:
+        pass
+    return result
+
+
+def _get_last_completed_phase(project_id):
+    """Find the last completed phase for a project from DB.
+    Returns (last_phase_key, all_completed_phases_list).
+    """
+    completed = []
+    last = None
+    try:
+        from models import PhaseState
+        for ps in PhaseState.query.filter_by(
+            project_id=project_id, status='completed'
+        ).order_by(PhaseState.completed_at).all():
+            completed.append(ps.phase)
+            last = ps.phase
+    except Exception:
+        pass
+    return last, completed
+
+
+def _build_resume_context(project_id, from_phase):
+    """Build enriched context for resume by loading all previous phase outputs.
+    This replaces in-memory pipeline_info with DB-persisted state.
+    """
+    all_outputs = _load_all_phase_outputs(project_id)
+    ctx_lines = ['## RESUME CONTEXT — Previous Phase Outputs (from DB)']
+    for pk in sorted(all_outputs.keys()):
+        outs = all_outputs[pk]
+        ctx_lines.append(f'\n### {pk} outputs:')
+        # Summarize key fields (don't dump entire JSON)
+        for k, v in outs.items():
+            if k == 'phase':
+                continue
+            if isinstance(v, list) and len(v) > 5:
+                ctx_lines.append(f'- {k}: [{len(v)} items] first={v[0]}')
+            elif isinstance(v, dict) and len(str(v)) > 200:
+                ctx_lines.append(f'- {k}: {{...}} ({len(v)} keys)')
+            else:
+                ctx_lines.append(f'- {k}: {v}')
+    ctx_lines.append(f'\n--- Resume from {from_phase} ---')
+    return '\n'.join(ctx_lines)
+
+
 def _spawn_hermes_agent(goal, context, project_id, phase, log_cb=None, prewarmer=None, prewarm_skills=None):
     """Spawn a Hermes agent for a single phase via the delegate-task API.
 
@@ -639,22 +786,46 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                             pass
             except Exception:
                 completed_seed = []
-            # ── NEVER seed completed_phases on restart ──
-            # Sequential phases have dependencies — skipping is broken.
-            # Pipeline always starts from PHASE_4_1. Caller must roll back
-            # partial resources before restarting.
+            
+            # ── RESUME FROM CHECKPOINT ──
+            # Read persisted phase outputs from DB. If previous phases completed,
+            # resume from the NEXT phase (not PHASE_4_1). The agent receives
+            # previous phase outputs as context so it doesn't re-create resources.
+            _resume_from = None
+            _resume_context = ''
+            try:
+                _last_phase, _completed_from_db = _get_last_completed_phase(project_id)
+                if _completed_from_db and _last_phase:
+                    # Find the next phase after the last completed one
+                    _phase_keys = [s['key'] for s in MIG_PHASES]
+                    _last_idx = _phase_keys.index(_last_phase) if _last_phase in _phase_keys else -1
+                    if _last_idx >= 0 and _last_idx < len(_phase_keys) - 1:
+                        _resume_from = _phase_keys[_last_idx + 1]
+                        completed_seed = _completed_from_db
+                        _resume_context = _build_resume_context(project_id, _resume_from)
+                        log(f'[resume] Checkpoint found: {_completed_from_db} — resuming from {_resume_from}')
+                    elif _last_idx == len(_phase_keys) - 1:
+                        # All phases completed
+                        log(f'[resume] All phases completed — pipeline done')
+                        completed_seed = _completed_from_db
+                        _resume_from = None  # will hit completion check below
+            except Exception as _re_err:
+                logger.warning(f'Resume from checkpoint failed: {_re_err}')
+            
             pipeline_info = {
                 'status': 'running',
-                'completed_phases': [],  # ALWAYS empty — no skipping
+                'completed_phases': completed_seed,
                 'failed_phase': None,
                 'current_phase': None,
                 'log': [],
-                'phase_status': {},
+                'phase_status': {pk: 'completed' for pk in completed_seed},
                 'started_at': datetime.now(timezone.utc).isoformat(),
                 'thread_alive': True,
                 'stop_requested': False,   # GUI Stop button -> graceful stop after current phase
                 'pause_requested': False,  # GUI Pause button -> suspend before next phase
                 'paused_at_phase': None,   # phase where it paused (for resume)
+                '_resume_from': _resume_from,
+                '_resume_context': _resume_context,
             }
             _running_pipelines[project_id] = pipeline_info
 
@@ -767,9 +938,19 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
 
             # ── Run each phase ──
             _phases_already_ran = set()  # Track phases run by concurrent runner
+            _resume_from = pipeline_info.pop('_resume_from', None)
+            _resume_context = pipeline_info.pop('_resume_context', '')
             for i in range(start_from, len(pipeline)):
                 step = pipeline[i]
                 phase_key = step['phase']
+
+                # ── RESUME: Skip phases that are already completed (from checkpoint) ──
+                if _resume_from and phase_key != _resume_from and phase_key in pipeline_info['completed_phases']:
+                    log(f'[resume] {phase_key} already completed (checkpoint) — skipping')
+                    continue
+                if _resume_from and phase_key == _resume_from:
+                    log(f'[resume] Resuming from {phase_key} with persisted context')
+                    _resume_from = None  # Clear so we don't skip further
 
                 # Skip if already ran via concurrent group
                 if phase_key in _phases_already_ran:
@@ -864,6 +1045,10 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 # Build enriched context
                 phase_ctx = build_phase_context(phase_key)
                 enriched = f"ERP Migration Project ID: {project_id}. Current pipeline phase: {phase_key}. Customer: {pdata.get('customerName', 'N/A')}. Target region: {pdata.get('region', 'la-south-2')}. Execution mode: agentic orchestration."
+                
+                # ── Inject resume context (previous phase outputs from DB) ──
+                if _resume_context:
+                    enriched = _resume_context + '\n\n' + enriched
 
                 # ── Compute next-phase skills for pre-warming during streaming ──
                 _next_skills = []
@@ -1358,6 +1543,34 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         db.session.commit()
                     except Exception:
                         pass
+                    
+                    # ── Persist phase_outputs to PhaseState table (checkpoint-resilience) ──
+                    # Each phase's outputs are stored so the next phase can read them
+                    # from DB instead of in-memory state. This makes the pipeline
+                    # resumable without re-running completed phases.
+                    try:
+                        from models import PhaseState
+                        ps = PhaseState.query.filter_by(
+                            project_id=project_id, phase=phase_key
+                        ).first()
+                        if not ps:
+                            ps = PhaseState(
+                                execution_state_id=state.id,
+                                project_id=project_id,
+                                phase=phase_key,
+                            )
+                            db.session.add(ps)
+                        ps.status = 'completed'
+                        ps.completed_at = datetime.utcnow()
+                        # Extract outputs from agent response + execution context
+                        _phase_out = _extract_phase_outputs(
+                            phase_key, response, enriched, project_id
+                        )
+                        ps.set_outputs(_phase_out)
+                        db.session.commit()
+                        log(f'[checkpoint] {phase_key} outputs persisted ({len(json.dumps(_phase_out))} chars)')
+                    except Exception as _cp_err:
+                        logger.warning(f'Phase outputs persist failed: {_cp_err}')
                     
                     # ── Pre-warm next phase (engine minion) ──
                     try:

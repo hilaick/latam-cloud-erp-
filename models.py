@@ -220,6 +220,40 @@ class ExecutionState(db.Model):
     phase_status_map = db.Column(db.Text)   # JSON dict of phase→status (survives Flask restart)
     # Relationship to structured logs
     logs = db.relationship('ExecutionLog', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
+    # Relationship to per-phase state (checkpoint-resilience)
+    phase_states = db.relationship('PhaseState', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
+
+
+# ── Per-Phase Checkpoint State (survives Flask restart / server reboot) ──
+# Each phase persists its outputs as JSONB on completion.
+# The next phase reads these outputs from DB instead of in-memory state.
+# Resume sweep reads the last completed phase and starts from the next one.
+class PhaseState(db.Model):
+    __tablename__ = 'phase_states'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    execution_state_id = db.Column(db.Integer, db.ForeignKey('execution_states.id'), nullable=False, index=True)
+    project_id = db.Column(db.String(50), index=True, nullable=False)
+    phase = db.Column(db.String(50), nullable=False, index=True)  # PHASE_4_1, PHASE_4_2, etc.
+    status = db.Column(db.String(20), nullable=False, default='pending')  # pending, running, completed, failed
+    phase_outputs = db.Column(db.Text)  # JSON — all outputs this phase produced (resource IDs, specs, etc.)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
+
+    __table_args__ = (db.UniqueConstraint('project_id', 'phase', name='_project_phase_uc'),)
+
+    def set_outputs(self, outputs_dict):
+        """Persist phase outputs as JSON."""
+        self.phase_outputs = json.dumps(outputs_dict, default=str)
+
+    def get_outputs(self):
+        """Read phase outputs from JSON."""
+        if self.phase_outputs:
+            try:
+                return json.loads(self.phase_outputs)
+            except Exception:
+                return {}
+        return {}
 
 # 🚨 Structured Execution Logs — queryable, per-project event journal (Fix #7)
 class ExecutionLog(db.Model):

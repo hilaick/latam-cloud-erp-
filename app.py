@@ -1174,14 +1174,15 @@ if __name__ == '__main__':
         logging.warning(f"Knowledge store init failed (will lazy-load): {e}")
 
     # ── Auto-resume stale pipelines (survives Flask crash / server reboot) ──
-    # Any pipeline that was IN_PROGRESS when we died gets resumed from the first
-    # uncompleted phase. This is the checkpoint-resilience layer.
+    # Any pipeline that was IN_PROGRESS when we died gets resumed from the
+    # last completed phase (using PhaseState checkpoint). This is the
+    # checkpoint-resilience layer.
     try:
         from services.pipeline_resume import resume_stale_pipelines
         import threading as _th
         _t = _th.Thread(target=resume_stale_pipelines, args=(app,), daemon=True)
         _t.start()
-        logging.info("[startup] Pipeline auto-resume sweep started (thread)")
+        logging.info("[startup] Pipeline auto-resume sweep started (checkpoint-aware)")
     except Exception as e:
         logging.warning(f"[startup] Auto-resume sweep init failed: {e}")
 
