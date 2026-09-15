@@ -2867,6 +2867,124 @@ def orchestration_report(project_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@execution_bp.route('/api/execution/<project_id>/reconciliation', methods=['GET'])
+@jwt_required()
+def reconciliation_report(project_id):
+    """Source vs target spec comparison. Returns per-server deltas and cost flags.
+    
+    Project-agnostic: reads source_servers and target_ecs_map from executionContext,
+    queries live cloud for actual specs, compares and flags over-provisioned.
+    """
+    import subprocess as _sp, json as _j
+    try:
+        pdata = ProjectData.query.get(project_id)
+        if not pdata:
+            return jsonify({'success': False, 'error': 'project not found'}), 404
+        d = _j.loads(pdata.data) if isinstance(pdata.data, str) else pdata.data
+        ctx = d.get('executionContext', {})
+        
+        # Get source servers from executionContext
+        source_servers = ctx.get('source_servers', [])
+        target_map = ctx.get('target_ecs_map', [])
+        
+        # Query live specs for each target
+        comparisons = []
+        for tgt in target_map:
+            src_name = tgt.get('source_name', '')
+            ecs_id = tgt.get('ecs_id', '')
+            ecs_name = tgt.get('ecs_name', '')
+            
+            # Query target ECS specs
+            tgt_spec = {'vcpus': '?', 'ram_mb': '?', 'flavor': '?', 'disks': []}
+            try:
+                r = _sp.run(['hcloud', 'ECS', 'ShowServer', '--cli-region=la-north-2',
+                            '--cli-profile=internal', f'--server_id={ecs_id}'],
+                           capture_output=True, text=True, timeout=20)
+                raw = r.stdout or ''
+                start = raw.find('{')
+                if start >= 0:
+                    depth = 0; end = start
+                    for i in range(start, len(raw)):
+                        if raw[i] == '{': depth += 1
+                        elif raw[i] == '}': depth -= 1
+                        if depth == 0: end = i+1; break
+                    srv = _j.loads(raw[start:end]).get('server', {})
+                    flv = srv.get('flavor', {})
+                    tgt_spec['vcpus'] = int(flv.get('vcpus', 0))
+                    tgt_spec['ram_mb'] = int(flv.get('ram', 0))
+                    tgt_spec['flavor'] = flv.get('name', '?')
+                    for vol in srv.get('os-extended-volumes:volumes_attached', []):
+                        tgt_spec['disks'].append(vol.get('id', '?'))
+            except Exception:
+                pass
+            
+            # Find matching source
+            src_spec = {'vcpus': '?', 'ram_mb': '?', 'flavor': '?', 'disks': []}
+            for src in source_servers:
+                if src.get('name', '').replace('-SOURCE', '') == src_name or src.get('name') == src_name:
+                    src_spec['vcpus'] = src.get('vcpus', '?')
+                    src_spec['ram_mb'] = src.get('ram_mb', '?')
+                    src_spec['flavor'] = src.get('flavor', '?')
+                    break
+            
+            # Calculate deltas
+            deltas = {}
+            for dim in ['vcpus', 'ram_mb']:
+                sv, tv = src_spec.get(dim, '?'), tgt_spec.get(dim, '?')
+                if isinstance(sv, (int, float)) and isinstance(tv, (int, float)) and sv > 0:
+                    pct = ((tv - sv) / sv) * 100
+                    deltas[dim] = {'source': sv, 'target': tv, 'delta_pct': round(pct, 1), 'flag': 'over-provisioned' if pct > 20 else 'ok'}
+                else:
+                    deltas[dim] = {'source': sv, 'target': tv, 'delta_pct': '?', 'flag': 'unknown'}
+            
+            comparisons.append({
+                'source_name': src_name,
+                'target_name': ecs_name,
+                'target_id': ecs_id,
+                'source_spec': src_spec,
+                'target_spec': tgt_spec,
+                'deltas': deltas,
+                'cost_risk': any(d.get('flag') == 'over-provisioned' for d in deltas.values()),
+            })
+        
+        # SMS task trace
+        sms_tasks = []
+        try:
+            r = _sp.run(['hcloud', 'SMS', 'ListTasks', '--cli-region=ap-southeast-3',
+                        '--cli-profile=erp-source', '--limit=20'],
+                       capture_output=True, text=True, timeout=20)
+            raw = r.stdout or ''
+            start = raw.find('{')
+            if start >= 0:
+                depth = 0; end = start
+                for i in range(start, len(raw)):
+                    if raw[i] == '{': depth += 1
+                    elif raw[i] == '}': depth -= 1
+                    if depth == 0: end = i+1; break
+                td = _j.loads(raw[start:end])
+                for t in td.get('tasks', []):
+                    sms_tasks.append({
+                        'id': t.get('id'),
+                        'name': t.get('name', ''),
+                        'state': t.get('state', ''),
+                        'source_server': t.get('source_server', ''),
+                        'target%target_server': t.get('target_server', ''),
+                        'create_time': t.get('create_time', ''),
+                    })
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'comparisons': comparisons,
+            'sms_tasks': sms_tasks,
+            'sms_task_count': len(sms_tasks),
+            'over_provisioned_count': sum(1 for c in comparisons if c.get('cost_risk')),
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @execution_bp.route('/api/execution/<project_id>/phase-content', methods=['GET'])
 @jwt_required()
 def get_phase_content(project_id):

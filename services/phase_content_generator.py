@@ -49,7 +49,8 @@ PHASE_DEFAULTS = {
     'PHASE_4_4': {'label': 'Data Sync', 'icon': 'fa-sync-alt', 'color': '#10b981'},
     'PHASE_4_5': {'label': 'Monitor', 'icon': 'fa-chart-line', 'color': '#06b6d4'},
     'PHASE_4_6': {'label': 'Cutover', 'icon': 'fa-exchange-alt', 'color': '#ef4444'},
-    'PHASE_4_7': {'label': 'Teardown', 'icon': 'fa-trash-alt', 'color': '#84cc16'},
+    'PHASE_4_7': {'label': 'Reconciliation', 'icon': 'fa-balance-scale', 'color': '#f97316'},
+    'PHASE_4_8': {'label': 'Teardown', 'icon': 'fa-trash-alt', 'color': '#84cc16'},
 }
 
 
@@ -89,7 +90,7 @@ def generate_phase_content(execution_plan):
 
     # Build content for each phase
     result = {}
-    for phase_key in ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7']:
+    for phase_key in ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7', 'PHASE_4_8']:
         defaults = PHASE_DEFAULTS.get(phase_key, {})
         actions = phase_actions.get(phase_key, [])
         resources = phase_resources.get(phase_key, set())
@@ -181,11 +182,21 @@ def generate_phase_content(execution_plan):
             goal = "Execute cold cutover procedure: sever on-premises connections, promote target VPC bindings, and validate application reachability on the new infrastructure."
 
         elif phase_key == 'PHASE_4_7':
+            desc = "Reconciliation: compare source vs target specs (vCPU, RAM, disk, flavor). Flag over-provisioned resources that increase costs."
+            goal = ("Compare every source server's specifications (vCPU, RAM, disk count/size/type, flavor family) against its target counterpart. "
+                    "Flag any target that is over-provisioned (>20% above source on any dimension) as a cost risk. "
+                    "Verify disk counts match 1:1. Report a reconciliation summary with source→target mapping, deltas, and cost implications. "
+                    "Do NOT modify any resources — this is read-only validation.")
+
+        elif phase_key == 'PHASE_4_8':
             parts = []
             if 'SMOKE_TESTS' in unique_actions: parts.append('smoke tests')
             parts.append('destroy transient resources')
+            parts.append('preserve SMS tasks for trace')
             desc = f"Teardown: {', '.join(parts)}. Confirm PPU costs drop to baseline."
-            goal = f"Destroy transient migration resources and run {', '.join(parts)}. Confirm no orphaned resources remain."
+            goal = (f"Destroy transient migration resources (unbound EIPs, temp disks, factory VMs) but PRESERVE SMS tasks for audit trace. "
+                    f"Run {', '.join(parts)}. Confirm no orphaned resources remain. "
+                    f"SMS tasks must NOT be deleted — they are the migration audit trail.")
 
         else:
             desc = f"{len(actions)} actions planned."

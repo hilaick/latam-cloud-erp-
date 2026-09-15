@@ -1,12 +1,14 @@
 """
-Orchestration Engine — Background 7-phase migration pipeline.
+Orchestration Engine — Background 8-phase migration pipeline.
 
 Runs the full agentic pipeline in a background thread so:
 - The HTTP request returns immediately (fire-and-poll)
 - Users can switch projects / navigate away — execution continues server-side
 - Multiple projects execute in parallel (each in its own thread)
 - Per-project lock prevents duplicate concurrent runs
-- 1800s timeout per phase (not per entire pipeline)
+- No hard phase timeouts — phases run as long as progressing
+- Pipeline continues on failure (resilient mode)
+- Engine minions: pre-warming, cloud cache, concurrent phases
 
 API contract:
   POST /api/execution/<project_id>/orchestrate   → starts pipeline, returns immediately
@@ -24,6 +26,10 @@ import logging
 import threading
 import subprocess
 from datetime import datetime, timezone
+from services.engine_minions import (
+    get_cloud_cache, PhasePreWarmer, ConcurrentPhaseRunner,
+    get_concurrent_group, CONCURRENT_PHASE_GROUPS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -698,7 +704,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             if dynamic_phases:
                 # Use dynamic phases from the execution plan
                 pipeline = []
-                for phase_key in ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7']:
+                for phase_key in ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7', 'PHASE_4_8']:
                     content = dynamic_phases.get(phase_key)
                     if content:
                         pipeline.append({
@@ -710,12 +716,57 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             else:
                 # Fallback to hardcoded phases
                 pipeline = PIPELINE_PHASES
-                log('[plan] No execution plan found — using default 7-phase pipeline.')
+                log('[plan] No execution plan found — using default 8-phase pipeline.')
+
+            # ── Initialize engine minions ──
+            cloud_cache = get_cloud_cache()
+            prewarmer = PhasePreWarmer(log_cb=log)
+            log(f'[minion] Cloud cache: {cloud_cache.summary()}')
+            log(f'[minion] Pre-warmer: active for phases {list(_PREWARM_MAP.keys())}')
+            log(f'[minion] Concurrent groups: {[list(g) for g in CONCURRENT_PHASE_GROUPS]}')
 
             # ── Run each phase ──
+            _phases_already_ran = set()  # Track phases run by concurrent runner
             for i in range(start_from, len(pipeline)):
                 step = pipeline[i]
                 phase_key = step['phase']
+
+                # Skip if already ran via concurrent group
+                if phase_key in _phases_already_ran:
+                    continue
+
+                # ── CONCURRENT PHASE GROUP ──
+                # If this phase is part of a concurrent group, run all members
+                # in parallel, then advance past them.
+                _concurrent_group = get_concurrent_group(phase_key)
+                if _concurrent_group and phase_key not in _phases_already_ran:
+                    # Check which group members haven't completed yet
+                    _pending = [pk for pk in _concurrent_group
+                                if pk not in pipeline_info['completed_phases']
+                                and pk not in _phases_already_ran]
+                    if len(_pending) > 1:
+                        log(f'[concurrent] Running {len(_pending)} phases in parallel: {_pending}')
+                        _runner = ConcurrentPhaseRunner(
+                            spawn_fn=lambda goal, ctx, pid, pk, log_cb=None: _spawn_hermes_agent(goal, ctx, pid, pk, log_cb=log_cb),
+                            log_cb=log,
+                        )
+                        _cresults = _runner.run_group(
+                            _pending, pipeline, project_id, enriched,
+                            pipeline_info['phase_status'],
+                        )
+                        # Process results
+                        for _pk, (_succ, _resp, _err) in _cresults.items():
+                            _phases_already_ran.add(_pk)
+                            if _succ:
+                                pipeline_info['completed_phases'].append(_pk)
+                                pipeline_info['phase_status'][_pk] = 'completed'
+                                log(f'[concurrent] {_pk} completed ✓')
+                            else:
+                                pipeline_info['phase_status'][_pk] = 'failed'
+                                log(f'[concurrent] {_pk} failed — pipeline continues (resilient)')
+                        # Invalidate cache after concurrent ops
+                        cloud_cache.invalidate()
+                        continue  # All group members done, advance past them
 
                 # ── STOP REQUESTED: halt gracefully at the phase boundary ──
                 if pipeline_info.get('stop_requested'):
@@ -1236,6 +1287,22 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         log(f'[output] {redact_secrets(response[:200] if response else "")}...' if response and len(response) > 200 else f'[output] {redact_secrets(response or "")}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
+                    
+                    # ── Pre-warm next phase (engine minion) ──
+                    try:
+                        from services.skill_preload import SkillPreloadRepository as _SR
+                        _sr = _SR()
+                        _next_skills = []
+                        for _npk in _PREWARM_MAP.get(phase_key, []):
+                            _next_skills.extend(_sr.get_skills_for_server('generic', _npk))
+                        if _next_skills:
+                            prewarmer.check_and_prewarm(phase_key, 999999, _next_skills)  # Force pre-warm (phase done = 100%)
+                    except Exception as _pw_err:
+                        log(f'[minion:prewarm] failed: {_pw_err}')
+                    
+                    # ── Cloud cache stats ──
+                    log(f'[minion:cache] {cloud_cache.summary()}')
+                    
                     # Persist log for post-restart hydration
                     try:
                         from models import ExecutionState as _ES

@@ -22,6 +22,7 @@ function MigrationOpsDashboard({ project }) {
     const [cloudState, setCloudState] = useState(null);
     const [execPlan, setExecPlan] = useState(null);
     const [executionState, setExecutionState] = useState(null);
+    const [reconciliation, setReconciliation] = useState(null);
     const [selectedServer, setSelectedServer] = useState('');
     const [selectedAction, setSelectedAction] = useState('SMS_SUBTASK_MONITOR');
     const [taskBusy, setTaskBusy] = useState(null);
@@ -145,6 +146,54 @@ function MigrationOpsDashboard({ project }) {
                 ].map(c => <div key={c.l} className="bg-white border border-slate-200 rounded-xl p-3"><div className="text-[9px] font-black uppercase text-slate-400 tracking-widest">{c.l}</div><div className="text-xl font-black text-slate-800 mt-0.5">{c.v}</div><div className={`text-[9px] font-bold ${c.c}`}>{c.sub}</div></div>)}
             </div>
 
+            {/* ── RECONCILIATION PANEL ── */}
+            {reconciliation && (
+            <div className="mb-4 bg-white border border-slate-200 rounded-xl p-3">
+                <div className="flex justify-between items-center mb-2">
+                    <div className="text-[9px] font-black uppercase text-slate-400 tracking-widest"><i className="fas fa-balance-scale mr-1 text-orange-500"></i>Reconciliation Report</div>
+                    <div className="text-[9px] font-bold">
+                        <span className="text-emerald-600">{reconciliation.comparisons?.length || 0} servers</span>
+                        {' · '}
+                        <span className={reconciliation.over_provisioned_count > 0 ? 'text-red-600' : 'text-emerald-600'}>{reconciliation.over_provisioned_count || 0} over-provisioned</span>
+                        {' · '}
+                        <span className="text-cyan-600">{reconciliation.sms_task_count || 0} SMS tasks (trace)</span>
+                    </div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-[9px]">
+                        <thead><tr className="border-b border-slate-100">
+                            <th className="text-left py-1 px-2 font-black text-slate-500">Source</th>
+                            <th className="text-left py-1 px-2 font-black text-slate-500">Target</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">Src vCPU</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">Tgt vCPU</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">Src RAM</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">Tgt RAM</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">CPU Δ%</th>
+                            <th className="text-right py-1 px-2 font-black text-slate-500">RAM Δ%</th>
+                            <th className="text-center py-1 px-2 font-black text-slate-500">Risk</th>
+                        </tr></thead>
+                        <tbody>{(reconciliation.comparisons || []).map((c, i) => <tr key={i} className="border-b border-slate-50">
+                            <td className="py-1 px-2 font-mono">{c.source_name}</td>
+                            <td className="py-1 px-2 font-mono">{c.target_name}</td>
+                            <td className="py-1 px-2 text-right">{c.source_spec?.vcpus}</td>
+                            <td className="py-1 px-2 text-right">{c.target_spec?.vcpus}</td>
+                            <td className="py-1 px-2 text-right">{c.source_spec?.ram_mb}</td>
+                            <td className="py-1 px-2 text-right">{c.target_spec?.ram_mb}</td>
+                            <td className={`py-1 px-2 text-right font-bold ${c.deltas?.vcpus?.flag === 'over-provisioned' ? 'text-red-600' : 'text-emerald-600'}`}>{c.deltas?.vcpus?.delta_pct ?? '?'}%</td>
+                            <td className={`py-1 px-2 text-right font-bold ${c.deltas?.ram_mb?.flag === 'over-provisioned' ? 'text-red-600' : 'text-emerald-600'}`}>{c.deltas?.ram_mb?.delta_pct ?? '?'}%</td>
+                            <td className="py-1 px-2 text-center">{c.cost_risk ? <span className="text-red-600 font-black">⚠</span> : <span className="text-emerald-600">✓</span>}</td>
+                        </tr>)}</tbody>
+                    </table>
+                </div>
+                {reconciliation.sms_tasks?.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-100">
+                    <div className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">SMS Task Trace</div>
+                    {reconciliation.sms_tasks.map((t, i) => <div key={i} className="text-[8px] font-mono text-slate-600">{t.id?.slice(0,8)}… | {t.state} | {t.source_server?.slice(0,30)} → {t.target_server?.slice(0,30)}</div>)}
+                </div>
+                )}
+            </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* COL 1: Plan Navigator */}
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden lg:col-span-1">
@@ -205,6 +254,7 @@ function MigrationOpsDashboard({ project }) {
                 <button onClick={buildPlan} className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider border border-indigo-100"><i className="fas fa-drafting-compass mr-1"></i>Rebuild Plan</button>
                 <button onClick={() => fetch(`/api/execution/${project.id}/orchestrate/status`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setExecutionState(d); log(`[status] phase ${d.current_phase || d.currentPhase || '?'} · ${d.log?.length || 0} log lines`); })} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider"><i className="fas fa-sync mr-1"></i>Status</button>
                 <button onClick={() => fetch(`/api/execution/${project.id}/cloud-state`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { if (d.success) setCloudState(d); log(`[cloud] phase ${d.inferred_phase} · ${d.sms_progress?.total || 0} tasks · ${d.sms_sources_connected || 0} sources`); })} className="px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-[10px] font-black uppercase tracking-wider border border-cyan-100"><i className="fas fa-satellite-dish mr-1"></i>Cloud</button>
+                <button onClick={() => fetch(`/api/execution/${project.id}/reconciliation`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { if (d.success) { setReconciliation(d); log(`[recon] ${d.comparisons?.length || 0} servers · ${d.over_provisioned_count || 0} over-provisioned · ${d.sms_task_count || 0} SMS tasks`); } else { log(`[recon] ${d.error}`); } })} className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-[10px] font-black uppercase tracking-wider border border-orange-100"><i className="fas fa-balance-scale mr-1"></i>Recon</button>
                 <button onClick={() => fetch('/api/hermes-cli/health').then(r => r.json()).then(d => { setProfileInfo(d); log(`[health] delegation: ${d.capabilities?.delegation} · model: ${d.capabilities?.model}`); })} className="px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] font-black uppercase tracking-wider border border-purple-100"><i className="fas fa-heartbeat mr-1"></i>Health</button>
                 <button onClick={() => fetch('/api/hermes-cli/system-info', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { log(`[sys] customers:${d.database_counts?.customers} projects:${d.database_counts?.projects} bridge:${d.status?.hermes_daemon_bridge}`); })} className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-wider border border-emerald-100"><i className="fas fa-stethoscope mr-1"></i>DB</button>
                 <span className="ml-auto text-[8px] font-mono text-slate-400">mode: {project?.executionMode || 'manual'} · this tab shows STATUS only</span>
