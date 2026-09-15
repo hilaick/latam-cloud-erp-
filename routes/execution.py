@@ -2236,6 +2236,21 @@ def orchestration_status(project_id):
         _es = ExecutionState.query.filter_by(project_id=project_id).first()
         if _es and _es.last_active_at:
             status['started_at'] = _es.last_active_at.isoformat()
+            # Elapsed time
+            from datetime import datetime, timezone
+            _elapsed = (datetime.now(timezone.utc) - _es.last_active_at).total_seconds()
+            status['elapsed_seconds'] = round(_elapsed, 1)
+            status['elapsed_display'] = f"{int(_elapsed//60)}m {int(_elapsed%60)}s"
+    except Exception:
+        pass
+
+    # ── Progress bar ──
+    try:
+        _completed = len(status.get('completed_phases', []))
+        _total = 8  # 8 phases in the pipeline
+        status['progress_pct'] = round(_completed / _total * 100, 1)
+        status['completed_count'] = _completed
+        status['total_phases'] = _total
     except Exception:
         pass
 

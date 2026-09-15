@@ -1295,11 +1295,10 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     
                     # ── Pre-warm next phase (engine minion) ──
                     try:
-                        from services.skill_preload import SkillPreloadRepository as _SR
-                        _sr = _SR()
+                        from services.skill_preload import skills_for_phase
                         _next_skills = []
                         for _npk in PHASE_PREWARM_MAP.get(phase_key, []):
-                            _next_skills.extend(_sr.get_skills_for_server('generic', _npk))
+                            _next_skills.extend(skills_for_phase(_npk))
                         if _next_skills:
                             prewarmer.check_and_prewarm(phase_key, 999999, _next_skills)  # Force pre-warm (phase done = 100%)
                     except Exception as _pw_err:
