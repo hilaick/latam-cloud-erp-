@@ -2247,13 +2247,24 @@ def orchestration_status(project_id):
     except Exception as _e:
         logger.warning(f"Elapsed timer error: {_e}")
 
-    # ── Progress bar ──
+    # ── Progress bar + ETA ──
     try:
         _completed = len(status.get('completed_phases', []))
         _total = 8  # 8 phases in the pipeline
         status['progress_pct'] = round(_completed / _total * 100, 1)
         status['completed_count'] = _completed
         status['total_phases'] = _total
+        # ETA: if we have elapsed time and at least 1 phase completed,
+        # estimate remaining time as (elapsed / completed) * remaining
+        if _completed > 0 and 'elapsed_seconds' in status:
+            _elapsed_s = status['elapsed_seconds']
+            _remaining = _total - _completed
+            _eta_s = (_elapsed_s / _completed) * _remaining
+            status['eta_seconds'] = round(_eta_s, 1)
+            status['eta_display'] = f"{int(_eta_s//60)}m {int(_eta_s%60)}s"
+        else:
+            status['eta_seconds'] = 0
+            status['eta_display'] = '—'
     except Exception:
         pass
 
@@ -2262,7 +2273,7 @@ def orchestration_status(project_id):
     resp = {'success': True, 'status': status}
     for _k in ('progress_pct', 'elapsed_display', 'elapsed_seconds', 'total_phases',
                'completed_count', 'current_phase', 'completed_phases', 'phase_status',
-               'started_at', 'thread_alive', 'failed_phase'):
+               'started_at', 'thread_alive', 'failed_phase', 'eta_display', 'eta_seconds'):
         if _k in status:
             resp[_k] = status[_k]
     return jsonify(resp)

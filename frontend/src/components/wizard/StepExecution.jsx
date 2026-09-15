@@ -147,7 +147,7 @@ export default function StepExecution({ project, onUpdateProject, onPromote }) {
         { id: 'hub', num: '4.5', icon: 'fa-stream', label: 'DevOps Command Center' }
     ] : [
         { id: 'readiness', num: '4.0', icon: 'fa-user-lock', label: 'Readiness Gateway' },
-        { id: 'orchestrator', num: '4.1-4.7', icon: 'fa-cogs', label: 'Execution Pipeline' },
+        { id: 'orchestrator', num: '4.1-4.8', icon: 'fa-cogs', label: 'Execution Pipeline' },
         { id: 'workbench', num: '4.8', icon: 'fa-tools', label: 'Engineering Workbench' },
         { id: 'tam', num: '4.10', icon: 'fa-clipboard-check', label: 'TAM Service Governance' }
     ];
@@ -501,7 +501,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         setAutoOrchestrating(true);
         // Per-phase run: caller passes explicitPhaseKey (e.g. 'PHASE_4_1') to force re-run of THAT phase.
         // Full pipeline (no explicitPhaseKey): keep skip-completed behavior.
-        const phaseKeys = ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7'];
+        const phaseKeys = ['PHASE_4_1', 'PHASE_4_2', 'PHASE_4_3', 'PHASE_4_4', 'PHASE_4_5', 'PHASE_4_6', 'PHASE_4_7', 'PHASE_4_8'];
         const restartPhase = explicitPhaseKey && phaseKeys.includes(explicitPhaseKey) ? explicitPhaseKey : null;
         // Clear stale "completed" markers: if restarting a phase, clear it AND all later phases
         // (they may have been marked done from an earlier run — wrong to show green for them)
@@ -1298,12 +1298,18 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 {/* Center circle */}
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex flex-col items-center justify-center text-white shadow-xl z-10">
                                     <i className="fas fa-robot text-2xl mb-1"></i>
-                                    <div className="text-[9px] font-black uppercase tracking-widest">7 Phases</div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest">8 Phases</div>
                                     <div className="text-[8px] text-purple-200 mt-0.5">{
-                                        completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/7 done` :
+                                        completedOrchPhases.size > 0 ? `${completedOrchPhases.size}/8 done` :
                                         autoOrchestrating && execState?.currentPhase ? `${execState.currentPhase.replace('PHASE_4_', '4.')} active` :
                                         'Ready'
                                     }</div>
+                                    {autoOrchestrating && execState?.elapsed_display && (
+                                    <div className="text-[7px] text-purple-300 mt-0.5">⏱ {execState.elapsed_display}</div>
+                                    )}
+                                    {autoOrchestrating && execState?.eta_display && execState.eta_display !== '—' && (
+                                    <div className="text-[7px] text-purple-300">ETA {execState.eta_display}</div>
+                                    )}
                                 </div>
                                 {/* SVG connecting circle */}
                                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 380 380">
@@ -1325,9 +1331,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: phaseContent?.PHASE_4_4?.icon || 'fa-sync-alt', color: '#10b981', desc: phaseContent?.PHASE_4_4?.desc || 'SMS/DRS/OMS replication' },
                                     { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: phaseContent?.PHASE_4_5?.icon || 'fa-chart-line', color: '#06b6d4', desc: phaseContent?.PHASE_4_5?.desc || 'Sync progress monitoring' },
                                     { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: phaseContent?.PHASE_4_6?.icon || 'fa-exchange-alt', color: '#ef4444', desc: phaseContent?.PHASE_4_6?.desc || 'Cold cutover, VPC promotion' },
-                                    { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: phaseContent?.PHASE_4_7?.icon || 'fa-trash-alt', color: '#84cc16', desc: phaseContent?.PHASE_4_7?.desc || 'Cleanup, smoke tests' },
+                                    { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Reconcile', icon: phaseContent?.PHASE_4_7?.icon || 'fa-balance-scale', color: '#84cc16', desc: phaseContent?.PHASE_4_7?.desc || 'Validate source vs target specs' },
+                                    { n: 8, label: phaseContent?.PHASE_4_8?.label || 'Teardown', icon: phaseContent?.PHASE_4_8?.icon || 'fa-trash-alt', color: '#6b7280', desc: phaseContent?.PHASE_4_8?.desc || 'Cleanup, preserve SMS tasks for trace' },
                                 ].map((ph, idx) => {
-                                    const angle = (idx / 7) * 2 * Math.PI - Math.PI / 2;
+                                    const angle = (idx / 8) * 2 * Math.PI - Math.PI / 2;
                                     const x = 190 + 155 * Math.cos(angle);
                                     const y = 190 + 155 * Math.sin(angle);
                                     const phaseKey = `PHASE_4_${ph.n}`;
@@ -1732,7 +1739,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                 { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', desc: phaseContent?.PHASE_4_4?.desc || 'Deploy SMS and DRS migration agents. Verify health and connectivity.' },
                                 { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', desc: phaseContent?.PHASE_4_5?.desc || 'Monitor byte-by-byte replication. Report sync percentages and ETA to cutover.' },
                                 { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', desc: phaseContent?.PHASE_4_6?.desc || 'Sever on-prem connections, promote target VPC, validate app reachability.' },
-                                { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', desc: phaseContent?.PHASE_4_7?.desc || 'Destroy transient resources. Confirm PPU costs drop to baseline.' },
+                                { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Reconcile', desc: phaseContent?.PHASE_4_7?.desc || 'Validate source vs target specs. Confirm no under-provisioning.' },
+                                { n: 8, label: phaseContent?.PHASE_4_8?.label || 'Teardown', desc: phaseContent?.PHASE_4_8?.desc || 'Destroy transient resources. Preserve SMS tasks for trace. Confirm PPU costs drop.' },
                             ].map(ph => {
                                 const phaseKey = `PHASE_4_${ph.n}`;
                                 let status = phaseStatus[phaseKey] || (completedOrchPhases.has(phaseKey) ? 'completed' : 'pending');
@@ -1990,7 +1998,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                             { n: 4, label: phaseContent?.PHASE_4_4?.label || 'Data Sync', icon: 'fa-sync-alt', color: '#10b981', done: completedOrchPhases.has('PHASE_4_4') },
                                             { n: 5, label: phaseContent?.PHASE_4_5?.label || 'Monitor', icon: 'fa-chart-line', color: '#06b6d4', done: completedOrchPhases.has('PHASE_4_5') },
                                             { n: 6, label: phaseContent?.PHASE_4_6?.label || 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444', done: completedOrchPhases.has('PHASE_4_6') },
-                                            { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Teardown', icon: 'fa-trash-alt', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') },
+                                            { n: 7, label: phaseContent?.PHASE_4_7?.label || 'Reconcile', icon: 'fa-balance-scale', color: '#84cc16', done: completedOrchPhases.has('PHASE_4_7') },
+                                            { n: 8, label: phaseContent?.PHASE_4_8?.label || 'Teardown', icon: 'fa-trash-alt', color: '#6b7280', done: completedOrchPhases.has('PHASE_4_8') },
                                         ].map(ph => {
                                             const isRunning = liveCurrentPhase === `PHASE_4_${ph.n}` && autoOrchestrating;
                                             return (
@@ -2675,9 +2684,10 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
         { key: 'PHASE_4_2', label: 'Source Prep', icon: 'fa-download', color: '#f59e0b' },
         { key: 'PHASE_4_3', label: 'Target ECS', icon: 'fa-server', color: '#8b5cf6' },
         { key: 'PHASE_4_4', label: 'Data Sync', icon: 'fa-sync-alt', color: '#10b981' },
-        { key: 'PHASE_4_5', label: 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444' },
-        { key: 'PHASE_4_6', label: 'Harden', icon: 'fa-shield-alt', color: '#06b6d4' },
-        { key: 'PHASE_4_7', label: 'Test', icon: 'fa-vial', color: '#10b981' },
+        { key: 'PHASE_4_5', label: 'Monitor', icon: 'fa-chart-line', color: '#06b6d4' },
+        { key: 'PHASE_4_6', label: 'Cutover', icon: 'fa-exchange-alt', color: '#ef4444' },
+        { key: 'PHASE_4_7', label: 'Reconcile', icon: 'fa-balance-scale', color: '#84cc16' },
+        { key: 'PHASE_4_8', label: 'Teardown', icon: 'fa-trash-alt', color: '#6b7280' },
     ];
     const currentPhase = executionState?.currentPhase || 'PHASE_4_1';
     const currentPhaseIdx = MIG_PHASES.findIndex(p => p.key === currentPhase);
