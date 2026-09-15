@@ -127,15 +127,16 @@ def get_cloud_cache():
 # ═══════════════════════════════════════════════════════════════════
 
 # Phases that can be pre-warmed while current phase is still running
-_PREWARM_MAP = {
-    'PHASE_4_1': ['PHASE_4_2'],   # While network is building, prep source agents
-    'PHASE_4_2': ['PHASE_4_3'],   # While source prep runs, load target provisioning skills
-    'PHASE_4_3': ['PHASE_4_4'],   # While target ECS provisions, load SMS task skills
-    'PHASE_4_4': ['PHASE_4_5'],   # While data sync starts, load monitor skills
-    'PHASE_4_5': ['PHASE_4_6'],   # While monitoring, load cutover skills
-    'PHASE_4_6': ['PHASE_4_7'],   # While cutover, load reconciliation skills
-    'PHASE_4_7': ['PHASE_4_8'],   # While reconciling, load teardown skills
+PHASE_PREWARM_MAP = {  # Public alias for orchestration engine
+    'PHASE_4_1': ['PHASE_4_2'],
+    'PHASE_4_2': ['PHASE_4_3'],
+    'PHASE_4_3': ['PHASE_4_4'],
+    'PHASE_4_4': ['PHASE_4_5'],
+    'PHASE_4_5': ['PHASE_4_6'],
+    'PHASE_4_6': ['PHASE_4_7'],
+    'PHASE_4_7': ['PHASE_4_8'],
 }
+_PREWARM_MAP = PHASE_PREWARM_MAP
 
 class PhasePreWarmer:
     """Engine minion that pre-loads skills for the next phase.

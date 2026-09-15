@@ -28,7 +28,7 @@ import subprocess
 from datetime import datetime, timezone
 from services.engine_minions import (
     get_cloud_cache, PhasePreWarmer, ConcurrentPhaseRunner,
-    get_concurrent_group, CONCURRENT_PHASE_GROUPS,
+    get_concurrent_group, CONCURRENT_PHASE_GROUPS, PHASE_PREWARM_MAP,
 )
 
 logger = logging.getLogger(__name__)
@@ -722,7 +722,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             cloud_cache = get_cloud_cache()
             prewarmer = PhasePreWarmer(log_cb=log)
             log(f'[minion] Cloud cache: {cloud_cache.summary()}')
-            log(f'[minion] Pre-warmer: active for phases {list(_PREWARM_MAP.keys())}')
+            log(f'[minion] Pre-warmer: active for phases {list(PHASE_PREWARM_MAP.keys())}')
             log(f'[minion] Concurrent groups: {[list(g) for g in CONCURRENT_PHASE_GROUPS]}')
 
             # ── Run each phase ──
@@ -1293,7 +1293,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         from services.skill_preload import SkillPreloadRepository as _SR
                         _sr = _SR()
                         _next_skills = []
-                        for _npk in _PREWARM_MAP.get(phase_key, []):
+                        for _npk in PHASE_PREWARM_MAP.get(phase_key, []):
                             _next_skills.extend(_sr.get_skills_for_server('generic', _npk))
                         if _next_skills:
                             prewarmer.check_and_prewarm(phase_key, 999999, _next_skills)  # Force pre-warm (phase done = 100%)
