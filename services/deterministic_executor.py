@@ -387,6 +387,54 @@ class DeterministicExecutor:
                 'output': (out or err)[:400],
                 'error': ('API error: ' + _combined[:80]) if (not ok and _api_error) else None,
             })
+
+        # ── SMS-specific post-validation ──
+        # SMS_AGENT_INSTALL: verify agent connected + checks OK from ListServers output
+        if action == 'SMS_AGENT_INSTALL' and results and results[-1].get('status') == 'success':
+            _sms_out = results[-1].get('output', '')
+            _server_name = target
+            try:
+                import json as _json
+                _data = _json.loads(_sms_out) if _sms_out.strip().startswith('{') else None
+                if _data and 'source_servers' in _data:
+                    _srv = next((s for s in _data['source_servers'] if s.get('name') == _server_name), None)
+                    if _srv:
+                        _connected = _srv.get('connected', False)
+                        _checks_ok = all(c.get('result') == 'OK' for c in _srv.get('checks', []))
+                        if _connected and _checks_ok:
+                            results[-1]['output'] = f"Agent OK: connected={_connected}, {len(_srv.get('checks',[]))} checks OK"
+                            # Store SMS server ID for chain
+                            _sms_id = _srv.get('id', '')
+                            if _sms_id:
+                                chain_vals[f'sms_id:{_server_name}'] = _sms_id
+                        else:
+                            results[-1]['status'] = 'failed'
+                            results[-1]['error'] = f"Agent not ready: connected={_connected}, checks_ok={_checks_ok}"
+            except Exception:
+                pass  # Fall through to agent lane if parse fails
+
+        # MIGRATION_PROJECT_CONFIG: verify project settings from ListMigprojects output
+        if action == 'MIGRATION_PROJECT_CONFIG' and results and results[-1].get('status') == 'success':
+            _mp_out = results[-1].get('output', '')
+            try:
+                import json as _json
+                _data = _json.loads(_mp_out) if _mp_out.strip().startswith('{') else None
+                if _data and 'migprojects' in _data:
+                    _proj = _data['migprojects'][0] if _data['migprojects'] else None
+                    if _proj:
+                        _syncing = _proj.get('syncing', True)
+                        _public_ip = _proj.get('use_public_ip', False)
+                        _exist_srv = _proj.get('exist_server', False)
+                        if not _syncing and _public_ip and _exist_srv:
+                            results[-1]['output'] = f"Project OK: syncing={_syncing}, use_public_ip={_public_ip}, exist_server={_exist_srv}"
+                            _mp_id = _proj.get('id', '')
+                            if _mp_id:
+                                chain_vals['mig_project_id'] = _mp_id
+                        else:
+                            results[-1]['status'] = 'failed'
+                            results[-1]['error'] = f"Project config wrong: syncing={_syncing}, use_public_ip={_public_ip}, exist_server={_exist_srv}"
+            except Exception:
+                pass
         all_ok = all(r.get('status') == 'success' for r in results)
         entry = {
             'step_id': step.get('step_id'),

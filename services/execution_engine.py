@@ -1352,10 +1352,9 @@ class ExecutionEngine:
                 "status": "pending",
             })
 
-            # Step: SMS Agent install (Zero Trust = customer responsibility)
+            # Step: SMS Agent check (deterministic — hcloud SMS ListServers, no SSH needed)
+            # If agent is connected + all checks OK, skip install. Otherwise defer to agent.
             sid += 1
-            sms_domain = f"sms.{source_region}.myhuaweicloud.com"
-            agent_cmd = f"cd /opt && wget -q https://sms-resource-intl-{source_region}.obs.{source_region}.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/ && screen -dmS sms_agent bash -c \"printf 'y\\n<AK>\\n<SK>\\n{sms_domain}\\n\\n\\ny\\ny\\nn\\n' | bash /opt/SMS-Agent/startup.sh\""
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_2,
                 "action": "SMS_AGENT_INSTALL",
@@ -1363,16 +1362,19 @@ class ExecutionEngine:
                 "pillar": "compute",
                 "strategy": "sms",
                 "tool_source": "skill",
-                "tool_name": "huawei-sms-cross-region-migration (agent install via screen+printf)",
-                "commands": [{"desc": "Install SMS agent via SSH", "cmd": f"ssh root@<source_ip> '{agent_cmd}'", "type": "ssh"}],
-                "credentials_needed": ["ak", "sk", "os_user", "os_password"],
+                "tool_name": "huawei-sms-cross-region-migration (agent check via ListServers)",
+                "commands": [
+                    {"desc": f"Check SMS agent status (connected + checks OK)", "cmd": f"hcloud SMS ListServers --cli-region={source_region} --cli-profile=erp-source --limit=50", "type": "hcloud"},
+                ],
+                "credentials_needed": ["ak", "sk"],
                 "zero_trust": is_zero_trust,
                 "fallback_strategy": fallback,
                 "rollback": {"cmd": f"ssh root@<source_ip> 'bash /opt/SMS-Agent/uninstall.sh'", "label": "Uninstall SMS agent"},
                 "status": "pending",
             })
 
-            # Step: Migration project config (SMS.6602 prevention)
+            # Step: Migration project config (deterministic — hcloud SMS ListMigprojects)
+            # If project exists with correct settings (syncing=false, use_public_ip=true), skip config.
             sid += 1
             steps.append({
                 "step_id": sid, "phase": ExecutionEngine.PHASE_4_2,
@@ -1381,8 +1383,10 @@ class ExecutionEngine:
                 "pillar": "compute",
                 "strategy": "sms",
                 "tool_source": "skill",
-                "tool_name": "huawei-sms-cross-region-migration (use_public_ip=false)",
-                "commands": [{"desc": "Set use_public_ip=false", "cmd": f"hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=false --cli-region={source_region}", "type": "hcloud"}],
+                "tool_name": "huawei-sms-cross-region-migration (project check via ListMigprojects)",
+                "commands": [
+                    {"desc": "Check migration project config", "cmd": f"hcloud SMS ListMigprojects --cli-region={source_region} --cli-profile=erp-source --limit=10", "type": "hcloud"},
+                ],
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": None,
