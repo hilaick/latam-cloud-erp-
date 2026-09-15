@@ -604,6 +604,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                      capture_output=True, text=True, timeout=20)
                         _d2 = json.loads(_x2.stdout) if _x2.stdout else {}
                         _vpcs = _d2.get('vpcs') or _d2.get('vpc') or _d2.get('Vpcs') or []
+                        # hcloud VPC ListVpcs may return array directly (not wrapped in dict)
+                        if not _vpcs and isinstance(_d2, list):
+                            _vpcs = _d2
                         # Check for migration VPC — tagged with erp-migration OR non-default name
                         # (vpc-default IS the migration VPC if it has erp-migration tag)
                         _migration_vpc = any(
@@ -636,9 +639,13 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                             pass
             except Exception:
                 completed_seed = []
+            # ── NEVER seed completed_phases on restart ──
+            # Sequential phases have dependencies — skipping is broken.
+            # Pipeline always starts from PHASE_4_1. Caller must roll back
+            # partial resources before restarting.
             pipeline_info = {
                 'status': 'running',
-                'completed_phases': completed_seed,
+                'completed_phases': [],  # ALWAYS empty — no skipping
                 'failed_phase': None,
                 'current_phase': None,
                 'log': [],
@@ -832,14 +839,17 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     state.status = 'IN_PROGRESS'
                     db.session.commit()
 
-                # Skip already completed — UNLESS restart_phase forces re-run of this phase
+                # ── NO PHASE SKIPPING — sequential phases have dependencies ──
+                # A later phase CANNOT run if an earlier phase hasn't completed.
+                # On restart (Flask crash, server reboot), the pipeline MUST start
+                # from PHASE_4_1 with a clean slate. The caller is responsible for
+                # rolling back any partial resources before restarting.
+                # restart_phase is kept for manual single-phase re-run only.
+                if restart_phase and restart_phase != phase_key:
+                    log(f'[skip] {step["label"]} — not the requested restart phase ({restart_phase}).')
+                    continue
                 if restart_phase == phase_key:
                     log(f'[restart] {step["label"]} — forced re-run by user request.')
-                    if phase_key in pipeline_info['completed_phases']:
-                        pipeline_info['completed_phases'].remove(phase_key)
-                elif phase_key in pipeline_info['completed_phases']:
-                    log(f'[skip] {step["label"]} — already completed.')
-                    continue
 
                 log(f'[phase] {phase_key}: {step["label"]} — spawning agent...')
                 pipeline_info['current_phase'] = phase_key
