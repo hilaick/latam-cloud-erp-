@@ -298,7 +298,34 @@ class DeterministicExecutor:
             cmd = c.get('cmd') if isinstance(c, dict) else str(c)
             if not cmd:
                 continue
-            # Inject --cli-profile if missing (hcloud commands need auth)
+            # Pre-flight idempotent check: if resource already exists, skip creation
+            # CREATE_TARGET_ECS: check if {name}-TARGET exists in target region
+            _preflight_skip = False
+            if action == 'CREATE_TARGET_ECS' and cmd.startswith('hcloud'):
+                _target_name = f"{target}-TARGET"
+                _pf_region = 'la-north-2'
+                _pf_profile = 'internal'  # target region always uses internal profile
+                _pf = _run_shell(f"hcloud ECS ListServersDetails --cli-region={_pf_region} --cli-profile={_pf_profile} --limit=100")
+                if _pf[0] == 0:
+                    import json as _json
+                    try:
+                        _pf_data = _json.loads(_pf[1])
+                        for _s in _pf_data.get('servers', []):
+                            if _s.get('name') == _target_name and _s.get('status') in ('ACTIVE', 'BUILD'):
+                                _lookup_id = _s.get('id', '')
+                                results.append({
+                                    'cmd': f'[idempotent] {target} already exists as {_target_name}',
+                                    'status': 'success',
+                                    'rc': 0,
+                                    'output': f'{{"id": "{_lookup_id}", "name": "{_target_name}"}}',
+                                    'error': None,
+                                })
+                                _preflight_skip = True
+                                break
+                    except Exception:
+                        pass  # Fall through to normal execution
+            if _preflight_skip:
+                continue  # Skip the actual creation command
             if cmd.startswith('hcloud') and '--cli-profile' not in cmd:
                 if '--cli-region=la-north-2' in cmd or '--cli-region=sa-brazil-1' in cmd:
                     cmd = cmd.replace('hcloud', 'hcloud --cli-profile=internal', 1)

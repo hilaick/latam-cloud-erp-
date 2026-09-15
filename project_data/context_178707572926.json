@@ -25,6 +25,30 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
     "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "a628cd63-6314-42ee-b03e-75ac20c86daa",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "7dc6e435-2379-4451-a44f-87c0848629bf",
+    "status": "ACTIVE"
    }
   ],
   "target_servers": [
@@ -326,7 +350,7 @@
     "commands": [
      {
       "desc": "Provision VPC",
-      "cmd": "hcloud VPC CreateVpc --vpc.name=erp-migration-erp-vpc --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916052603' --cli-region=la-north-2",
+      "cmd": "hcloud VPC CreateVpc --vpc.name=erp-migration-erp-vpc --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916063157' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -481,7 +505,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916052603' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916063157' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -566,19 +590,17 @@
     "pillar": "compute",
     "strategy": "sms",
     "tool_source": "skill",
-    "tool_name": "huawei-sms-cross-region-migration (agent install via screen+printf)",
+    "tool_name": "huawei-sms-cross-region-migration (agent check via ListServers)",
     "commands": [
      {
-      "desc": "Install SMS agent via SSH",
-      "cmd": "ssh root@<source_ip> 'cd /opt && wget -q https://sms-resource-intl-ap-southeast-3.obs.ap-southeast-3.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/ && screen -dmS sms_agent bash -c \"printf 'y\\n<AK>\\n<SK>\\nsms.ap-southeast-3.myhuaweicloud.com\\n\\n\\ny\\ny\\nn\\n' | bash /opt/SMS-Agent/startup.sh\"'",
-      "type": "ssh"
+      "desc": "Check SMS agent status (connected + checks OK)",
+      "cmd": "hcloud SMS ListServers --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50",
+      "type": "hcloud"
      }
     ],
     "credentials_needed": [
      "ak",
-     "sk",
-     "os_user",
-     "os_password"
+     "sk"
     ],
     "zero_trust": false,
     "fallback_strategy": "image_import",
@@ -596,11 +618,11 @@
     "pillar": "compute",
     "strategy": "sms",
     "tool_source": "skill",
-    "tool_name": "huawei-sms-cross-region-migration (use_public_ip=false)",
+    "tool_name": "huawei-sms-cross-region-migration (project check via ListMigprojects)",
     "commands": [
      {
-      "desc": "Set use_public_ip=false",
-      "cmd": "hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=false --cli-region=ap-southeast-3",
+      "desc": "Check migration project config",
+      "cmd": "hcloud SMS ListMigprojects --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=10",
       "type": "hcloud"
      }
     ],
@@ -851,7 +873,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916052603' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916063157' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -936,19 +958,17 @@
     "pillar": "compute",
     "strategy": "sms",
     "tool_source": "skill",
-    "tool_name": "huawei-sms-cross-region-migration (agent install via screen+printf)",
+    "tool_name": "huawei-sms-cross-region-migration (agent check via ListServers)",
     "commands": [
      {
-      "desc": "Install SMS agent via SSH",
-      "cmd": "ssh root@<source_ip> 'cd /opt && wget -q https://sms-resource-intl-ap-southeast-3.obs.ap-southeast-3.myhuaweicloud.com/SMS-Agent.tar.gz -O /tmp/SMS-Agent.tar.gz && tar xzf /tmp/SMS-Agent.tar.gz -C /opt/ && screen -dmS sms_agent bash -c \"printf 'y\\n<AK>\\n<SK>\\nsms.ap-southeast-3.myhuaweicloud.com\\n\\n\\ny\\ny\\nn\\n' | bash /opt/SMS-Agent/startup.sh\"'",
-      "type": "ssh"
+      "desc": "Check SMS agent status (connected + checks OK)",
+      "cmd": "hcloud SMS ListServers --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50",
+      "type": "hcloud"
      }
     ],
     "credentials_needed": [
      "ak",
-     "sk",
-     "os_user",
-     "os_password"
+     "sk"
     ],
     "zero_trust": false,
     "fallback_strategy": "image_import",
@@ -966,11 +986,11 @@
     "pillar": "compute",
     "strategy": "sms",
     "tool_source": "skill",
-    "tool_name": "huawei-sms-cross-region-migration (use_public_ip=false)",
+    "tool_name": "huawei-sms-cross-region-migration (project check via ListMigprojects)",
     "commands": [
      {
-      "desc": "Set use_public_ip=false",
-      "cmd": "hcloud SMS UpdateMigproject --mig_project_id=<project_id> --use_public_ip=false --cli-region=ap-southeast-3",
+      "desc": "Check migration project config",
+      "cmd": "hcloud SMS ListMigprojects --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=10",
       "type": "hcloud"
      }
     ],
