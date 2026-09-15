@@ -2238,7 +2238,10 @@ def orchestration_status(project_id):
             status['started_at'] = _es.last_active_at.isoformat()
             # Elapsed time
             from datetime import datetime, timezone
-            _elapsed = (datetime.now(timezone.utc) - _es.last_active_at).total_seconds()
+            _started = _es.last_active_at
+            if _started.tzinfo is None:
+                _started = _started.replace(tzinfo=timezone.utc)
+            _elapsed = (datetime.now(timezone.utc) - _started).total_seconds()
             status['elapsed_seconds'] = round(_elapsed, 1)
             status['elapsed_display'] = f"{int(_elapsed//60)}m {int(_elapsed%60)}s"
     except Exception:
