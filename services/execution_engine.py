@@ -828,15 +828,16 @@ class ExecutionEngine:
                 action = "CREATE_SG"
                 sg_name = f"{_sandbox_prefix}-sg"  # Migration SG in sandbox VPC
                 # Create migration SG; if already exists, ListSecurityGroups will find it
+                # Note: CreateSecurityGroup V3 API does NOT take --vpc_id (it's VPC-scoped implicitly)
                 cmd = (f"hcloud VPC CreateSecurityGroup --security_group.name={sg_name} "
-                       f"--vpc_id=<vpc_id> {ep_sg_opt}--cli-region={target_region}")
+                       f"{ep_sg_opt}--cli-region={target_region}")
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"
                 cmd = (f"hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 "
                        f"--bandwidth.name={node.get('name','target-eip')}-eip "
                        f"--bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic "
-                       f"--tags.1={erp_tag_q}{ep_eip_opt} --cli-region={target_region}")
+                       f"{ep_eip_opt}--cli-region={target_region}")
                 rollback = {"cmd": "hcloud EIP DeletePublicip --publicip_id=<eip_id>", "label": "Delete EIP"}
             elif ntype == "ELB":
                 action = "CREATE_ELB"
