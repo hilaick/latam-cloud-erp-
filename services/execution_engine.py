@@ -823,8 +823,8 @@ class ExecutionEngine:
                     rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
             elif ntype in ("SG", "SECURITY"):
                 action = "CREATE_SG"
-                cmd = (f"hcloud VPC CreateSecurityGroup --security_group.name={node.get('name','sg-target')} "
-              f"{ep_sg_opt}--cli-region={target_region}")
+                # Huawei auto-creates a default SG with every VPC — query it instead of creating
+                cmd = (f"hcloud VPC ListSecurityGroups --cli-region={target_region} --limit=50")
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"

@@ -315,9 +315,38 @@ class DeterministicExecutor:
                 resolved = cmd
             rc, out, err = _run_shell(resolved)
             # hcloud CLI returns rc=0 even on API errors — check output for error markers
-            _api_error = any(marker in (out + err) for marker in 
-                ['error_msg', 'error_code', 'APIGW.', 'USE_ERROR', '[USE_ERROR]', 'VPC.0', 'ECS.0', 'SMS.0', 'IAM.0'])
-            ok = rc == 0 and not _api_error
+            _combined = out + err
+            _api_error = any(marker in _combined for marker in 
+                ['APIGW.', 'USE_ERROR', '[USE_ERROR]', 'IAM.0'])
+            # Idempotent success: resource already exists — treat as success, capture ID
+            _idempotent_hit = any(marker in _combined for marker in
+                ['already exist', 'already Exist', 'VPC.9902', 'ECS.0004'])
+            if _idempotent_hit and rc == 0:
+                ok = True
+                # For "already exists", query the resource to get its ID for chain extraction
+                _lookup_id = ''
+                if 'CREATE_SG' in action or 'CreateSecurityGroup' in resolved:
+                    _lr = _run_shell('hcloud VPC ListSecurityGroups --cli-region=' + 
+                        (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2') +
+                        ' --cli-profile=internal --limit=50')
+                    if _lr[0] == 0:
+                        import re as _re
+                        _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])
+                        if _m: _lookup_id = _m.group(1)
+                elif 'CREATE_VPC' in action:
+                    _lr = _run_shell('hcloud VPC ListVpcs --cli-region=' + 
+                        (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2') +
+                        ' --cli-profile=internal --limit=50')
+                    if _lr[0] == 0:
+                        import re as _re
+                        _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])
+                        if _m: _lookup_id = _m.group(1)
+                if _lookup_id:
+                    out = f'{{"id": "{_lookup_id}"}}'  # Inject ID for chain extraction
+            else:
+                # Non-idempotent API errors (error_msg without already-exists)
+                _api_error = _api_error or ('error_msg' in _combined and not _idempotent_hit)
+                ok = rc == 0 and not _api_error
             results.append({
                 'cmd': resolved[:160],
                 'status': 'success' if ok else 'failed',
