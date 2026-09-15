@@ -141,20 +141,20 @@ function MigrationOpsDashboard({ project }) {
                     <div className="flex-1">
                         <div className="flex justify-between mb-1">
                             <span className="text-[9px] font-black uppercase text-slate-400">Progress</span>
-                            <span className="text-[9px] font-bold text-slate-600">{executionState.progress_pct ?? 0}%</span>
+                            <span className="text-[9px] font-bold text-slate-300">{executionState.progress_pct ?? 0}%</span>
                         </div>
-                        <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div className="w-full bg-slate-700 rounded-full h-2">
                             <div className="bg-purple-500 h-2 rounded-full transition-all duration-500" style={{ width: `${executionState.progress_pct ?? 0}%` }}></div>
                         </div>
                     </div>
                     <div className="text-right shrink-0">
                         <div className="text-[9px] font-black uppercase text-slate-400">Elapsed</div>
-                        <div className="text-sm font-black text-slate-800">{executionState.elapsed_display || '—'}</div>
+                        <div className="text-sm font-black text-white">{executionState.elapsed_display || '—'}</div>
                     </div>
                     {executionState.elapsed_seconds > 0 && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
                     <div className="text-right shrink-0">
                         <div className="text-[9px] font-black uppercase text-slate-400">ETA</div>
-                        <div className="text-sm font-black text-amber-600">{(() => { const rem = (executionState.elapsed_seconds / executionState.progress_pct) * (100 - executionState.progress_pct); return `${Math.floor(rem/60)}m ${Math.floor(rem%60)}s`; })()}</div>
+                        <div className="text-sm font-black text-amber-400">{(() => { const rem = (executionState.elapsed_seconds / executionState.progress_pct) * (100 - executionState.progress_pct); return `${Math.floor(rem/60)}m ${Math.floor(rem%60)}s`; })()}</div>
                     </div>
                     )}
                 </div>
