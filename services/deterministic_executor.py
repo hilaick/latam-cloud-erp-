@@ -276,6 +276,12 @@ class DeterministicExecutor:
             cmd = c.get('cmd') if isinstance(c, dict) else str(c)
             if not cmd:
                 continue
+            # Inject --cli-profile if missing (hcloud commands need auth)
+            if cmd.startswith('hcloud') and '--cli-profile' not in cmd:
+                if '--cli-region=la-north-2' in cmd or '--cli-region=sa-brazil-1' in cmd:
+                    cmd = cmd.replace('hcloud', 'hcloud --cli-profile=internal', 1)
+                elif '--cli-region=ap-southeast-3' in cmd:
+                    cmd = cmd.replace('hcloud', 'hcloud --cli-profile=erp-source', 1)
             if '<' in cmd and '>' in cmd:
                 resolved = cmd
                 # First substitute chained values from prior steps
@@ -308,7 +314,10 @@ class DeterministicExecutor:
             else:
                 resolved = cmd
             rc, out, err = _run_shell(resolved)
-            ok = rc == 0 and 'USE_ERROR' not in out and '[USE_ERROR]' not in out
+            # hcloud CLI returns rc=0 even on API errors — check output for error markers
+            _api_error = any(marker in (out + err) for marker in 
+                ['error_msg', 'error_code', 'APIGW.', 'USE_ERROR', '[USE_ERROR]', 'VPC.0', 'ECS.0', 'SMS.0', 'IAM.0'])
+            ok = rc == 0 and not _api_error
             results.append({
                 'cmd': resolved[:160],
                 'status': 'success' if ok else 'failed',

@@ -1205,9 +1205,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 pass
                             log(f'[det] {phase_key}: all {len(entries)} steps completed deterministically ✓')
                         else:
-                            log(f'[det] {phase_key}: {len(failures)}/{len(entries)} steps failed — falling directly to agent lane (deterministic is pure-function; same input = same result, retry is useless)')
+                            log(f'[prerequisite] {phase_key}: {len(entries)-len(failures)}/{len(entries)} steps resolved — {len(failures)} deferred to agent lane (missing chain data or auth)')
                             success = False
-                            error = f"Deterministic: {len(failures)} steps failed"
+                            error = f"Prerequisite: {len(failures)} steps deferred to agent"
                             # Fall through to agent spawn below
                     except Exception as det_err:
                         log(f'[det] {phase_key}: deterministic executor error: {det_err}')
