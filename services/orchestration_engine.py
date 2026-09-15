@@ -822,6 +822,11 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 phase_ctx = build_phase_context(phase_key)
                 enriched = f"ERP Migration Project ID: {project_id}. Current pipeline phase: {phase_key}. Customer: {pdata.get('customerName', 'N/A')}. Target region: {pdata.get('region', 'la-south-2')}. Execution mode: agentic orchestration."
 
+                # ── Inject cached cloud state (avoids redundant hcloud calls by agent) ──
+                _cached_state = cloud_cache.prefetch_for_phase(phase_key)
+                if _cached_state:
+                    enriched += f"\n\n{_cached_state}"
+
                 # ── Enriched execution context (injected, so the agent does NOT need to read the DB) ──
                 # The 4.2 agent persisted source_servers (EIPs, SMS IDs, disk), mig project id etc.
                 # to executionContext. Later phases need these values — provide them directly.

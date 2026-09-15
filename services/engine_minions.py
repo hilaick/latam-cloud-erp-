@@ -113,6 +113,34 @@ class CloudQueryCache:
         total = s['hits'] + s['misses']
         hit_rate = f"{s['hits']/total*100:.0f}%" if total > 0 else "N/A"
         return f"cache: {s['hits']} hits / {s['misses']} misses ({hit_rate} hit rate), {s['evictions']} evictions"
+    
+    def prefetch_for_phase(self, phase_key, region='la-north-2', profile='internal'):
+        """Pre-fetch cloud data for a phase and return as context string.
+        This avoids the agent making redundant hcloud calls."""
+        ctx_lines = [f"=== CACHED CLOUD STATE ({phase_key}) ==="]
+        queries = {
+            'PHASE_4_1': [
+                (['VPC', 'ListVpcs', '--limit=20'], 'VPCs'),
+                (['VPC', 'ListSubnets', '--limit=50'], 'Subnets'),
+            ],
+            'PHASE_4_2': [
+                (['SMS', 'ListServers', '--limit=20'], 'SMS_Sources'),
+            ],
+            'PHASE_4_3': [
+                (['ECS', 'NovaListServers', '--limit=20'], 'ECS'),
+            ],
+            'PHASE_4_5': [
+                (['SMS', 'ListTasks', '--limit=20'], 'SMS_Tasks'),
+            ],
+        }
+        for cmd_parts, label in queries.get(phase_key, []):
+            data = self.query(cmd_parts, region=region, profile=profile)
+            if data is not None:
+                ctx_lines.append(f"{label}: {json.dumps(data, indent=2)[:500]}")
+        if len(ctx_lines) > 1:
+            ctx_lines.append("=== END CACHED STATE ===")
+            return '\n'.join(ctx_lines)
+        return ""
 
 
 # Global cache instance (shared across all pipeline runs)
@@ -226,7 +254,11 @@ class PhasePreWarmer:
 
 # Phases that can run concurrently (different regions, different resources)
 CONCURRENT_PHASE_GROUPS = [
-    {'PHASE_4_1', 'PHASE_4_2'},  # Network (target) + Source Prep (source) — different clouds
+    # DISABLED: concurrent phases compete for LB RPM (5-8 RPM/key),
+    # causing rate-limit retries that make total time WORSE than sequential.
+    # Also blocks the pipeline log during concurrent execution.
+    # Keep sequential — optimize each phase via minions + cache instead.
+    # {'PHASE_4_1', 'PHASE_4_2'},
 ]
 
 
