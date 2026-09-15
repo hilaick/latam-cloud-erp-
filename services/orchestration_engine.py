@@ -848,7 +848,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
 
             def log(msg):
                 redacted = redact_secrets(str(msg))
-                pipeline_info['log'].append(redacted)
+                from datetime import datetime as _dt
+                _ts = _dt.now().strftime('%Y-%m-%d %H:%M:%S')
+                pipeline_info['log'].append(f'[{_ts}] {redacted}')
                 logger.info(f"[orchestration:{project_id}] {redacted}")
 
             # ── Load project data for context ──
