@@ -4,339 +4,15 @@
   "target_ecs_map": [
    {
     "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
+    "sms_id": "93c8d5f5-9de2-4fe5-bcd9-6ce0c433dee6",
+    "ecs_id": "",
+    "eip": ""
    },
    {
     "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "SHUTOFF"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "2f9b5e1b-acdc-456c-be10-37a84bc6d391",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "7222e8f4-456a-4b58-8250-7e737e025248",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "20ea22a3-836d-4a3b-bec8-47e3349ddcaa",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "da56ecfa-1820-4af7-9348-80b875c9b9f2",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "20ea22a3-836d-4a3b-bec8-47e3349ddcaa",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "da56ecfa-1820-4af7-9348-80b875c9b9f2",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "20ea22a3-836d-4a3b-bec8-47e3349ddcaa",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "da56ecfa-1820-4af7-9348-80b875c9b9f2",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "20ea22a3-836d-4a3b-bec8-47e3349ddcaa",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "da56ecfa-1820-4af7-9348-80b875c9b9f2",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "20ea22a3-836d-4a3b-bec8-47e3349ddcaa",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "da56ecfa-1820-4af7-9348-80b875c9b9f2",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
-    "status": "SHUTOFF"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
-    "status": "SHUTOFF"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "b2667ee9-3750-4881-8e42-ecd7d3d397f5",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "d5564ed4-edc4-40c8-b1b0-315149454b4c",
-    "status": "ACTIVE"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0002",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
-    "ecs_id": "b2667ee9-3750-4881-8e42-ecd7d3d397f5",
-    "status": "SHUTOFF"
-   },
-   {
-    "source_name": "ecs-49be-e903-20d3-12d0-0001",
-    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
-    "ecs_id": "d5564ed4-edc4-40c8-b1b0-315149454b4c",
-    "status": "SHUTOFF"
+    "sms_id": "243ff564-ae65-40e7-aced-280e2d13ba78",
+    "ecs_id": "",
+    "eip": ""
    }
   ],
   "target_servers": [
@@ -638,7 +314,7 @@
     "commands": [
      {
       "desc": "Provision VPC",
-      "cmd": "hcloud VPC CreateVpc --vpc.name=vpc-default --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
+      "cmd": "hcloud VPC CreateVpc --vpc.name=vpc-default --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916033957' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -731,7 +407,7 @@
     "commands": [
      {
       "desc": "Provision EIP",
-      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=124.243.134.252-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
+      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=124.243.134.252-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916033957' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -762,7 +438,7 @@
     "commands": [
      {
       "desc": "Provision EIP",
-      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=111.119.235.186-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
+      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=111.119.235.186-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916033957' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -793,7 +469,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916033957' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -937,7 +613,7 @@
     "commands": [
      {
       "desc": "Create SMS task",
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=<src_id> --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],
@@ -1163,7 +839,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916033957' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -1307,7 +983,7 @@
     "commands": [
      {
       "desc": "Create SMS task",
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=d5c9c173-46c3-4256-80bb-1e0f03dbf876 --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=<src_id> --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "type": "hcloud"
      }
     ],

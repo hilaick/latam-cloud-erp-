@@ -785,6 +785,8 @@ class ExecutionEngine:
         erp_tag = f"erp-migration-{(project.get('projectId') or 'erp')[-8:]}-{_t.strftime('%Y%m%d%H%M%S')}"
         erp_tag_q = f"'erp-migration*{erp_tag}'"
         plan['erp_tag_value'] = erp_tag
+        # Sandbox VPC naming: erp-migration-{short_id} for isolation from customer VPCs
+        _sandbox_prefix = f"erp-migration-{(project.get('projectId') or 'erp')[-8:]}"
 
         network_nodes = [n for n in migration_resources if _categorize_resource(n) == "network"]
         # Enterprise Project scoping for Phase 4.1 network provisioning

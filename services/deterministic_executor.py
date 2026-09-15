@@ -363,6 +363,7 @@ class DeterministicExecutor:
                 'status': 'success' if ok else 'failed',
                 'rc': rc,
                 'output': (out or err)[:400],
+                'error': ('API error: ' + _combined[:80]) if (not ok and _api_error) else None,
             })
         all_ok = all(r.get('status') == 'success' for r in results)
         entry = {
