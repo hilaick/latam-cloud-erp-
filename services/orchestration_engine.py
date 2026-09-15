@@ -751,7 +751,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                             log_cb=log,
                         )
                         _cresults = _runner.run_group(
-                            _pending, pipeline, project_id, enriched,
+                            _pending, pipeline, project_id, {},  # enriched_context not needed — runner finds steps from pipeline
                             pipeline_info['phase_status'],
                         )
                         # Process results
