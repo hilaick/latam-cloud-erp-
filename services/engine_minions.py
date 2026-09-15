@@ -269,11 +269,18 @@ class ConcurrentPhaseRunner:
             
             def _run(pk, s):
                 try:
-                    success, response, error = self._spawn_fn(
-                        s['goal'], enriched_context, project_id, pk,
-                        log_cb=lambda msg: self._log(f'[{pk}] {msg}')
-                    )
-                    results[pk] = (success, response, error)
+                    # Flask DB calls require app_context — not inherited by threads
+                    from flask import current_app
+                    try:
+                        _app = current_app._get_current_object()
+                    except RuntimeError:
+                        from app import app as _app
+                    with _app.app_context():
+                        success, response, error = self._spawn_fn(
+                            s['goal'], enriched_context, project_id, pk,
+                            log_cb=lambda msg: self._log(f'[{pk}] {msg}')
+                        )
+                        results[pk] = (success, response, error)
                 except Exception as e:
                     results[pk] = (False, '', str(e))
             
