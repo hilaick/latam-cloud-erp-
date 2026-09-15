@@ -300,6 +300,7 @@ class DeterministicExecutor:
                 continue
             # Pre-flight idempotent check: if resource already exists, skip creation
             # CREATE_TARGET_ECS: check if {name}-TARGET exists in target region
+            # SMS_TASK_CREATE: check if SMS task already exists for this server
             _preflight_skip = False
             if action == 'CREATE_TARGET_ECS' and cmd.startswith('hcloud'):
                 _target_name = f"{target}-TARGET"
@@ -324,6 +325,55 @@ class DeterministicExecutor:
                                 break
                     except Exception:
                         pass  # Fall through to normal execution
+            elif action == 'SMS_TASK_CREATE':
+                # Check if SMS tasks already exist for this source server
+                _pf = _run_shell("hcloud SMS ListTasks --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50")
+                if _pf[0] == 0:
+                    import json as _json
+                    try:
+                        _pf_data = _json.loads(_pf[1])
+                        _existing_tasks = _pf_data.get('tasks', [])
+                        # Check by source server name in task
+                        for _t in _existing_tasks:
+                            _t_state = _t.get('state', '')
+                            _t_src = _t.get('source_server_name', '') or ''
+                            if target in _t_src or _t_state in ('RUNNING', 'MIGRATE_SUCCESS', 'READY', 'SYNCING'):
+                                _task_id = _t.get('id', '')
+                                results.append({
+                                    'cmd': f'[idempotent] SMS task already exists: {_task_id[:20]} state={_t_state}',
+                                    'status': 'success',
+                                    'rc': 0,
+                                    'output': f'{{"id": "{_task_id}", "state": "{_t_state}"}}',
+                                    'error': None,
+                                })
+                                chain_vals['task_id'] = _task_id
+                                _preflight_skip = True
+                                break
+                    except Exception:
+                        pass
+            elif action == 'SMS_TASK_START':
+                # Check if SMS task is already running/succeeded
+                _pf = _run_shell("hcloud SMS ListTasks --cli-region=ap-southeast-3 --cli-profile=erp-source --limit=50")
+                if _pf[0] == 0:
+                    import json as _json
+                    try:
+                        _pf_data = _json.loads(_pf[1])
+                        for _t in _pf_data.get('tasks', []):
+                            _t_state = _t.get('state', '')
+                            if _t_state in ('RUNNING', 'MIGRATE_SUCCESS', 'SYNCING'):
+                                _task_id = _t.get('id', '')
+                                results.append({
+                                    'cmd': f'[idempotent] SMS task already {_t_state}: {_task_id[:20]}',
+                                    'status': 'success',
+                                    'rc': 0,
+                                    'output': f'{{"id": "{_task_id}", "state": "{_t_state}"}}',
+                                    'error': None,
+                                })
+                                chain_vals['task_id'] = _task_id
+                                _preflight_skip = True
+                                break
+                    except Exception:
+                        pass
             if _preflight_skip:
                 continue  # Skip the actual creation command
             if cmd.startswith('hcloud') and '--cli-profile' not in cmd:
