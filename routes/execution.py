@@ -2235,17 +2235,16 @@ def orchestration_status(project_id):
     try:
         _es = ExecutionState.query.filter_by(project_id=project_id).first()
         if _es and _es.last_active_at:
-            status['started_at'] = _es.last_active_at.isoformat()
-            # Elapsed time
             from datetime import datetime, timezone
             _started = _es.last_active_at
             if _started.tzinfo is None:
                 _started = _started.replace(tzinfo=timezone.utc)
+            status['started_at'] = _started.isoformat()
             _elapsed = (datetime.now(timezone.utc) - _started).total_seconds()
             status['elapsed_seconds'] = round(_elapsed, 1)
             status['elapsed_display'] = f"{int(_elapsed//60)}m {int(_elapsed%60)}s"
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.warning(f"Elapsed timer error: {_e}")
 
     # ── Progress bar ──
     try:
