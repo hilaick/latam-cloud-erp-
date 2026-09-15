@@ -1787,6 +1787,24 @@ def start_orchestration(project_id):
     return jsonify(result), code
 
 
+@execution_bp.route('/api/execution/<project_id>/orchestrate/pause', methods=['POST'])
+@jwt_required()
+def pause_orchestration(project_id):
+    """Pause the pipeline — current phase completes, then suspends before next."""
+    from services.orchestration_engine import pause_pipeline
+    result = pause_pipeline(project_id)
+    return jsonify(result), 200 if result.get('success') else 409
+
+
+@execution_bp.route('/api/execution/<project_id>/orchestrate/stop', methods=['POST'])
+@jwt_required()
+def stop_orchestration(project_id):
+    """Stop the pipeline — halts at the next phase boundary. Kills agent subprocess."""
+    from services.orchestration_engine import stop_pipeline
+    result = stop_pipeline(project_id)
+    return jsonify(result), 200 if result.get('success') else 409
+
+
 @execution_bp.route('/api/execution/<project_id>/orchestrate/status', methods=['GET'])
 @jwt_required()
 def orchestration_status(project_id):

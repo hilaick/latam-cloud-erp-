@@ -995,7 +995,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                             body: JSON.stringify({}),
                                         });
                                         const data = await res.json();
-                                        if (data.success) window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                                        if (data.success) {
+                                            setAutoOrchestrating(false);
+                                            window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
+                                        }
                                     } catch (e) { console.error('[pause] error', e); }
                                 }}
                                 className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors"
@@ -1057,12 +1060,16 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         for (const ph of st.completed_phases) ps[ph] = 'completed';
                                         setPhaseStatus(ps);
                                     }
+                                    // Update elapsed/ETA from top-level
+                                    if (data.elapsed_display) setLiveElapsedDisplay(data.elapsed_display);
+                                    if (data.eta_display) setLiveEtaDisplay(data.eta_display);
+                                    if (data.progress_pct != null) setLiveProgressPct(data.progress_pct);
                                 }
                             } catch (e) { console.error('[refresh] status error', e); }
                             // Also dispatch for any other listeners
                             window.dispatchEvent(new CustomEvent('hermes-refresh-status'));
                         }}
-                        className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                        className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700"
                         title="Refresh cloud state + pipeline status"
                     >
                         <i className="fas fa-sync-alt mr-1"></i> Refresh
