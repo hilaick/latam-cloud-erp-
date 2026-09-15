@@ -574,28 +574,51 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
             # completion like "7/7 done" on an empty cloud).
             completed_seed = []
             try:
-                _proj_seed = ProjectData.query.get(project_id)
-                if _proj_seed:
-                    _dt_seed = json.loads(_proj_seed.delegate_tasks or "[]")
-                    _candidate_seed = [t.get("phase") for t in _dt_seed
-                                       if t.get("status") == "COMPLETED" and t.get("phase")]
+                # ── PRIMARY: Read persisted completed_phases from ExecutionState ──
+                # This survives Flask restarts (written on each phase completion)
+                _es_seed = ExecutionState.query.filter_by(project_id=project_id).first()
+                if _es_seed and _es_seed.completed_phases:
+                    _candidate_seed = json.loads(_es_seed.completed_phases)
+                    if _candidate_seed:
+                        log(f'[resume] Found persisted completed_phases: {_candidate_seed}')
+                else:
+                    # ── FALLBACK: Read from delegate_tasks (legacy) ──
+                    _proj_seed = ProjectData.query.get(project_id)
+                    if _proj_seed:
+                        _dt_seed = json.loads(_proj_seed.delegate_tasks or "[]")
+                        _candidate_seed = [t.get("phase") for t in _dt_seed
+                                           if t.get("status") == "COMPLETED" and t.get("phase")]
+                    else:
+                        _candidate_seed = []
                     # Validate candidate seed against live cloud evidence.
                     # If the cloud has zero migrated resources, nothing is done.
                     _has_cloud = False
                     try:
                         import subprocess as _sp
-                        _x = _sp.run(['hcloud','SMS','ListServers','--cli-region=ap-southeast-3','--cli-profile=erp-src'],
+                        _x = _sp.run(['hcloud','SMS','ListServers','--cli-region=ap-southeast-3','--cli-profile=erp-source'],
                                      capture_output=True, text=True, timeout=20)
                         _d = json.loads(_x.stdout) if _x.stdout else {}
                         _srcs = _d.get('source_servers') or []
                         _has_sms = len(_srcs) > 0
-                        _x2 = _sp.run(['hcloud','VPC','ListVpcs','--cli-region=la-north-2','--cli-profile=erp-src'],
-                                      capture_output=True, text=True, timeout=20)
+                        _x2 = _sp.run(['hcloud','VPC','ListVpcs','--cli-region=la-north-2','--cli-profile=internal'],
+                                     capture_output=True, text=True, timeout=20)
                         _d2 = json.loads(_x2.stdout) if _x2.stdout else {}
                         _vpcs = _d2.get('vpcs') or _d2.get('vpc') or _d2.get('Vpcs') or []
-                        _non_default = [v for v in _vpcs if v.get('name') != 'default']
-                        _has_vpc = len(_non_default) > 0
-                        _has_cloud = _has_sms and _has_vpc
+                        # Check for migration VPC — tagged with erp-migration OR non-default name
+                        # (vpc-default IS the migration VPC if it has erp-migration tag)
+                        _migration_vpc = any(
+                            v.get('name') != 'default' or 
+                            any(t.get('key','').startswith('erp-migration') for t in (v.get('tags') or []))
+                            for v in _vpcs
+                        )
+                        _has_vpc = len(_vpcs) > 0 and _migration_vpc
+                        # Also check target ECS as stronger evidence of completion
+                        _x3 = _sp.run(['hcloud','ECS','NovaListServers','--cli-region=la-north-2','--cli-profile=internal','--limit=5'],
+                                     capture_output=True, text=True, timeout=20)
+                        _d3 = json.loads(_x3.stdout) if _x3.stdout else {}
+                        _srvs = _d3.get('servers') or []
+                        _has_target_ecs = any('TARGET' in s.get('name','') for s in _srvs)
+                        _has_cloud = _has_sms and (_has_vpc or _has_target_ecs)
                     except Exception:
                         pass
                     if _has_cloud:
@@ -1317,6 +1340,14 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         log(f'[output] {redact_secrets(response[:200] if response else "")}...' if response and len(response) > 200 else f'[output] {redact_secrets(response or "")}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
+                    
+                    # ── Persist completed_phases to DB (survives Flask restart) ──
+                    try:
+                        state.completed_phases = json.dumps(pipeline_info['completed_phases'])
+                        state.phase_status_map = json.dumps(pipeline_info['phase_status'])
+                        db.session.commit()
+                    except Exception:
+                        pass
                     
                     # ── Pre-warm next phase (engine minion) ──
                     try:

@@ -216,6 +216,8 @@ class ExecutionState(db.Model):
     migration_mode = db.Column(db.String(50)) # 'EP' or 'VPC_SANDBOX'
     last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_pipeline_log = db.Column(db.Text)  # JSON list of latest orchestration log lines (survives restart)
+    completed_phases = db.Column(db.Text)   # JSON list of completed phase keys (survives Flask restart)
+    phase_status_map = db.Column(db.Text)   # JSON dict of phase→status (survives Flask restart)
     # Relationship to structured logs
     logs = db.relationship('ExecutionLog', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
 
