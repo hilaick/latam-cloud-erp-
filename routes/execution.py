@@ -2257,7 +2257,15 @@ def orchestration_status(project_id):
     except Exception:
         pass
 
-    return jsonify({'success': True, 'status': status})
+    # Flatten key fields to top level so frontend can read executionState.progress_pct directly
+    # (instead of executionState.status.progress_pct)
+    resp = {'success': True, 'status': status}
+    for _k in ('progress_pct', 'elapsed_display', 'elapsed_seconds', 'total_phases',
+               'completed_count', 'current_phase', 'completed_phases', 'phase_status',
+               'started_at', 'thread_alive', 'failed_phase'):
+        if _k in status:
+            resp[_k] = status[_k]
+    return jsonify(resp)
 
 
 @execution_bp.route('/api/execution/<project_id>/orchestrate/resume', methods=['POST'])
