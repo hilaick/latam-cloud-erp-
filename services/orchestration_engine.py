@@ -198,12 +198,29 @@ def _extract_phase_outputs(phase_key, agent_response, enriched_context, project_
     
     try:
         ec = enriched_context or {}
+        # enriched_context may be a string (not a dict) — handle gracefully
+        if isinstance(ec, str):
+            ec = {}
         
         if phase_key == 'PHASE_4_1':
-            # Network: VPC, Subnet, SG, EIPs
-            outputs['vpc_id'] = ec.get('vpc_id', '')
-            outputs['subnet_id'] = ec.get('subnet_id', '')
-            outputs['sg_id'] = ec.get('sg_id', '')
+            # Network: VPC, Subnet, SG, EIPs — extract from agent response
+            import re as _re
+            _resp = agent_response or ''
+            vpc_ids = _re.findall(r'vpc[_\s-]?id[:\s]*([0-9a-f]{8}-[0-9a-f]{4}[0-9a-f-]+)', _resp, _re.IGNORECASE)
+            if not vpc_ids:
+                vpc_ids = _re.findall(r'VPC[:\s]*([0-9a-f]{8}-[0-9a-f]{4}[0-9a-f-]+)', _resp, _re.IGNORECASE)
+            if vpc_ids:
+                outputs['vpc_id'] = vpc_ids[0]
+            subnet_ids = _re.findall(r'subnet[_\s-]?id[:\s]*([0-9a-f]{8}-[0-9a-f]{4}[0-9a-f-]+)', _resp, _re.IGNORECASE)
+            if subnet_ids:
+                outputs['subnet_id'] = subnet_ids[0]
+            sg_ids = _re.findall(r'(?:security[_\s]?group|sg)[_\s-]?id[:\s]*([0-9a-f]{8}-[0-9a-f]{4}[0-9a-f-]+)', _resp, _re.IGNORECASE)
+            if sg_ids:
+                outputs['sg_id'] = sg_ids[0]
+            # Also extract from ec dict if available
+            outputs['vpc_id'] = outputs.get('vpc_id') or ec.get('vpc_id', '')
+            outputs['subnet_id'] = outputs.get('subnet_id') or ec.get('subnet_id', '')
+            outputs['sg_id'] = outputs.get('sg_id') or ec.get('sg_id', '')
             outputs['eip_ids'] = ec.get('eip_ids', [])
             outputs['eip_addresses'] = ec.get('eip_addresses', [])
             
