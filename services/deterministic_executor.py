@@ -141,6 +141,20 @@ class DeterministicExecutor:
             if nm:
                 source_names.setdefault(nm, ip)
 
+        # Source ECS UUIDs from plan's source_resource_map (resolved at build time from live discovery)
+        source_ecs_ids = {}  # name -> source ECS UUID (for DISCOVER_SOURCE_SPECS)
+        srm = p.get('source_resource_map') or {}
+        for _sn, _sd in srm.items():
+            if _sd.get('id'):
+                source_ecs_ids[_sn] = _sd['id']
+                source_names.setdefault(_sn, _sd.get('ips', [''])[0] if _sd.get('ips') else '')
+        # Also enrich from executionContext if agent already discovered
+        for s in (ec.get('source_servers') or []):
+            name = s.get('name') or ''
+            src_ecs = s.get('source_ecs_id') or s.get('ecs_id') or ''
+            if name and src_ecs:
+                source_ecs_ids.setdefault(name, src_ecs)
+
         mig_project_id = (p.get('migProjectId') or p.get('mig_project_id') or
                           (ec.get('sms_migration_project_id') if isinstance(ec, dict) else '') or
                           (ec.get('mig_project_id') if isinstance(ec, dict) else '') or '')
@@ -207,6 +221,7 @@ class DeterministicExecutor:
             'source_names': source_names,
             'source_sms_ids': source_sms_ids,   # for <src_id>
             'source_sms_disk_ids': source_sms_disk_ids,  # for <sms_disk_id>
+            'source_ecs_ids': source_ecs_ids,    # for <source_ecs_id> (source UUID)
             'target_ecs_ids': target_ecs_ids,   # for <ecs_id>
             'target_eips': target_eips,          # for <target_eip>
             'mig_project_id': mig_project_id,
@@ -239,6 +254,7 @@ class DeterministicExecutor:
             tid = (ctx.get('target_ecs_ids') or {}).get(target_name, '')
             teip = (ctx.get('target_eips') or {}).get(target_name, '')
             sdid = (ctx.get('source_sms_disk_ids') or {}).get(target_name, '')
+            src_ecs = (ctx.get('source_ecs_ids') or {}).get(target_name, '')
             if sid:
                 out = out.replace('<src_id>', sid)
             if tid:
@@ -247,6 +263,11 @@ class DeterministicExecutor:
                 out = out.replace('<target_eip>', teip)
             if sdid:
                 out = out.replace('<sms_disk_id>', sdid)
+            if src_ecs:
+                out = out.replace('<source_ecs_id>', src_ecs)
+                # Also resolve <ecs_id> for DISCOVER steps that need source UUID
+                if '<ecs_id>' in out and not tid:
+                    out = out.replace('<ecs_id>', src_ecs)
         # <source_ip> per named target: replace name-keyed tokens
         for name, ip in ctx.get('source_names', {}).items():
             out = out.replace(f'<ip_{name}>', ip)

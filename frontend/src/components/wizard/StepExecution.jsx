@@ -276,6 +276,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const [completedOrchPhases, setCompletedOrchPhases] = useState(new Set());
     const [failedOrchPhaseIdx, setFailedOrchPhaseIdx] = useState(null);
     const [phaseStatus, setPhaseStatus] = useState({}); // { PHASE_4_X: 'completed'|'failed'|'running' }
+    const [phaseDurations, setPhaseDurations] = useState({}); // { PHASE_4_X: '0m 18s' } — per-phase elapsed from backend
     const [prereqChecked, setPrereqChecked] = useState(project?.prereqsValidated === true);
     const [prereqPassed, setPrereqPassed] = useState(project?.prereqsValidated === true);
     const [dryRunResult, setDryRunResult] = useState(null);
@@ -567,6 +568,8 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 }
                 // Update phase status map
                 if (st.phase_status) setPhaseStatus(st.phase_status);
+                // Update per-phase elapsed durations
+                if (st.phase_durations) setPhaseDurations(st.phase_durations);
                 // Update completed phases
                 if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                 // Track live current phase (from status — authoritative, survives
@@ -656,6 +659,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     // Sync log from backend
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.phase_durations) setPhaseDurations(st.phase_durations);
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     setFailedOrchPhaseIdx(st.failed_phase ?? null);
                     // Store external execution info for display
@@ -669,17 +673,20 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 } else if (st.status === 'crashed') {
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.phase_durations) setPhaseDurations(st.phase_durations);
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     setFailedOrchPhaseIdx(st.failed_phase ?? null);
                     setCollapsedSections(prev => ({...prev, logs: false}));
                 } else if (st.status === 'halted') {
                     if (st.log) setOrchestrationLog(st.log);
                     if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.phase_durations) setPhaseDurations(st.phase_durations);
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     setFailedOrchPhaseIdx(st.failed_phase ?? null);
                 } else if (st.status === 'completed') {
                     if (st.completed_phases) setCompletedOrchPhases(new Set(st.completed_phases));
                     if (st.phase_status) setPhaseStatus(st.phase_status);
+                    if (st.phase_durations) setPhaseDurations(st.phase_durations);
                     updatePhase('COMPLETED', 'DONE');
                 }
             } catch (err) {

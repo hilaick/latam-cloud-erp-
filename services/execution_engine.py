@@ -490,6 +490,44 @@ class ExecutionEngine:
         target_arch = project.get("targetArchitecture", {})
         mapper_nodes = project.get("mapperNodes", [])
 
+        # ── Source resource resolution: map SOW names → real Huawei Cloud UUIDs ──
+        # When we have source access, resolve placeholder IDs to real resource IDs
+        # This runs ONCE at plan build time, not during execution
+        source_region = project.get("sourceRegion", "ap-southeast-3")
+        source_resource_map = {}  # {sow_name: {id, flavor, ips, ...}}
+        try:
+            import subprocess as _sp
+            _src_profile = "erp-source"  # working profile for source region
+            _r = _sp.run(
+                f"hcloud ECS ListServersDetails --cli-region={source_region} --cli-profile={_src_profile} --limit=100",
+                shell=True, capture_output=True, text=True, timeout=30)
+            if _r.returncode == 0 and _r.stdout:
+                import json as _j
+                _s = _r.stdout.find('[')
+                _e = _r.stdout.rfind(']') + 1
+                if _s > 0 and _e > _s:
+                    for _sv in _j.loads(_r.stdout[_s:_e]):
+                        _n = _sv.get('name', '')
+                        if _n.startswith('ecs-'):
+                            _ips = []
+                            for _at, _al in _sv.get('addresses', {}).items():
+                                for _a in _al:
+                                    _ips.append(_a.get('addr', ''))
+                            source_resource_map[_n] = {
+                                'id': _sv.get('id', ''),
+                                'flavor_id': _sv.get('flavor', {}).get('id', ''),
+                                'status': _sv.get('status', ''),
+                                'ips': _ips,
+                                'os_type': _sv.get('metadata', {}).get('__os_type', ''),
+                                'image_id': _sv.get('image', {}).get('id', ''),
+                                'vcpus': _sv.get('flavor', {}).get('vcpus', 0),
+                                'ram_mb': _sv.get('flavor', {}).get('ram', 0),
+                            }
+            if source_resource_map:
+                logger.info(f"[SOURCE_RESOLVE] Resolved {len(source_resource_map)} source ECS servers from {source_region}")
+        except Exception as _e:
+            logger.warning(f"[SOURCE_RESOLVE] Could not resolve source resources: {_e}")
+
         # ── Account identity & EPS provisioning context (from presales intake) ──
         account_id = project.get("accountId", "")
         huawei_account_name = project.get("huaweiAccountName", "")
@@ -553,6 +591,7 @@ class ExecutionEngine:
             "eps_path_a": eps_path_a,
             "eps_requires_verification": eps_requires_verification,
             "built_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "source_resource_map": source_resource_map,  # SOW name → real UUID mapping
             "pillars": {"compute": 0, "database": 0, "storage": 0, "network": 0},
             "steps": [],
             "summary": {},
