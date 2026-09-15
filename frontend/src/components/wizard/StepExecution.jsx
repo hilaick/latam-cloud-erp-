@@ -1316,7 +1316,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                     <div className="text-[7px] text-purple-300 mt-0.5">⏱ {liveElapsedDisplay}</div>
                                     )}
                                     {autoOrchestrating && liveEtaDisplay && liveEtaDisplay !== '—' && (
-                                    <div className="text-[7px] text-purple-300">ETA {liveEtaDisplay}</div>
+                                    <div className="text-[7px] text-purple-300">⏳ {liveEtaDisplay} left</div>
                                     )}
                                 </div>
                                 {/* SVG connecting circle */}

@@ -153,7 +153,7 @@ function MigrationOpsDashboard({ project }) {
                     </div>
                     {executionState.eta_display && executionState.eta_display !== '—' && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
                     <div className="text-right shrink-0">
-                        <div className="text-[9px] font-black uppercase text-slate-400">ETA</div>
+                        <div className="text-[9px] font-black uppercase text-slate-400">Remaining</div>
                         <div className="text-sm font-black text-amber-400">{executionState.eta_display}</div>
                     </div>
                     )}
