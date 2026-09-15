@@ -2233,11 +2233,21 @@ def orchestration_status(project_id):
 
     # ── Add started_at timestamp for elapsed timer ──
     try:
-        from models import ExecutionState as _ES
+        from models import ExecutionState as _ES, PhaseState as _PS
         _es = _ES.query.filter_by(project_id=project_id).first()
         if _es and _es.last_active_at:
             from datetime import datetime, timezone
+            # Use PhaseState started_at (earliest phase) for accurate elapsed
+            # across Flask restarts, fallback to last_active_at
             _started = _es.last_active_at
+            try:
+                _earliest = _PS.query.filter_by(
+                    project_id=project_id
+                ).order_by(_PS.started_at.asc()).first()
+                if _earliest and _earliest.started_at:
+                    _started = _earliest.started_at
+            except Exception:
+                pass
             if _started.tzinfo is None:
                 _started = _started.replace(tzinfo=timezone.utc)
             status['started_at'] = _started.isoformat()

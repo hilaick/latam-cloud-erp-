@@ -1057,6 +1057,25 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 state.current_phase = phase_key
                 state.status = 'IN_PROGRESS'
                 state.last_active_at = datetime.utcnow()
+                
+                # Mark PhaseState as running (for accurate elapsed timer)
+                try:
+                    from models import PhaseState
+                    ps = PhaseState.query.filter_by(
+                        project_id=project_id, phase=phase_key
+                    ).first()
+                    if not ps:
+                        ps = PhaseState(
+                            execution_state_id=state.id,
+                            project_id=project_id,
+                            phase=phase_key,
+                        )
+                        db.session.add(ps)
+                    ps.status = 'running'
+                    ps.started_at = datetime.utcnow()
+                    db.session.commit()
+                except Exception:
+                    pass
                 db.session.commit()
 
                 # Build enriched context
