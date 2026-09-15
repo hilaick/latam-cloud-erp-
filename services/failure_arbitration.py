@@ -155,14 +155,17 @@ def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,
             # and should NOT trigger a halt if the conclusion shows success.
             SOFT_MARKERS = ['❌', 'blocked', 'no data transferred', '0%',
                             'Check failed', 'Not ready', 'SMS.0515',
-                            'consistently fails', 'impossible via API']
+                            'consistently fails', 'impossible via API',
+                            'unknown toolsets']  # MCP warning noise, not real failure
             # Success override signals — if ANY of these appear in the
             # conclusion, soft markers are ignored (they're just context).
             SUCCESS_OVERRIDES = ['✅', 'complete', 'completed', 'success',
                                  'provisioned', 'created successfully', 'verified',
                                  'all.*ok', 'all.*check', 'no orphaned', 'all clean',
                                  'ready for next', 'no new creation needed',
-                                 'already exist', 'already provisioned']
+                                 'already exist', 'already provisioned',
+                                 'migrate_success', 'replications complete',
+                                 'all replications']
             tail = str(resp[-300:]).lower() if resp else ''
             # 1. Hard blockers in conclusion → halt immediately
             if tail and any(t in tail for t in HARD_BLOCKERS):
