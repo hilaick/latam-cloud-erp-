@@ -872,7 +872,8 @@ def build_execution_plan(project_id):
 
         return jsonify({"success": True, "plan": plan})
     except Exception as e:
-        logging.error(f"build-plan failed: {e}")
+        import traceback
+        logging.error(f"build-plan failed: {e}\n{traceback.format_exc()}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

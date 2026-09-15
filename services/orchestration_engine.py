@@ -88,7 +88,7 @@ PIPELINE_PHASES = [
     {
         'phase': 'PHASE_4_3',
         'label': 'Build App Landing Zone',
-        'goal': 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.',
+        'goal': 'Provision the application landing zone: deploy target VPC, ECS instances, and empty PaaS databases. CRITICAL CONSTRAINT: Target ECS OS image MUST match the source server OS exactly. If source is Ubuntu 22.04, target MUST use Ubuntu 22.04 image (never SUSE, CentOS, or any other OS). Query IMS ListImages to find the matching image in the target region. SMS migration REQUIRES source and target OS to match — a mismatch causes SMS.1404 and SMS.3103 errors. Confirm infrastructure matches the approved Target Architecture from Phase 2.4.',
     },
     {
         'phase': 'PHASE_4_4',
@@ -1081,6 +1081,34 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 # Build enriched context
                 phase_ctx = build_phase_context(phase_key)
                 enriched = f"ERP Migration Project ID: {project_id}. Current pipeline phase: {phase_key}. Customer: {pdata.get('customerName', 'N/A')}. Target region: {pdata.get('region', 'la-south-2')}. Execution mode: agentic orchestration."
+                
+                # ── Inject source OS constraint for PHASE_4_3 ──
+                # SMS REQUIRES target OS to match source OS exactly.
+                # Query source servers and inject OS info so agent picks correct image.
+                if phase_key == 'PHASE_4_3':
+                    try:
+                        _p2_outs = _load_phase_outputs(project_id, 'PHASE_4_2')
+                        if _p2_outs.get('source_os'):
+                            enriched += f" SOURCE OS: {_p2_outs['source_os']} — target image MUST match."
+                        else:
+                            # Query SMS sources directly
+                            import subprocess as _sp
+                            _x = _sp.run(['hcloud','SMS','ListServers','--cli-region=ap-southeast-3','--cli-profile=erp-source','--limit=10'],
+                                         capture_output=True, text=True, timeout=20)
+                            _d = json.loads(_x.stdout) if _x.stdout else {}
+                            _srcs = _d.get('source_servers') or []
+                            if isinstance(_d, list):
+                                _srcs = _d
+                            _os_info = set()
+                            for _s in _srcs:
+                                _os_type = _s.get('os_type', '')
+                                _os_ver = _s.get('os_version', '')
+                                if _os_type or _os_ver:
+                                    _os_info.add(f"{_os_type} {_os_ver}".strip())
+                            if _os_info:
+                                enriched += f" SOURCE OS: {', '.join(_os_info)} — target image MUST match exactly. Query IMS ListImages with --__imagetype=gold to find matching image in target region."
+                    except Exception:
+                        pass
                 
                 # ── Inject resume context (previous phase outputs from DB) ──
                 if _resume_context:
