@@ -25,8 +25,10 @@ CHAIN_EXTRACTORS = {
     'CREATE_VPC':     [(r'"(id|vpc_id)"\s*:\s*"([0-9a-f-]{36})"', 2), (r'vpc_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{36})', 1)],
     'CREATE_SUBNET':  [(r'"(id|subnet_id)"\s*:\s*"([0-9a-f-]{36})"', 2), (r'subnet_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{36})', 1)],
     'CREATE_SG':      [(r'"(id|security_group_id)"\s*:\s*"([0-9a-f-]{36})"', 2), (r'security_group_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{36})', 1)],
+    'CREATE_EIP':     [(r'"(id|publicip_id)"\s*:\s*"([0-9a-f-]{36})"', 2), (r'publicip_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{36})', 1)],
     'CREATE_TARGET_ECS': [(r'"(id|server_id)"\s*:\s*"([0-9a-f-]{36})"', 2), (r'server_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{36})', 1)],
     'SMS_TASK_CREATE': [(r'"(id|task_id)"\s*:\s*"([0-9a-f-]{32,36})"', 2), (r'task_id["\']?\s*[:=]\s*["\']?([0-9a-f-]{32,36})', 1)],
+    'ADD_SG_RULES_SMS': [(r'"(id)"\s*:\s*"([0-9a-f-]{36})"', 2)],  # rule ID for trace
 }
 
 # ── Placeholder registry: placeholder -> resolution strategy + source key ──

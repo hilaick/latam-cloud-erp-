@@ -325,18 +325,29 @@ class DeterministicExecutor:
                 ok = True
                 # For "already exists", query the resource to get its ID for chain extraction
                 _lookup_id = ''
+                _region = (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2')
                 if 'CREATE_SG' in action or 'CreateSecurityGroup' in resolved:
-                    _lr = _run_shell('hcloud VPC ListSecurityGroups --cli-region=' + 
-                        (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2') +
-                        ' --cli-profile=internal --limit=50')
+                    # Find the migration SG by name (sg-migration), not the default SG
+                    _lr = _run_shell(f'hcloud VPC ListSecurityGroups --cli-region={_region} --cli-profile=internal --limit=50')
+                    if _lr[0] == 0:
+                        import re as _re
+                        # Look for sg-migration specifically
+                        for _m in _re.finditer(r'"name"\s*:\s*"([^"]+)"[^}]*?"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1]):
+                            if 'migration' in _m.group(1).lower():
+                                _lookup_id = _m.group(2); break
+                        if not _lookup_id:
+                            # Fallback: first non-default SG
+                            for _m in _re.finditer(r'"name"\s*:\s*"([^"]+)"[^}]*?"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1]):
+                                if _m.group(1) != 'default':
+                                    _lookup_id = _m.group(2); break
+                elif 'CREATE_VPC' in action:
+                    _lr = _run_shell(f'hcloud VPC ListVpcs --cli-region={_region} --cli-profile=internal --limit=50')
                     if _lr[0] == 0:
                         import re as _re
                         _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])
                         if _m: _lookup_id = _m.group(1)
-                elif 'CREATE_VPC' in action:
-                    _lr = _run_shell('hcloud VPC ListVpcs --cli-region=' + 
-                        (resolved.split('--cli-region=')[1].split()[0] if '--cli-region=' in resolved else 'la-north-2') +
-                        ' --cli-profile=internal --limit=50')
+                elif 'CREATE_EIP' in action:
+                    _lr = _run_shell(f'hcloud EIP ListPublicips --cli-region={_region} --cli-profile=internal --limit=50')
                     if _lr[0] == 0:
                         import re as _re
                         _m = _re.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _lr[1])
@@ -392,6 +403,9 @@ class DeterministicExecutor:
         steps' <placeholders>. Secret placeholders (<AK>, <SK>...) are NEVER
         substituted — they mark 'env' strategy and report blocked to force the
         agent lane to use auth.cfg / env injection instead.
+
+        Optimization: after VPC completes, runs independent steps (Subnet, SG, EIP)
+        in parallel using ThreadPoolExecutor since they only need vpc_id.
         """
         steps = [s for s in (plan.get('steps') or []) if s.get('phase') == self.phase_key]
         if not steps:
@@ -400,17 +414,65 @@ class DeterministicExecutor:
         chain_vals = {}   # {action: value} — from previous step outputs
         entries = []
         failures = []
+        
+        # Phase 1: Run VPC step first (everything depends on it)
+        # Phase 2: Run independent steps in parallel (Subnet, SG, EIPs)
+        # Phase 3: Run dependent steps sequentially (SG rules need sg_id)
+        _vpc_done = False
+        _parallel_batch = []
+        _sequential_rest = []
+        
         for s in steps:
+            action = s.get('action', '')
+            if not _vpc_done and action == 'CREATE_VPC':
+                # Must run first
+                e = self.run_step(s, ctx, log, chain_vals)
+                entries.append(e)
+                if e.get('results'):
+                    for r in e['results']:
+                        if r.get('output'):
+                            cv = extract_chained_values(action, r['output'])
+                            if cv: chain_vals.update(cv)
+                if e['status'] != 'success': failures.append(e)
+                _vpc_done = True
+            elif _vpc_done and action in ('CREATE_SUBNET', 'CREATE_SG', 'CREATE_EIP'):
+                _parallel_batch.append(s)
+            else:
+                _sequential_rest.append(s)
+        
+        # Phase 2: Parallel execution of independent steps
+        if _parallel_batch:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            _par_results = {}
+            with ThreadPoolExecutor(max_workers=min(len(_parallel_batch), 4)) as pool:
+                futures = {pool.submit(self.run_step, s, ctx, log, dict(chain_vals)): s 
+                           for s in _parallel_batch}
+                for fut in as_completed(futures):
+                    s = futures[fut]
+                    e = fut.result()
+                    _par_results[id(s)] = e
+            # Collect in original order
+            for s in _parallel_batch:
+                e = _par_results.get(id(s))
+                if e:
+                    entries.append(e)
+                    if e.get('results'):
+                        for r in e['results']:
+                            if r.get('output'):
+                                cv = extract_chained_values(s.get('action', ''), r['output'])
+                                if cv: chain_vals.update(cv)
+                    if e['status'] != 'success': failures.append(e)
+        
+        # Phase 3: Sequential dependent steps (SG rules, etc.)
+        for s in _sequential_rest:
             e = self.run_step(s, ctx, log, chain_vals)
             entries.append(e)
-            # Capture chained values even from failed steps that produced output
             if e.get('results'):
                 for r in e['results']:
                     if r.get('output'):
                         cv = extract_chained_values(s.get('action', ''), r['output'])
-                        if cv:
-                            chain_vals.update(cv)
-            if e['status'] != 'success':
-                failures.append(e)
+                        if cv: chain_vals.update(cv)
+            if e['status'] != 'success': failures.append(e)
+        
         success = len(failures) == 0
         return success, entries, failures

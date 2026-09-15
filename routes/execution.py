@@ -2302,7 +2302,7 @@ def orchestration_status(project_id):
     resp = {'success': True, 'status': status}
     for _k in ('progress_pct', 'elapsed_display', 'elapsed_seconds', 'total_phases',
                'completed_count', 'current_phase', 'completed_phases', 'phase_status',
-               'started_at', 'thread_alive', 'failed_phase', 'eta_display', 'eta_seconds'):
+               'phase_durations', 'started_at', 'thread_alive', 'failed_phase', 'eta_display', 'eta_seconds'):
         if _k in status:
             resp[_k] = status[_k]
     return jsonify(resp)

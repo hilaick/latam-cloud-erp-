@@ -818,13 +818,16 @@ class ExecutionEngine:
                     rollback = {"cmd": "hcloud VPC DeleteSubnet --subnet_id=<subnet_id>", "label": "Delete subnet"}
                 else:
                     action = "CREATE_VPC"
-                    cmd = (f"hcloud VPC CreateVpc --vpc.name={node.get('name','vpc-target')} --vpc.cidr={node.get('cidr','192.168.0.0/16')} "
+                    _vpc_name = f"{_sandbox_prefix}-vpc"  # Sandbox VPC for migration isolation
+                    cmd = (f"hcloud VPC CreateVpc --vpc.name={_vpc_name} --vpc.cidr={node.get('cidr','192.168.0.0/16')} "
                               f"--vpc.tags.1={erp_tag_q}{ep_vpc_opt} --cli-region={target_region}")
                     rollback = {"cmd": "hcloud VPC DeleteVpc --vpc_id=<vpc_id>", "label": "Delete VPC"}
             elif ntype in ("SG", "SECURITY"):
                 action = "CREATE_SG"
-                # Huawei auto-creates a default SG with every VPC — query it instead of creating
-                cmd = (f"hcloud VPC ListSecurityGroups --cli-region={target_region} --limit=50")
+                sg_name = f"{_sandbox_prefix}-sg"  # Migration SG in sandbox VPC
+                # Create migration SG; if already exists, ListSecurityGroups will find it
+                cmd = (f"hcloud VPC CreateSecurityGroup --security_group.name={sg_name} "
+                       f"--vpc_id=<vpc_id> {ep_sg_opt}--cli-region={target_region}")
                 rollback = {"cmd": "hcloud VPC DeleteSecurityGroup --security_group_id=<sg_id>", "label": "Delete SG"}
             elif ntype == "EIP":
                 action = "CREATE_EIP"
@@ -906,6 +909,7 @@ class ExecutionEngine:
                 erp_tag_q=erp_tag_q,
                 enterprise_project_id=eps_id_prov,
                 flavor_cache=project.get("target_flavor_cache", {}),
+                project_id=project.get("projectId", ""),
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1111,11 +1115,14 @@ class ExecutionEngine:
                               is_zero_trust: bool, is_vmware: bool, data_gb: float,
                               os_type: str, erp_tag_q: str = None,
                               enterprise_project_id: str = '',
-                              flavor_cache: dict = None) -> List[dict]:
+                              flavor_cache: dict = None,
+                              project_id: str = '') -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
         name = node.get("name", "unknown")
+        # Sandbox VPC naming: erp-migration-{short_id} for isolation from customer VPCs
+        _sandbox_prefix = f"erp-migration-{project_id[-8:]}" if project_id else "erp-migration"
         if not name or name == "unknown":
             return []  # skip nodes with no name — agent lane handles them via discovery
 

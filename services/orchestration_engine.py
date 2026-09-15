@@ -69,6 +69,7 @@ def get_pipeline_status(project_id):
         'failed_phase': None,
         'log': [],
         'phase_status': {},
+        'phase_durations': {},
     })
 
 
@@ -1601,6 +1602,17 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         log(f'[output] {redact_secrets(response[:200] if response else "")}...' if response and len(response) > 200 else f'[output] {redact_secrets(response or "")}')
                     pipeline_info['completed_phases'].append(phase_key)
                     pipeline_info['phase_status'][phase_key] = 'completed'
+                    # Record per-phase duration
+                    _phase_dur = None
+                    try:
+                        _ps = PhaseState.query.filter_by(project_id=project_id, phase=phase_key).first()
+                        if _ps and _ps.started_at and _ps.completed_at:
+                            _phase_dur = (_ps.completed_at - _ps.started_at).total_seconds()
+                            _dur_m, _dur_s = divmod(int(_phase_dur), 60)
+                            pipeline_info.setdefault('phase_durations', {})[phase_key] = f'{_dur_m}m {_dur_s}s'
+                            log(f'[timing] {phase_key}: {_dur_m}m {_dur_s}s')
+                    except Exception:
+                        pass
                     
                     # ── Persist completed_phases to DB (survives Flask restart) ──
                     try:

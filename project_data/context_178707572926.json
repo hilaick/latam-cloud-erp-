@@ -241,6 +241,102 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
     "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "d7a7d2ea-c3dc-4da6-a17b-93e5f8bdee87",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "c5b72acc-6962-44e3-9e51-6e12d65e388d",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "1764d54e-caee-4fdf-9a6c-efd10e2dbc3b",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b57b3bda-00a4-44b7-bd57-0faf8f755127",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "b2667ee9-3750-4881-8e42-ecd7d3d397f5",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "d5564ed4-edc4-40c8-b1b0-315149454b4c",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "b2667ee9-3750-4881-8e42-ecd7d3d397f5",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "d5564ed4-edc4-40c8-b1b0-315149454b4c",
+    "status": "SHUTOFF"
    }
   ],
   "target_servers": [
@@ -542,7 +638,7 @@
     "commands": [
      {
       "desc": "Provision VPC",
-      "cmd": "hcloud VPC CreateVpc --vpc.name=vpc-default --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260915163023' --cli-region=la-north-2",
+      "cmd": "hcloud VPC CreateVpc --vpc.name=vpc-default --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -635,7 +731,7 @@
     "commands": [
      {
       "desc": "Provision EIP",
-      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=124.243.134.252-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260915163023' --cli-region=la-north-2",
+      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=124.243.134.252-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -666,7 +762,7 @@
     "commands": [
      {
       "desc": "Provision EIP",
-      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=111.119.235.186-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260915163023' --cli-region=la-north-2",
+      "cmd": "hcloud EIP CreatePublicip --publicip.type=5_bgp --publicip.ip_version=4 --bandwidth.name=111.119.235.186-eip --bandwidth.size=300 --bandwidth.share_type=PER --bandwidth.charge_mode=traffic --tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -697,7 +793,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260915163023' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -752,6 +848,31 @@
    {
     "step_id": 10,
     "phase": "PHASE_4_2",
+    "action": "DISCOVER_SOURCE_SPECS",
+    "target_resource": "ecs-49be-e903-20d3-12d0-0001",
+    "pillar": "compute",
+    "strategy": "sms",
+    "tool_source": "deterministic",
+    "tool_name": "hcloud ECS ShowServer (source specs discovery)",
+    "commands": [
+     {
+      "desc": "Query source ECS specs for rightsizing",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=<ecs_id>",
+      "type": "hcloud"
+     }
+    ],
+    "credentials_needed": [
+     "ak",
+     "sk"
+    ],
+    "zero_trust": false,
+    "fallback_strategy": null,
+    "rollback": null,
+    "status": "pending"
+   },
+   {
+    "step_id": 11,
+    "phase": "PHASE_4_2",
     "action": "SMS_AGENT_INSTALL",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
     "pillar": "compute",
@@ -780,7 +901,7 @@
     "status": "pending"
    },
    {
-    "step_id": 11,
+    "step_id": 12,
     "phase": "PHASE_4_2",
     "action": "MIGRATION_PROJECT_CONFIG",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -805,7 +926,7 @@
     "status": "pending"
    },
    {
-    "step_id": 12,
+    "step_id": 13,
     "phase": "PHASE_4_4",
     "action": "SMS_TASK_CREATE",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -833,7 +954,7 @@
     "status": "pending"
    },
    {
-    "step_id": 13,
+    "step_id": 14,
     "phase": "PHASE_4_4",
     "action": "SMS_TASK_START",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -861,7 +982,7 @@
     "status": "pending"
    },
    {
-    "step_id": 14,
+    "step_id": 15,
     "phase": "PHASE_4_5",
     "action": "SMS_SUBTASK_MONITOR",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -895,7 +1016,7 @@
     ]
    },
    {
-    "step_id": 15,
+    "step_id": 16,
     "phase": "PHASE_4_5",
     "action": "SMS_CONTINUOUS_SYNC_READY",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -927,7 +1048,7 @@
     "expected": "full replication 100% + agent connected"
    },
    {
-    "step_id": 16,
+    "step_id": 17,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_TARGET_TEST",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -959,7 +1080,7 @@
     "verification_doc": "Huawei SMS: Test the Target Server (boot + data/app validation before final cutover)"
    },
    {
-    "step_id": 17,
+    "step_id": 18,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_INCREMENTAL_SYNC",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -990,7 +1111,7 @@
     "cutover_step": "incremental_sync"
    },
    {
-    "step_id": 18,
+    "step_id": 19,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_PROMOTE",
     "target_resource": "ecs-49be-e903-20d3-12d0-0001",
@@ -1031,7 +1152,7 @@
     "verification_doc": "Huawei SMS: Service Cutover \u2014 route live traffic to production target"
    },
    {
-    "step_id": 19,
+    "step_id": 20,
     "phase": "PHASE_4_3",
     "action": "CREATE_TARGET_ECS",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1042,7 +1163,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260915163023' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916021700' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -1062,7 +1183,7 @@
     "learnings": ""
    },
    {
-    "step_id": 20,
+    "step_id": 21,
     "phase": "PHASE_4_1",
     "action": "ADD_SG_RULES_SMS",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1095,7 +1216,32 @@
     "status": "pending"
    },
    {
-    "step_id": 21,
+    "step_id": 22,
+    "phase": "PHASE_4_2",
+    "action": "DISCOVER_SOURCE_SPECS",
+    "target_resource": "ecs-49be-e903-20d3-12d0-0002",
+    "pillar": "compute",
+    "strategy": "sms",
+    "tool_source": "deterministic",
+    "tool_name": "hcloud ECS ShowServer (source specs discovery)",
+    "commands": [
+     {
+      "desc": "Query source ECS specs for rightsizing",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-source --server_id=<ecs_id>",
+      "type": "hcloud"
+     }
+    ],
+    "credentials_needed": [
+     "ak",
+     "sk"
+    ],
+    "zero_trust": false,
+    "fallback_strategy": null,
+    "rollback": null,
+    "status": "pending"
+   },
+   {
+    "step_id": 23,
     "phase": "PHASE_4_2",
     "action": "SMS_AGENT_INSTALL",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1125,7 +1271,7 @@
     "status": "pending"
    },
    {
-    "step_id": 22,
+    "step_id": 24,
     "phase": "PHASE_4_2",
     "action": "MIGRATION_PROJECT_CONFIG",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1150,7 +1296,7 @@
     "status": "pending"
    },
    {
-    "step_id": 23,
+    "step_id": 25,
     "phase": "PHASE_4_4",
     "action": "SMS_TASK_CREATE",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1178,7 +1324,7 @@
     "status": "pending"
    },
    {
-    "step_id": 24,
+    "step_id": 26,
     "phase": "PHASE_4_4",
     "action": "SMS_TASK_START",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1206,7 +1352,7 @@
     "status": "pending"
    },
    {
-    "step_id": 25,
+    "step_id": 27,
     "phase": "PHASE_4_5",
     "action": "SMS_SUBTASK_MONITOR",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1240,7 +1386,7 @@
     ]
    },
    {
-    "step_id": 26,
+    "step_id": 28,
     "phase": "PHASE_4_5",
     "action": "SMS_CONTINUOUS_SYNC_READY",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1272,7 +1418,7 @@
     "expected": "full replication 100% + agent connected"
    },
    {
-    "step_id": 27,
+    "step_id": 29,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_TARGET_TEST",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1304,7 +1450,7 @@
     "verification_doc": "Huawei SMS: Test the Target Server (boot + data/app validation before final cutover)"
    },
    {
-    "step_id": 28,
+    "step_id": 30,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_INCREMENTAL_SYNC",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1335,7 +1481,7 @@
     "cutover_step": "incremental_sync"
    },
    {
-    "step_id": 29,
+    "step_id": 31,
     "phase": "PHASE_4_6",
     "action": "SMS_CUTOVER_PROMOTE",
     "target_resource": "ecs-49be-e903-20d3-12d0-0002",
@@ -1376,7 +1522,7 @@
     "verification_doc": "Huawei SMS: Service Cutover \u2014 route live traffic to production target"
    },
    {
-    "step_id": 30,
+    "step_id": 32,
     "phase": "PHASE_4_7",
     "action": "RELEASE_STAGING_EIPS",
     "target_resource": "all",
@@ -1401,7 +1547,7 @@
     "status": "pending"
    },
    {
-    "step_id": 31,
+    "step_id": 33,
     "phase": "PHASE_4_7",
     "action": "SMOKE_TESTS",
     "target_resource": "all",
@@ -1431,7 +1577,7 @@
     "status": "pending"
    },
    {
-    "step_id": 32,
+    "step_id": 34,
     "phase": "PHASE_4_0",
     "action": "ECS_QUOTA",
     "target_resource": "account",
@@ -1458,7 +1604,7 @@
     "source_detail": "\ud83d\udd0c MCP: ecs quota check (fallback: hcloud)"
    },
    {
-    "step_id": 33,
+    "step_id": 35,
     "phase": "PHASE_4_0",
     "action": "VPC_QUOTA",
     "target_resource": "account",
