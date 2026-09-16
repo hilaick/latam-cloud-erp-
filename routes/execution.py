@@ -837,6 +837,9 @@ def build_execution_plan(project_id):
             "executionMode": pd.get("executionMode", "agentic"),
             "sourceRegion": pd.get("sourceRegion", pd.get("source_region", "")),
             "region": pd.get("region", pd.get("targetRegion", "la-north-2")),
+            "sourceProfile": pd.get("sourceProfile", pd.get("source_profile", "")),
+            "targetProfile": pd.get("targetProfile", pd.get("target_profile", "")),
+            "targetSuffix": pd.get("targetSuffix", "-TARGET"),
             "sourceEnvironment": pd.get("sourceEnvironment", pd.get("presales", {}).get("sourceEnvironment", "")),
             "authLevel": pd.get("authLevel", pd.get("presales", {}).get("authLevel", "")),
             "project_type": pd.get("project_type", project.project_type if hasattr(project, 'project_type') else ""),
@@ -861,6 +864,54 @@ def build_execution_plan(project_id):
             customer_dict = {
                 "authLevel": getattr(customer, "auth_level", "") or "",
             }
+
+        # ── Provision hcloud CLI profiles from customer vault ──
+        # Each project gets its own profiles carrying the customer's AK/SK.
+        # Profile naming: erp-{project_id[-8:]}-src / erp-{project_id[-8:]}-tgt
+        import subprocess as _sp
+        _pid8 = str(project_id)[-8:]
+        _src_profile = f"erp-{_pid8}-src"
+        _tgt_profile = f"erp-{_pid8}-tgt"
+        _source_region = project_dict.get("sourceRegion", "ap-southeast-3")
+        _target_region = project_dict.get("region", "la-north-2")
+        _profiles_created = []
+
+        if customer:
+            try:
+                # Target region credentials (customer.ak/sk)
+                _ak, _sk = _decrypt_credential_pair(customer.ak, customer.sk)
+                if _ak and _sk:
+                    _sp.run(
+                        f"hcloud configure set --cli-profile={_tgt_profile} --mode=AKSK "
+                        f"--region={_target_region} --accessKeyId={_ak} --secretAccessKey={_sk} "
+                        f"--projectId={project_dict.get('enterpriseProjectId','')} --domainId=",
+                        shell=True, capture_output=True, text=True, timeout=10
+                    )
+                    _profiles_created.append(_tgt_profile)
+
+                # Source region credentials (customer.source_huawei_ak/sk)
+                _src_ak, _src_sk = _decrypt_credential_pair(
+                    getattr(customer, "source_huawei_ak", None),
+                    getattr(customer, "source_huawei_sk", None)
+                )
+                if _src_ak and _src_sk:
+                    _sp.run(
+                        f"hcloud configure set --cli-profile={_src_profile} --mode=AKSK "
+                        f"--region={_source_region} --accessKeyId={_src_ak} --secretAccessKey={_src_sk} "
+                        f"--projectId={getattr(customer, 'source_huawei_project_id', '') or ''} --domainId=",
+                        shell=True, capture_output=True, text=True, timeout=10
+                    )
+                    _profiles_created.append(_src_profile)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Profile provisioning failed: {e}")
+
+        # Store profile names in project data for executor to read
+        if _profiles_created:
+            project_dict["sourceProfile"] = _src_profile if _src_profile in _profiles_created else project_dict.get("sourceProfile", "")
+            project_dict["targetProfile"] = _tgt_profile if _tgt_profile in _profiles_created else project_dict.get("targetProfile", "")
+            pd["sourceProfile"] = project_dict["sourceProfile"]
+            pd["targetProfile"] = project_dict["targetProfile"]
 
         plan = ExecutionEngine.build_plan(project_dict, customer_dict)
 
