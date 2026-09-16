@@ -881,12 +881,14 @@ def build_execution_plan(project_id):
                 # Target region credentials (customer.ak/sk)
                 _ak, _sk = _decrypt_credential_pair(customer.ak, customer.sk)
                 if _ak and _sk:
-                    _sp.run(
-                        f"hcloud configure set --cli-profile={_tgt_profile} --mode=AKSK "
-                        f"--region={_target_region} --accessKeyId={_ak} --secretAccessKey={_sk} "
-                        f"--projectId={project_dict.get('enterpriseProjectId','')} --domainId=",
-                        shell=True, capture_output=True, text=True, timeout=10
+                    _tgt_cmd = (
+                        f"hcloud configure set --cli-profile={_tgt_profile} --cli-mode=AKSK "
+                        f"--cli-region={_target_region} --cli-access-key={_ak} --cli-secret-key={_sk}"
                     )
+                    _eps_id = project_dict.get('enterpriseProjectId', '')
+                    if _eps_id:
+                        _tgt_cmd += f" --cli-project-id={_eps_id}"
+                    _sp.run(_tgt_cmd, shell=True, capture_output=True, text=True, timeout=10)
                     _profiles_created.append(_tgt_profile)
 
                 # Source region credentials (customer.source_huawei_ak/sk)
@@ -895,12 +897,14 @@ def build_execution_plan(project_id):
                     getattr(customer, "source_huawei_sk", None)
                 )
                 if _src_ak and _src_sk:
-                    _sp.run(
-                        f"hcloud configure set --cli-profile={_src_profile} --mode=AKSK "
-                        f"--region={_source_region} --accessKeyId={_src_ak} --secretAccessKey={_src_sk} "
-                        f"--projectId={getattr(customer, 'source_huawei_project_id', '') or ''} --domainId=",
-                        shell=True, capture_output=True, text=True, timeout=10
+                    _src_cmd = (
+                        f"hcloud configure set --cli-profile={_src_profile} --cli-mode=AKSK "
+                        f"--cli-region={_source_region} --cli-access-key={_src_ak} --cli-secret-key={_src_sk}"
                     )
+                    _src_proj_id = getattr(customer, 'source_huawei_project_id', '') or ''
+                    if _src_proj_id:
+                        _src_cmd += f" --cli-project-id={_src_proj_id}"
+                    _sp.run(_src_cmd, shell=True, capture_output=True, text=True, timeout=10)
                     _profiles_created.append(_src_profile)
             except Exception as e:
                 logger.warning(f"Profile provisioning failed: {e}")
