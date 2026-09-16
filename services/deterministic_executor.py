@@ -244,6 +244,47 @@ class DeterministicExecutor:
             'ak_sk': f"{ak}:{sk}",
         }
 
+    def _resolve_flavor_from_cloud(self, target_name: str) -> str:
+        """Query target region flavors and pick best match for the source server."""
+        try:
+            import subprocess as _sp
+            _cmd = ['hcloud', 'ECS', 'ListFlavors', '--cli-region', self.target_region,
+                    '--cli-profile', self.target_profile, '--limit', '200']
+            _r = _sp.run(_cmd, capture_output=True, text=True, timeout=15)
+            if _r.returncode != 0 or not _r.stdout:
+                return ''
+            _data = json.loads(_r.stdout)
+            _flavors = _data.get('flavors', [])
+            # Get source vCPU/RAM from plan or executionContext
+            _src_vcpus = 0
+            _src_ram_mb = 0
+            _ec = (self.plan or {}).get('executionContext') or {}
+            for _srv in (_ec.get('source_servers') or []):
+                if _srv.get('name') == target_name:
+                    _src_vcpus = int(_srv.get('vcpus', 0) or 0)
+                    _src_ram_mb = int(_srv.get('ram', 0) or 0)
+                    break
+            if not _src_vcpus:
+                return ''
+            # Find matching flavor (same vCPU, >= RAM, not abandoned/deprecated)
+            _candidates = []
+            for _f in _flavors:
+                _fv = int(_f.get('vcpus', 0) or 0)
+                _fr = int(_f.get('ram', 0) or 0)
+                _fn = _f.get('id', '')
+                _fos = _f.get('os_extra_specs', {})
+                if _fv == _src_vcpus and _fr >= _src_ram_mb:
+                    if 'deprecated' not in _fn.lower() and 'abandoned' not in _fn.lower():
+                        _candidates.append((_fn, _fr))
+            if _candidates:
+                # Sort by RAM (closest match first)
+                _candidates.sort(key=lambda x: x[1])
+                logger.info(f"[det-exec] flavor resolved: {_candidates[0][0]} (vCPU={_src_vcpus} RAM={_src_ram_mb}MB)")
+                return _candidates[0][0]
+        except Exception as e:
+            logger.warning(f"[det-exec] flavor resolution failed: {e}")
+        return ''
+
     def resolve_cmd(self, cmd, ctx=None, target_override=None):
         ctx = ctx or self._resolve_ctx()
         out = cmd
@@ -284,6 +325,11 @@ class DeterministicExecutor:
         # <source_ip> per named target: replace name-keyed tokens
         for name, ip in ctx.get('source_names', {}).items():
             out = out.replace(f'<ip_{name}>', ip)
+        # <DISCOVERED_FLAVOR> — resolve by querying target region flavors
+        if '<DISCOVERED_FLAVOR>' in out:
+            _resolved_flavor = self._resolve_flavor_from_cloud(target_name)
+            if _resolved_flavor:
+                out = out.replace('<DISCOVERED_FLAVOR>', _resolved_flavor)
         return out
 
     # ── step execution ────────────────────────────────────────────────────

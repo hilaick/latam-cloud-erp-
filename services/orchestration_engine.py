@@ -25,6 +25,7 @@ import time
 import logging
 import threading
 import subprocess
+import signal as _signal
 from datetime import datetime, timezone
 from services.engine_minions import (
     get_cloud_cache, PhasePreWarmer, ConcurrentPhaseRunner,
@@ -588,6 +589,21 @@ When done, report what you actually executed, the verification commands you ran,
             )
             emitted_activity = False
             _output_len = 0  # Track output length for pre-warm trigger
+            _agent_timeout = 1800  # 30 min hard ceiling per agent
+            import threading
+            _timed_out = False
+            def _kill_watchdog():
+                nonlocal _timed_out
+                try:
+                    proc.wait(timeout=_agent_timeout)
+                except subprocess.TimeoutExpired:
+                    _timed_out = True
+                    try:
+                        os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
+                    except Exception:
+                        proc.kill()
+            _wd = threading.Thread(target=_kill_watchdog, daemon=True)
+            _wd.start()
             try:
                 for line in proc.stdout:
                     if not line.strip():
@@ -618,7 +634,11 @@ When done, report what you actually executed, the verification commands you ran,
                         emitted_activity = True
             except Exception as _se:
                 last_error = f"stream read: {_se}"
-            proc.wait(timeout=PIPELINE_TIMEOUT_SECONDS)
+            if _timed_out:
+                log_stream = getattr(sys, '_orchestration_log_cb', None)
+                if log_stream:
+                    log_stream(f"[agent] ⚠️ Agent timed out after {_agent_timeout}s — force-killed")
+            proc.wait(timeout=30)
             result_rc = proc.returncode
             result_stdout = ''.join(results_buf)
             result_stderr = ''
@@ -1510,6 +1530,33 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 log(f"[cloud-writeback] persist failed: {_wbe}")
                     except Exception as _cwb_err:
                         log(f"[cloud-writeback] failed: {_cwb_err}")
+
+                # ── Collect agent-created resources into resources_deployed ──
+                if success and phase_key in ('PHASE_4_3', 'PHASE_4_4'):
+                    try:
+                        _agent_resources = []
+                        ctx = pdata.get('executionContext') or {}
+                        # Target ECS from cloud-writeback
+                        for _ts in (ctx.get('target_servers') or []):
+                            _agent_resources.append({
+                                'type': 'CREATE_TARGET_ECS',
+                                'name': _ts.get('name', ''),
+                                'id': _ts.get('id', ''),
+                                'details': f"status={_ts.get('status','')} priv={_ts.get('vpc_ip','')}"
+                            })
+                        # SMS tasks from cloud-writeback
+                        for _ss in (ctx.get('source_servers') or []):
+                            if _ss.get('sms_task_id'):
+                                _agent_resources.append({
+                                    'type': 'SMS_TASK',
+                                    'name': _ss.get('name', ''),
+                                    'id': _ss.get('sms_task_id', ''),
+                                    'details': f"state={_ss.get('sms_task_state','')}"
+                                })
+                        if _agent_resources:
+                            _phase_out['resources_deployed'] = _phase_out.get('resources_deployed', []) + _agent_resources
+                    except Exception:
+                        pass
 
                 # ── Create delegate task record ──
                 # Persist success outcome to Postgres

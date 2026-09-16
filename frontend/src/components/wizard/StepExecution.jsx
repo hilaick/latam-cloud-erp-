@@ -306,7 +306,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     const storyCurrentN = storyCurrentPhase ? parseInt(storyCurrentPhase.replace('PHASE_4_', ''), 10) : 0;
     const storyFailedN = failedOrchPhaseIdx !== null ? failedOrchPhaseIdx : 0;
     const storyFailedLabel = failedOrchPhaseIdx !== null
-        ? ((phaseContent?.[`PHASE_4_${failedOrchPhaseIdx}`]?.label) || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'][failedOrchPhaseIdx - 1] || 'Unknown')
+        ? ((phaseContent?.[`PHASE_4_${failedOrchPhaseIdx}`]?.label) || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Reconcile','Teardown'][failedOrchPhaseIdx - 1] || 'Unknown')
         : '';
     const storyStatus = (() => {
         if (storyCurrentPhase && phaseStatus[storyCurrentPhase] === 'failed') return 'failed';
@@ -317,7 +317,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
         return 'idle';
     })();
     const storyCurrentLabel = storyCurrentPhase
-        ? (phaseContent?.[storyCurrentPhase]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'][storyCurrentN - 1] || '')
+        ? (phaseContent?.[storyCurrentPhase]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Reconcile','Teardown'][storyCurrentN - 1] || '')
         : '';
     const storyLatestLog = (() => {
         if (!orchestrationLog?.length) return '';
@@ -325,7 +325,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
     })();
     const storyPhases = (() => {
         const icons = ['fa-network-wired','fa-download','fa-server','fa-sync-alt','fa-chart-line','fa-exchange-alt','fa-trash-alt'];
-        const labels = ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'];
+        const labels = ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Reconcile','Teardown'];
         const gap = 700 / 7;
         return [1,2,3,4,5,6,7].map((n, idx) => {
             const phaseKey = `PHASE_4_${n}`;
@@ -379,7 +379,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                 const desc = phaseContent?.[pk]?.desc || '';
                 actList.push({ action: 'PHASE', targets: [], commands: desc ? [desc] : [] });
             }
-            return { n, key: pk, label: phaseContent?.[pk]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Teardown'][n-1], actions: actList };
+            return { n, key: pk, label: phaseContent?.[pk]?.label || ['Network','Source Prep','Target','Data Sync','Monitor','Cutover','Reconcile','Teardown'][n-1], actions: actList };
         });
         return lines;
     })();
@@ -940,10 +940,10 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                             <span className={`w-2 h-2 rounded-full ${
                                 completedOrchPhases.size > 0 && execState?.currentPhase !== 'PHASE_4_0' ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'
                             }`}></span>
-                            {completedOrchPhases.size}/7 phases complete · {
+                            {completedOrchPhases.size}/8 phases complete · {
   autoOrchestrating ? `${execState?.currentPhase?.replace('PHASE_4_', '4.') || ''} active` :
   failedOrchPhaseIdx !== null ? `Halted at phase ${failedOrchPhaseIdx}` :
-  completedOrchPhases.size >= 7 ? 'All phases complete' :
+  completedOrchPhases.size >= 8 ? 'All phases complete' :
   'Ready'
 }
                             <span className="text-[8px] text-slate-400 font-mono">{cloudState?.timestamp || ''}</span>
@@ -1940,7 +1940,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                     {completedOrchPhases.size > 0 && (
                         <div className="mb-4">
                             <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-                                <span className="font-bold">{completedOrchPhases.size}/7 phases complete</span>
+                                <span className="font-bold">{completedOrchPhases.size}/8 phases complete</span>
                                 {failedOrchPhaseIdx !== null && <span className="text-rose-500 font-black">⏸ Halted at Phase {failedOrchPhaseIdx + 1}</span>}
                             </div>
                             <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
