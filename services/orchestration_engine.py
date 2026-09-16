@@ -600,14 +600,17 @@ When done, report what you actually executed, the verification commands you ran,
                 while _elapsed < _agent_timeout:
                     _rc = proc.poll()
                     if _rc is not None:
-                        # Process exited — give stdout 5s to drain, then declare dead
-                        time.sleep(5)
-                        if proc.stdout and not proc.stdout.closed:
+                        # Process exited — wait 3s for stdout to drain, then force-close
+                        time.sleep(3)
+                        _proc_dead = True
+                        # Kill the process group to unblock any pending I/O
+                        try:
+                            os.killpg(os.getpgid(proc.pid), _signal.SIGKILL)
+                        except Exception:
                             try:
-                                proc.stdout.close()
+                                proc.kill()
                             except Exception:
                                 pass
-                        _proc_dead = True
                         return
                     time.sleep(2)
                     _elapsed += 2
@@ -620,7 +623,19 @@ When done, report what you actually executed, the verification commands you ran,
             _wd = threading.Thread(target=_kill_watchdog, daemon=True)
             _wd.start()
             try:
-                for line in proc.stdout:
+                # Use readline() + poll instead of 'for line in proc.stdout'
+                # because closing stdout from watchdog thread doesn't break
+                # the iterator's internal read buffer.
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:  # EOF
+                        break
+                    if _proc_dead and not line.strip():
+                        # Process exited — drain remaining lines then break
+                        for _drain in proc.stdout:
+                            if _drain.strip():
+                                results_buf.append(_drain)
+                        break
                     if not line.strip():
                         continue
                     results_buf.append(line)
