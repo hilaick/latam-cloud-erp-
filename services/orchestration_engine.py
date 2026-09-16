@@ -592,16 +592,31 @@ When done, report what you actually executed, the verification commands you ran,
             _agent_timeout = 1800  # 30 min hard ceiling per agent
             import threading
             _timed_out = False
+            _proc_dead = False  # Set when process exits but stdout still open
             def _kill_watchdog():
-                nonlocal _timed_out
+                nonlocal _timed_out, _proc_dead
+                # Poll for process exit every 2s — breaks stdout deadlock
+                _elapsed = 0
+                while _elapsed < _agent_timeout:
+                    _rc = proc.poll()
+                    if _rc is not None:
+                        # Process exited — give stdout 5s to drain, then declare dead
+                        time.sleep(5)
+                        if proc.stdout and not proc.stdout.closed:
+                            try:
+                                proc.stdout.close()
+                            except Exception:
+                                pass
+                        _proc_dead = True
+                        return
+                    time.sleep(2)
+                    _elapsed += 2
+                # Hard timeout — kill the process
+                _timed_out = True
                 try:
-                    proc.wait(timeout=_agent_timeout)
-                except subprocess.TimeoutExpired:
-                    _timed_out = True
-                    try:
-                        os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
-                    except Exception:
-                        proc.kill()
+                    os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
+                except Exception:
+                    proc.kill()
             _wd = threading.Thread(target=_kill_watchdog, daemon=True)
             _wd.start()
             try:
@@ -638,6 +653,10 @@ When done, report what you actually executed, the verification commands you ran,
                 log_stream = getattr(sys, '_orchestration_log_cb', None)
                 if log_stream:
                     log_stream(f"[agent] ⚠️ Agent timed out after {_agent_timeout}s — force-killed")
+            if _proc_dead and not _timed_out:
+                log_stream = getattr(sys, '_orchestration_log_cb', None)
+                if log_stream:
+                    log_stream(f"[agent] 🩹 Agent process exited — stdout drained, collecting output (self-heal retry if needed)")
             proc.wait(timeout=30)
             result_rc = proc.returncode
             result_stdout = ''.join(results_buf)
@@ -991,6 +1010,16 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 if _resume_from and phase_key == _resume_from:
                     log(f'[resume] Resuming from {phase_key} with persisted context')
                     _resume_from = None  # Clear so we don't skip further
+
+                # ── IDEMPOTENT: Skip phases already completed in DB (even on fresh start) ──
+                if phase_key in pipeline_info['completed_phases'] and phase_key not in _phases_already_ran:
+                    from models import PhaseState as _PS
+                    _ps_check = _PS.query.filter_by(
+                        project_id=project_id, phase=phase_key, status='completed'
+                    ).first()
+                    if _ps_check:
+                        log(f'[idempotent] {phase_key} already completed in DB — skipping (outputs preserved)')
+                        continue
 
                 # Skip if already ran via concurrent group
                 if phase_key in _phases_already_ran:

@@ -278,6 +278,102 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
     "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
+    "status": "SHUTOFF"
    }
   ],
   "target_servers": [
@@ -506,7 +602,7 @@
     "commands": [
      {
       "desc": "Provision VPC",
-      "cmd": "hcloud VPC CreateVpc --vpc.name=erp-migration-erp-vpc --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916120626' --cli-region=la-north-2",
+      "cmd": "hcloud VPC CreateVpc --vpc.name=erp-migration-erp-vpc --vpc.cidr=192.168.0.0/16 --vpc.tags.1='erp-migration*erp-migration-erp-20260916131437' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -661,7 +757,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916120626' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0001-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916131437' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
@@ -1029,7 +1125,7 @@
     "commands": [
      {
       "desc": "Create target ECS with EIP (flavor discovered at runtime)",
-      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916120626' --cli-region=la-north-2",
+      "cmd": "hcloud ECS CreateServers --server.name='ecs-49be-e903-20d3-12d0-0002-TARGET' --server.flavorRef=<DISCOVERED_FLAVOR> --server.root_volume.size=100 --server.publicip.eip.iptype=5_bgp --server.publicip.eip.bandwidth.size=100 --server.tags.1='erp-migration*erp-migration-erp-20260916131437' --cli-region=la-north-2",
       "type": "hcloud"
      }
     ],
