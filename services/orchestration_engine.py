@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+import random
 import logging
 import threading
 import subprocess
@@ -748,7 +749,7 @@ When done, report what you actually executed, the verification commands you ran,
                 last_error = f"LB transient error: {combined[:300]}"
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} hit transient LLM error, retrying...")
-                    time.sleep(15 * (attempt + 1))  # backoff: 15s, 30s, 45s
+                    time.sleep(15 * (attempt + 1) + random.uniform(0, 5))  # backoff: 15s, 30s, 45s
                     continue
                 return False, None, f"Hermes failed: {combined[:500]}"
             # Non-zero exit (NOT substantive — real failure)
@@ -756,24 +757,93 @@ When done, report what you actually executed, the verification commands you ran,
                 err_text = result.stderr.strip()[:500]
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} rc={result.returncode}, retrying...")
-                    time.sleep(8 * (attempt + 1))
+                    time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
                     continue
                 return False, None, f"Hermes failed: {err_text}"
         except subprocess.TimeoutExpired:
             last_error = f"Phase timed out after {PIPELINE_TIMEOUT_SECONDS}s"
             if attempt < max_spawn_retries:
                 logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} timed out, retrying...")
-                time.sleep(8 * (attempt + 1))
+                time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
                 continue
             return False, None, last_error
         except Exception as e:
             last_error = str(e)
             if attempt < max_spawn_retries:
                 logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} exception, retrying...")
-                time.sleep(8 * (attempt + 1))
+                time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
                 continue
             return False, None, last_error
     return False, None, last_error
+
+
+def _check_pending_migrations(project_id, app):
+    """Background thread: polls SMS task status every 60s for servers
+    marked NEEDS_HUMAN_INTERVENTION. When a server completes (human fixed it),
+    updates migration_status to SUCCESS and logs it."""
+    import subprocess as _sp, json as _js
+    from models import db, ProjectData
+    time.sleep(30)  # Initial delay before first poll
+    _polls = 0
+    while _polls < 60:  # Run for ~1 hour max (60 polls × 60s)
+        try:
+            with app.app_context():
+                _proj = ProjectData.query.get(project_id)
+                if not _proj:
+                    break
+                _data = _js.loads(str(_proj.data))
+                _ctx = _data.get('executionContext') or {}
+                _srcs = _ctx.get('source_servers') or []
+                _pending = [s for s in _srcs if s.get('migration_status') == 'NEEDS_HUMAN_INTERVENTION']
+                if not _pending:
+                    break  # Nothing pending — stop detector
+                # Query SMS tasks
+                _pid_short = str(project_id)[-8:]
+                _r = _sp.run(
+                    ['hcloud', 'SMS', 'ListTasks', '--cli-region=ap-southeast-3',
+                     f'--cli-profile=erp-{_pid_short}-src', '--limit=50'],
+                    capture_output=True, text=True, timeout=30
+                )
+                _raw = _r.stdout
+                for _i, _c in enumerate(_raw):
+                    if _c == '{':
+                        break
+                else:
+                    _i = 0
+                _td = _js.loads(_raw[_i:])
+                _task_map = {}
+                for _tt in _td.get('tasks', []):
+                    _task_map[_tt.get('name', '')] = _tt.get('state', '')
+                _changed = False
+                for _sv in _srcs:
+                    if _sv.get('migration_status') != 'NEEDS_HUMAN_INTERVENTION':
+                        continue
+                    _sv_name = _sv.get('name', '')
+                    # Check by server name prefix (task names vary)
+                    for _tname, _tstate in _task_map.items():
+                        if _sv_name.split('-')[-1] in _tname and _tstate == 'MIGRATE_SUCCESS':
+                            _sv['migration_status'] = 'SUCCESS'
+                            _sv['resolved_by'] = 'human'
+                            _sv['resolved_at'] = datetime.utcnow().isoformat()
+                            _changed = True
+                            logger.info(f'[human-intervention] {_sv_name}: MIGRATE_SUCCESS ✅ — human fixed it!')
+                            break
+                if _changed:
+                    _ctx['source_servers'] = _srcs
+                    _proj.data = _js.dumps(_data, ensure_ascii=False)
+                    db.session.commit()
+                if not _changed:
+                    time.sleep(60)
+                    _polls += 1
+                    continue
+                # Check if any still pending
+                if not [s for s in _srcs if s.get('migration_status') == 'NEEDS_HUMAN_INTERVENTION']:
+                    break
+                _polls += 1
+        except Exception as _phe:
+            logger.warning(f'[human-intervention] poll error: {_phe}')
+            time.sleep(60)
+            _polls += 1
 
 
 def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
@@ -1217,9 +1287,11 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         # Per-server filtering: on retry, only include servers
                         # that haven't migrated successfully. Successful servers
                         # are left alone (idempotent checks handle them).
-                        _failing_servers = [s for s in src_servers if s.get('migration_status') != 'SUCCESS']
-                        _skipped = len(src_servers) - len(_failing_servers)
-                        _servers_to_show = _failing_servers if _failing_servers else src_servers
+                        # Servers marked NEEDS_HUMAN_INTERVENTION are also skipped
+                        # — agent should not retry, human must intervene.
+                        _active_servers = [s for s in src_servers if s.get('migration_status') not in ('SUCCESS', 'NEEDS_HUMAN_INTERVENTION')]
+                        _skipped = len(src_servers) - len(_active_servers)
+                        _servers_to_show = _active_servers if _active_servers else src_servers
                         enriched += "\n\n=== SOURCE SERVERS (from executionContext — authoritative) ==="
                         if _skipped > 0:
                             enriched += f"\n⚠️ {_skipped} server(s) already MIGRATE_SUCCESS — SKIPPED, will not be retried."
@@ -1440,7 +1512,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 break
                             prev_err = _err or prev_err
                             attempt += 1
-                            time.sleep(delay)
+                            time.sleep(delay + random.uniform(0, 3))
 
                 # ── SPAWN TREE RECORDING: persist agent node (in project data) ──
                 # So the SpawnTreeVisualizer poll shows real spawns (one agent per
@@ -1628,11 +1700,12 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                     _updated = True
                                     log(f'[per-server] {_sv_name}: MIGRATE_SUCCESS ✅ — will be skipped on retry')
                             elif _sv_state == 'MIGRATE_FAIL':
-                                if _sv.get('migration_status') != 'FAILED':
-                                    _sv['migration_status'] = 'FAILED'
+                                if _sv.get('migration_status') not in ('NEEDS_HUMAN_INTERVENTION', 'SUCCESS'):
+                                    _sv['migration_status'] = 'NEEDS_HUMAN_INTERVENTION'
                                     _sv['last_sms_error'] = _sv_state
+                                    _sv['failed_at'] = datetime.utcnow().isoformat()
                                     _updated = True
-                                    log(f'[per-server] {_sv_name}: MIGRATE_FAIL ❌ — will be retried')
+                                    log(f'[per-server] {_sv_name}: MIGRATE_FAIL ❌ — reported for human intervention. Pipeline continues.')
                             elif _sv_state in ('RUNNING', 'SYNCING'):
                                 _sv['migration_status'] = 'RUNNING'
                                 _updated = True

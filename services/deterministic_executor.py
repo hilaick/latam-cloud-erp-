@@ -622,7 +622,7 @@ class DeterministicExecutor:
         """
         steps = [s for s in (plan.get('steps') or []) if s.get('phase') == self.phase_key]
         if not steps:
-            return False, [], 'no-steps'
+            return False, [], [], []
         ctx = self._resolve_ctx()
         chain_vals = {}   # {action: value} — from previous step outputs
         entries = []

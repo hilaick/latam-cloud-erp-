@@ -471,6 +471,7 @@ class ExecutionEngine:
     PHASE_4_5 = "PHASE_4_5"  # Monitor (replication progress -> continuous sync)
     PHASE_4_6 = "PHASE_4_6"  # Cutover (verify target + incremental + promote)
     PHASE_4_7 = "PHASE_4_7"  # Teardown (smoke tests + resource cleanup)
+    PHASE_4_8 = "PHASE_4_8"  # Finalize (destroy transient resources + delivery report)
 
     @staticmethod
     def build_plan(project: dict, customer: dict = None) -> dict:
@@ -1771,6 +1772,114 @@ class ExecutionEngine:
                 "status": "pending",
                 "monitor": True,
             })
+
+        # ═══ PHASE 4.8: Finalize — destroy transient resources, delivery report, mark COMPLETE ═══
+        # Step 1: Delete SMS migration project (source-side cleanup, preserves task records for audit)
+        step_id += 1
+        steps.append({
+            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "action": "DELETE_SMS_MIGRATION_PROJECT",
+            "target_resource": "sms-migration-project",
+            "pillar": "compute",
+            "strategy": "teardown",
+            "tool_source": "skill",
+            "tool_name": "huawei-cloud-sms-migration (migration project cleanup)",
+            "commands": [
+                {"desc": "Delete SMS migration project (preserves task records for audit)",
+                 "cmd": f"hcloud SMS DeleteMigProject --migproject_id=<sms_migration_project_id> --cli-region={source_region}",
+                 "type": "hcloud"},
+            ],
+            "credentials_needed": ["ak", "sk"],
+            "zero_trust": False,
+            "fallback_strategy": None,
+            "rollback": None,
+            "status": "pending",
+        })
+
+        # Step 2: Release unbound EIPs in target region (staging/factory EIPs)
+        step_id += 1
+        steps.append({
+            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "action": "RELEASE_UNBOUND_EIPS",
+            "target_resource": "all",
+            "pillar": "network",
+            "strategy": "teardown",
+            "tool_source": "skill",
+            "tool_name": "huawei-cloud-eip-billing-region-pitfalls (release unbound EIPs)",
+            "commands": [
+                {"desc": "List EIPs in target region and release unbound ones",
+                 "cmd": f"hcloud EIP ListPublicips --cli-region={target_region}",
+                 "type": "hcloud"},
+            ],
+            "credentials_needed": ["ak", "sk"],
+            "zero_trust": False,
+            "fallback_strategy": None,
+            "rollback": None,
+            "status": "pending",
+        })
+
+        # Step 3: Delete mig_worker ECS instances (if any were deployed)
+        if mig_worker_triggers:
+            step_id += 1
+            steps.append({
+                "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+                "action": "DESTROY_MIG_WORKER_FINAL",
+                "target_resource": "mig-worker-target",
+                "pillar": "compute",
+                "strategy": "teardown",
+                "tool_source": "plan",
+                "tool_name": "erp-execution-orchestration (mig-worker final teardown)",
+                "commands": [{"desc": "Delete mig_worker ECS", "cmd": f"hcloud ECS DeleteServer --server_id=<ecs_id> --cli-region={target_region}", "type": "hcloud"}],
+                "credentials_needed": ["ak", "sk"],
+                "zero_trust": False,
+                "fallback_strategy": None,
+                "rollback": None,
+                "status": "pending",
+            })
+
+        # Step 4: Delete OBS migration buckets (temp staging buckets)
+        step_id += 1
+        steps.append({
+            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "action": "DELETE_OBS_MIGRATION_BUCKETS",
+            "target_resource": "all",
+            "pillar": "storage",
+            "strategy": "teardown",
+            "tool_source": "skill",
+            "tool_name": "obs-migration (bucket cleanup)",
+            "commands": [
+                {"desc": "List and delete erp-tagged OBS buckets in target region",
+                 "cmd": f"hcloud OBS ListBuckets --cli-region={target_region}",
+                 "type": "hcloud"},
+            ],
+            "credentials_needed": ["ak", "sk"],
+            "zero_trust": False,
+            "fallback_strategy": None,
+            "rollback": None,
+            "status": "pending",
+        })
+
+        # Step 5: Final smoke test — verify target ECS still ACTIVE after cleanup
+        step_id += 1
+        steps.append({
+            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "action": "FINAL_SMOKE_TEST",
+            "target_resource": "all",
+            "pillar": "compute",
+            "strategy": "verify",
+            "tool_source": "skill",
+            "tool_name": "huawei-sms-cross-region-migration (post-cleanup verification)",
+            "commands": [
+                {"desc": "Verify all target ECS still ACTIVE after cleanup",
+                 "cmd": f"hcloud ECS ListServersDetail --cli-region={target_region}",
+                 "type": "hcloud"},
+            ],
+            "credentials_needed": ["ak", "sk"],
+            "zero_trust": False,
+            "fallback_strategy": None,
+            "rollback": None,
+            "status": "pending",
+        })
 
         return steps
 
