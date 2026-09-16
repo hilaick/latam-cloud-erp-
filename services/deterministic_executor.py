@@ -57,14 +57,18 @@ class DeterministicExecutor:
         self.pdata = project_data or {}
         self.project_id = project_id
         self.phase_key = phase_key
-        # Derive regions from project data — NEVER hardcode
+        # ── Derive EVERYTHING from raw project data — independent of build_plan ──
+        # build_plan is a plan builder, not a runtime dependency.
+        # The executor reads the same source (project_data) directly.
         proj = self.pdata if isinstance(self.pdata, dict) else {}
+        # Regions: from project data, with sensible defaults
         self.source_region = source_region or proj.get('sourceRegion', proj.get('source_region', 'ap-southeast-3'))
         self.target_region = target_region or proj.get('region', proj.get('targetRegion', proj.get('target_region', 'la-north-2')))
-        # Derive CLI profiles from project data — each project may have different credentials
+        # CLI profiles: one hcloud profile per customer project (carries AK/SK from vault)
+        # NOT derived from region name — each customer has their own credentials per region
         self.source_profile = proj.get('sourceProfile', proj.get('source_profile', 'erp-source'))
         self.target_profile = proj.get('targetProfile', proj.get('target_profile', 'internal'))
-        # Target naming convention — some projects use -TARGET suffix, others use different patterns
+        # Target naming convention — configurable per project
         self.target_suffix = proj.get('targetSuffix', proj.get('target_suffix', '-TARGET'))
 
     # ── placeholder resolution ────────────────────────────────────────────

@@ -494,13 +494,10 @@ class ExecutionEngine:
         # When we have source access, resolve placeholder IDs to real resource IDs
         # This runs ONCE at plan build time, not during execution
         source_region = project.get("sourceRegion", "ap-southeast-3")
-        source_profile = project.get("sourceProfile", "erp-source")
-        target_profile = project.get("targetProfile", "internal")
-        target_suffix = project.get("targetSuffix", "-TARGET")
         source_resource_map = {}  # {sow_name: {id, flavor, ips, ...}}
         try:
             import subprocess as _sp
-            _src_profile = source_profile
+            _src_profile = project.get("sourceProfile", "erp-source")
             _r = _sp.run(
                 f"hcloud ECS ListServersDetails --cli-region={source_region} --cli-profile={_src_profile} --limit=100",
                 shell=True, capture_output=True, text=True, timeout=30)
@@ -569,6 +566,10 @@ class ExecutionEngine:
         execution_mode = project.get("executionMode", "agentic")
         source_region = project.get("sourceRegion", project.get("source_region", ""))
         target_region = project.get("region", project.get("targetRegion", "la-north-2"))
+        # CLI profiles: one hcloud profile per customer project (carries AK/SK from vault)
+        source_profile = project.get("sourceProfile", "erp-source")
+        target_profile = project.get("targetProfile", "internal")
+        target_suffix = project.get("targetSuffix", "-TARGET")
         used_storage_pct = float(physics.get("usedStoragePct", 50)) if physics else 50.0
 
         # Zero Trust detection
