@@ -903,8 +903,7 @@ def build_execution_plan(project_id):
                     )
                     _profiles_created.append(_src_profile)
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"Profile provisioning failed: {e}")
+                logger.warning(f"Profile provisioning failed: {e}")
 
         # Store profile names in project data for executor to read
         if _profiles_created:

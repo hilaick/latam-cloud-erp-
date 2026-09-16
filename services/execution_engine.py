@@ -978,6 +978,7 @@ class ExecutionEngine:
                 enterprise_project_id=eps_id_prov,
                 flavor_cache=project.get("target_flavor_cache", {}),
                 project_id=project.get("projectId", ""),
+                source_profile=source_profile, target_profile=target_profile,
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1253,7 +1254,9 @@ class ExecutionEngine:
                               os_type: str, erp_tag_q: str = None,
                               enterprise_project_id: str = '',
                               flavor_cache: dict = None,
-                              project_id: str = '') -> List[dict]:
+                              project_id: str = '',
+                              source_profile: str = 'erp-source',
+                              target_profile: str = 'internal') -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
