@@ -1989,6 +1989,7 @@ function OrchestratorView({ project, executionState, updatePhase, isGreenfield, 
                                         projectId={project?.id}
                                         onRollback={handleRollback}
                                         color="#10b981"
+                                        deployedResources={executionState?.resources_deployed?.filter(r => r.phase === phaseKey)}
                                     />
                                 );
                             })}

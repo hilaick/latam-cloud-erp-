@@ -1417,7 +1417,7 @@ class ExecutionEngine:
                 "credentials_needed": ["ak", "sk"],
                 "zero_trust": False,
                 "fallback_strategy": fallback,
-                "rollback": {"cmd": f"hcloud SMS DeleteTask --task_id=<task_id>", "label": "Delete SMS task"},
+                "rollback": {"cmd": "echo 'SMS task preserved for trace — not deleted'", "label": "Preserve SMS task (trace)"},
                 "status": "pending",
             })
 

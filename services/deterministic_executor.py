@@ -578,6 +578,7 @@ class DeterministicExecutor:
         chain_vals = {}   # {action: value} — from previous step outputs
         entries = []
         failures = []
+        resources_deployed = []  # [{type, name, id, status, details}] for UI rendering
         
         # Phase 1: Run VPC step first (everything depends on it)
         # Phase 2: Run independent steps in parallel (Subnet, SG, EIPs)
@@ -637,6 +638,26 @@ class DeterministicExecutor:
                         cv = extract_chained_values(s.get('action', ''), r['output'])
                         if cv: chain_vals.update(cv)
             if e['status'] != 'success': failures.append(e)
+            else:
+                # Collect deployed resources for UI rendering
+                _action = s.get('action', '')
+                _target = s.get('target_resource', '')
+                _out = e.get('results', [{}])[-1].get('output', '') if e.get('results') else ''
+                _res = {'type': _action, 'name': _target, 'id': '', 'status': 'deployed', 'details': ''}
+                # Extract ID from output
+                import re as _re_id
+                _id_m = _re_id.search(r'"id"\s*:\s*"([0-9a-f-]{36})"', _out)
+                if _id_m:
+                    _res['id'] = _id_m.group(1)
+                # Extract additional details
+                _ip_m = _re_id.search(r'"public_ip"\s*:\s*"([\d.]+)"', _out)
+                _priv_m = _re_id.search(r'"private_ip"\s*:\s*"([\d.]+)"', _out)
+                _state_m = _re_id.search(r'"state"\s*:\s*"(\w+)"', _out)
+                if _ip_m: _res['details'] += f"pub={_ip_m.group(1)} "
+                if _priv_m: _res['details'] += f"priv={_priv_m.group(1)} "
+                if _state_m: _res['details'] += f"state={_state_m.group(1)}"
+                _res['details'] = _res['details'].strip()
+                resources_deployed.append(_res)
         
         success = len(failures) == 0
-        return success, entries, failures
+        return success, entries, failures, resources_deployed

@@ -1189,12 +1189,13 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 success = True
                 response = ""
                 error = ""
+                det_resources = []  # Resources from deterministic executor (for UI)
                 if phase_key.startswith('PHASE_4_') and phase_key != 'PHASE_4_0':
                     try:
                         from services.deterministic_executor import DeterministicExecutor
                         det = DeterministicExecutor(pdata, project_id, phase_key,
                                                      target_region=pdata.get('region', 'la-north-2'))
-                        det_ok, entries, failures = det.run_phase(plan, log=log)
+                        det_ok, entries, failures, det_resources = det.run_phase(plan, log=log)
                         if det_ok:
                             response = f"Deterministic: {len(entries)} steps succeeded."
                             try:
@@ -1644,6 +1645,9 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         _phase_out = _extract_phase_outputs(
                             phase_key, response, enriched, project_id
                         )
+                        # Inject deterministic resources (if any) for UI rendering
+                        if det_resources:
+                            _phase_out['resources_deployed'] = det_resources
                         ps.set_outputs(_phase_out)
                         db.session.commit()
                         log(f'[checkpoint] {phase_key} outputs persisted ({len(json.dumps(_phase_out))} chars)')

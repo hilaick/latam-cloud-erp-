@@ -2348,12 +2348,28 @@ def orchestration_status(project_id):
     except Exception:
         pass
 
+    # ── Collect deployed resources from all phase outputs ──
+    try:
+        from models import PhaseState as _PS2
+        _all_resources = []
+        for _ps2 in _PS2.query.filter_by(project_id=project_id).order_by(_PS2.started_at).all():
+            _po = _ps2.get_outputs() if hasattr(_ps2, 'get_outputs') else {}
+            if isinstance(_po, dict):
+                for _r in _po.get('resources_deployed', []):
+                    _r['phase'] = _ps2.phase
+                    _all_resources.append(_r)
+        if _all_resources:
+            status['resources_deployed'] = _all_resources
+    except Exception:
+        pass
+
     # Flatten key fields to top level so frontend can read executionState.progress_pct directly
     # (instead of executionState.status.progress_pct)
     resp = {'success': True, 'status': status}
     for _k in ('progress_pct', 'elapsed_display', 'elapsed_seconds', 'total_phases',
                'completed_count', 'current_phase', 'completed_phases', 'phase_status',
-               'phase_durations', 'started_at', 'thread_alive', 'failed_phase', 'eta_display', 'eta_seconds'):
+               'phase_durations', 'started_at', 'thread_alive', 'failed_phase', 'eta_display', 'eta_seconds',
+               'resources_deployed'):
         if _k in status:
             resp[_k] = status[_k]
     return jsonify(resp)

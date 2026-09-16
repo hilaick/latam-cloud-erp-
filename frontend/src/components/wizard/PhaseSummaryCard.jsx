@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 // Renders after [done] appears in orchestrationLog, shows agent's full output
 // Parses markdown tables from the report into a proper resource table
 
-export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onRollback, projectId }) {
+export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onRollback, projectId, deployedResources }) {
   const [open, setOpen] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollbackPreview, setRollbackPreview] = useState(null);
@@ -42,9 +42,14 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
   // Use full report from session DB when available (log truncates to 200 chars)
   const reportSource = fullReport || agentOutput;
 
-  // Parse markdown table rows from the agent report
+  // Use structured deployed resources from API when available, else parse markdown tables
   const resourceRows = [];
-  if (reportSource) {
+  if (deployedResources && deployedResources.length > 0) {
+    // Structured resources from deterministic executor / phase_outputs
+    for (const r of deployedResources) {
+      resourceRows.push([r.type || '?', r.name || '?', r.id || '—', r.status || 'deployed', r.details || '']);
+    }
+  } else if (reportSource) {
     const tableMatch = reportSource.match(/\|.*\|/g);
     if (tableMatch) {
       let header = null;
@@ -131,7 +136,7 @@ export default function PhaseSummaryCard({ phase, logLines, phaseKey, color, onR
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    {['Resource','ID','Status','Details'].map(h => <th key={h} className="py-1 px-2 text-left text-[9px] font-black uppercase text-slate-400">{h}</th>)}
+                    {['Resource','Name','ID','Status','Details'].map(h => <th key={h} className="py-1 px-2 text-left text-[9px] font-black uppercase text-slate-400">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
