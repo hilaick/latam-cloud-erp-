@@ -1694,6 +1694,23 @@ def get_execution_progress(project_id):
             except Exception:
                 pass
         # Build spawn tree from real pipeline state: main -> one node per phase
+        # Real model from HermesConfig (not hardcoded) so the tree shows truth
+        real_model = 'glm-5.1'
+        try:
+            from models import HermesConfig
+            _hc = HermesConfig.get_config()
+            if _hc and getattr(_hc, 'delegation_model', None):
+                real_model = _hc.delegation_model
+        except Exception:
+            pass
+        # Parse prewarm records from the pipeline log: which phases were
+        # pre-warmed and with which skills (engine_minions.py logs them).
+        prewarm_map = {}
+        for _l in (status.get('log') or []):
+            _s = str(_l)
+            _m = _re.search(r'\[minion:prewarm\] (PHASE_4_\d) pre-warmed \(top \d+ skills: ([^,\)]+),', _s)
+            if _m:
+                prewarm_map[_m.group(1)] = [x.strip() for x in _m.group(2).split(',') if x.strip()]
         phases = []
         for n in range(1, 8):
             pk = f'PHASE_4_{n}'
@@ -1707,11 +1724,16 @@ def get_execution_progress(project_id):
                 st_ = 'running'
             else:
                 st_ = 'pending'
-            phases.append({'id': f'agent_{pk.lower()}', 'label': f'4.{n}', 'status': st_})
-        nodes = [{'id': 'main', 'label': 'Main Orchestrator', 'status': 'running', 'model': 'glm-5.1'}]
+            phases.append({
+                'id': f'agent_{pk.lower()}', 'label': f'4.{n}', 'status': st_,
+                'model': real_model,
+                'prewarmed': pk in prewarm_map,
+                'prewarm_skills': prewarm_map.get(pk, []),
+            })
+        nodes = [{'id': 'main', 'label': 'Main Orchestrator', 'status': 'running', 'model': real_model}]
         edges = []
         for ph in phases:
-            nodes.append({**ph, 'model': 'glm-5.1'})
+            nodes.append(ph)
             edges.append({'from': 'main', 'to': ph['id']})
         # Operations from the live log (last 20 entries, tagged)
         ops = []

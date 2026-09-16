@@ -256,7 +256,7 @@ class PhasePreWarmer:
             result = sp.run(cmd, capture_output=True, text=True, timeout=90)
             self._sessions[phase_key] = True  # Mark as pre-warmed
             ready = 'READY' in result.stdout
-            self._log(f'[minion:prewarm] {phase_key} pre-warmed (top {len(top_skills)} skills, {len(result.stdout)} chars, ready={ready})')
+            self._log(f'[minion:prewarm] {phase_key} pre-warmed (top {len(top_skills)} skills: {skill_str}, {len(result.stdout)} chars, ready={ready})')
         except Exception as e:
             if 'TimeoutExpired' in type(e).__name__:
                 self._log(f'[minion:prewarm] {phase_key} timed out (90s) — skills too heavy, will load on phase start')

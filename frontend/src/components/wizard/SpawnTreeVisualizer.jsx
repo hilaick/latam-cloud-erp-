@@ -27,6 +27,40 @@ function StatusBadge({ status }) {
   );
 }
 
+function PrewarmBadge({ skills }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <span
+        onClick={() => setOpen(o => !o)}
+        title="Pre-warmed with phase-scoped skills"
+        style={{
+          fontSize: '8px', color: '#6ee7b7', background: '#064e3b',
+          padding: '1px 6px', borderRadius: '3px', cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: '3px',
+          border: '1px solid #10b98155',
+        }}
+      >
+        ⚡ pre-warmed ({skills.length})
+        <i className={`fas fa-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: '6px' }} />
+      </span>
+      {open && (
+        <div style={{
+          marginTop: '4px', background: '#0f172a', border: '1px solid #1e293b',
+          borderRadius: '6px', padding: '4px 8px', maxWidth: '220px',
+          display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center',
+        }}>
+          {skills.map((s, i) => (
+            <span key={i} style={{ fontSize: '8px', color: '#a7f3d0', background: '#064e3b44', padding: '1px 4px', borderRadius: '3px' }}>
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TreeNode({ node, children, isRoot, modelName }) {
   const cfg = STATUS_COLORS[node.status?.toLowerCase()] || STATUS_COLORS.pending;
   return (
@@ -57,6 +91,7 @@ function TreeNode({ node, children, isRoot, modelName }) {
                 </span>
               )}
             </div>
+            {node.prewarmed && <PrewarmBadge skills={node.prewarm_skills || []} />}
           </>
         )}
         {isRoot && (
