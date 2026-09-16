@@ -374,6 +374,54 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "a67d0dec-62a7-41d1-98b6-20b9c5a00544",
     "status": "SHUTOFF"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b15e3405-f607-4294-95a4-b6be7c5f9b08",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b15e3405-f607-4294-95a4-b6be7c5f9b08",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b15e3405-f607-4294-95a4-b6be7c5f9b08",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "b15e3405-f607-4294-95a4-b6be7c5f9b08",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "aae6b62d-96c1-4d03-a1fd-33a8d20c6712",
+    "status": "ACTIVE"
    }
   ],
   "target_servers": [

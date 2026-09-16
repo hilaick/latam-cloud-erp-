@@ -391,14 +391,15 @@ class DeterministicExecutor:
                     try:
                         _pf_data = _json.loads(_pf[1])
                         _existing_tasks = _pf_data.get('tasks', [])
-                        # Check by source server name in task
+                        # Match by source server name in task — NOT just any running task
                         for _t in _existing_tasks:
                             _t_state = _t.get('state', '')
-                            _t_src = _t.get('source_server_name', '') or ''
-                            if target in _t_src or _t_state in ('RUNNING', 'MIGRATE_SUCCESS', 'READY', 'SYNCING'):
+                            _t_src = _t.get('source_server_name', '') or _t.get('name', '')
+                            # Must match THIS source server name AND be in a valid state
+                            if (target in _t_src or target.replace('ecs-','') in _t_src) and _t_state not in ('MIGRATE_FAIL', 'DELETED', 'ERROR'):
                                 _task_id = _t.get('id', '')
                                 results.append({
-                                    'cmd': f'[idempotent] SMS task already exists: {_task_id[:20]} state={_t_state}',
+                                    'cmd': f'[idempotent] SMS task already exists for {target}: {_task_id[:20]} state={_t_state}',
                                     'status': 'success',
                                     'rc': 0,
                                     'output': f'{{"id": "{_task_id}", "state": "{_t_state}"}}',
@@ -410,7 +411,7 @@ class DeterministicExecutor:
                     except Exception:
                         pass
             elif action == 'SMS_TASK_START':
-                # Check if SMS task is already running/succeeded
+                # Check if SMS task for THIS server is already running/succeeded
                 _pf = _run_shell(f"hcloud SMS ListTasks --cli-region={self.source_region} --cli-profile={self.source_profile} --limit=50")
                 if _pf[0] == 0:
                     import json as _json
@@ -418,10 +419,12 @@ class DeterministicExecutor:
                         _pf_data = _json.loads(_pf[1])
                         for _t in _pf_data.get('tasks', []):
                             _t_state = _t.get('state', '')
-                            if _t_state in ('RUNNING', 'MIGRATE_SUCCESS', 'SYNCING'):
+                            _t_src = _t.get('source_server_name', '') or _t.get('name', '')
+                            # Must match THIS source server AND be in a running/success state
+                            if (target in _t_src or target.replace('ecs-','') in _t_src) and _t_state in ('RUNNING', 'MIGRATE_SUCCESS', 'SYNCING', 'READY'):
                                 _task_id = _t.get('id', '')
                                 results.append({
-                                    'cmd': f'[idempotent] SMS task already {_t_state}: {_task_id[:20]}',
+                                    'cmd': f'[idempotent] SMS task for {target} already {_t_state}: {_task_id[:20]}',
                                     'status': 'success',
                                     'rc': 0,
                                     'output': f'{{"id": "{_task_id}", "state": "{_t_state}"}}',
