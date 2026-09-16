@@ -1708,7 +1708,7 @@ def get_execution_progress(project_id):
         prewarm_map = {}
         for _l in (status.get('log') or []):
             _s = str(_l)
-            _m = _re.search(r'\[minion:prewarm\] (PHASE_4_\d) pre-warmed \(top \d+ skills: ([^,\)]+),', _s)
+            _m = _re.search(r'\[minion:prewarm\] (PHASE_4_\d) pre-warmed \(top \d+ skills: ([^)]+?), \d+ chars', _s)
             if _m:
                 prewarm_map[_m.group(1)] = [x.strip() for x in _m.group(2).split(',') if x.strip()]
         phases = []
