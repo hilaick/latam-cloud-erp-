@@ -1214,8 +1214,16 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                 if isinstance(ec, dict):
                     src_servers = ec.get('source_servers') or []
                     if src_servers:
+                        # Per-server filtering: on retry, only include servers
+                        # that haven't migrated successfully. Successful servers
+                        # are left alone (idempotent checks handle them).
+                        _failing_servers = [s for s in src_servers if s.get('migration_status') != 'SUCCESS']
+                        _skipped = len(src_servers) - len(_failing_servers)
+                        _servers_to_show = _failing_servers if _failing_servers else src_servers
                         enriched += "\n\n=== SOURCE SERVERS (from executionContext — authoritative) ==="
-                        for srv in src_servers:
+                        if _skipped > 0:
+                            enriched += f"\n⚠️ {_skipped} server(s) already MIGRATE_SUCCESS — SKIPPED, will not be retried."
+                        for srv in _servers_to_show:
                             enriched += ("\n- {name}: eip={eip} private={private_ip} sms_id={sms_id} "
                                          "state={state} agent={agent_version} disk={disk_name} {disk_size}B"
                                          " flavor={flavor} vcpus={vcpus} ram_mb={ram_mb}").format(
@@ -1585,6 +1593,61 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 log(f"[cloud-writeback] persist failed: {_wbe}")
                     except Exception as _cwb_err:
                         log(f"[cloud-writeback] failed: {_cwb_err}")
+
+                # ── Per-server migration status tracking ──
+                # After PHASE_4_4/4_5, check SMS task status per server and
+                # mark each as SUCCESS/FAILED. On retry, only failing servers
+                # are included in the agent prompt — successful ones are left alone.
+                if phase_key in ('PHASE_4_4', 'PHASE_4_5') and success:
+                    try:
+                        import subprocess as _ssp
+                        _src_region = pdata.get('sourceRegion', 'ap-southeast-3')
+                        _src_profile = f'erp-{str(project_id)[-8:]}-src'
+                        _r = _ssp.run(
+                            ['hcloud', 'SMS', 'ListTasks', f'--cli-region={_src_region}', f'--cli-profile={_src_profile}', '--limit=50'],
+                            capture_output=True, text=True, timeout=30
+                        )
+                        _raw = _r.stdout
+                        # Skip non-JSON prefix
+                        for _ci, _cc in enumerate(_raw):
+                            if _cc == '{': break
+                        _td = json.loads(_raw[_ci:])
+                        _task_map = {}
+                        for _tt in _td.get('tasks', []):
+                            _task_map[_tt.get('source_server_name', '')] = _tt.get('state', '')
+                        # Update each source_server with migration_status
+                        _ctx = pdata.get('executionContext') or {}
+                        _src_srvs = _ctx.get('source_servers') or []
+                        _updated = False
+                        for _sv in _src_srvs:
+                            _sv_name = _sv.get('name', '')
+                            _sv_state = _task_map.get(_sv_name, '')
+                            if _sv_state == 'MIGRATE_SUCCESS':
+                                if _sv.get('migration_status') != 'SUCCESS':
+                                    _sv['migration_status'] = 'SUCCESS'
+                                    _updated = True
+                                    log(f'[per-server] {_sv_name}: MIGRATE_SUCCESS ✅ — will be skipped on retry')
+                            elif _sv_state == 'MIGRATE_FAIL':
+                                if _sv.get('migration_status') != 'FAILED':
+                                    _sv['migration_status'] = 'FAILED'
+                                    _sv['last_sms_error'] = _sv_state
+                                    _updated = True
+                                    log(f'[per-server] {_sv_name}: MIGRATE_FAIL ❌ — will be retried')
+                            elif _sv_state in ('RUNNING', 'SYNCING'):
+                                _sv['migration_status'] = 'RUNNING'
+                                _updated = True
+                        if _updated:
+                            _ctx['source_servers'] = _src_srvs
+                            pdata['executionContext'] = _ctx
+                            try:
+                                _proj_ps = ProjectData.query.get(project_id)
+                                if _proj_ps:
+                                    _proj_ps.data = json.dumps(pdata, ensure_ascii=False)
+                                    db.session.commit()
+                            except Exception:
+                                pass
+                    except Exception as _pse:
+                        log(f'[per-server] status check failed: {_pse}')
 
                 # ── Collect agent-created resources into resources_deployed ──
                 if success and phase_key in ('PHASE_4_3', 'PHASE_4_4'):
