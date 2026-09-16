@@ -1782,9 +1782,11 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     
                     # ── Persist completed_phases to DB (survives Flask restart) ──
                     try:
-                        state.completed_phases = json.dumps(pipeline_info['completed_phases'])
-                        state.phase_status_map = json.dumps(pipeline_info['phase_status'])
-                        db.session.commit()
+                        _s = ExecutionState.query.filter_by(project_id=project_id).first()
+                        if _s:
+                            _s.completed_phases = json.dumps(pipeline_info['completed_phases'])
+                            _s.phase_status_map = json.dumps(pipeline_info['phase_status'])
+                            db.session.commit()
                     except Exception:
                         pass
                     
