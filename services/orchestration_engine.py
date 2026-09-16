@@ -527,8 +527,8 @@ When done, report what you actually executed, the verification commands you ran,
 
     # ── Spawn Hermes CLI subprocess ──
     binary = (hc.hermes_binary_path if hc else None) or 'hermes'
-    delegation_model = (hc.delegation_model if hc else None) or 'deepseek-v4-pro'
-    delegation_provider = (hc.delegation_provider if hc else None) or 'zai'
+    delegation_model = (hc.delegation_model if hc else None) or 'glm-5.1'
+    delegation_provider = (hc.delegation_provider if hc else None) or 'custom'
     profile = 'exec'
 
     # Check if profile exists, fall back to default
