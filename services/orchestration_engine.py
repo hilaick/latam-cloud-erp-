@@ -623,19 +623,30 @@ When done, report what you actually executed, the verification commands you ran,
             _wd = threading.Thread(target=_kill_watchdog, daemon=True)
             _wd.start()
             try:
-                # Use readline() + poll instead of 'for line in proc.stdout'
-                # because closing stdout from watchdog thread doesn't break
-                # the iterator's internal read buffer.
+                # Use select-based reading with timeout instead of blocking readline
+                # because the pipe may stay open even after the process exits
+                # (child processes inheriting the file descriptor).
+                import select as _select
+                _stdout_fd = proc.stdout.fileno()
                 while True:
-                    line = proc.stdout.readline()
-                    if not line:  # EOF
-                        break
-                    if _proc_dead and not line.strip():
-                        # Process exited — drain remaining lines then break
-                        for _drain in proc.stdout:
-                            if _drain.strip():
-                                results_buf.append(_drain)
-                        break
+                    # Poll stdout with 2s timeout — allows checking _proc_dead
+                    _ready, _, _ = _select.select([_stdout_fd], [], [], 2.0)
+                    if _ready:
+                        line = proc.stdout.readline()
+                        if not line:  # EOF
+                            break
+                    else:
+                        # No data within 2s — check if process is dead
+                        if _proc_dead or proc.poll() is not None:
+                            # Drain any remaining data
+                            try:
+                                for _drain in proc.stdout:
+                                    if _drain.strip():
+                                        results_buf.append(_drain)
+                            except Exception:
+                                pass
+                            break
+                        continue
                     if not line.strip():
                         continue
                     results_buf.append(line)
