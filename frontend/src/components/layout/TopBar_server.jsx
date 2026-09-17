@@ -115,6 +115,8 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
         },
     ];
 
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
     return (
         <div className="bg-white border-b border-gray-200 px-3 md:px-6 lg:pl-20 py-2.5 md:py-4 flex items-center justify-between sticky top-0 z-[45] shadow-sm shrink-0">
             {/* Project Selector */}
@@ -193,16 +195,6 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                     className="bg-purple-800 border-purple-700 text-purple-100 hover:bg-purple-700 hover:text-purple-50 hover:border-purple-500 shadow-md"
                 />
 
-                {/* Command Terminal */}
-                <Button 
-                    onClick={onOpenCommandDrawer}
-                    type="default"
-                    shape="circle"
-                    size="large"
-                    icon={<ThunderboltOutlined />}
-                    className="bg-gray-800 border-gray-700 text-green-400 hover:bg-gray-700 hover:text-green-300 hover:border-gray-500 shadow-md"
-                />
-
                 {/* User Avatar */}
                 <div className="relative" ref={profileMenuRef}>
                     <Avatar 
@@ -232,20 +224,40 @@ export default function TopBar({ onLogout, onOpenGlossary, onOpenCommandDrawer, 
                                         {item.label}
                                     </button>
                                 ))}
+                                {/* Logout inside profile menu */}
+                                <div className="border-t border-gray-200 mt-2 pt-2">
+                                    <button
+                                        onClick={() => { setProfileMenuOpen(false); setShowLogoutConfirm(true); }}
+                                        className="w-full text-left px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors flex items-center"
+                                    >
+                                        <span className="w-5 text-center mr-2"><PoweroffOutlined /></span>
+                                        Sign Out
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Logout */}
-                <Button 
-                    onClick={onLogout}
-                    type="default"
-                    shape="circle"
-                    size="large"
-                    icon={<PoweroffOutlined />}
-                    className="bg-red-50 border-red-200 text-red-600 hover:bg-red-500 hover:text-white shadow-sm"
-                />
+                {/* Logout Confirmation Modal */}
+                {showLogoutConfirm && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100]" onClick={() => setShowLogoutConfirm(false)}>
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden border border-gray-200" onClick={e => e.stopPropagation()}>
+                            <div className="p-6 text-center">
+                                <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                                    <PoweroffOutlined className="text-2xl text-red-600" />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Sign Out?</h3>
+                                <p className="text-sm text-gray-500 mb-1">Any running migration pipeline will continue in the background.</p>
+                                <p className="text-sm text-gray-500">You will need to sign in again to access the dashboard.</p>
+                            </div>
+                            <div className="flex border-t border-gray-200">
+                                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+                                <button onClick={() => { setShowLogoutConfirm(false); onLogout(); }} className="flex-1 py-3 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors border-l border-gray-200">Sign Out</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
