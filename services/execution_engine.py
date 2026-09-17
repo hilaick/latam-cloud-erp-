@@ -1051,9 +1051,9 @@ class ExecutionEngine:
         for svc in wave0_services:
             if svc == 'VPN':
                 # VPN gateway for cross-region connectivity
-                sid += 1
+                step_id += 1
                 steps.append({
-                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "step_id": step_id, "phase": ExecutionEngine.PHASE_4_1,
                     "action": "CREATE_VPN_GATEWAY",
                     "target_resource": f"{_sandbox_prefix}-vpn-gw",
                     "pillar": "network",
@@ -1071,9 +1071,9 @@ class ExecutionEngine:
                 })
             elif svc == 'RDS':
                 # RDS needs dedicated subnet + SG with MySQL/PostgreSQL ports
-                sid += 1
+                step_id += 1
                 steps.append({
-                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "step_id": step_id, "phase": ExecutionEngine.PHASE_4_1,
                     "action": "CREATE_RDS_SUBNET_SG",
                     "target_resource": f"{_sandbox_prefix}-rds",
                     "pillar": "database",
@@ -1093,9 +1093,9 @@ class ExecutionEngine:
                 })
             elif svc == 'DWS':
                 # DWS needs dedicated subnet + SG with DB port
-                sid += 1
+                step_id += 1
                 steps.append({
-                    "step_id": sid, "phase": ExecutionEngine.PHASE_4_1,
+                    "step_id": step_id, "phase": ExecutionEngine.PHASE_4_1,
                     "action": "CREATE_DWS_SUBNET_SG",
                     "target_resource": f"{_sandbox_prefix}-dws",
                     "pillar": "database",

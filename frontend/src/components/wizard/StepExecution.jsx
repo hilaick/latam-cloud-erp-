@@ -3466,7 +3466,7 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
             const planData = await planRes.json();
             const executionPlan = planData.plan || planData;
             // Now run the dry-run with the plan
-            const res = await fetch(`/api/execution/${project?.id}/agentic-dry-run`, {
+            const res = await fetch(`/api/projects/${project?.id}/agentic-dry-run`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
