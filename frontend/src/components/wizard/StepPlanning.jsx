@@ -7,6 +7,7 @@ import CutoverRunbookView from './CutoverRunbookView';
 import AgenticOrchestrationPanel from './AgenticOrchestrationPanel';
 
 import TechnicalFeasibility from './TechnicalFeasibility';
+import AssessmentPreview from './AssessmentPreview';
 
 // Agent model label for the spawn tree. NEVER hardcode a version here — read from
 // the saved execution plan (project.data.executionPlan.model), falling back to the
@@ -264,60 +265,9 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                         </div>
                     )}
 
-                    {/* ── 3.6 Assessment Preview: synthesizes 3.1–3.5 → "should we proceed?" ── */}
+                    {/* ── 3.6 Assessment Preview: shallow simulation from project data ── */}
                     {subTab === 'assessment' && (
-                        <div className="p-6 h-full flex flex-col animate-fade-in">
-                            <div className="bg-indigo-50 border border-indigo-200 p-5 rounded-xl mb-4 flex items-start gap-4 text-indigo-800 shadow-inner shrink-0">
-                                <i className="fas fa-chart-bar mt-0.5 text-xl"></i>
-                                <div className="text-xs leading-relaxed">
-                                    <strong className="block mb-1 text-sm uppercase tracking-widest">Assessment Preview</strong>
-                                    Synthesizes outputs from Technical Feasibility (3.1), Delivery Physics (3.3), FinOps (3.4), and Strategic Tooling (3.5) into a preliminary readiness assessment.
-                                    This is a <b>shallow simulation</b> from raw project data — the deep plan-based validation happens in Phase 4.0 Readiness Gateway after the execution plan is built.
-                                </div>
-                            </div>
-
-                            {/* Feasibility Summary */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                {[
-                                    { label: 'Feasibility', icon: 'fa-clipboard-check', tab: 'feasibility', ok: !!project?.feasibilityAssessment, msg: project?.feasibilityAssessment ? `Score: ${project.feasibilityAssessment.score || 'N/A'}` : 'Not assessed' },
-                                    { label: 'Physics', icon: 'fa-microscope', tab: 'physics', ok: !!project?.physics, msg: project?.physics ? 'Calculated' : 'Not calculated' },
-                                    { label: 'FinOps', icon: 'fa-wallet', tab: 'finops', ok: !!project?.financials, msg: project?.financials ? 'Budgeted' : 'Not budgeted' },
-                                    { label: 'Tooling', icon: 'fa-tools', tab: 'tools', ok: !!project?.toolRecommendations, msg: project?.toolRecommendations ? `${(project.toolRecommendations.recommendations || []).length} assigned` : 'Not assigned' },
-                                ].map(card => (
-                                    <div key={card.label} onClick={() => setSubTab(card.tab)}
-                                        className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${
-                                            card.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
-                                        }`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <i className={`fas ${card.icon} ${card.ok ? 'text-emerald-600' : 'text-amber-500'}`}></i>
-                                            <span className="text-xs font-black uppercase tracking-widest text-slate-700">{card.label}</span>
-                                        </div>
-                                        <div className={`text-sm font-bold ${card.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                            <i className={`fas ${card.ok ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-1`}></i>
-                                            {card.msg}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Assessment Verdict */}
-                            {(() => {
-                                const allReady = project?.feasibilityAssessment && project?.physics && project?.financials && project?.toolRecommendations;
-                                return (
-                                    <div className={`rounded-xl border-2 p-5 ${allReady ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
-                                        <h4 className={`font-black text-sm uppercase tracking-widest mb-2 ${allReady ? 'text-emerald-800' : 'text-amber-800'}`}>
-                                            <i className={`fas ${allReady ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-2`}></i>
-                                            {allReady ? 'Assessment: Ready to Proceed' : 'Assessment: Incomplete Inputs'}
-                                        </h4>
-                                        <p className="text-xs text-slate-600">
-                                            {allReady
-                                                ? 'All planning inputs are populated. Build the execution plan in 3.7 Wave & Runbook Planning, then validate it in Phase 4.0 Readiness Gateway.'
-                                                : 'Complete the flagged inputs above before building the execution plan. The deep plan-based validation in Phase 4.0 will provide precise PASS/WARNINGS/BLOCKED status.'}
-                                        </p>
-                                    </div>
-                                );
-                            })()}
-                        </div>
+                        <AssessmentPreview activeProject={project} onUpdateProject={onUpdateProject} />
                     )}
 
                     {subTab === 'physics' && (

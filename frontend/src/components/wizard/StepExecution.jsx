@@ -4,6 +4,7 @@ import { ERPContext } from '../../context/ERPContext';
 import WaveZeroConfigModal from './WaveZeroConfigModal';
 import SpawnTreeVisualizer from './SpawnTreeVisualizer';
 import PhaseSummaryCard from './PhaseSummaryCard';
+import AgenticOrchestrationPanel from './AgenticOrchestrationPanel';
 
 const executableTypes = ['ECS', 'BMS', 'VM', 'SERVER', 'RDS', 'GAUSSDB', 'DB', 'DATABASE'];
 
@@ -3812,6 +3813,24 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
                         )}
                     </div>
                 </div>
+
+                {/* ── Simulation Visualization (constellation, traces, timeline, footprint) ── */}
+                {validationResult && !validationResult.error && validationResult.trace && (
+                    <div className="bg-slate-900 rounded-2xl border border-slate-700/50 overflow-hidden animate-fade-in">
+                        <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
+                            <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                                <i className="fas fa-project-diagram mr-2 text-indigo-400"></i>Simulation Results
+                            </h4>
+                            <span className="text-[9px] text-slate-500">{validationResult.trace.length} steps · {validationResult.summary?.total_sim_hours?.toFixed(1) || '?'} sim-hours</span>
+                        </div>
+                        <div style={{ maxHeight: '600px' }} className="overflow-y-auto">
+                            <AgenticOrchestrationPanel
+                                project={{ ...project, agenticDryRun: validationResult }}
+                                onUpdateProject={onUpdateProject}
+                            />
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Override Blockers (visible when BLOCKED) ── */}
                 {validationResult?.validation?.status === 'BLOCKED' && !overrideActive && (
