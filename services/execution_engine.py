@@ -980,6 +980,7 @@ class ExecutionEngine:
                 flavor_cache=project.get("target_flavor_cache", {}),
                 project_id=project.get("projectId", ""),
                 source_profile=source_profile, target_profile=target_profile,
+                mig_worker_triggers=mig_worker_triggers,
             ))
             step_id = steps[-1]["step_id"]
 
@@ -1257,10 +1258,12 @@ class ExecutionEngine:
                               flavor_cache: dict = None,
                               project_id: str = '',
                               source_profile: str = 'erp-source',
-                              target_profile: str = 'internal') -> List[dict]:
+                              target_profile: str = 'internal',
+                              mig_worker_triggers: list = None) -> List[dict]:
         """Build execution steps for a single resource based on strategy."""
         steps = []
         sid = step_id_counter
+        mig_worker_triggers = mig_worker_triggers or []
         name = node.get("name", "unknown")
         # Sandbox VPC naming: erp-migration-{short_id} for isolation from customer VPCs
         _sandbox_prefix = f"erp-migration-{project_id[-8:]}" if project_id else "erp-migration"
@@ -1775,9 +1778,9 @@ class ExecutionEngine:
 
         # ═══ PHASE 4.8: Finalize — destroy transient resources, delivery report, mark COMPLETE ═══
         # Step 1: Delete SMS migration project (source-side cleanup, preserves task records for audit)
-        step_id += 1
+        sid += 1
         steps.append({
-            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "step_id": sid, "phase": ExecutionEngine.PHASE_4_8,
             "action": "DELETE_SMS_MIGRATION_PROJECT",
             "target_resource": "sms-migration-project",
             "pillar": "compute",
@@ -1797,9 +1800,9 @@ class ExecutionEngine:
         })
 
         # Step 2: Release unbound EIPs in target region (staging/factory EIPs)
-        step_id += 1
+        sid += 1
         steps.append({
-            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "step_id": sid, "phase": ExecutionEngine.PHASE_4_8,
             "action": "RELEASE_UNBOUND_EIPS",
             "target_resource": "all",
             "pillar": "network",
@@ -1820,9 +1823,9 @@ class ExecutionEngine:
 
         # Step 3: Delete mig_worker ECS instances (if any were deployed)
         if mig_worker_triggers:
-            step_id += 1
+            sid += 1
             steps.append({
-                "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+                "step_id": sid, "phase": ExecutionEngine.PHASE_4_8,
                 "action": "DESTROY_MIG_WORKER_FINAL",
                 "target_resource": "mig-worker-target",
                 "pillar": "compute",
@@ -1838,9 +1841,9 @@ class ExecutionEngine:
             })
 
         # Step 4: Delete OBS migration buckets (temp staging buckets)
-        step_id += 1
+        sid += 1
         steps.append({
-            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "step_id": sid, "phase": ExecutionEngine.PHASE_4_8,
             "action": "DELETE_OBS_MIGRATION_BUCKETS",
             "target_resource": "all",
             "pillar": "storage",
@@ -1860,9 +1863,9 @@ class ExecutionEngine:
         })
 
         # Step 5: Final smoke test — verify target ECS still ACTIVE after cleanup
-        step_id += 1
+        sid += 1
         steps.append({
-            "step_id": step_id, "phase": ExecutionEngine.PHASE_4_8,
+            "step_id": sid, "phase": ExecutionEngine.PHASE_4_8,
             "action": "FINAL_SMOKE_TEST",
             "target_resource": "all",
             "pillar": "compute",
