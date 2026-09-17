@@ -102,13 +102,13 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     };
 
     const menuItems = [
-        { id: 'feasibility', num: '3.0', icon: 'fa-clipboard-check', label: 'Technical Feasibility' },
-        { id: 'wbs', num: '3.1', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
-        { id: 'physics', num: '3.2', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
-        { id: 'finops', num: '3.3', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
-        { id: 'tools', num: '3.4a', icon: 'fa-tools', label: 'Strategic Tooling' },
-        { id: 'execution', num: '3.4b', icon: 'fa-robot', label: 'Execution Mode' },
-        { id: 'runbook', num: '3.5', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
+        { id: 'feasibility', num: '3.1', icon: 'fa-clipboard-check', label: 'Technical Feasibility' },
+        { id: 'wbs', num: '3.2', icon: 'fa-tasks', label: 'WBS & RACI Matrix' },
+        { id: 'physics', num: '3.3', icon: 'fa-microscope', label: 'Delivery Physics Engine' },
+        { id: 'finops', num: '3.4', icon: 'fa-wallet', label: 'FinOps Budget & Burn' },
+        { id: 'tools', num: '3.5', icon: 'fa-tools', label: 'Strategic Tooling' },
+        { id: 'assessment', num: '3.6', icon: 'fa-chart-bar', label: 'Assessment Preview' },
+        { id: 'runbook', num: '3.7', icon: 'fa-calendar-alt', label: 'Wave & Runbook Planning' }
     ];
 
     // 🚨 NEW: Phase 3 → Phase 4 Gate — validate prerequisites & build ExecutionPlan
@@ -117,35 +117,32 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         let data = {};
         try { data = JSON.parse(project?.data || '{}'); } catch(e) {}
 
-        // REQUIRED: execution mode (now in 3.4b Execution Mode)
-        const mode = project?.executionMode || executionMode;
-        if (!mode) {
-            warnings.push({ level: 'required', tab: 'execution', msg: 'Execution Mode not selected. Choose Manual, Agentic, or Individual in 3.4b Execution Mode.' });
-        }
+        // REQUIRED: execution mode (now in 4.0 Readiness Gateway — no longer blocking here)
+        // Execution Mode moved to Phase 4.0 Readiness Gateway
 
         // RECOMMENDED: WBS & RACI populated
         if (!project?.wbsMatrix && !data?.wbs) {
-            warnings.push({ level: 'recommended', tab: 'wbs', msg: 'WBS & RACI Matrix not populated. Visit 3.1 to define detailed work breakdown.' });
+            warnings.push({ level: 'recommended', tab: 'wbs', msg: 'WBS & RACI Matrix not populated. Visit 3.2 to define detailed work breakdown.' });
         }
 
-        // RECOMMENDED: physics calculated (now 3.2)
+        // RECOMMENDED: physics calculated (now 3.3)
         if (!project?.physics) {
-            warnings.push({ level: 'recommended', tab: 'physics', msg: 'Delivery physics not calculated. Visit 3.2 for time/bandwidth estimates.' });
+            warnings.push({ level: 'recommended', tab: 'physics', msg: 'Delivery physics not calculated. Visit 3.3 for time/bandwidth estimates.' });
         }
 
-        // RECOMMENDED: finops budget (now 3.3) — FIXED: checks actual save keys
+        // RECOMMENDED: finops budget (now 3.4) — FIXED: checks actual save keys
         if (!project?.budget && !project?.financials) {
-            warnings.push({ level: 'recommended', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.3 for cost envelopes.' });
+            warnings.push({ level: 'recommended', tab: 'finops', msg: 'FinOps budget & burn not configured. Visit 3.4 for cost envelopes.' });
         }
 
-        // RECOMMENDED: tool assignments (now 3.4a)
+        // RECOMMENDED: tool assignments (now 3.5)
         if (!data?.toolAssignments && !data?.recommendations) {
-            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Visit 3.4a to run tool recommendations based on physics & cost analysis.' });
+            warnings.push({ level: 'recommended', tab: 'tools', msg: 'Tool assignments not generated. Visit 3.5 to run tool recommendations based on physics & cost analysis.' });
         }
 
-        // RECOMMENDED: wave plan
+        // RECOMMENDED: wave plan (now 3.7)
         if (!data?.waves && !data?.runbook) {
-            warnings.push({ level: 'recommended', tab: 'runbook', msg: 'Wave cutover plan not created. Visit 3.5 to group servers into waves.' });
+            warnings.push({ level: 'recommended', tab: 'runbook', msg: 'Wave cutover plan not created. Visit 3.7 to group servers into waves.' });
         }
 
         const hasBlocking = warnings.some(w => w.level === 'required');
@@ -259,7 +256,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                         <div key={`tools-${resourceRefreshKey}`} className="animate-fade-in h-full flex flex-col">
                             <div className="bg-amber-50 border-b border-amber-200 p-6 shrink-0">
                                 <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest"><i className="fas fa-tools mr-2"></i> Strategic Tooling Allocation</h4>
-                                <p className="text-xs text-amber-700/80 mt-1 font-medium">Select optimal migration engines informed by delivery physics and cost constraints from steps 3.2–3.3.</p>
+                                <p className="text-xs text-amber-700/80 mt-1 font-medium">Select optimal migration engines informed by delivery physics and cost constraints from steps 3.3–3.4.</p>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <ToolRecommendationView activeProject={project} onUpdateProject={onUpdateProject} onRefreshResources={handleRefreshResources} />
@@ -267,151 +264,59 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                         </div>
                     )}
 
-                    {subTab === 'execution' && (
-                        <div key={`execution-${resourceRefreshKey}`} className="animate-fade-in h-full flex flex-col">
-                            <div className="bg-purple-50 border-b border-purple-200 p-6 shrink-0">
-                                <h4 className="font-black text-purple-800 text-sm uppercase tracking-widest">
-                                    <i className="fas fa-robot mr-2"></i> Setup Phase 4 Execution Mode
-                                </h4>
-                                <p className="text-xs text-purple-700/80 mt-1 font-medium">
-                                    Select how workloads will be processed by the delivery team or orchestration engine.
-                                    <span className="block mt-1 text-purple-500">Run recommendations (3.4a) and wave planning (3.5) first for best results.</span>
-                                </p>
-                                {/* Resource Count + Refresh */}
-                                <div className="mt-3 flex items-center gap-3">
-                                    <div className="bg-white border border-purple-200 px-4 py-2 rounded-lg">
-                                        <div className="text-[10px] text-purple-600 uppercase tracking-widest font-bold">Resources in Target Architecture</div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg font-black text-purple-800">
-                                                {(() => {
-                                                    const savedNodes = project?.targetTopology?.mapperNodes;
-                                                    const allNodes = project?.mapperNodes || [];
-                                                    if (savedNodes && savedNodes.length > 0) {
-                                                        return `${savedNodes.length} / ${allNodes.length}`;
-                                                    }
-                                                    const filter = project?.topologyFilter || 'All';
-                                                    if (filter && filter !== 'All') {
-                                                        const inScope = allNodes.filter(n => {
-                                                            if (filter === 'In SOW') return n.status === 'Matched' || n.status === 'Quoted Only';
-                                                            if (filter === 'In Discovery') return n.status === 'Matched' || n.status === 'Live Only';
-                                                            return n.status === filter;
-                                                        });
-                                                        return `${inScope.length} / ${allNodes.length}`;
-                                                    }
-                                                    return allNodes.length;
-                                                })()}
-                                            </span>
-                                            <button 
-                                                onClick={handleRefreshResources}
-                                                className="text-[10px] bg-purple-100 text-purple-600 hover:bg-purple-200 px-2 py-1 rounded font-black uppercase tracking-widest transition-colors"
-                                                title="Refresh from saved Target Architecture"
-                                            >
-                                                <i className="fas fa-sync-alt mr-1"></i> Refresh
-                                            </button>
+                    {/* ── 3.6 Assessment Preview: synthesizes 3.1–3.5 → "should we proceed?" ── */}
+                    {subTab === 'assessment' && (
+                        <div className="p-6 h-full flex flex-col animate-fade-in">
+                            <div className="bg-indigo-50 border border-indigo-200 p-5 rounded-xl mb-4 flex items-start gap-4 text-indigo-800 shadow-inner shrink-0">
+                                <i className="fas fa-chart-bar mt-0.5 text-xl"></i>
+                                <div className="text-xs leading-relaxed">
+                                    <strong className="block mb-1 text-sm uppercase tracking-widest">Assessment Preview</strong>
+                                    Synthesizes outputs from Technical Feasibility (3.1), Delivery Physics (3.3), FinOps (3.4), and Strategic Tooling (3.5) into a preliminary readiness assessment.
+                                    This is a <b>shallow simulation</b> from raw project data — the deep plan-based validation happens in Phase 4.0 Readiness Gateway after the execution plan is built.
+                                </div>
+                            </div>
+
+                            {/* Feasibility Summary */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                {[
+                                    { label: 'Feasibility', icon: 'fa-clipboard-check', tab: 'feasibility', ok: !!project?.feasibilityResult, msg: project?.feasibilityResult ? 'Assessed' : 'Not assessed' },
+                                    { label: 'Physics', icon: 'fa-microscope', tab: 'physics', ok: !!project?.physics, msg: project?.physics ? 'Calculated' : 'Not calculated' },
+                                    { label: 'FinOps', icon: 'fa-wallet', tab: 'finops', ok: !!(project?.budget || project?.financials), msg: (project?.budget || project?.financials) ? 'Budgeted' : 'Not budgeted' },
+                                    { label: 'Tooling', icon: 'fa-tools', tab: 'tools', ok: !!(project?.data?.toolAssignments || project?.data?.recommendations), msg: (project?.data?.toolAssignments || project?.data?.recommendations) ? 'Assigned' : 'Not assigned' },
+                                ].map(card => (
+                                    <div key={card.label} onClick={() => setSubTab(card.tab)}
+                                        className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${
+                                            card.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
+                                        }`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <i className={`fas ${card.icon} ${card.ok ? 'text-emerald-600' : 'text-amber-500'}`}></i>
+                                            <span className="text-xs font-black uppercase tracking-widest text-slate-700">{card.label}</span>
+                                        </div>
+                                        <div className={`text-sm font-bold ${card.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                            <i className={`fas ${card.ok ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-1`}></i>
+                                            {card.msg}
                                         </div>
                                     </div>
-                                    <div className="text-xs text-purple-500">
-                                        {project?.targetTopology?.mapperNodes?.length > 0 ? "Using Saved Architecture" : 
-                                         project?.mapperNodes?.length > 0 ? "Using Unfiltered Discovery Data (Save & Proceed from Step 2.4 first)" : 
-                                         project?.blueprintData ? "Using SOW/Quote Data" : 
-                                         project?.blueprint ? "Using Blueprint Data" : 
-                                         "No Architecture Data"}
-                                    </div>
-                                </div>
+                                ))}
                             </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                                {/* Execution Mode Selector */}
-                                <div className="mb-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {/* Manual Pipeline */}
-                                        <button
-                                            onClick={() => {
-                                                setExecutionMode('manual');
-                                                onUpdateProject(project.id, 'executionMode', 'manual');
-                                            }}
-                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
-                                                executionMode === 'manual'
-                                                    ? 'border-blue-600 bg-blue-50 shadow-md shadow-blue-200/50'
-                                                    : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50'
-                                            }`}
-                                        >
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
-                                                executionMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
-                                            }`}>
-                                                <i className="fas fa-tasks text-lg"></i>
-                                            </div>
-                                            <h6 className="font-black text-sm text-slate-800 mb-1">Manual Pipeline</h6>
-                                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                                                Standard step-by-step Kanban execution. Teams manually update cards and trigger APIs per server.
-                                            </p>
-                                            {executionMode === 'manual' && (
-                                                <span className="inline-block mt-3 bg-blue-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
-                                                    <i className="fas fa-check mr-1"></i> Selected
-                                                </span>
-                                            )}
-                                        </button>
 
-                                        {/* Agentic Orchestration */}
-                                        <button
-                                            onClick={() => {
-                                                setExecutionMode('agentic');
-                                                onUpdateProject(project.id, 'executionMode', 'agentic');
-                                            }}
-                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
-                                                executionMode === 'agentic'
-                                                    ? 'border-purple-600 bg-purple-50 shadow-md shadow-purple-200/50'
-                                                    : 'border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50/50'
-                                            }`}
-                                        >
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
-                                                executionMode === 'agentic' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-500'
-                                            }`}>
-                                                <i className="fas fa-robot text-lg"></i>
-                                            </div>
-                                            <h6 className="font-black text-sm text-slate-800 mb-1">Agentic Orchestration</h6>
-                                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                                                Hermes autonomous engine takes control of the entire wave, deploying agents and syncing tasks automatically.
-                                            </p>
-                                            {executionMode === 'agentic' && (
-                                                <span className="inline-block mt-3 bg-purple-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
-                                                    <i className="fas fa-check mr-1"></i> Selected
-                                                </span>
-                                            )}
-                                        </button>
-
-                                        {/* Individual Tasks */}
-                                        <button
-                                            onClick={() => {
-                                                setExecutionMode('individual');
-                                                onUpdateProject(project.id, 'executionMode', 'individual');
-                                            }}
-                                            className={`p-5 rounded-xl border-2 text-left transition-all ${
-                                                executionMode === 'individual'
-                                                    ? 'border-emerald-600 bg-emerald-50 shadow-md shadow-emerald-200/50'
-                                                    : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50'
-                                            }`}
-                                        >
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
-                                                executionMode === 'individual' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
-                                            }`}>
-                                                <i className="fas fa-cube text-lg"></i>
-                                            </div>
-                                            <h6 className="font-black text-sm text-slate-800 mb-1">Individual Tasks</h6>
-                                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                                                Isolate workloads into standalone ad-hoc tasks. Ideal for tiny batches or specific database true-ups.
-                                            </p>
-                                            {executionMode === 'individual' && (
-                                                <span className="inline-block mt-3 bg-emerald-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">
-                                                    <i className="fas fa-check mr-1"></i> Selected
-                                                </span>
-                                            )}
-                                        </button>
+                            {/* Assessment Verdict */}
+                            {(() => {
+                                const allReady = project?.feasibilityResult && project?.physics && (project?.budget || project?.financials);
+                                return (
+                                    <div className={`rounded-xl border-2 p-5 ${allReady ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+                                        <h4 className={`font-black text-sm uppercase tracking-widest mb-2 ${allReady ? 'text-emerald-800' : 'text-amber-800'}`}>
+                                            <i className={`fas ${allReady ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-2`}></i>
+                                            {allReady ? 'Assessment: Ready to Proceed' : 'Assessment: Incomplete Inputs'}
+                                        </h4>
+                                        <p className="text-xs text-slate-600">
+                                            {allReady
+                                                ? 'All planning inputs are populated. Build the execution plan in 3.7 Wave & Runbook Planning, then validate it in Phase 4.0 Readiness Gateway.'
+                                                : 'Complete the flagged inputs above before building the execution plan. The deep plan-based validation in Phase 4.0 will provide precise PASS/WARNINGS/BLOCKED status.'}
+                                        </p>
                                     </div>
-                                </div>
-
-                                {/* Execution Mode selector panels — NO simulation, NO constellation, NO spawn tree here.
-                                    Those belong in 3.5 Wave & Runbook Planning after build-plan. */}
-                            </div>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -472,17 +377,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         >
                                             <i className={`fas ${buildPlanLoading ? 'fa-spinner fa-spin' : 'fa-sitemap'}`}></i> {buildPlanLoading ? 'Building...' : 'Build Execution Plan'}
                                         </button>
-                                        <button
-                                            onClick={handleDryRun}
-                                            disabled={dryRunLoading || !buildPlanResult?.ok}
-                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
-                                                dryRunLoading ? 'bg-slate-200 text-slate-400 cursor-wait' :
-                                                !buildPlanResult?.ok ? 'bg-slate-100 text-slate-300 cursor-not-allowed' :
-                                                'bg-slate-800 hover:bg-slate-900 text-white shadow'
-                                            }`}
-                                        >
-                                            <i className={`fas ${dryRunLoading ? 'fa-spinner fa-spin' : 'fa-flask'}`}></i> {dryRunLoading ? 'Simulating...' : 'Dry-Run Simulation'}
-                                        </button>
+                                        {/* Dry-Run moved to Phase 4.0 Readiness Gateway → Plan Validation */}
                                     </div>
                                 </div>
                             </div>

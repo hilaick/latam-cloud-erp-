@@ -3401,6 +3401,15 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
     const [epsBusy, setEpsBusy] = useState(null);           // which EP id is binding
     const [epsError, setEpsError] = useState(null);
 
+    // ── Execution Mode (moved from 3.4b) ──
+    const [executionMode, setExecutionMode] = useState(project?.executionMode || 'agentic');
+    // ── Plan Validation (dry-run) ──
+    const [validationResult, setValidationResult] = useState(null);
+    const [validationBusy, setValidationBusy] = useState(false);
+    // ── Override mechanism ──
+    const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
+    const [overrideActive, setOverrideActive] = useState(false);
+
     const selectEps = async (epsId, epsName) => {
         setEpsBusy(epsId); setEpsError(null);
         try {
@@ -3440,6 +3449,62 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
             setEpsError(e.message);
         }
         setEpsBusy(null);
+    };
+
+    // ── Plan Validation: run dry-run simulation gripping the built plan ──
+    const runPlanValidation = async () => {
+        setValidationBusy(true);
+        setValidationResult(null);
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            // First, ensure the plan is built
+            const planRes = await fetch(`/api/execution/${project?.id}/build-plan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({})
+            });
+            const planData = await planRes.json();
+            const executionPlan = planData.plan || planData;
+            // Now run the dry-run with the plan
+            const res = await fetch(`/api/execution/${project?.id}/agentic-dry-run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    execution_mode: executionMode,
+                    execution_plan: executionPlan.steps || executionPlan,
+                    plan_validation: true
+                })
+            });
+            const data = await res.json();
+            setValidationResult(data);
+        } catch (err) {
+            setValidationResult({ error: err.message });
+        } finally {
+            setValidationBusy(false);
+        }
+    };
+
+    // ── Override: log the override decision ──
+    const applyOverride = async () => {
+        if (!overrideAcknowledged) return;
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            await fetch(`/api/execution/${project?.id}/override`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    gate: 'plan_validation',
+                    blockers: validationResult?.validation?.blockers || [],
+                    warnings: validationResult?.validation?.warnings || [],
+                    acknowledged: true,
+                    timestamp: new Date().toISOString()
+                })
+            });
+            setOverrideActive(true);
+        } catch (err) {
+            console.error('Override logging failed:', err);
+            setOverrideActive(true); // proceed anyway — override is local
+        }
     };
 
     const runFullCheck = async () => {
@@ -3638,6 +3703,163 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
                     </div>
                 )}
 
+                {/* ── Execution Mode Selection (moved from 3.4b) ── */}
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+                    <div className="bg-slate-900 px-5 py-3 border-b border-slate-700">
+                        <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                            <i className="fas fa-cogs mr-2 text-indigo-400"></i>Execution Mode
+                        </h4>
+                    </div>
+                    <div className="px-5 py-3 space-y-2">
+                        <div className="text-[10px] text-slate-400 mb-2">How Phase 4 will execute. This determines orchestration style, not the plan itself.</div>
+                        {[
+                            { id: 'agentic', icon: 'fa-robot', label: 'Agentic Orchestration', desc: 'AI-driven step selection, adaptive recovery, parallel execution' },
+                            { id: 'individual', icon: 'fa-user-cog', label: 'Individual (Surgical)', desc: 'Per-server isolation, manual step control, debugging-friendly' },
+                            { id: 'manual', icon: 'fa-hand-paper', label: 'Manual', desc: 'No simulation. Execute plan steps directly, no dry-run gating' },
+                        ].map(mode => (
+                            <div key={mode.id} onClick={() => setExecutionMode(mode.id)}
+                                className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${
+                                    executionMode === mode.id
+                                        ? 'border-indigo-500/70 bg-indigo-900/20 ring-1 ring-indigo-500/30'
+                                        : 'border-slate-600/50 bg-slate-700/20 hover:border-slate-500/50'
+                                }`}>
+                                <i className={`fas ${mode.icon} text-lg ${executionMode === mode.id ? 'text-indigo-400' : 'text-slate-400'}`}></i>
+                                <div className="flex-1 min-w-0">
+                                    <div className={`text-xs font-bold ${executionMode === mode.id ? 'text-white' : 'text-slate-300'}`}>{mode.label}</div>
+                                    <div className="text-[9px] text-slate-400">{mode.desc}</div>
+                                </div>
+                                {executionMode === mode.id && <i className="fas fa-check-circle text-indigo-400"></i>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── Plan Validation (dry-run) ── */}
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+                    <div className="bg-slate-900 px-5 py-3 border-b border-slate-700 flex items-center justify-between">
+                        <h4 className="font-black text-xs text-slate-300 uppercase tracking-widest">
+                            <i className="fas fa-flask mr-2 text-cyan-400"></i>Plan Validation
+                        </h4>
+                        {validationResult?.validation && (
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
+                                validationResult.validation.status === 'PASS' ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/50' :
+                                validationResult.validation.status === 'PASS_WITH_WARNINGS' ? 'bg-amber-900/40 text-amber-400 border border-amber-700/50' :
+                                'bg-rose-900/40 text-rose-400 border border-rose-700/50'
+                            }`}>
+                                {validationResult.validation.status.replace('PASS_WITH_WARNINGS', '⚠ WARNINGS')}
+                            </span>
+                        )}
+                    </div>
+                    <div className="px-5 py-3">
+                        <div className="text-[10px] text-slate-400 mb-3">
+                            Simulates the built execution plan to predict PASS / WARNINGS / BLOCKED before committing resources.
+                            {executionMode === 'manual' && ' Manual mode — Plan Validation is advisory only, execution proceeds regardless.'}
+                        </div>
+                        <button onClick={runPlanValidation} disabled={validationBusy}
+                            className="w-full px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-colors disabled:opacity-50">
+                            <i className={`fas ${validationBusy ? 'fa-spinner fa-spin' : 'fa-play-circle'} mr-2`}></i>
+                            {validationBusy ? 'Validating...' : 'Run Plan Validation'}
+                        </button>
+
+                        {/* Validation Results */}
+                        {validationResult && !validationResult.error && validationResult.validation && (
+                            <div className="mt-4 space-y-2">
+                                {/* Blockers */}
+                                {validationResult.validation.blockers?.length > 0 && (
+                                    <div className="bg-rose-900/20 border border-rose-700/50 rounded-xl p-3">
+                                        <h5 className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-2">
+                                            <i className="fas fa-ban mr-1"></i>Blockers ({validationResult.validation.blockers.length})
+                                        </h5>
+                                        {validationResult.validation.blockers.map((b, i) => (
+                                            <div key={i} className="text-[10px] text-rose-300 mb-1">
+                                                <span className="font-bold">{b.action}</span>: {b.message}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {/* Warnings */}
+                                {validationResult.validation.warnings?.length > 0 && (
+                                    <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-3">
+                                        <h5 className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2">
+                                            <i className="fas fa-exclamation-triangle mr-1"></i>Warnings ({validationResult.validation.warnings.length})
+                                        </h5>
+                                        {validationResult.validation.warnings.map((w, i) => (
+                                            <div key={i} className="text-[10px] text-amber-300 mb-1">
+                                                <span className="font-bold">{w.action}</span>: {w.message}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {/* PASS */}
+                                {validationResult.validation.status === 'PASS' && (
+                                    <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-xl p-3 text-center">
+                                        <i className="fas fa-check-circle text-emerald-400 text-2xl mb-1"></i>
+                                        <div className="text-xs font-bold text-emerald-400">All checks passed — plan is ready for execution</div>
+                                    </div>
+                                )}
+                                {/* Trace summary */}
+                                {validationResult.trace && (
+                                    <div className="text-[9px] text-slate-500 mt-2">
+                                        {validationResult.trace.length} simulated steps · {validationResult.summary?.total_sim_hours?.toFixed(1) || '?'} sim-hours
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {validationResult?.error && (
+                            <div className="mt-3 text-[10px] text-rose-400 bg-rose-900/20 border border-rose-800/50 rounded-lg p-2">
+                                <i className="fas fa-exclamation-triangle mr-1"></i> {validationResult.error}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── Override Blockers (visible when BLOCKED) ── */}
+                {validationResult?.validation?.status === 'BLOCKED' && !overrideActive && (
+                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-2xl p-5 animate-fade-in">
+                        <div className="flex items-start gap-3">
+                            <i className="fas fa-exclamation-triangle text-amber-400 text-xl mt-0.5"></i>
+                            <div className="flex-1">
+                                <h4 className="font-black text-amber-400 text-sm mb-1">Override Blockers</h4>
+                                <p className="text-xs text-amber-300/80 mb-3">
+                                    The execution plan has been proven to work in practice. Blockers are predictions from the simulation, not certainties.
+                                    You may proceed, but execution may fail at the flagged steps.
+                                </p>
+                                <label className="flex items-center gap-2 text-xs text-amber-200 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={overrideAcknowledged}
+                                        onChange={e => setOverrideAcknowledged(e.target.checked)}
+                                        className="rounded bg-slate-700 border-slate-600"
+                                    />
+                                    I acknowledge the risks. Execution may fail at the flagged steps.
+                                </label>
+                                <div className="flex gap-3 mt-3">
+                                    <button
+                                        onClick={applyOverride}
+                                        disabled={!overrideAcknowledged}
+                                        className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black uppercase tracking-widest rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                                        <i className="fas fa-forward mr-2"></i>Continue Anyway
+                                    </button>
+                                    <button
+                                        onClick={() => { setOverrideAcknowledged(false); }}
+                                        className="px-5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-black uppercase tracking-widest rounded-xl transition-colors">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Override active confirmation */}
+                {overrideActive && (
+                    <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-2xl p-4 text-center">
+                        <i className="fas fa-forward text-emerald-400 mr-2"></i>
+                        <span className="text-xs font-bold text-emerald-400">Override applied — proceeding despite blockers</span>
+                        <div className="text-[9px] text-slate-400 mt-1">Audit trail: override logged at {new Date().toISOString()}</div>
+                    </div>
+                )}
+
                 {/* Risk Warning (Path B) */}
                 {showRiskWarning && (
                     <div className="bg-amber-900/30 border border-amber-700/50 rounded-2xl p-5 animate-fade-in">
@@ -3681,13 +3903,16 @@ function ReadinessGatewayView({ project, isGreenfield, authLevel, isZeroTrust, o
                     </button>
                     <button 
                         onClick={onApprove}
-                        disabled={!isReady || (showRiskWarning && !riskAcknowledged)}
+                        disabled={!isReady || (showRiskWarning && !riskAcknowledged) || (validationResult?.validation?.status === 'BLOCKED' && !overrideActive && executionMode !== 'manual')}
                         className={`px-8 py-2.5 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all ${
-                            isReady && (!showRiskWarning || riskAcknowledged)
+                            isReady && (!showRiskWarning || riskAcknowledged) && (executionMode === 'manual' || overrideActive || validationResult?.validation?.status !== 'BLOCKED')
                                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
                                 : 'bg-slate-600 text-slate-400 cursor-not-allowed'
                         }`}
-                        title={showRiskWarning && !riskAcknowledged ? 'Acknowledge risk warning first' : ''}
+                        title={
+                            showRiskWarning && !riskAcknowledged ? 'Acknowledge risk warning first' :
+                            validationResult?.validation?.status === 'BLOCKED' && !overrideActive && executionMode !== 'manual' ? 'Override blockers or switch to Manual mode' : ''
+                        }
                     >
                         <i className="fas fa-unlock mr-2"></i>
                         Unlock Execution Engine

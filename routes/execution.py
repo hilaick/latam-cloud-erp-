@@ -3511,3 +3511,54 @@ def get_server_compliance_api(project_id, server_name):
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── Phase 4.0 Readiness Gateway: Override Endpoint ──
+@execution_bp.route('/api/execution/<project_id>/override', methods=['POST'])
+def log_gate_override(project_id):
+    """
+    Log a manual override for a Readiness Gateway gate.
+    This is an audit trail record — it does NOT change execution state.
+    The override is immutable once written.
+    """
+    try:
+        from models import db, ProjectData
+        data = request.get_json(force=True)
+        gate = data.get('gate', 'unknown')
+        blockers = data.get('blockers', [])
+        warnings = data.get('warnings', [])
+        acknowledged = data.get('acknowledged', False)
+        timestamp = data.get('timestamp', datetime.utcnow().isoformat())
+
+        if not acknowledged:
+            return jsonify({"success": False, "error": "Must acknowledge risks before overriding"}), 400
+
+        # Load project and append override to its data
+        project = ProjectData.query.get(project_id)
+        if not project:
+            return jsonify({"success": False, "error": "Project not found"}), 404
+
+        project_data = project.data if isinstance(project.data, dict) else json.loads(project.data or '{}')
+        overrides = project_data.get('readiness_overrides', [])
+        override_record = {
+            "gate": gate,
+            "blockers": blockers,
+            "warnings": warnings,
+            "acknowledged": acknowledged,
+            "timestamp": timestamp,
+            "logged_at": datetime.utcnow().isoformat(),
+            "user": "current_user",  # TODO: wire to actual auth user
+        }
+        overrides.append(override_record)
+        project_data['readiness_overrides'] = overrides
+        project.data = json.dumps(project_data) if isinstance(project.data, str) else project_data
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "override": override_record,
+            "total_overrides": len(overrides),
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500

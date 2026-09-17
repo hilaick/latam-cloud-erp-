@@ -7686,6 +7686,22 @@ def register_agentic_dry_run_routes(execution_bp):
                     result = AgenticExecutionSimulator.execute_live(contract, decrypted_creds=decrypted_creds)
             else:
                 # 🟡 DRY-RUN: paper simulation only
+                # ── Plan-Validation mode (4.0 Readiness Gateway): simulator grips the built plan ──
+                # If the request includes an execution_plan, inject it into the contract so
+                # the simulator enriches the plan rather than decomposing from scratch.
+                execution_plan = data.get("execution_plan")
+                assessment_preview = data.get("assessment_preview", False)
+                
+                if execution_plan and isinstance(execution_plan, dict):
+                    # Plan Validation (4.0): simulate(plan=executionPlan, project=projectData)
+                    contract["_execution_plan"] = execution_plan
+                    contract["_simulation_mode"] = "plan_validation"
+                    logger.info(f"Dry-run: PLAN VALIDATION mode — gripping built plan with {len(execution_plan.get('steps', []))} steps")
+                elif assessment_preview:
+                    # Assessment Preview (3.5): lightweight simulation from raw project data
+                    contract["_simulation_mode"] = "assessment_preview"
+                    logger.info("Dry-run: ASSESSMENT PREVIEW mode — lightweight simulation from raw project data")
+                
                 result = AgenticExecutionSimulator.simulate(contract)
 
             # 🔑 Post-process: normalize phase keys for frontend matching
@@ -7710,6 +7726,40 @@ def register_agentic_dry_run_routes(execution_bp):
                 raw_phase = trace_entry.get("phase", "")
                 trace_entry["phase_group"] = _PHASE_NORM.get(raw_phase, raw_phase)
 
+            # ── Plan Validation / Assessment Preview: derive PASS / WARNINGS / BLOCKED status ──
+            # Extract blockers and warnings from the trace for the Readiness Gateway UI.
+            _validation_status = "PASS"
+            _blockers = []
+            _warnings = []
+            for trace_entry in result.get("trace", []):
+                status = trace_entry.get("status", "")
+                action = trace_entry.get("action", "")
+                msg = trace_entry.get("message", "")
+                # CRITICAL / BLOCKED entries are blockers
+                if status in ("CRITICAL", "BLOCKED", "FAILED"):
+                    _blockers.append({"action": action, "message": msg, "phase": trace_entry.get("phase", "")})
+                    _validation_status = "BLOCKED"
+                # WARNING entries are warnings (don't escalate to BLOCKED)
+                elif status in ("WARNING", "DEGRADED") and _validation_status != "BLOCKED":
+                    _warnings.append({"action": action, "message": msg, "phase": trace_entry.get("phase", "")})
+                    if _validation_status == "PASS":
+                        _validation_status = "PASS_WITH_WARNINGS"
+            
+            # For assessment_preview mode, also check feasibility blockers from summary
+            if contract.get("_simulation_mode") == "assessment_preview":
+                summary = result.get("summary", {})
+                if summary.get("blockers"):
+                    for b in summary["blockers"]:
+                        _blockers.append({"action": "feasibility", "message": b, "phase": "assessment"})
+                    _validation_status = "BLOCKED" if _blockers else _validation_status
+            
+            result["validation"] = {
+                "status": _validation_status,
+                "blockers": _blockers,
+                "warnings": _warnings,
+                "simulation_mode": contract.get("_simulation_mode", "full"),
+            }
+
             # 🔑 Save simulation results to project data so the GUI can display them
             try:
                 agenticDryRun = {
@@ -7720,6 +7770,7 @@ def register_agentic_dry_run_routes(execution_bp):
                     "total_sim_hours": result.get("summary", {}).get("total_sim_hours", 0),
                     "generated_at": result.get("summary", {}).get("generated_at"),
                     "mode": execution_mode,
+                    "validation": result.get("validation", {}),
                 }
                 # Write into project's data JSON
                 if isinstance(project_record.data, str):

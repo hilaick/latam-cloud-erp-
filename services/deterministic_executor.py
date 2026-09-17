@@ -654,6 +654,62 @@ class DeterministicExecutor:
             'status': 'success' if all_ok else 'failed',
             'results': results,
         }
+
+        # ── Plan metadata: fallback on failure ──
+        # If the step failed and the plan carries a fallback action, try it.
+        if not all_ok:
+            failure_modes = step.get('failure_modes') or []
+            fallback = step.get('fallback')
+            rollback = step.get('rollback')
+
+            # Log failure_modes as advisory metadata
+            if failure_modes:
+                entry['failure_modes'] = failure_modes
+                if log:
+                    log(f'[det] {action}: failure_modes available: {failure_modes}')
+
+            # Try fallback if defined
+            if fallback and isinstance(fallback, dict):
+                fb_action = fallback.get('action', '')
+                fb_cmd = fallback.get('command', '')
+                if fb_cmd:
+                    if log:
+                        log(f'[det] {action} failed → trying fallback: {fb_action or "unnamed"}')
+                    try:
+                        # Simple chain_val substitution for fallback commands
+                        fb_resolved = fb_cmd
+                        for _k, _v in chain_vals.items():
+                            fb_resolved = fb_resolved.replace(f'<{_k}>', str(_v))
+                        fb_rc, fb_out, fb_err = _run_shell(fb_resolved)
+                        fb_ok = fb_rc == 0
+                        entry['fallback'] = {
+                            'action': fb_action,
+                            'cmd': fb_resolved[:160],
+                            'status': 'success' if fb_ok else 'failed',
+                            'output': (fb_out or fb_err)[:400],
+                        }
+                        if fb_ok:
+                            entry['status'] = 'success_with_fallback'
+                            if log:
+                                log(f'[det] fallback succeeded: {fb_action}')
+                        else:
+                            if log:
+                                log(f'[det] fallback also failed: {fb_action}')
+                    except Exception as fb_err:
+                        entry['fallback'] = {'action': fb_action, 'status': 'error', 'error': str(fb_err)[:200]}
+
+            # Record rollback command for potential later use (don't execute now)
+            if rollback:
+                entry['rollback'] = rollback
+                if log:
+                    log(f'[det] {action}: rollback available in plan metadata')
+
+        # ── Plan metadata: preflight checks ──
+        # If the plan carries preflight checks, record them as advisory metadata
+        # (they were already evaluated by the 4.0 Readiness Gateway dry-run)
+        preflight = step.get('preflight')
+        if preflight:
+            entry['preflight'] = preflight
         if log:
             if all_ok:
                 log(f'[det] {action} on {target}: ✓')
