@@ -279,10 +279,10 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                             {/* Feasibility Summary */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                                 {[
-                                    { label: 'Feasibility', icon: 'fa-clipboard-check', tab: 'feasibility', ok: !!project?.feasibilityResult, msg: project?.feasibilityResult ? 'Assessed' : 'Not assessed' },
+                                    { label: 'Feasibility', icon: 'fa-clipboard-check', tab: 'feasibility', ok: !!project?.feasibilityAssessment, msg: project?.feasibilityAssessment ? `Score: ${project.feasibilityAssessment.score || 'N/A'}` : 'Not assessed' },
                                     { label: 'Physics', icon: 'fa-microscope', tab: 'physics', ok: !!project?.physics, msg: project?.physics ? 'Calculated' : 'Not calculated' },
-                                    { label: 'FinOps', icon: 'fa-wallet', tab: 'finops', ok: !!(project?.budget || project?.financials), msg: (project?.budget || project?.financials) ? 'Budgeted' : 'Not budgeted' },
-                                    { label: 'Tooling', icon: 'fa-tools', tab: 'tools', ok: !!(project?.data?.toolAssignments || project?.data?.recommendations), msg: (project?.data?.toolAssignments || project?.data?.recommendations) ? 'Assigned' : 'Not assigned' },
+                                    { label: 'FinOps', icon: 'fa-wallet', tab: 'finops', ok: !!project?.financials, msg: project?.financials ? 'Budgeted' : 'Not budgeted' },
+                                    { label: 'Tooling', icon: 'fa-tools', tab: 'tools', ok: !!project?.toolRecommendations, msg: project?.toolRecommendations ? `${(project.toolRecommendations.recommendations || []).length} assigned` : 'Not assigned' },
                                 ].map(card => (
                                     <div key={card.label} onClick={() => setSubTab(card.tab)}
                                         className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${
@@ -302,7 +302,7 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
 
                             {/* Assessment Verdict */}
                             {(() => {
-                                const allReady = project?.feasibilityResult && project?.physics && (project?.budget || project?.financials);
+                                const allReady = project?.feasibilityAssessment && project?.physics && project?.financials && project?.toolRecommendations;
                                 return (
                                     <div className={`rounded-xl border-2 p-5 ${allReady ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
                                         <h4 className={`font-black text-sm uppercase tracking-widest mb-2 ${allReady ? 'text-emerald-800' : 'text-amber-800'}`}>
