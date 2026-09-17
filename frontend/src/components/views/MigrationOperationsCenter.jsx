@@ -108,7 +108,16 @@ function MigrationOpsDashboard({ project }) {
     const actions = [...new Set((execPlan?.steps || []).filter(s => s.target_resource === selectedServer).map(s => s.action))];
     const reconciled = cloudState?.reconciled_steps || {};
     const planSteps = execPlan?.steps || [];
-    const stepStatus = (sid) => reconciled[sid] || 'pending';
+    // Step status: DB executionState takes priority, then cloud reconciliation, then pending
+    const dbStepStatuses = executionState?.steps || {};
+    const stepStatus = (sid) => dbStepStatuses[sid] || reconciled[sid] || 'pending';
+    const stepStatusColor = (st) => {
+        if (st === 'completed' || st === 'completed_by_cloud' || st === 'success') return 'text-emerald-600';
+        if (st === 'running' || st === 'running_in_cloud' || st === 'in_progress') return 'text-cyan-600';
+        if (st === 'failed' || st === 'error') return 'text-red-600';
+        if (st === 'skipped') return 'text-amber-600';
+        return 'text-slate-400';
+    };
     const cloudPhase = cloudState?.inferred_phase?.replace('PHASE_4_', '4.') || '—';
 
     return (
@@ -118,12 +127,17 @@ function MigrationOpsDashboard({ project }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <div className="text-white font-black text-sm uppercase tracking-widest"><i className="fas fa-tools text-emerald-400 mr-2"></i>Status Dashboard</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 font-mono">Engine: <span className="text-emerald-400 font-bold">{phase}</span> · Cloud: <span className="text-cyan-400 font-bold">{cloudPhase}</span> · {cloudState?.phase_reason || ''}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                            <span className="text-slate-500">Pipeline:</span> <span className="text-emerald-400 font-bold">{phase}</span>
+                            {' · '}
+                            <span className="text-slate-500">Cloud:</span> <span className="text-cyan-400 font-bold">{cloudPhase}</span>
+                            {cloudState?.phase_reason && <span className="text-slate-600"> ({cloudState.phase_reason})</span>}
+                        </div>
                     </div>
                     <div className="flex gap-2 text-[9px] font-mono">
-                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300"><i className="fas fa-robot mr-1 text-purple-400"></i>main: {realModel}</span>
-                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300"><i className="fas fa-paper-plane mr-1 text-blue-400"></i>delegate: {realDelegation}</span>
-                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300"><i className="fas fa-network-wired mr-1 text-amber-400"></i>VPC: {cloudState?.vpc_count || 0} · ECS: {cloudState?.ecs_count || 0}</span>
+                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300" title="LLM model driving the pipeline orchestrator"><i className="fas fa-robot mr-1 text-purple-400"></i>orchestrator: {realModel}</span>
+                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300" title="LLM model for delegated sub-tasks"><i className="fas fa-paper-plane mr-1 text-blue-400"></i>sub-agent: {realDelegation}</span>
+                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300" title="Deployed resources in target region (from Huawei Cloud API)"><i className="fas fa-network-wired mr-1 text-amber-400"></i>Target: VPC {cloudState?.vpc_count || 0} · ECS {cloudState?.ecs_count || 0}</span>
                     </div>
                 </div>
                 <div className="grid grid-cols-8 gap-1.5 mt-3">
@@ -149,7 +163,7 @@ function MigrationOpsDashboard({ project }) {
                     </div>
                     <div className="text-right shrink-0">
                         <div className="text-[9px] font-black uppercase text-slate-400">Elapsed</div>
-                        <div className="text-sm font-black text-white">{executionState.elapsed_display || '—'}</div>
+                        <div className="text-sm font-black text-white">{(executionState.progress_pct > 0 || executionState.thread_alive) ? (executionState.elapsed_display || '—') : '—'}</div>
                     </div>
                     {executionState.eta_display && executionState.eta_display !== '—' && executionState.progress_pct > 0 && executionState.progress_pct < 100 && (
                     <div className="text-right shrink-0">
@@ -165,9 +179,9 @@ function MigrationOpsDashboard({ project }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 {[
                     { l: 'SMS Sources', v: cloudState?.sms_source_count ?? '—', sub: `${cloudState?.sms_sources_connected ?? 0} connected`, c: 'text-emerald-600' },
-                    { l: 'SMS Tasks', v: cloudState?.sms_progress?.total ?? '—', sub: `${cloudState?.sms_progress?.running ?? 0} running`, c: 'text-amber-600' },
-                    { l: 'Plan', v: `${planSteps.length} steps`, sub: `${Object.values(reconciled).filter(v => v === 'completed_by_cloud').length} done in cloud`, c: 'text-indigo-600' },
-                    { l: 'Delegated', v: '—', sub: 'profile: default', c: 'text-purple-600' },
+                    { l: 'SMS Tasks', v: cloudState?.sms_progress?.total ?? '—', sub: `${cloudState?.sms_progress?.running ?? 0} running · ${cloudState?.sms_progress?.success ?? 0} done`, c: 'text-amber-600' },
+                    { l: 'Plan', v: `${planSteps.length} steps`, sub: `${Object.values(reconciled).filter(v => v === 'completed_by_cloud').length} verified in cloud · ${planSteps.filter(s => stepStatus(s.step_id) === 'pending').length} pending`, c: 'text-indigo-600' },
+                    { l: 'Servers', v: servers.length || '—', sub: `${new Set(planSteps.filter(s => stepStatus(s.step_id) === 'completed_by_cloud').map(s => s.target_resource)).size} completed`, c: 'text-purple-600' },
                 ].map(c => <div key={c.l} className="bg-white border border-slate-200 rounded-xl p-3"><div className="text-[9px] font-black uppercase text-slate-400 tracking-widest">{c.l}</div><div className="text-xl font-black text-slate-800 mt-0.5">{c.v}</div><div className={`text-[9px] font-bold ${c.c}`}>{c.sub}</div></div>)}
             </div>
 
@@ -222,7 +236,13 @@ function MigrationOpsDashboard({ project }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* COL 1: Plan Navigator */}
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden lg:col-span-1">
-                    <div className="bg-slate-50 border-b border-slate-200 p-3 flex justify-between items-center"><h3 className="font-black text-xs text-slate-800 uppercase tracking-widest"><i className="fas fa-list-check text-indigo-600 mr-1.5"></i>Plan Navigator</h3><button onClick={() => setShowPlan(v => !v)} className="text-[9px] text-indigo-600 font-black uppercase tracking-widest"><i className={`fas ${showPlan ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1`}></i>{showPlan ? 'Hide' : 'Show'}</button></div>
+                    <div className="bg-slate-50 border-b border-slate-200 p-3 flex justify-between items-center">
+                        <div>
+                            <h3 className="font-black text-xs text-slate-800 uppercase tracking-widest"><i className="fas fa-list-check text-indigo-600 mr-1.5"></i>Plan Navigator</h3>
+                            <div className="text-[8px] text-slate-400 mt-0.5">Execution plan from Phase 3.5 · status from DB + cloud</div>
+                        </div>
+                        <button onClick={() => setShowPlan(v => !v)} className="text-[9px] text-indigo-600 font-black uppercase tracking-widest"><i className={`fas ${showPlan ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1`}></i>{showPlan ? 'Hide' : 'Show'}</button>
+                    </div>
                     {showPlan && <div className="p-2 flex-1 overflow-y-auto max-h-[320px] custom-scrollbar">
                         {!planSteps.length && <div className="text-[11px] text-slate-400 p-2">No plan. <button onClick={buildPlan} className="text-indigo-600 font-bold">Build now</button></div>}
                         <div className="flex gap-1.5 mb-2">
@@ -231,7 +251,7 @@ function MigrationOpsDashboard({ project }) {
                             <button onClick={runStep} disabled={!selectedServer || !selectedAction || taskBusy} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black disabled:opacity-40">{taskBusy ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fas fa-play mr-1"></i>Run</>}</button>
                         </div>
                         {taskResult && <div className={`mb-2 p-2 rounded-lg border text-[9px] font-mono ${taskResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>{taskResult.error ? taskResult.error : `done: ${JSON.stringify(taskResult.result?.summary || taskResult.message || 'ok').slice(0, 200)}`}</div>}
-                        <table className="w-full text-left"><thead><tr className="border-b border-slate-200 text-[8px] font-black uppercase text-slate-400 tracking-widest"><th className="py-1 pr-1 w-7">#</th><th className="py-1 pr-1 w-9">Ph</th><th className="py-1 pr-1">Server</th><th className="py-1 pr-1">Action</th><th className="py-1 w-14">Status</th></tr></thead><tbody>{planSteps.filter(s => !selectedServer || s.target_resource === selectedServer).slice(0, 60).map(s => <tr key={s.step_id} className={`border-b border-slate-50 cursor-pointer hover:bg-indigo-50/40 ${s.target_resource === selectedServer ? 'bg-indigo-50/30' : ''}`} onClick={() => { setSelectedServer(s.target_resource); setSelectedAction(s.action); }}><td className="py-1 pr-1 text-[9px] font-mono text-slate-400">{s.step_id}</td><td className="py-1 pr-1 text-[9px] font-bold text-slate-500">{String(s.phase || '').replace('PHASE_4_', '4.')}</td><td className="py-1 pr-1 text-[9px] font-bold text-slate-600 truncate max-w-[90px]">{s.target_resource}</td><td className="py-1 pr-1 text-[9px] font-mono text-slate-700">{s.action}</td><td className={`py-1 text-[8px] font-black uppercase ${stepStatus(s.step_id) === 'completed_by_cloud' ? 'text-indigo-600' : stepStatus(s.step_id) === 'running_in_cloud' ? 'text-cyan-600' : 'text-slate-400'}`}>{stepStatus(s.step_id).replace(/_/g, ' ')}</td></tr>)}</tbody></table>
+                        <table className="w-full text-left"><thead><tr className="border-b border-slate-200 text-[8px] font-black uppercase text-slate-400 tracking-widest"><th className="py-1 pr-1 w-7">#</th><th className="py-1 pr-1 w-9">Ph</th><th className="py-1 pr-1">Server</th><th className="py-1 pr-1">Action</th><th className="py-1 w-14">Status</th></tr></thead><tbody>{planSteps.filter(s => !selectedServer || s.target_resource === selectedServer).slice(0, 60).map(s => <tr key={s.step_id} className={`border-b border-slate-50 cursor-pointer hover:bg-indigo-50/40 ${s.target_resource === selectedServer ? 'bg-indigo-50/30' : ''}`} onClick={() => { setSelectedServer(s.target_resource); setSelectedAction(s.action); }}><td className="py-1 pr-1 text-[9px] font-mono text-slate-400">{s.step_id}</td><td className="py-1 pr-1 text-[9px] font-bold text-slate-500">{String(s.phase || '').replace('PHASE_4_', '4.')}</td><td className="py-1 pr-1 text-[9px] font-bold text-slate-600 truncate max-w-[90px]">{s.target_resource}</td><td className="py-1 pr-1 text-[9px] font-mono text-slate-700">{s.action}</td><td className={`py-1 text-[8px] font-black uppercase ${stepStatusColor(stepStatus(s.step_id))}`}>{stepStatus(s.step_id).replace(/_/g, ' ')}</td></tr>)}</tbody></table>
                     </div>}
                 </div>
 
@@ -392,12 +412,17 @@ const TABS = [
     { id: 'mig_worker', label: 'mig_worker', icon: 'fa-server' },
 ];
 
-export default function MigrationOperationsCenter() {
+export default function MigrationOperationsCenter({ initialProjectId }) {
     const { projects, customers } = useContext(ERPContext);
-    const [selectedProjectId, setSelectedProjectId] = useState('');
+    const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId || '');
     const [activeTab, setActiveTab] = useState('status');
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Sync with navigation context — if user navigates from a project, keep it selected
+    useEffect(() => {
+        if (initialProjectId && !selectedProjectId) setSelectedProjectId(initialProjectId);
+    }, [initialProjectId]);
 
     const activeProjects = (projects || []).filter(p => p.id);
     const sp = activeProjects.find(p => String(p.id) === String(selectedProjectId)) || activeProjects[0];

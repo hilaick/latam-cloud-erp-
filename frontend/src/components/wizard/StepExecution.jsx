@@ -2646,6 +2646,9 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
     const [execLog, setExecLog] = useState([]);
     const [selectedServer, setSelectedServer] = useState(null);
     const [serverStatus, setServerStatus] = useState({});
+    const [serverStates, setServerStates] = useState([]);
+    const [serverLifecycle, setServerLifecycle] = useState({});
+    const [serverStatesLoading, setServerStatesLoading] = useState(false);
     // showSpawnTree removed — telemetry now in OrchestratorView's external execution dashboard
 
     // Servers for Phase 4 execution come from targetArchitecture (execution contract).
@@ -2686,6 +2689,30 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
         } catch (e) { /* silent */ }
     };
     useEffect(() => { buildPlan(); }, [project.id]);
+
+    // ── Fetch per-server migration states ──
+    const fetchServerStates = async () => {
+        setServerStatesLoading(true);
+        try {
+            const res = await fetch(`/api/execution/${project.id}/server-states`, {
+                headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    setServerStates(data.servers || []);
+                    setServerLifecycle(data.lifecycle || {});
+                }
+            }
+        } catch (e) { /* silent */ }
+        setServerStatesLoading(false);
+    };
+    useEffect(() => { fetchServerStates(); }, [project.id]);
+    // Poll server states every 15s during execution
+    useEffect(() => {
+        const iv = setInterval(fetchServerStates, 15000);
+        return () => clearInterval(iv);
+    }, [project.id]);
 
     const executeAll = async () => {
         setExecuting(true); setExecLog([{ msg: '[AGENTIC] Starting...', type: 'info' }]);
@@ -2738,7 +2765,176 @@ function MigrationOrchestratorView({ project, executionState, executionMode, onU
             {isManual && <MigrationManualView servers={servers} execPlan={execPlan} executeStep={executeStep} serverStatus={serverStatus} setServerStatus={setServerStatus} isZeroTrust={isZeroTrust} />}
             {/* MigrationAgenticView removed — replaced by lifecycle chart + external execution dashboard above */}
             {isIndividual && <MigrationIndividualView servers={servers} execPlan={execPlan} executeStep={executeStep} selectedServer={selectedServer} setSelectedServer={setSelectedServer} isZeroTrust={isZeroTrust} cloudState={cloudState} project={project} onPlanRefresh={buildPlan} />}
+            {/* ── Per-Server Lifecycle Grid (works in ALL execution modes) ── */}
+            <ServerLifecycleGrid
+                projectId={project.id}
+                servers={servers}
+                serverStates={serverStates}
+                serverLifecycle={serverLifecycle}
+                loading={serverStatesLoading}
+                onRefresh={fetchServerStates}
+                token={token}
+            />
         </div>
+    );
+}
+
+function ServerLifecycleGrid({ projectId, servers, serverStates, serverLifecycle, loading, onRefresh, token }) {
+    const [actionLoading, setActionLoading] = useState({});
+    const [complianceDetail, setComplianceDetail] = useState({});
+
+    const STATUS_STYLES = {
+        planned:          { bg: '#1e293b', border: '#475569', color: '#94a3b8', icon: 'fa-clock' },
+        running:          { bg: '#1e3a5f', border: '#3b82f6', color: '#60a5fa', icon: 'fa-spinner fa-spin' },
+        agent_installed:  { bg: '#1e3a5f', border: '#3b82f6', color: '#60a5fa', icon: 'fa-check-circle' },
+        syncing:          { bg: '#1a3326', border: '#10b981', color: '#34d399', icon: 'fa-sync-alt fa-spin' },
+        synced:           { bg: '#1a3326', border: '#10b981', color: '#34d399', icon: 'fa-check-double' },
+        cut_over:         { bg: '#1a3326', border: '#22c55e', color: '#4ade80', icon: 'fa-exchange-alt' },
+        completed:        { bg: '#1a3326', border: '#22c55e', color: '#4ade80', icon: 'fa-check-circle' },
+        failed:           { bg: '#3b1f1f', border: '#ef4444', color: '#f87171', icon: 'fa-exclamation-triangle' },
+        skipped:          { bg: '#1e293b', border: '#6b7280', color: '#9ca3af', icon: 'fa-forward' },
+    };
+
+    const handleResume = async (serverName) => {
+        setActionLoading(p => ({ ...p, [serverName]: 'resuming' }));
+        try {
+            const res = await fetch(`/api/execution/${projectId}/server-states/${encodeURIComponent(serverName)}/resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            if (data.success) onRefresh();
+            else alert(`Resume failed: ${data.error}`);
+        } catch (e) { alert(`Resume error: ${e.message}`); }
+        setActionLoading(p => ({ ...p, [serverName]: null }));
+    };
+
+    const handleSkip = async (serverName) => {
+        if (!confirm(`Skip ${serverName}? This server will not be migrated.`)) return;
+        setActionLoading(p => ({ ...p, [serverName]: 'skipping' }));
+        try {
+            const res = await fetch(`/api/execution/${projectId}/server-states/${encodeURIComponent(serverName)}/skip`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            });
+            const data = await res.json();
+            if (data.success) onRefresh();
+            else alert(`Skip failed: ${data.error}`);
+        } catch (e) { alert(`Skip error: ${e.message}`); }
+        setActionLoading(p => ({ ...p, [serverName]: null }));
+    };
+
+    const handleCompliance = async (serverName) => {
+        try {
+            const res = await fetch(`/api/execution/${projectId}/server-states/${encodeURIComponent(serverName)}/compliance`, {
+                headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setComplianceDetail(p => ({ ...p, [serverName]: data }));
+            }
+        } catch (e) { /* silent */ }
+    };
+
+    // Merge server list with server states
+    const mergedServers = servers.map(srv => {
+        const state = serverStates.find(st => st.source_server_name === srv.name);
+        return { ...srv, state: state || null };
+    });
+
+    if (!mergedServers.length) return null;
+
+    return (
+        <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
+                    <i className="fas fa-server mr-1" /> Server Lifecycle
+                </h3>
+                <button onClick={onRefresh} className="text-[10px] text-slate-500 hover:text-slate-300" disabled={loading}>
+                    <i className={`fas ${loading ? 'fa-spinner fa-spin' : 'fa-sync-alt'} mr-1`} />Refresh
+                </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {mergedServers.map((srv) => {
+                    const st = srv.state;
+                    const status = st?.status || 'planned';
+                    const style = STATUS_STYLES[status] || STATUS_STYLES.planned;
+                    const isFailed = status === 'failed';
+                    const isPlanned = status === 'planned';
+                    const isDone = ['completed', 'cut_over', 'synced', 'skipped'].includes(status);
+                    const acting = actionLoading[srv.name];
+                    const compliance = complianceDetail[srv.name];
+                    return (
+                        <div key={srv.name} className="rounded-lg p-3" style={{ background: style.bg, border: `1px solid ${style.border}` }}>
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-bold" style={{ color: style.color }}>
+                                    <i className={`fas ${style.icon} mr-1`} />{srv.name}
+                                </span>
+                                <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded" style={{ background: style.border + '30', color: style.color }}>
+                                    {status.replace(/_/g, ' ')}
+                                </span>
+                            </div>
+                            {/* Server details */}
+                            <div className="text-[10px] text-slate-500 mb-2">
+                                {srv.flavor && <span className="mr-2">Flavor: {srv.flavor}</span>}
+                                {st?.target_flavor && <span className="mr-2">→ {st.target_flavor}</span>}
+                                {st?.sms_task_id && <span>SMS: {st.sms_task_id.slice(0,12)}…</span>}
+                            </div>
+                            {/* Compliance badge */}
+                            {st?.target_requirements_met !== null && st?.target_requirements_met !== undefined && (
+                                <div className="mb-2">
+                                    <button onClick={() => handleCompliance(srv.name)}
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${st.target_requirements_met ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        <i className={`fas ${st.target_requirements_met ? 'fa-check' : 'fa-times'} mr-1`} />
+                                        {st.target_requirements_met ? 'Requirements Met' : 'Requirements NOT Met'}
+                                    </button>
+                                    {compliance && compliance.compliance_detail && (
+                                        <div className="mt-1 text-[9px] text-slate-500 bg-slate-800/50 rounded p-1">
+                                            {JSON.stringify(compliance.compliance_detail, null, 1).slice(0, 200)}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {/* Error message */}
+                            {isFailed && st?.error_message && (
+                                <div className="text-[10px] text-red-400 bg-red-500/10 rounded p-1 mb-2 break-all">
+                                    {st.error_message.slice(0, 150)}
+                                </div>
+                            )}
+                            {/* Step progress */}
+                            {st && (
+                                <div className="text-[10px] text-slate-600 mb-2">
+                                    Step: {st.current_step_id || '—'}{isFailed && st.failed_step_id ? ` (failed at ${st.failed_step_id})` : ''}
+                                </div>
+                            )}
+                            {/* Action buttons */}
+                            <div className="flex gap-1">
+                                {(isFailed || isPlanned) && (
+                                    <button onClick={() => handleResume(srv.name)} disabled={!!acting}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50">
+                                        <i className={`fas ${acting === 'resuming' ? 'fa-spinner fa-spin' : 'fa-play'} mr-1`} />
+                                        {isFailed ? 'Resume' : 'Start'}
+                                    </button>
+                                )}
+                                {!isDone && !isFailed && (
+                                    <button onClick={() => handleSkip(srv.name)} disabled={!!acting}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-500/20 text-slate-400 hover:bg-slate-500/30 disabled:opacity-50">
+                                        <i className={`fas ${acting === 'skipping' ? 'fa-spinner fa-spin' : 'fa-forward'} mr-1`} />Skip
+                                    </button>
+                                )}
+                                {isFailed && (
+                                    <button onClick={() => handleResume(srv.name)} disabled={!!acting}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50">
+                                        <i className="fas fa-redo mr-1" />Re-deploy
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+    </div>
     );
 }
 

@@ -218,10 +218,13 @@ class ExecutionState(db.Model):
     last_pipeline_log = db.Column(db.Text)  # JSON list of latest orchestration log lines (survives restart)
     completed_phases = db.Column(db.Text)   # JSON list of completed phase keys (survives Flask restart)
     phase_status_map = db.Column(db.Text)   # JSON dict of phase→status (survives Flask restart)
+    server_filter = db.Column(db.Text)      # JSON list of server names — only run steps for these servers (surgical resume)
     # Relationship to structured logs
     logs = db.relationship('ExecutionLog', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
     # Relationship to per-phase state (checkpoint-resilience)
     phase_states = db.relationship('PhaseState', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
+    # Relationship to per-server state (surgical resume)
+    server_states = db.relationship('ServerMigrationState', backref='execution_state', lazy='dynamic', cascade='all, delete-orphan')
 
 
 # ── Per-Phase Checkpoint State (survives Flask restart / server reboot) ──
@@ -254,6 +257,62 @@ class PhaseState(db.Model):
             except Exception:
                 return {}
         return {}
+
+# ── Per-Server Migration State (surgical resume / selective execution) ──
+# Tracks each server's lifecycle independently from PhaseState (which is phase-level).
+# Enables: resume failed server, skip server, start planned server mid-pipeline,
+# target requirements compliance, and per-server status reporting.
+class ServerMigrationState(db.Model):
+    __tablename__ = 'server_migration_states'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    execution_state_id = db.Column(db.Integer, db.ForeignKey('execution_states.id'), nullable=False, index=True)
+    project_id = db.Column(db.String(50), index=True, nullable=False)
+    source_server_id = db.Column(db.String(100))
+    source_server_name = db.Column(db.String(200), nullable=False, index=True)
+    target_ecs_id = db.Column(db.String(100))
+    target_ecs_name = db.Column(db.String(200))
+    sms_task_id = db.Column(db.String(100))
+    # Lifecycle: planned → agent_installed → syncing → synced → cut_over → completed
+    # Failure: planned → failed (at failed_step_id)
+    # Skip: planned → skipped
+    status = db.Column(db.String(30), nullable=False, default='planned')  # planned|running|agent_installed|syncing|synced|cut_over|completed|failed|skipped
+    current_step_id = db.Column(db.Integer)
+    failed_step_id = db.Column(db.Integer)
+    error_message = db.Column(db.Text)
+    # Target requirements compliance
+    target_flavor = db.Column(db.String(50))
+    target_flavor_source = db.Column(db.String(30))  # exact|mapped_vcpu_ram|discovered|placeholder
+    target_requirements_met = db.Column(db.Boolean, default=False)
+    target_requirements_detail = db.Column(db.Text)  # JSON — compliance check results
+    # Timestamps
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('project_id', 'source_server_name', name='_project_server_uc'),)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'source_server_id': self.source_server_id,
+            'source_server_name': self.source_server_name,
+            'target_ecs_id': self.target_ecs_id,
+            'target_ecs_name': self.target_ecs_name,
+            'sms_task_id': self.sms_task_id,
+            'status': self.status,
+            'current_step_id': self.current_step_id,
+            'failed_step_id': self.failed_step_id,
+            'error_message': self.error_message,
+            'target_flavor': self.target_flavor,
+            'target_flavor_source': self.target_flavor_source,
+            'target_requirements_met': self.target_requirements_met,
+            'target_requirements_detail': self.target_requirements_detail,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
 
 # 🚨 Structured Execution Logs — queryable, per-project event journal (Fix #7)
 class ExecutionLog(db.Model):

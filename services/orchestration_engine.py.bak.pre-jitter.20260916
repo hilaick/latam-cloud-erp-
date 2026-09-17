@@ -22,7 +22,6 @@ import os
 import re
 import sys
 import time
-import random
 import logging
 import threading
 import subprocess
@@ -555,7 +554,7 @@ When done, report what you actually executed, the verification commands you ran,
         '--quiet',
         '--model', delegation_model,
         '--provider', 'custom',
-        '--toolsets', 'terminal,file,web',
+        '--toolsets', 'terminal,file,web,mcp',
         '--reasoning', 'medium',
     ]
     # ── SKILL PRELOAD (phase-specific) ──
@@ -749,7 +748,7 @@ When done, report what you actually executed, the verification commands you ran,
                 last_error = f"LB transient error: {combined[:300]}"
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} hit transient LLM error, retrying...")
-                    time.sleep(15 * (attempt + 1) + random.uniform(0, 5))  # backoff: 15s, 30s, 45s
+                    time.sleep(15 * (attempt + 1))  # backoff: 15s, 30s, 45s
                     continue
                 return False, None, f"Hermes failed: {combined[:500]}"
             # Non-zero exit (NOT substantive — real failure)
@@ -757,21 +756,21 @@ When done, report what you actually executed, the verification commands you ran,
                 err_text = result.stderr.strip()[:500]
                 if attempt < max_spawn_retries:
                     logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} rc={result.returncode}, retrying...")
-                    time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
+                    time.sleep(8 * (attempt + 1))
                     continue
                 return False, None, f"Hermes failed: {err_text}"
         except subprocess.TimeoutExpired:
             last_error = f"Phase timed out after {PIPELINE_TIMEOUT_SECONDS}s"
             if attempt < max_spawn_retries:
                 logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} timed out, retrying...")
-                time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
+                time.sleep(8 * (attempt + 1))
                 continue
             return False, None, last_error
         except Exception as e:
             last_error = str(e)
             if attempt < max_spawn_retries:
                 logger.warning(f"[orchestration:{project_id}] {phase} spawn attempt {attempt+1} exception, retrying...")
-                time.sleep(8 * (attempt + 1) + random.uniform(0, 4))
+                time.sleep(8 * (attempt + 1))
                 continue
             return False, None, last_error
     return False, None, last_error
@@ -1350,16 +1349,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                         from services.deterministic_executor import DeterministicExecutor
                         det = DeterministicExecutor(pdata, project_id, phase_key,
                                                      target_region=pdata.get('region', 'la-north-2'))
-                        # ── Server filter: only run steps for selected servers ──
-                        # If server_filter is set on the execution state, pass it through
-                        _srv_filter = None
-                        try:
-                            _es_for_filter = ExecutionState.query.filter_by(project_id=project_id).first()
-                            if _es_for_filter and _es_for_filter.server_filter:
-                                _srv_filter = json.loads(_es_for_filter.server_filter)
-                        except Exception:
-                            pass
-                        det_ok, entries, failures, det_resources = det.run_phase(plan, log=log, server_filter=_srv_filter)
+                        det_ok, entries, failures, det_resources = det.run_phase(plan, log=log)
                         if det_ok:
                             response = f"Deterministic: {len(entries)} steps succeeded."
                             try:
@@ -1521,7 +1511,7 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                 break
                             prev_err = _err or prev_err
                             attempt += 1
-                            time.sleep(delay + random.uniform(0, 3))
+                            time.sleep(delay)
 
                 # ── SPAWN TREE RECORDING: persist agent node (in project data) ──
                 # So the SpawnTreeVisualizer poll shows real spawns (one agent per
@@ -1649,20 +1639,6 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                                     })
                                     updated = True
                             ctx['source_servers'] = _src_srv
-
-                        # ── Enrich source_servers with vcpus/ram/flavor from live ECS ──
-                        # This is critical for deterministic flavor resolution in PHASE_4_3.
-                        # Without it, <DISCOVERED_FLAVOR> placeholder forces agent lane.
-                        try:
-                            from services.cloud_resolver import enrich_source_servers_specs
-                            _src_before = sum(1 for s in (ctx.get('source_servers') or []) if s.get('vcpus'))
-                            enrich_source_servers_specs(ctx.get('source_servers') or [])
-                            _src_after = sum(1 for s in (ctx.get('source_servers') or []) if s.get('vcpus'))
-                            if _src_after > _src_before:
-                                updated = True
-                                log(f'[cloud-writeback] enriched {_src_after - _src_before} source_servers with vcpus/ram/flavor')
-                        except Exception as _enr_err:
-                            log(f'[cloud-writeback] source spec enrichment failed: {_enr_err}')
 
                         # Write target_ecs_id back to targetArchitecture.compute[]
                         _compute = (pdata.get('targetArchitecture') or {}).get('compute') or []
@@ -1990,18 +1966,6 @@ def _run_pipeline_thread(project_id, start_from, app, restart_phase=None):
                     # Don't halt the pipeline — continue to next phase.
                     # A failed phase may be retried later or its work may be
                     # completed by a downstream phase. The pipeline is resilient.
-                    # Update PhaseState so it doesn't stay 'running' forever.
-                    try:
-                        from models import PhaseState as _PS
-                        _ps = _PS.query.filter_by(project_id=project_id, phase=phase_key).first()
-                        if _ps:
-                            _ps.status = 'failed_with_continue'
-                            _ps.completed_at = datetime.utcnow()
-                            if error:
-                                _ps.error_message = str(error)[:500]
-                            db.session.commit()
-                    except Exception as _ps_err:
-                        logger.warning(f'PhaseState update on continue path failed: {_ps_err}')
                     log(f'[continue] {phase_key} failed but pipeline continues to next phase (resilient mode)')
                     state.status = 'IN_PROGRESS'
                     state.last_active_at = datetime.utcnow()

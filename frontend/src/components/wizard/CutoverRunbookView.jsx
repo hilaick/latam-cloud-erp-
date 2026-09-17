@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { EditableCell } from '../../utils/helpers';
 
-export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
+export default function CutoverRunbookView({ activeProject, onUpdateProject, defaultCollapsed = false }) {
     const runbook = activeProject?.runbook || [];
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
     const completedCount = runbook.filter(t => t.status === 'Completed').length;
     const progressPct = runbook.length > 0 ? Math.round((completedCount / runbook.length) * 100) : 0;
@@ -35,14 +36,34 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
     };
 
     return (
-        <div className="max-w-[1400px] mx-auto pb-12 animate-fade-in flex flex-col h-full">
+        <div className="max-w-[1400px] mx-auto pb-4 animate-fade-in flex flex-col">
             
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6 shrink-0 flex items-center gap-6">
-                <div className="w-16 h-16 rounded-full border-4 border-rose-100 flex items-center justify-center shrink-0 bg-rose-50">
-                    <span className="text-xl font-black text-rose-600">{progressPct}%</span>
+            {/* ── Collapsible Header ── */}
+            <div 
+                className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-0 shrink-0 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                onClick={() => setCollapsed(v => !v)}
+            >
+                <div className="w-12 h-12 rounded-full border-4 border-rose-100 flex items-center justify-center shrink-0 bg-rose-50">
+                    <span className="text-sm font-black text-rose-600">{progressPct}%</span>
                 </div>
-                <div className="flex-1">
-                    <h4 className="font-black text-slate-800 text-lg mb-1">Downtime Window Execution Tracker</h4>
+                <div className="flex-1 min-w-0">
+                    <h4 className="font-black text-slate-800 text-sm mb-0.5">
+                        <i className="fas fa-clipboard-list text-rose-400 mr-2"></i>
+                        Downtime Window Execution Tracker
+                    </h4>
+                    <div className="text-[10px] text-slate-400">
+                        {completedCount} of {runbook.length} tasks completed
+                        {runbook.length > 0 && <span> · minute-by-minute operational checklist for the cutover window</span>}
+                    </div>
+                </div>
+                <i className={`fas ${collapsed ? 'fa-chevron-down' : 'fa-chevron-up'} text-slate-400 text-sm`}></i>
+            </div>
+
+            {/* ── Collapsible Content ── */}
+            {!collapsed && (
+            <div className="mt-3 flex flex-col flex-1">
+                {runbook.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden shadow-inner">
                         <div className="bg-rose-500 h-full transition-all duration-500" style={{ width: `${progressPct}%` }}></div>
                     </div>
@@ -51,18 +72,18 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                         <span>{runbook.length} Total Steps</span>
                     </div>
                 </div>
-            </div>
+                )}
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1">
-                <div className="px-8 py-5 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center shrink-0">
-                    <div>
-                        <h3 className="font-black text-lg tracking-wide"><i className="fas fa-clipboard-list text-rose-400 mr-2"></i> Critical Cutover Runbook</h3>
-                        <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Minute-by-minute operational checklist for the cutover window.</p>
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1">
+                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                        <div>
+                            <h3 className="font-black text-sm tracking-wide"><i className="fas fa-clipboard-list text-rose-400 mr-2"></i> Critical Cutover Runbook</h3>
+                            <p className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-widest">Minute-by-minute operational checklist for the cutover window</p>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); handleAddManualTask(); }} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-md transition-transform active:scale-95">
+                            <i className="fas fa-plus mr-1"></i> Add Step
+                        </button>
                     </div>
-                    <button onClick={handleAddManualTask} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md transition-transform active:scale-95">
-                        <i className="fas fa-plus mr-2"></i> Add Step
-                    </button>
-                </div>
                 <div className="flex-1 bg-slate-50 overflow-x-auto custom-scrollbar relative">
                     <div className="absolute left-[39px] top-0 bottom-0 w-0.5 bg-slate-200 z-0"></div>
                     
@@ -124,6 +145,8 @@ export default function CutoverRunbookView({ activeProject, onUpdateProject }) {
                     </table>
                 </div>
             </div>
+            </div>
+            )}
         </div>
     );
 }

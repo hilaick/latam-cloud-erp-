@@ -924,6 +924,17 @@ def build_execution_plan(project_id):
         from app import db
         db.session.commit()
 
+        # ── Initialize per-server migration state tracking ──
+        try:
+            from services.server_tracker import init_server_states
+            from models import ExecutionState
+            _es = ExecutionState.query.filter_by(project_id=project_id).first()
+            _es_id = _es.id if _es else 0
+            _ec = pd.get('executionContext', {})
+            init_server_states(project_id, _es_id, plan, _ec, db)
+        except Exception as _iss_err:
+            logging.warning(f"init_server_states error: {_iss_err}")
+
         return jsonify({"success": True, "plan": plan})
     except Exception as e:
         import traceback
@@ -1712,7 +1723,7 @@ def get_execution_progress(project_id):
             if _m:
                 prewarm_map[_m.group(1)] = [x.strip() for x in _m.group(2).split(',') if x.strip()]
         phases = []
-        for n in range(1, 8):
+        for n in range(1, 9):
             pk = f'PHASE_4_{n}'
             ps = (status.get('phase_status') or {}).get(pk)
             st = (status.get('completed_phases') or [])
@@ -1920,7 +1931,7 @@ def orchestration_status(project_id):
                 for l in status.get('log', []):
                     if l.startswith('[done]'):
                         # Match phase by label or fallback key
-                        for n in range(1, 8):
+                        for n in range(1, 9):
                             pk = f'PHASE_4_{n}'
                             if pk in l or f'4.{n}' in l:
                                 completed.add(pk)
@@ -1944,7 +1955,28 @@ def orchestration_status(project_id):
                     status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
                     status['phase_status'] = {p: 'completed' for p in completed}
                     status['status'] = 'completed'
-                elif not status.get('status') or status.get('status') in ('idle', None):
+                # Also detect [fail] markers and PhaseState DB records
+                try:
+                    from models import PhaseState as _PS
+                    _all_ps = _PS.query.filter_by(project_id=project_id).all()
+                    for _ps_rec in _all_ps:
+                        _pk = _ps_rec.phase
+                        _ps_st = _ps_rec.status or ''
+                        if _ps_st == 'completed':
+                            status.setdefault('phase_status', {})[_pk] = 'completed'
+                            completed.add(_pk)
+                        elif _ps_st in ('failed', 'failed_with_continue'):
+                            status.setdefault('phase_status', {})[_pk] = 'completed' if _ps_st == 'failed_with_continue' else 'failed'
+                            if _ps_st == 'failed_with_continue':
+                                completed.add(_pk)
+                    if completed:
+                        status['completed_phases'] = sorted(completed, key=lambda p: int(p.split('_')[-1]))
+                        # If all 8 phases done (even with failed_with_continue), pipeline is completed
+                        if len(completed) >= 8:
+                            status['status'] = 'completed'
+                except Exception:
+                    pass
+                if not status.get('status') or status.get('status') in ('idle', None):
                     status['status'] = 'idle'
         except Exception as e:
             logger.warning(f"DB hydration failed: {e}")
@@ -3332,6 +3364,150 @@ def playbook_learning_stats():
             "total_playbooks": total_pb,
             "auto_learned_playbooks": auto_count,
             "manual_playbooks": total_pb - auto_count,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Per-Server Migration State API (surgical resume / selective execution)
+# ═══════════════════════════════════════════════════════════════════
+
+@execution_bp.route('/api/execution/<project_id>/server-states', methods=['GET'])
+def get_server_states_api(project_id):
+    """Get per-server migration states for a project."""
+    try:
+        from services.server_tracker import get_server_states, SERVER_LIFECYCLE
+        states = get_server_states(project_id)
+        return jsonify({
+            "success": True,
+            "servers": states,
+            "lifecycle": {k: {"label": v["label"], "color": v["color"], "next": v["next"]}
+                          for k, v in SERVER_LIFECYCLE.items()},
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/server-states/<server_name>/resume', methods=['POST'])
+def resume_server_api(project_id, server_name):
+    """Resume a failed/planned server from its last step or a specific step.
+    
+    Body: {"from_step_id": <int>}  (optional — defaults to failed_step_id or 1)
+    """
+    try:
+        from services.server_tracker import reset_server_for_resume, get_server_states
+        from models import db, ExecutionState, ServerMigrationState
+        data = request.get_json() or {}
+        from_step_id = data.get('from_step_id')
+        
+        srv = ServerMigrationState.query.filter_by(
+            project_id=project_id, source_server_name=server_name
+        ).first()
+        if not srv:
+            return jsonify({"success": False, "error": f"Server {server_name} not found"}), 404
+        
+        if not from_step_id:
+            from_step_id = srv.failed_step_id or srv.current_step_id or 1
+        
+        reset_server_for_resume(project_id, server_name, from_step_id, db)
+        
+        # Set server_filter on ExecutionState so the pipeline only runs this server
+        _es = ExecutionState.query.filter_by(project_id=project_id).first()
+        if _es:
+            _es.server_filter = json.dumps([server_name])
+            _es.status = 'PENDING'
+            _es.current_phase = 'PHASE_4_2'  # Resume from execution phase
+            db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "server": server_name,
+            "from_step_id": from_step_id,
+            "message": f"Server {server_name} reset to planned, will resume from step {from_step_id}",
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/server-states/<server_name>/skip', methods=['POST'])
+def skip_server_api(project_id, server_name):
+    """Skip a planned/pending server."""
+    try:
+        from services.server_tracker import skip_server
+        from models import db
+        skip_server(project_id, server_name, db)
+        return jsonify({"success": True, "server": server_name, "status": "skipped"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/server-states/batch-resume', methods=['POST'])
+def batch_resume_servers_api(project_id):
+    """Resume multiple servers at once.
+    
+    Body: {"servers": ["server1", "server2"]}
+    """
+    try:
+        from services.server_tracker import reset_server_for_resume
+        from models import db, ExecutionState, ServerMigrationState
+        data = request.get_json() or {}
+        servers = data.get('servers', [])
+        
+        if not servers:
+            return jsonify({"success": False, "error": "No servers specified"}), 400
+        
+        results = []
+        for name in servers:
+            srv = ServerMigrationState.query.filter_by(
+                project_id=project_id, source_server_name=name
+            ).first()
+            if srv:
+                from_step = srv.failed_step_id or srv.current_step_id or 1
+                reset_server_for_resume(project_id, name, from_step, db)
+                results.append({"server": name, "from_step_id": from_step, "status": "reset"})
+            else:
+                results.append({"server": name, "status": "not_found"})
+        
+        # Set server_filter on ExecutionState
+        _es = ExecutionState.query.filter_by(project_id=project_id).first()
+        if _es:
+            _es.server_filter = json.dumps(servers)
+            _es.status = 'PENDING'
+            _es.current_phase = 'PHASE_4_2'
+            db.session.commit()
+        
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@execution_bp.route('/api/execution/<project_id>/server-states/<server_name>/compliance', methods=['GET'])
+def get_server_compliance_api(project_id, server_name):
+    """Get target requirements compliance for a server."""
+    try:
+        from models import ServerMigrationState
+        srv = ServerMigrationState.query.filter_by(
+            project_id=project_id, source_server_name=server_name
+        ).first()
+        if not srv:
+            return jsonify({"success": False, "error": f"Server {server_name} not found"}), 404
+        
+        detail = srv.target_requirements_detail
+        if detail:
+            try:
+                detail = json.loads(detail)
+            except Exception:
+                pass
+        
+        return jsonify({
+            "success": True,
+            "server": server_name,
+            "target_flavor": srv.target_flavor,
+            "target_flavor_source": srv.target_flavor_source,
+            "target_requirements_met": srv.target_requirements_met,
+            "compliance_detail": detail,
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

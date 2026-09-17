@@ -165,8 +165,14 @@ def run_troubleshoot_loop(project_id, phase_key, step, error_text, log,
                                  'ready for next', 'no new creation needed',
                                  'already exist', 'already provisioned',
                                  'migrate_success', 'replications complete',
-                                 'all replications']
-            tail = str(resp[-300:]).lower() if resp else ''
+                                 'all replications',
+                                 'no orphaned resources', 'eips cleaned',
+                                 'tasks remaining.*0', 'pipeline.*finished',
+                                 'finalize.*complete', 'teardown.*complete']
+            # Strip Hermes CLI warning prefixes (e.g. "Warning: Unknown toolsets: mcp\n")
+            # These are framework noise, not phase failures.
+            _clean = re.sub(r'^Warning:.*?\n', '', str(resp), flags=re.MULTILINE)
+            tail = _clean[-400:].lower() if _clean else ''
             # 1. Hard blockers in conclusion → halt immediately
             if tail and any(t in tail for t in HARD_BLOCKERS):
                 # But even hard blockers can be overridden by explicit success

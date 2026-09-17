@@ -591,8 +591,9 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                 </div>
                             )}
 
-                            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} />
+                            {/* ── Sub-tabs: Execution Plan vs Cutover Runbook ── */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+                                <CutoverRunbookView activeProject={project} onUpdateProject={onUpdateProject} defaultCollapsed={true} />
                             </div>
                         </div>
                     )}

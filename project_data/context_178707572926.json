@@ -89,6 +89,66 @@
     "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
     "ecs_id": "7cf006aa-78a1-46f8-90b8-d99c5f3b5ede",
     "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "c3f1450f-cbab-4e95-bb31-834c1c00fb41",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "64dc895e-0c9b-4ef4-9c10-9a6861ca2dde",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "c3f1450f-cbab-4e95-bb31-834c1c00fb41",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "64dc895e-0c9b-4ef4-9c10-9a6861ca2dde",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "c3f1450f-cbab-4e95-bb31-834c1c00fb41",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "64dc895e-0c9b-4ef4-9c10-9a6861ca2dde",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "c3f1450f-cbab-4e95-bb31-834c1c00fb41",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "64dc895e-0c9b-4ef4-9c10-9a6861ca2dde",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0002",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0002-TARGET",
+    "ecs_id": "c3f1450f-cbab-4e95-bb31-834c1c00fb41",
+    "status": "ACTIVE"
+   },
+   {
+    "source_name": "ecs-49be-e903-20d3-12d0-0001",
+    "ecs_name": "ecs-49be-e903-20d3-12d0-0001-TARGET",
+    "ecs_id": "64dc895e-0c9b-4ef4-9c10-9a6861ca2dde",
+    "status": "ACTIVE"
    }
   ],
   "target_servers": [
@@ -548,7 +608,7 @@
     "step_id": 10,
     "commands": [
      {
-      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-75729268-src --server_id=<ecs_id>",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-75729268-src --server_id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Query source ECS specs for rightsizing",
       "type": "hcloud"
      }
@@ -626,7 +686,7 @@
     "step_id": 13,
     "commands": [
      {
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=4c5eda3a-3a33-48c4-a483-bf861edf8bff --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0001' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=4c5eda3a-3a33-48c4-a483-bf861edf8bff --target_server.vm_id=be46391b-e5f7-4e2b-9865-f495ba2cba53 --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "desc": "Create SMS task",
       "type": "hcloud"
      }
@@ -748,7 +808,7 @@
     "step_id": 17,
     "commands": [
      {
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Boot/verify target ECS is ACTIVE with migrated data",
       "type": "hcloud"
      },
@@ -821,7 +881,7 @@
       "type": "ssh"
      },
      {
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Confirm target ECS ACTIVE (production promoted)",
       "type": "hcloud"
      }
@@ -916,7 +976,7 @@
     "step_id": 22,
     "commands": [
      {
-      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-75729268-src --server_id=<ecs_id>",
+      "cmd": "hcloud ECS ShowServer --cli-region=ap-southeast-3 --cli-profile=erp-75729268-src --server_id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Query source ECS specs for rightsizing",
       "type": "hcloud"
      }
@@ -994,7 +1054,7 @@
     "step_id": 25,
     "commands": [
      {
-      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=4c5eda3a-3a33-48c4-a483-bf861edf8bff --target_server.vm_id=<ecs_id> --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
+      "cmd": "hcloud SMS CreateTask --name='migrate-ecs-49be-e903-20d3-12d0-0002' --type=MIGRATE_FILE --os_type=LINUX --source_server.id=4c5eda3a-3a33-48c4-a483-bf861edf8bff --target_server.vm_id=be46391b-e5f7-4e2b-9865-f495ba2cba53 --target_server.disks.1.disk_id=<sms_disk_id> --target_server.disks.1.name='Disk 1' --target_server.disks.1.device_use=OS --target_server.disks.1.disk_index=z --target_server.disks.1.msr_partition_size=-1 --use_public_ip=false --start_target_server=true --cli-region=ap-southeast-3",
       "desc": "Create SMS task",
       "type": "hcloud"
      }
@@ -1116,7 +1176,7 @@
     "step_id": 29,
     "commands": [
      {
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Boot/verify target ECS is ACTIVE with migrated data",
       "type": "hcloud"
      },
@@ -1189,7 +1249,7 @@
       "type": "ssh"
      },
      {
-      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=<ecs_id>",
+      "cmd": "hcloud ECS ListServersDetail --cli-region=la-north-2 --id=be46391b-e5f7-4e2b-9865-f495ba2cba53",
       "desc": "Confirm target ECS ACTIVE (production promoted)",
       "type": "hcloud"
      }

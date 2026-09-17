@@ -128,7 +128,7 @@ function App() {
                     {activePhase === 'radar' && <PreSalesRadar />}
                     {activePhase === 'pipeline' && <MasterPipeline />}
                     {activePhase === 'crm' && <CustomerDirectory />}
-                    {activePhase === 'migration_monitor' && <MigrationOperationsCenter />}
+                    {activePhase === 'migration_monitor' && <MigrationOperationsCenter initialProjectId={activeProjectId} />}
                     {activePhase === 'resource-discovery' && <LiveCloudNOC />}
                     {activePhase === 'master_hub' && <MasterExecutionHub />}
                     

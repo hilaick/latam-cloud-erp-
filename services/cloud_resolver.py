@@ -183,3 +183,49 @@ def resolve_command(cmd, values):
         if val and ph in cmd:
             cmd = cmd.replace(ph, str(val))
     return cmd
+
+
+def enrich_source_servers_specs(source_servers, src_region=SOURCE_REGION, src_profile='erp-src'):
+    """Enrich source_servers with vcpus, ram, flavor from live source ECS.
+    
+    Queries hcloud ECS ShowServer for each source server to get vcpus/ram/flavor.
+    Returns the enriched list (mutates in-place too).
+    This is needed so _resolve_flavor_from_cloud can work deterministically
+    in PHASE_4_3 without deferring to the agent lane.
+    """
+    if not source_servers:
+        return source_servers
+    for srv in source_servers:
+        if not isinstance(srv, dict):
+            continue
+        # Skip if already enriched
+        if srv.get('vcpus') and srv.get('ram'):
+            continue
+        _sid = srv.get('ecs_id') or srv.get('id') or ''
+        if not _sid:
+            continue
+        try:
+            r = subprocess.run(
+                ['hcloud', 'ECS', 'ShowServer', '--server_id=' + str(_sid),
+                 '--cli-region=' + src_region, '--cli-profile=' + src_profile],
+                capture_output=True, text=True, timeout=20,
+            )
+            if r.returncode != 0 or not r.stdout:
+                continue
+            d = json.loads(r.stdout)
+            _server = d.get('server', d)
+            _flavor = _server.get('flavor', {})
+            if isinstance(_flavor, dict):
+                srv['vcpus'] = int(_flavor.get('vcpus', 0) or 0)
+                srv['ram'] = int(_flavor.get('ram', 0) or 0)
+                srv['flavor_id'] = _flavor.get('id', '')
+            _image = _server.get('image', {})
+            if isinstance(_image, dict):
+                srv['os_type'] = _image.get('os_type', '')
+                srv['image_id'] = _image.get('id', '')
+            logger.info(f"[cloud-resolver] enriched {srv.get('name','?')}: "
+                        f"vcpus={srv.get('vcpus')}, ram={srv.get('ram')}, "
+                        f"flavor={srv.get('flavor_id')}")
+        except Exception as e:
+            logger.warning(f"[cloud-resolver] enrich failed for {_sid}: {e}")
+    return source_servers

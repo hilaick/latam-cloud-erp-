@@ -61,12 +61,26 @@ const DISK_TYPES = ['SSD', 'HDD', 'GPSSD', 'Ultra-high I/O', 'Mixed'];
 
 // Scenario-specific pre-fills
 const SCENARIO_PRESETS = {
-    'sap': { project_type: ['standard'], sourceEnvironment: ['vmware', 'bare_metal'], authLevel: ['Read-Only (Customer Managed)'], deliveryScope: ['turnkey'], complexityLevel: 'High', migrationScope: ['compute_single_servers', 'compute_batch_servers', 'database_migration'] },
-    'cross-cloud': { sourceEnvironment: ['aws', 'azure'], migrationScope: ['compute_single_servers', 'compute_batch_servers', 'storage_object_cross_cloud'], complexityLevel: 'Medium' },
+    // ─── Compute: On-Prem ───
     'on-prem': { project_type: ['standard'], sourceEnvironment: ['vmware', 'bare_metal'], authLevel: ['Local OS Admin'], migrationScope: ['compute_single_servers', 'compute_batch_servers'], complexityLevel: 'Low' },
+    // ─── Compute: Cross-Cloud ───
+    'cross-cloud': { sourceEnvironment: ['aws', 'azure', 'google_cloud'], migrationScope: ['compute_single_servers', 'compute_batch_servers', 'storage_object_cross_cloud'], complexityLevel: 'Medium' },
+    // ─── Compute: Huawei Cross-Region ───
+    'huawei-cross-region': { project_type: ['standard'], deliveryScope: ['turnkey'], complexityLevel: 'Medium', sourceEnvironment: ['huawei_cross_region'], migrationScope: ['compute_single_servers', 'compute_batch_servers'], authLevel: ['Full Admin (Partner Managed)'] },
+    // ─── Compute: Huawei Cross-Account ───
+    'huawei-cross-account': { project_type: ['standard'], deliveryScope: ['turnkey'], complexityLevel: 'Medium', sourceEnvironment: ['huawei_cross_account'], migrationScope: ['compute_single_servers', 'compute_batch_servers'], authLevel: ['Full Admin (Partner Managed)'] },
+    // ─── Compute: Huawei AZ-to-AZ ───
+    'huawei-az-to-az': { project_type: ['standard'], deliveryScope: ['turnkey'], complexityLevel: 'Low', sourceEnvironment: ['huawei_az_to_az'], migrationScope: ['compute_single_servers', 'compute_batch_servers'], authLevel: ['Full Admin (Partner Managed)'] },
+    // ─── Database: Redis/DCS (v1 — proven on both lanes) ───
+    'database-redis': { migrationScope: ['database_migration', 'database_synchronization'], deliveryScope: ['turnkey'], complexityLevel: 'Low', sourceEnvironment: ['huawei_cross_region', 'huawei_cross_account', 'huawei_az_to_az'], authLevel: ['Full Admin (Partner Managed)'] },
+    // ─── Database: DRS (v2) ───
     'database': { migrationScope: ['database_migration', 'database_synchronization'], deliveryScope: ['co_delivery'], complexityLevel: 'Medium' },
-    'object-storage': { migrationScope: ['storage_object_cross_cloud'], sourceEnvironment: ['aws', 'azure'], complexityLevel: 'Low' },
-    'multi-region': { deliveryScope: ['turnkey'], complexityLevel: 'Ultra-High', sourceEnvironment: ['huawei_cross_region'] },
+    // ─── Storage (v2) ───
+    'object-storage': { migrationScope: ['storage_object_cross_cloud', 'storage_object_cloud_to_cloud'], sourceEnvironment: ['aws', 'azure'], complexityLevel: 'Low' },
+    // ─── SAP (v2) ───
+    'sap': { project_type: ['standard'], sourceEnvironment: ['vmware', 'bare_metal'], authLevel: ['Read-Only (Customer Managed)'], deliveryScope: ['turnkey'], complexityLevel: 'High', migrationScope: ['compute_single_servers', 'compute_batch_servers', 'database_migration'] },
+    // ─── Legacy alias: multi-region → huawei-cross-region ───
+    'multi-region': { project_type: ['standard'], deliveryScope: ['turnkey'], complexityLevel: 'Medium', sourceEnvironment: ['huawei_cross_region'], migrationScope: ['compute_single_servers', 'compute_batch_servers'], authLevel: ['Full Admin (Partner Managed)'] },
 };
 
 export default function StepTriage({ data, onChange, scenarioId }) {

@@ -13,6 +13,7 @@ verifies, and reports per-step results. No model calls.
 """
 import json
 import logging
+from datetime import datetime
 import subprocess
 import re
 import time
@@ -258,7 +259,7 @@ class DeterministicExecutor:
             # Get source vCPU/RAM from plan or executionContext
             _src_vcpus = 0
             _src_ram_mb = 0
-            _ec = (self.plan or {}).get('executionContext') or {}
+            _ec = (self.pdata or {}).get('executionContext') or {}
             for _srv in (_ec.get('source_servers') or []):
                 if _srv.get('name') == target_name:
                     _src_vcpus = int(_srv.get('vcpus', 0) or 0)
@@ -283,6 +284,42 @@ class DeterministicExecutor:
                 return _candidates[0][0]
         except Exception as e:
             logger.warning(f"[det-exec] flavor resolution failed: {e}")
+        return ''
+
+    def _resolve_image_from_cloud(self, os_type: str = 'Linux') -> str:
+        """Query target region IMS for a public image matching the OS type.
+        
+        Looks for Ubuntu 22.04 by default (most common migration target).
+        Returns the image_id or ''.
+        """
+        try:
+            import subprocess as _sp
+            _cmd = ['hcloud', 'IMS', 'ListImages', '--cli-region', self.target_region,
+                    '--cli-profile', self.target_profile,
+                    '--image_type', 'gold', '--os_type', os_type,
+                    '--status', 'active', '--limit', '50']
+            _r = _sp.run(_cmd, capture_output=True, text=True, timeout=15)
+            if _r.returncode != 0 or not _r.stdout:
+                return ''
+            _data = json.loads(_r.stdout)
+            _images = _data.get('images', [])
+            # Prefer Ubuntu 22.04, then 20.04, then any active public image
+            _pref_order = ['22.04', '20.04', '18.04']
+            for _pref in _pref_order:
+                for _img in _images:
+                    _name = (_img.get('name', '') or '').lower()
+                    if 'ubuntu' in _name and _pref in _name:
+                        _iid = _img.get('id', '')
+                        if _iid:
+                            logger.info(f"[det-exec] image resolved: {_name} ({_iid})")
+                            return _iid
+            # Fallback: first active public image
+            if _images:
+                _iid = _images[0].get('id', '')
+                logger.info(f"[det-exec] image resolved (fallback): {_images[0].get('name','')} ({_iid})")
+                return _iid
+        except Exception as e:
+            logger.warning(f"[det-exec] image resolution failed: {e}")
         return ''
 
     def resolve_cmd(self, cmd, ctx=None, target_override=None):
@@ -330,6 +367,38 @@ class DeterministicExecutor:
             _resolved_flavor = self._resolve_flavor_from_cloud(target_name)
             if _resolved_flavor:
                 out = out.replace('<DISCOVERED_FLAVOR>', _resolved_flavor)
+                # ── Target requirements compliance check ──
+                try:
+                    from services.server_tracker import validate_target_requirements
+                    from models import ServerMigrationState, db as _db
+                    _compliance = validate_target_requirements(
+                        source_flavor='',  # unknown at this point
+                        resolved_flavor=_resolved_flavor,
+                        flavor_source='mapped_vcpu_ram',
+                        target_region=self.target_region,
+                    )
+                    _srv_state = ServerMigrationState.query.filter_by(
+                        project_id=self.project_id, source_server_name=target_name
+                    ).first()
+                    if _srv_state:
+                        _srv_state.target_flavor = _resolved_flavor
+                        _srv_state.target_flavor_source = 'mapped_vcpu_ram'
+                        _srv_state.target_requirements_met = _compliance['compliant']
+                        _srv_state.target_requirements_detail = json.dumps(_compliance)
+                        _db.session.commit()
+                except Exception as _cmp_err:
+                    logger.warning(f"[det-exec] compliance check error: {_cmp_err}")
+        # <DISCOVERED_IMAGE> — resolve by querying target region IMS
+        if '<DISCOVERED_IMAGE>' in out:
+            _os_type = 'Linux'
+            _ec = (self.pdata or {}).get('executionContext') or {}
+            for _srv in (_ec.get('source_servers') or []):
+                if _srv.get('name') == target_name and _srv.get('os_type'):
+                    _os_type = _srv['os_type']
+                    break
+            _resolved_image = self._resolve_image_from_cloud(_os_type)
+            if _resolved_image:
+                out = out.replace('<DISCOVERED_IMAGE>', _resolved_image)
         return out
 
     # ── step execution ────────────────────────────────────────────────────
@@ -608,17 +677,12 @@ class DeterministicExecutor:
                     log(f'[det] {action} on {target}: ✗')
         return entry
 
-    def run_phase(self, plan, log=None):
-        """Run ALL plan steps for this phase. Returns (success, entries, failures).
+    def run_phase(self, plan, log=None, server_filter=None):
+        """Run ALL plan steps for this phase. Returns (success, entries, failures, resources_deployed).
 
-        Chain-aware: runs steps in order; captures output values from each step
-        (vpc_id, sg_id, ecs_id, task_id...) and substitutes them into later
-        steps' <placeholders>. Secret placeholders (<AK>, <SK>...) are NEVER
-        substituted — they mark 'env' strategy and report blocked to force the
-        agent lane to use auth.cfg / env injection instead.
-
-        Optimization: after VPC completes, runs independent steps (Subnet, SG, EIP)
-        in parallel using ThreadPoolExecutor since they only need vpc_id.
+        server_filter: optional list of server names. If provided, only run steps
+        whose target_resource matches one of these servers. Infrastructure steps
+        (VPC, Subnet, SG, EIP) always run regardless of filter.
         """
         steps = [s for s in (plan.get('steps') or []) if s.get('phase') == self.phase_key]
         if not steps:
@@ -636,8 +700,19 @@ class DeterministicExecutor:
         _parallel_batch = []
         _sequential_rest = []
         
+        # ── Server filter: only run steps for selected servers ──
+        # Infrastructure steps (VPC, Subnet, SG, EIP) always run.
+        # Server-specific steps are filtered by target_resource.
+        _INFRA_ACTIONS = {'CREATE_VPC', 'CREATE_SUBNET', 'CREATE_SG', 'CREATE_EIP',
+                          'CREATE_SG_RULE', 'MIGRATION_PROJECT_CONFIG'}
+        
         for s in steps:
             action = s.get('action', '')
+            target = s.get('target_resource', '')
+            # Apply server_filter: skip server-specific steps not in filter
+            if server_filter and action not in _INFRA_ACTIONS:
+                if target not in server_filter:
+                    continue  # Skip this step — not in the selected servers
             if not _vpc_done and action == 'CREATE_VPC':
                 # Must run first
                 e = self.run_step(s, ctx, log, chain_vals)
@@ -709,4 +784,29 @@ class DeterministicExecutor:
                 resources_deployed.append(_res)
         
         success = len(failures) == 0
+        
+        # ── Step-level status writeback to executionPlan ──
+        # Write each entry's status back to the plan steps
+        for e in entries:
+            _sid = e.get('step_id')
+            for s in (plan.get('steps') or []):
+                if s.get('step_id') == _sid:
+                    s['status'] = e.get('status', 'unknown')
+                    s['status_updated_at'] = datetime.utcnow().isoformat()
+                    break
+        
+        # ── Server state tracking ──
+        # Update ServerMigrationState for each step result
+        try:
+            from services.server_tracker import update_server_from_step
+            from models import db as _db
+            for e in entries:
+                _sid = e.get('step_id')
+                for s in (plan.get('steps') or []):
+                    if s.get('step_id') == _sid:
+                        update_server_from_step(self.project_id, s, e, _db)
+                        break
+        except Exception as _st_err:
+            logger.warning(f"[server_tracker] step writeback error: {_st_err}")
+        
         return success, entries, failures, resources_deployed
