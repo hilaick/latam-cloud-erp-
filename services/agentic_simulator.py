@@ -4541,20 +4541,12 @@ class AgenticExecutionSimulator:
             "project_id": project_id[:16] if project_id else "",
             "source_region": source_region,
             "discovered_at": _dt.datetime.utcnow().isoformat() + "Z",
-            # Source servers → become target migration specs
-            "compute": [
-                {
-                    "source_name": s.get("name", "?"),
-                    "source_id": s.get("id", ""),
-                    "source_region": source_region,
-                    "flavor": s.get("flavor", {}).get("id", "unknown") if isinstance(s.get("flavor"), dict) else "unknown",
-                    "status": s.get("status", "?"),
-                    "vpc_id": s.get("metadata", {}).get("vpc_id", "") if isinstance(s.get("metadata"), dict) else "",
-                    "os_type": s.get("metadata", {}).get("os_type", "Linux") if isinstance(s.get("metadata"), dict) else "Linux",
-                    "migration_status": "pending",
-                }
-                for s in source_servers
-            ] if source_servers else [],
+            # Source servers → become target migration specs (dedup by id/name —
+            # source listing can return the same ECS twice as full + truncated names)
+            "compute": [],
+            # Source volumes → become target storage specs (SYSTEM/BLOCK disks only,
+            # never boot volumes — boot disks belong to their parent ECS)
+            "storage": [],
             # Existing target VPCs
             "network": [
                 {
@@ -4565,26 +4557,54 @@ class AgenticExecutionSimulator:
                 }
                 for v in actual_vpcs
             ] if actual_vpcs else [],
-            # Source volumes → become target storage specs
-            "storage": [
-                {
-                    "source_name": v.get("name", "?"),
-                    "source_id": v.get("id", ""),
-                    "source_region": source_region,
-                    "size_gb": v.get("size", 0),
-                    "status": v.get("status", "?"),
-                    "migration_status": "pending",
-                }
-                for v in source_volumes
-            ] if source_volumes else [],
             "migration_summary": {
                 "servers_to_migrate": len(source_servers),
-                "volumes_to_migrate": len(source_volumes),
+                "volumes_to_migrate": 0,
                 "source_region": source_region,
                 "target_region": region,
                 "estimated_duration_h": len(source_servers) * 1.5 + 0.5,
             },
         }
+        _seen_sources = {}
+        for s in source_servers:
+            s_id = s.get("id", "")
+            s_name = s.get("name", "?")
+            s_key = s_id or s_name
+            if s_key and s_key in _seen_sources:
+                # duplicate (full + truncated name variant) — merge, keep rich row
+                _seen_sources[s_key]["status"] = s.get("status", _seen_sources[s_key].get("status", "?"))
+                continue
+            _src = {
+                "source_name": s_name,
+                "source_id": s_id,
+                "source_region": source_region,
+                "flavor": s.get("flavor", {}).get("id", "unknown") if isinstance(s.get("flavor"), dict) else "unknown",
+                "status": s.get("status", "?"),
+                "vpc_id": s.get("metadata", {}).get("vpc_id", "") if isinstance(s.get("metadata"), dict) else "",
+                "os_type": s.get("metadata", {}).get("os_type", "Linux") if isinstance(s.get("metadata"), dict) else "Linux",
+                "migration_status": "pending",
+            }
+            if s_key:
+                _seen_sources[s_key] = _src
+            target_arch["compute"].append(_src)
+        # Volumes: skip boot/system disks (EVS API returns `bootable: "true"` on the
+        # volume created with the ECS) — only data disks are standalone resources.
+        _data_volumes = []
+        for v in source_volumes:
+            _boot = str(v.get("bootable", "false")).lower()
+            if _boot == "true":
+                continue
+            _data_volumes.append({
+                "source_name": v.get("name", "?"),
+                "source_id": v.get("id", ""),
+                "source_region": source_region,
+                "size_gb": v.get("size", 0),
+                "status": v.get("status", "?"),
+                "bootable": False,
+                "migration_status": "pending",
+            })
+        target_arch["storage"] = _data_volumes
+        target_arch["migration_summary"]["volumes_to_migrate"] = len(_data_volumes)
         
         trace.append({
             "id": step_id, "phase": "PHASE_2_4", "agent": "ArchitectureMerger",
@@ -5233,6 +5253,26 @@ class AgenticExecutionSimulator:
             migration_resources = mapper_nodes
             network_resources = []
             logger.info(f"No targetArchitecture found — falling back to mapperNodes: {len(migration_resources)} resources")
+
+        # ── HARD FILTER: system/boot disks are NOT standalone resources ──
+        # System disks belong to their parent ECS (boot volume created with the
+        # instance). Legacy data (pre-discovery-fix) still has them as separate EVS
+        # rows — filtering here protects physics, tooling and simulation from
+        # double-counting. Detection: bootable flag OR Huawei boot-volume naming
+        # <server>-volume-0000/…-volume-000 pattern.
+        _pre_filter_count = len(migration_resources)
+        migration_resources = [
+            r for r in migration_resources
+            if not ((r.get("type") or "").upper() in ("EVS", "DISK", "VOLUME")
+                    and (r.get("bootable") is True
+                         or re.search(r'(?:-|^)volume-0+$', (r.get("name") or r.get("source_name") or ""))))
+        ]
+        if len(migration_resources) != _pre_filter_count:
+            logger.info(
+                f"System-disk filter: removed {_pre_filter_count - len(migration_resources)} "
+                f"boot/system EVS entries from migration resources "
+                f"(remaining: {len(migration_resources)})"
+            )
 
         waves = project.get("waves", [])
         # If server selection is active, filter pre-defined waves to only include selected servers

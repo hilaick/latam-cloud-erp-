@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Dict, Any
 
+import re
 from huaweicloudsdkcore.auth.credentials import BasicCredentials, GlobalCredentials
 from huaweicloudsdkcore.region.region import Region
 from huaweicloudsdkiam.v3 import IamClient, KeystoneListProjectsRequest
@@ -281,12 +282,37 @@ class HuaweiDiscovery:
                             })
                         except Exception:
                             pass
+
+                        # ── Volume linkage: os-extended-volumes:volumes_attached ──
+                        # The SDK maps 'os-extended-volumes:volumes_attached' to
+                        # os_extended_volumes_volumes_attached. Capture volume IDs +
+                        # device names so downstream (topology mapper, physics, tool
+                        # recommendation, simulation) can attach storage to its parent
+                        # server instead of treating system disks as standalone EVS.
+                        volumes_attached = []
+                        try:
+                            _va = getattr(s, 'os_extended_volumes_volumes_attached', None)
+                            if _va is None:
+                                _va = getattr(s, 'os-extended-volumes:volumes_attached', [])
+                            if _va:
+                                for _v in _va:
+                                    if isinstance(_v, dict):
+                                        volumes_attached.append({
+                                            "id": _v.get("id"), "device": _v.get("device"),
+                                        })
+                                    else:
+                                        volumes_attached.append({
+                                            "id": getattr(_v, "id", None), "device": getattr(_v, "device", None),
+                                        })
+                        except Exception:
+                            volumes_attached = []
                         
                         inventory["compute"].append({ 
                             "id": s.id, 
                             "name": s.name, 
                             "type": "ECS", 
                             "private_ip_address": private_ip,
+                            "os-extended-volumes:volumes_attached": volumes_attached,
                             "public_ip_address": public_ip,
                             "region": target_region,
                             "billing_mode": billing_mode,
@@ -666,18 +692,52 @@ class HuaweiDiscovery:
                         evs_region = Region(id=target_region, endpoint=f"https://evs.{target_region}.myhuaweicloud.com")
                         evs_client = EvsClient.new_builder().with_credentials(region_creds).with_region(evs_region).build()
                         for volume in evs_client.list_volumes(ListVolumesRequest()).volumes or []:
-                            # Skip system/boot disks — they're part of the ECS, not separate data disks
-                            bootable = getattr(volume, 'bootable', 'false')
-                            if str(bootable) == 'true':
+                            # ── Bootable / linkage detection ──
+                            # Some SDK responses omit `bootable`; also detect Huawei
+                            # system-disk naming: <ecs-id>-volume-0000 (the boot volume
+                            # created WITH the ECS instance). Data disks use distinct
+                            # names / higher suffixes and attach via `attachments`.
+                            bootable_raw = getattr(volume, 'bootable', None)
+                            bootable_flag = str(bootable_raw).lower() == 'true'
+                            vol_name = getattr(volume, 'name', '') or ''
+                            vol_id = getattr(volume, 'id', '')
+                            vol_size = getattr(volume, 'size', 0) or 0
+
+                            # attachments: [{server_id, device, id}] — links volume → parent ECS
+                            attachments = []
+                            try:
+                                for _a in (getattr(volume, 'attachments', None) or []):
+                                    if isinstance(_a, dict):
+                                        attachments.append({
+                                            "server_id": _a.get("server_id"),
+                                            "device": _a.get("device"),
+                                        })
+                                    else:
+                                        attachments.append({
+                                            "server_id": getattr(_a, "server_id", None),
+                                            "device": getattr(_a, "device", None),
+                                        })
+                            except Exception:
+                                attachments = []
+
+                            # Heuristic: Huawei boot-volume naming <server>-volume-0000
+                            is_system_disk = bootable_flag or bool(
+                                re.search(r'(?:-|^)volume-0+$', vol_name or '')
+                            )
+                            if is_system_disk:
+                                # Skip system/boot disks — they're part of the ECS, not separate data disks
                                 continue
                             inventory["storage"].append({ 
-                                "id": volume.id, 
-                                "name": getattr(volume, 'name', 'Unknown'), 
+                                "id": vol_id, 
+                                "name": vol_name, 
                                 "type": "EVS", 
                                 "region": target_region,
                                 "subtype": "block_storage",
-                                "size": getattr(volume, 'size', 0),
-                                "bootable": False,
+                                "size_gb": vol_size,
+                                "bootable": bootable_flag,
+                                "parent_server_id": (attachments or [{}])[0].get("server_id") if attachments else None,
+                                "parent_server_device": (attachments or [{}])[0].get("device") if attachments else None,
+                                "attachments": attachments,
                             })
                     except Exception as e: 
                         inventory["diagnostics"].append(f"[{target_region}] EVS Connect Error: {str(e)}")

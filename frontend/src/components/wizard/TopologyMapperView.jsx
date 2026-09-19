@@ -233,13 +233,53 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
     const liveNodes = useMemo(() => {
         const raw = activeProject?.mgcData?.raw_inventory || {};
         const fallbackRegion = activeProject?.region || 'la-south-2';
+        const sourceRegion = activeProject?.sourceRegion || activeProject?.source_region || '';
         const mNodes = [];
-        (raw.network || []).forEach((net, i) => mNodes.push({ id: `l-net-${i}`, name: net.name || `NET-${i}`, type: normalizeHuaweiType(net.type, 'VPC'), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', region: fallbackRegion, status: 'Live Only' }));
-        (raw.storage || []).forEach((st, i) => mNodes.push({ id: `l-st-${i}`, name: st.name || `ST-${i}`, type: normalizeHuaweiType(st.type, 'OBS'), storage: st.size_gb || st.specs?.size_gb || st.specs?.storage_gb, ip: st.location || st.specs?.location || 'N/A', location: 'Global', region: fallbackRegion, status: 'Live Only' }));
-        (raw.servers || raw.compute || []).forEach((srv, i) => mNodes.push({ id: `l-srv-${i}`, name: srv.name, type: 'ECS', storage: srv.specs?.storage_gb || srv.storage || srv.disk_size, os: srv.specs?.os_type || srv.os, ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`, location: 'Compute-Subnet', region: fallbackRegion, status: 'Live Only' }));
-        (raw.databases || []).forEach((db, i) => mNodes.push({ id: `l-db-${i}`, name: db.name, type: normalizeHuaweiType(db.engine || db.type, 'RDS'), storage: db.specs?.storage_gb || db.allocated_storage, ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', region: fallbackRegion, status: 'Live Only' }));
-        return mNodes;
-    }, [activeProject?.mgcData, activeProject?.region]);
+        // Helper: live rows carry their REAL source region from discovery +
+        // the target region separately. No more blind target-region stamping.
+        const liveRow = (base, item) => {
+            const srcReg = item?.region || sourceRegion || fallbackRegion;
+            return { ...base, region: srcReg, source_region: srcReg, target_region: fallbackRegion };
+        };
+        (raw.network || []).forEach((net, i) => mNodes.push(liveRow({ id: `l-net-${i}`, name: net.name || `NET-${i}`, type: normalizeHuaweiType(net.type, 'VPC'), ip: net.cidr || net.specs?.cidr || net.specs?.ip || net.public_ip_address || 'N/A', location: 'Cloud-Network', status: 'Live Only' }, net)));
+        // Storage rows with a parent server (data disks attached to an ECS) are NOT
+        // standalone resources — attach them to their server node instead so physics,
+        // tooling and simulation count them as part of the server, not separate EVS.
+        const parentedVolumes = (raw.storage || []).filter(st => st.parent_server_id && !st.bootable);
+        const orphanVolumes = (raw.storage || []).filter(st => !(st.parent_server_id && !st.bootable));
+        orphanVolumes.forEach((st, i) => mNodes.push(liveRow({ id: `l-st-${i}`, name: st.name || `ST-${i}`, type: normalizeHuaweiType(st.type, 'OBS'), storage: st.size_gb || st.specs?.size_gb || st.specs?.storage_gb, ip: st.location || st.specs?.location || 'N/A', location: 'Global', status: 'Live Only' }, st)));
+        (raw.servers || raw.compute || []).forEach((srv, i) => {
+            const srvId = srv.id || srv.name || '';
+            const attached = parentedVolumes.filter(v => String(v.parent_server_id) === String(srvId) || String(v.parent_server_id) === String(srv.name));
+            mNodes.push(liveRow({
+                id: `l-srv-${i}`, name: srv.name, type: 'ECS',
+                storage: srv.specs?.storage_gb || srv.storage || srv.disk_size,
+                os: srv.specs?.os_type || srv.os,
+                ip: srv.private_ip_address || srv.specs?.ip || srv.specs?.private_ip_address || `10.0.1.${10+i}`,
+                location: 'Compute-Subnet', status: 'Live Only',
+                volumes: (srv['os-extended-volumes:volumes_attached'] || [])
+                    .map(v => ({ id: v.id, device: v.device }))
+                    .concat(attached.map(v => ({ id: v.id, device: (v.attachments && v.attachments[0] && v.attachments[0].device) || '', size_gb: v.size_gb }))),
+            }, srv));
+        });
+        (raw.databases || []).forEach((db, i) => mNodes.push(liveRow({ id: `l-db-${i}`, name: db.name, type: normalizeHuaweiType(db.engine || db.type, 'RDS'), storage: db.specs?.storage_gb || db.allocated_storage, ip: db.private_ip_address || db.specs?.ip || `10.0.2.${10+i}`, location: 'Data-Subnet', status: 'Live Only' }, db)));
+        // Dedup by normalized name+type: discovery can return the same ECS twice
+        // (full-name and truncated-name variants). Keep the FIRST (richest) row.
+        const seen = new Set();
+        const deduped = [];
+        for (const n of mNodes) {
+            const key = `${String(n.type||'').toLowerCase()}|${String(n.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
+            if (seen.has(key)) {
+                // merge volumes into existing row instead of dropping
+                const existing = deduped.find(d => `${String(d.type||'').toLowerCase()}|${String(d.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')}` === key);
+                if (existing && n.volumes?.length) existing.volumes = [...(existing.volumes||[]), ...n.volumes];
+                continue;
+            }
+            seen.add(key);
+            deduped.push(n);
+        }
+        return deduped;
+    }, [activeProject?.mgcData, activeProject?.region, activeProject?.sourceRegion]);
 
     const finalizeReconciliation = () => {
         const merged = [];
@@ -350,7 +390,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                     </div>
                     <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner w-full md:w-auto overflow-x-auto">
                         <button onClick={()=>setActiveTab('reconcile')} className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all shrink-0 ${activeTab === 'reconcile' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-random mr-2"></i> 1. Reconcile Scope</button>
-                        <button onClick={()=>setActiveTab('target')} className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all shrink-0 ${activeTab === 'target' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-bullseye mr-2"></i> 2. Target Architecture</button>
+                        <button onClick={()=>setActiveTab('target')} className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all shrink-0 ${activeTab === 'target' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="fas fa-bullseye mr-2"></i> 2. Reconciled Architecture</button>
                     </div>
                 </div>
 
@@ -656,7 +696,7 @@ export default function TopologyMapperView({ activeProject, onUpdateProject, onP
                         {targetView === 'canvas' && (
                             <div className="flex-1 bg-slate-50 relative overflow-hidden flex flex-col border-t border-slate-200">
                                 <ArchitectureCanvas 
-                                    title="Final Target Architecture" 
+                                    title="Final Reconciled Architecture" 
                                     nodes={filteredAndSortedNodes} 
                                     onNodeClick={setSelectedNode} 
                                     regionFilter={regionFilter} 
