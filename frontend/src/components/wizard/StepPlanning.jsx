@@ -33,6 +33,8 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
     const [buildPlanLoading, setBuildPlanLoading] = useState(false);
     const [buildPlanResult, setBuildPlanResult] = useState(null); // { ok, steps, planSteps, builtAt, actions, message, rawError }
     const [dryRunLoading, setDryRunLoading] = useState(false);
+    const [saveClearLoading, setSaveClearLoading] = useState(false);
+    const [saveClearMsg, setSaveClearMsg] = useState('');
     const [stepsExpanded, setStepsExpanded] = useState(true);      // plan step preview table open/closed
     const [expandedStepRows, setExpandedStepRows] = useState({});  // per-row full-command expansion
 
@@ -122,6 +124,48 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
             setBuildPlanResult(prev => prev ? { ...prev, dryRunError: String(e) } : { dryRunError: String(e), ok: false, steps: 0, builtAt: '', actions: {} });
         } finally {
             setDryRunLoading(false);
+        }
+    };
+
+    // 💾 Save & Clear: persist the freshly built plan and wipe stale simulation
+    // artifacts (agenticDryRun / runbook) so the next dry-run starts from a clean
+    // slate — stale runbook/trace from a previous plan must not linger.
+    const handleSaveAndClear = async () => {
+        if (!project?.id) return;
+        setSaveClearLoading(true);
+        setSaveClearMsg('');
+        try {
+            const token = sessionStorage.getItem('hermes_access_token');
+            const hdrs = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+            // 1. Re-save the current plan (freshest executionPlan on the project)
+            const planRes = await fetch(`/api/execution/${project.id}/build-plan`, {
+                method: 'POST', headers: hdrs, body: JSON.stringify({}),
+            });
+            const planData = await planRes.json().catch(() => ({}));
+            const plan = planData.plan || {};
+            const steps = plan.steps || [];
+            // 2. Clear stale simulation artifacts (DELETE handler pops agenticDryRun
+            //    + runbook + legacy simulationResult/agenticTrace/lastSimulation)
+            const delRes = await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const delData = await delRes.json().catch(() => ({}));
+            setBuildPlanResult({
+                ok: planRes.ok,
+                steps: steps.length,
+                planSteps: steps,
+                builtAt: plan.built_at || '',
+                actions: {},
+                savedAndCleared: true,
+                clearMessage: delData.message || (delRes.ok ? 'Stale simulation cleared' : String(delData.error || delRes.status)),
+                rawError: !planRes.ok ? (planData.error || 'plan build failed') : '',
+            });
+            setSaveClearMsg(planRes.ok && delRes.ok ? `✓ Plan saved (${steps.length} steps) — stale simulation cleared` : '⚠️ Partial: see banner');
+        } catch (e) {
+            setBuildPlanResult(prev => prev ? { ...prev, saveClearError: String(e) } : { saveClearError: String(e), ok: false, steps: 0, builtAt: '', actions: {} });
+            setSaveClearMsg(`✗ ${String(e)}`);
+        } finally {
+            setSaveClearLoading(false);
         }
     };
 
@@ -333,6 +377,13 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                                     ? <span className="text-rose-700">✗ {buildPlanResult.rawError}</span>
                                                     : 'Generates the step template (with placeholders) that Phase 4 resolves and executes.'}
                                         </div>
+                                        {buildPlanResult?.savedAndCleared && (
+                                            <div className="mt-1.5 flex items-center gap-1.5 text-[8px] font-bold">
+                                                <span className="px-1.5 py-px rounded bg-emerald-50 border border-emerald-300 text-emerald-700">
+                                                    <i className="fas fa-check-circle mr-1"></i>Plan persisted · {buildPlanResult.clearMessage}
+                                                </span>
+                                            </div>
+                                        )}
                                         {buildPlanResult?.dryRunDone && (
                                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                                                 <span className={`px-1.5 py-px rounded text-[8px] font-bold border ${buildPlanResult.dryRunPlanGripped ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}>
@@ -374,6 +425,26 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                         >
                                             <i className={`fas ${buildPlanLoading ? 'fa-spinner fa-spin' : 'fa-sitemap'}`}></i> {buildPlanLoading ? 'Building...' : 'Build Execution Plan'}
                                         </button>
+                                        {/* 💾 Save & Clear: persist the plan + wipe stale simulation artifacts */}
+                                        <button
+                                            onClick={handleSaveAndClear}
+                                            disabled={saveClearLoading || buildPlanLoading}
+                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                                                saveClearLoading ? 'bg-slate-200 text-slate-400 cursor-wait' :
+                                                'bg-emerald-600 hover:bg-emerald-700 text-white shadow'
+                                            }`}
+                                        >
+                                            <i className={`fas ${saveClearLoading ? 'fa-spinner fa-spin' : 'fa-save'}`}></i> {saveClearLoading ? 'Saving...' : 'Save & Clear'}
+                                        </button>
+                                        {saveClearMsg && (
+                                            <button
+                                                onClick={() => setSaveClearMsg('')}
+                                                className={`px-1.5 py-0.5 rounded text-[8px] font-bold border ${saveClearMsg.startsWith('✓') ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-rose-50 border-rose-300 text-rose-700'}`}
+                                                title={saveClearMsg}
+                                            >
+                                                {saveClearMsg} <i className="fas fa-times ml-1"></i>
+                                            </button>
+                                        )}
                                         {/* Dry-Run moved to Phase 4.0 Readiness Gateway → Plan Validation */}
                                     </div>
                                 </div>
