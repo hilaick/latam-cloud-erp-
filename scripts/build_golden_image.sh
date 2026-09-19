@@ -22,10 +22,11 @@ echo "  Instance: $INSTANCE_ID  EIP: $EIP"
 
 echo "[2/5] Installing tools..."
 ssh -o StrictHostKeyChecking=no root@$EIP 'bash -s' << 'EOF'
-apt-get update -qq && apt-get install -y jq redis-tools netcat-openbsd wget -qq
+apt-get update -qq && apt-get install -y jq redis-tools netcat-openbsd wget qemu-utils -qq
 pip3 install huaweicloudsdkcore huaweicloudsdkecs huaweicloudsdkvpc huaweicloudsdkims huaweicloudsdksms huaweicloudsdkdcs -q
 curl -sSL "https://hwcloudcli.obs.cn-north-1.myhuaweicloud.com/cli/latest/hcloud_install.sh" -o /tmp/hcloud_install.sh && bash /tmp/hcloud_install.sh -y
 wget -qO /tmp/obsutil.tar.gz "https://obs-community.obs.${REGION}.myhuaweicloud.com/obsutil/current/obsutil_linux_amd64.tar.gz" && tar xzf /tmp/obsutil.tar.gz -C /usr/local/bin/ && chmod +x /usr/local/bin/obsutil
+curl -sL "https://aka.ms/downloadazcopy-v10-linux" -o /tmp/azcopy.tar.gz && tar xzf /tmp/azcopy.tar.gz -C /tmp && cp /tmp/azcopy_linux_amd64_*/azcopy /usr/local/bin/ && chmod +x /usr/local/bin/azcopy
 EOF
 echo "  Tools installed"
 
@@ -34,7 +35,7 @@ hcloud ecs stop "$INSTANCE_ID" && hcloud ecs wait "$INSTANCE_ID" --state SHUTOFF
 
 echo "[4/5] Creating private image..."
 IMAGE_ID=$(hcloud ims create-image --name "$IMAGE_NAME" --instance-id "$INSTANCE_ID" \
-  --description "mig_worker golden image: KooCLI, SDKs, obsutil, redis-shake" --format json | jq -r '.id')
+  --description "mig_worker golden image: KooCLI, SDKs, obsutil, azcopy, qemu-img, redis-shake" --format json | jq -r '.id')
 echo "  Image ID: $IMAGE_ID"
 
 echo "[5/5] Sharing to target project..."
