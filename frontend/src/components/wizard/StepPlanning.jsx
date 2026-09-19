@@ -81,15 +81,43 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
         if (!project?.id) return;
         setDryRunLoading(true);
         try {
+            // Ensure the dry-run pertains to the CURRENT plan:
+            // re-run build-plan first (backend grips stored executionPlan if no
+            // plan body is sent). This kills stale simulations from old plans.
+            const planRes = await fetch(`/api/execution/${project.id}/build-plan`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('hermes_access_token')}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const planData = await planRes.json();
+            const plan = planData.plan || {};
+            const steps = plan.steps || [];
+            if (planRes.ok) {
+                setBuildPlanResult(prev => ({ ...(prev || {}), ok: true, steps: steps.length, planSteps: steps, builtAt: plan.built_at || '' }));
+            }
             const token = sessionStorage.getItem('hermes_access_token');
-            await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
+            const res = await fetch(`/api/projects/${project.id}/agentic-dry-run`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: 'agentic' }),
             });
+            const dryRunData = await res.json().catch(() => ({}));
             // Simulation results are rendered in the Execution dashboard / constellation;
-            // here we just confirm it ran so the user can click through.
-            setBuildPlanResult(prev => prev ? { ...prev, dryRunDone: true } : { dryRunDone: true, ok: true, steps: 0, builtAt: '', actions: {} });
+            // here we surface plan-pertinence (gripped the built plan) + step counts.
+            setBuildPlanResult(prev => {
+                const base = prev || { ok: true, steps: steps.length, planSteps: steps, builtAt: plan.built_at || '', actions: {} };
+                const summary = dryRunData.summary || dryRunData.dryRun?.summary || {};
+                return {
+                    ...base,
+                    dryRunDone: true,
+                    dryRunPlanGripped: !!(dryRunData.plan_gripped || summary.plan_gripped),
+                    dryRunSimulationMode: dryRunData.simulation_mode || summary.simulation_mode || 'full',
+                    dryRunSteps: dryRunData.steps_simulated || summary.steps_simulated || 0,
+                    dryRunPlanId: dryRunData.plan_id || summary.plan_id || null,
+                    dryRunPlanBuiltAt: dryRunData.plan_built_at || summary.plan_built_at || '',
+                    dryRunTotalHours: summary.total_sim_hours ?? 0,
+                };
+            });
         } catch (e) {
             setBuildPlanResult(prev => prev ? { ...prev, dryRunError: String(e) } : { dryRunError: String(e), ok: false, steps: 0, builtAt: '', actions: {} });
         } finally {
@@ -305,6 +333,25 @@ export default function StepPlanning({ project, onUpdateProject, onPromote }) {
                                                     ? <span className="text-rose-700">✗ {buildPlanResult.rawError}</span>
                                                     : 'Generates the step template (with placeholders) that Phase 4 resolves and executes.'}
                                         </div>
+                                        {buildPlanResult?.dryRunDone && (
+                                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                                <span className={`px-1.5 py-px rounded text-[8px] font-bold border ${buildPlanResult.dryRunPlanGripped ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}>
+                                                    {buildPlanResult.dryRunPlanGripped
+                                                        ? '📋 Simulated from BUILT PLAN'
+                                                        : '⚠️ Simulated from raw topology (no plan gripped)'}
+                                                </span>
+                                                {buildPlanResult.dryRunSteps > 0 && (
+                                                    <span className="px-1.5 py-px rounded bg-slate-100 border border-slate-200 text-[8px] font-bold text-slate-500">
+                                                        {buildPlanResult.dryRunSteps} plan steps simulated · {buildPlanResult.dryRunTotalHours ?? 0}h
+                                                    </span>
+                                                )}
+                                                {buildPlanResult.dryRunPlanBuiltAt && (
+                                                    <span className="px-1.5 py-px rounded bg-slate-100 border border-slate-200 text-[8px] text-slate-400">
+                                                        plan built {buildPlanResult.dryRunPlanBuiltAt}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                         {buildPlanResult?.ok && buildPlanResult.steps > 0 && (
                                             <div className="flex flex-wrap gap-1 mt-1.5">
                                                 {Object.entries(buildPlanResult.actions).slice(0, 10).map(([a, n]) => (

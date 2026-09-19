@@ -5133,8 +5133,24 @@ class AgenticExecutionSimulator:
             dict with trace, resource_usage, summary
         """
         config = SimulationConfig()
-        # ── Single source of truth: targetArchitecture (built in Phase 2.4, approved by DTRB in 2.5) ──
-        # mapperNodes is the SOW blueprint (secondary — used for True-Up scope validation)
+        # ── PLAN VALIDATION (4.0 Readiness Gateway): grip the BUILT PLAN ──
+        # When the contract carries an execution_plan (from ExecutionEngine.build_plan,
+        # stored as projects.data['executionPlan']), simulate THAT plan's steps —
+        # not an independent decomposition from mapperNodes. This is the fix for
+        # stale-dry-run: previously the simulator rebuilt from topology, ignoring
+        # the plan the user built in 3.7, so results didn't pertain to the built plan.
+        execution_plan = project.get("_execution_plan") or None
+        sim_mode = project.get("_simulation_mode") or "full"
+        if execution_plan and isinstance(execution_plan, dict) and execution_plan.get("steps"):
+            plan_steps = execution_plan["steps"]
+            logger.info(
+                f"[plan_validation] simulate() gripping BUILT PLAN: "
+                f"{len(plan_steps)} steps, plan_id={execution_plan.get('planId', '?')}"
+            )
+            return AgenticExecutionSimulator._simulate_from_plan(
+                project, execution_plan, config
+            )
+        # Legacy/preview path: decompose from topology (targetArchitecture → mapperNodes)
         target_arch = project.get("targetArchitecture", {})
         mapper_nodes = project.get("mapperNodes", [])
 
@@ -6929,6 +6945,222 @@ class AgenticExecutionSimulator:
         }
 
     @staticmethod
+    def _simulate_from_plan(project: dict, execution_plan: dict, config) -> dict:
+        """PLAN VALIDATION (4.0 Readiness Gateway): simulate the BUILT PLAN.
+
+        Consumes the execution_plan produced by ExecutionEngine.build_plan()
+        (stored as projects.data['executionPlan']). Each plan step becomes a
+        trace entry — one trace per step, phases/actions/targets/commands taken
+        verbatim from the plan. This guarantees the dry-run pertains to the
+        plan the user built in 3.7, NOT an independent decomposition from raw
+        topology (the stale-dry-run defect).
+
+        Returns the same result shape as simulate(project):
+        {success, trace, resource_usage, timeline, summary, rollback_plan}
+        """
+        plan_steps = execution_plan.get("steps", []) or []
+        project_name = project.get("projectName", "UNNAMED")
+        region = project.get("region", execution_plan.get("target_region", "la-north-2"))
+        trace: List[dict] = []
+        step_id = 0
+        total_simulated_seconds = 0
+        resource_usage = {
+            "agents_spawned": 0,
+            "eips_consumed": 0,
+            "vpcs_created": 0,
+            "subnets_created": 0,
+            "security_groups_created": 0,
+            "instances_provisioned": 0,
+            "cbr_vaults_used": 0,
+            "obs_buckets_created": 0,
+            "mig_workers_deployed": 0,
+            "images_registered_ims": 0,
+            "peak_parallel_agents": 0,
+            "sms_migrations_attempted": 0,
+            "sms_migrations_succeeded": 0,
+            "image_migrations_performed": 0,
+            "troubleshooting_incidents": 0,
+        }
+        wave_timeline = []
+        warnings: List[dict] = []
+        blockers: List[dict] = []
+
+        # Counters for summary
+        steps_by_phase: Dict[str, int] = {}
+        resources_touched: set = set()
+
+        # Map plan step fields → resource_usage counters (best-effort, non-fatal)
+        ACTION_USAGE_MAP = {
+            "EIP": "eips_consumed", "ALLOCATE_EIP": "eips_consumed", "CREATE_EIP": "eips_consumed",
+            "VPC": "vpcs_created", "CREATE_VPC": "vpcs_created",
+            "SUBNET": "subnets_created", "CREATE_SUBNET": "subnets_created",
+            "SECURITY_GROUP": "security_groups_created", "CREATE_SG": "security_groups_created",
+            "CREATE_ECS": "instances_provisioned", "PROVISION_ECS": "instances_provisioned",
+            "INSTANCE": "instances_provisioned",
+            "SMS_TASK": "sms_migrations_attempted", "CREATE_SMS_TASK": "sms_migrations_attempted",
+            "MIGRATE_FILE": "sms_migrations_attempted",
+            "IMAGE_IMPORT": "images_registered_ims", "IMAGE_EXPORT": "images_registered_ims",
+            "AGENT_INSTALL": "mig_workers_deployed", "DEPLOY_AGENT": "mig_workers_deployed",
+            "MIG_WORKER": "mig_workers_deployed", "CBR": "cbr_vaults_used",
+        }
+
+        # ── Step 0: Orchestrator INIT rooted in the plan itself ──
+        step_id += 1
+        plan_id = execution_plan.get("plan_id") or execution_plan.get("project_id") or "?"
+        built_at = execution_plan.get("built_at", "")
+        trace.append({
+            "id": step_id, "phase": "PHASE_4_0", "agent": "Orchestrator",
+            "action": "PLAN_VALIDATION_INIT",
+            "target": plan_id,
+            "message": (
+                f"Plan Validation started for '{project_name}' in {region}. "
+                f"Gripping BUILT PLAN (plan_id={plan_id}, built_at={built_at}) with "
+                f"{len(plan_steps)} steps across {len(set(s.get('phase') for s in plan_steps))} phases. "
+                f"DRY-RUN: paper simulation only — NO cloud resources modified."
+            ),
+            "commands": [{"desc": "Load execution plan", "cmd": "executionPlan (built in 4.0 Readiness Gateway)", "type": "plan"}],
+            "timestamp_offset_seconds": 0,
+            "result": "plan_loaded",
+            "source_label": "📋 Plan (ExecutionEngine.build_plan)",
+            "plan_gripped": True,
+            "plan_id": plan_id,
+            "plan_built_at": built_at,
+            "steps_in_plan": len(plan_steps),
+        })
+        total_simulated_seconds += getattr(config, "STEP_TIMINGS", {}).get("agent_spawn", 2)
+
+        # ── One trace entry per plan step ──
+        for plan_step in plan_steps:
+            step_id += 1
+            phase = plan_step.get("phase", "PHASE_4_0")
+            action = plan_step.get("action", "STEP_EXECUTE")
+            target_resource = plan_step.get("target_resource", "unknown")
+            tool_source = plan_step.get("tool_source", "")
+            tool_name = plan_step.get("tool_name", "hcloud CLI")
+            raw_commands = plan_step.get("commands")
+            commands = raw_commands or (
+                [{"desc": f"Execute {action}", "cmd": f"hcloud {action} --cli-profile=<profile>", "type": "hcloud"}]
+            )
+            source_detail = plan_step.get("source_detail", "")
+            strategy = plan_step.get("strategy", "")
+
+            # Step timings: fixed per-step estimate (plan has no physics-driven timing)
+            step_seconds = getattr(config, "STEP_TIMINGS", {}).get("agent_spawn", 2) + 3
+            total_simulated_seconds += step_seconds
+
+            # Map action → usage counters
+            for key, counter in ACTION_USAGE_MAP.items():
+                if key.lower() in action.lower():
+                    resource_usage[counter] += 1
+                    break
+
+            # Track per-phase step counts + touched resources
+            steps_by_phase[phase] = steps_by_phase.get(phase, 0) + 1
+            if target_resource and target_resource not in ("account", "region"):
+                resources_touched.add(target_resource)
+
+            # Triage: steps missing commands or tool source → warning (not blocker)
+            entry_status = "SIMULATED_OK"
+            if not raw_commands:
+                warnings.append({"action": action, "message": f"Plan step '{action}' has no commands — execution will use generated fallback.", "phase": phase})
+                entry_status = "WARNING"
+            if not tool_source:
+                warnings.append({"action": action, "message": f"Plan step '{action}' has no tool resolution.", "phase": phase})
+
+            trace.append({
+                "id": step_id, "phase": phase, "agent": f"Agent-{action}",
+                "action": action,
+                "target": target_resource,
+                "message": (
+                    f"[PLAN] {action} on '{target_resource}' "
+                    f"({source_detail or tool_name}). Simulated from built plan."
+                ),
+                "commands": commands,
+                "timestamp_offset_seconds": total_simulated_seconds,
+                "result": "simulated_ok",
+                "status": entry_status,
+                "plan_step_id": plan_step.get("step_id"),
+                "strategy": strategy,
+                "tool_source": tool_source or "hcloud",
+                "tool_name": tool_name,
+                "source_label": source_detail or f"🔧 {tool_name}",
+                "plan_gripped": True,
+            })
+
+            # Wave timeline aggregation (every 10 steps → milestone row)
+            if step_id % 10 == 0:
+                wave_timeline.append({
+                    "wave_id": f"W{len(wave_timeline) + 1}",
+                    "steps": 10,
+                    "label": f"Milestone after step {step_id}: {action}",
+                    "status": "SIMULATED",
+                })
+
+        # ── Summary ──
+        total_sim_hours = round(total_simulated_seconds / 3600.0, 2)
+        servers_processed = len(resources_touched)
+        # required_phases: try module-level Engine phases, else derive from plan
+        _required_phases = list(steps_by_phase.keys())
+        try:
+            from services.execution_engine import ExecutionEngine as _EE
+            if hasattr(_EE, "PHASES"):
+                _required_phases = _EE.PHASES
+        except Exception:
+            pass
+        summary = {
+            "project_name": project_name,
+            "region": region,
+            "plan_id": plan_id,
+            "plan_built_at": built_at,
+            "simulation_mode": "plan_validation",
+            "plan_gripped": True,
+            "steps_simulated": len(plan_steps),
+            "phases_covered": sorted(steps_by_phase.keys()),
+            "steps_by_phase": steps_by_phase,
+            "servers_processed": servers_processed,
+            "total_sim_hours": total_sim_hours,
+            "estimated_duration_hours": total_sim_hours,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "migration_paths": {
+                "plan_validation": True,
+                "note": "Simulation executed against the built execution plan — no topology re-decomposition.",
+            },
+            "required_phases": _required_phases,
+            "tool_sources": {
+                "mcp": sum(1 for s in trace if s.get("tool_source") == "mcp"),
+                "skill": sum(1 for s in trace if s.get("tool_source") in ("skill", "external", "history")),
+                "hcloud": sum(1 for s in trace if s.get("tool_source") == "hcloud"),
+                "manual": sum(1 for s in trace if s.get("tool_source") == "manual"),
+                "plan": sum(1 for s in trace if s.get("tool_source") == "plan"),
+            },
+            "warnings_count": len(warnings),
+            "blockers_count": len(blockers),
+            "note": (
+                "PLAN VALIDATION: dry-run simulated the built execution plan (4.0 Readiness Gateway). "
+                "Plan-adjacent artifacts (runbook, simulations) now pertain to THIS plan's steps."
+            ),
+        }
+
+        # Attach warnings/blockers to trace so the route's validation extraction sees them
+        if warnings:
+            summary["validation_warnings"] = warnings
+        if blockers:
+            summary["validation_blockers"] = blockers
+
+        return {
+            "success": True,
+            "trace": trace,
+            "resource_usage": resource_usage,
+            "timeline": wave_timeline,
+            "summary": summary,
+            "rollback_plan": {
+                "total_reversible_steps": 0,
+                "steps": [],
+                "note": "Plan validation is a paper simulation — rollback plan is produced at live execution.",
+            },
+        }
+
+    @staticmethod
     def _process_single_server(
         server: dict,
         physics: dict,
@@ -7689,9 +7921,20 @@ def register_agentic_dry_run_routes(execution_bp):
                 # ── Plan-Validation mode (4.0 Readiness Gateway): simulator grips the built plan ──
                 # If the request includes an execution_plan, inject it into the contract so
                 # the simulator enriches the plan rather than decomposing from scratch.
+                # Fallback: grip the plan stored on the project by the 4.0 build-plan
+                # endpoint (fixes stale dry-run — results now pertain to the BUILT plan).
                 execution_plan = data.get("execution_plan")
                 assessment_preview = data.get("assessment_preview", False)
                 
+                if not execution_plan and not assessment_preview:
+                    stored_plan = project_data.get("executionPlan")
+                    if isinstance(stored_plan, dict) and stored_plan.get("steps"):
+                        execution_plan = stored_plan
+                        logger.info(
+                            f"Dry-run: gripping stored executionPlan "
+                            f"({len(execution_plan['steps'])} steps, built_at="
+                            f"{execution_plan.get('built_at', '?')}) — plan-pertinent simulation"
+                        )
                 if execution_plan and isinstance(execution_plan, dict):
                     # Plan Validation (4.0): simulate(plan=executionPlan, project=projectData)
                     contract["_execution_plan"] = execution_plan
@@ -7772,6 +8015,19 @@ def register_agentic_dry_run_routes(execution_bp):
                     "mode": execution_mode,
                     "validation": result.get("validation", {}),
                 }
+                # Plan-pertinence: expose whether this dry-run gripped the BUILT PLAN
+                # (plan_validation mode) or decomposed from raw topology (legacy).
+                # Mirrors summary.plan_gripped for GUI badges like "Simulated from built plan".
+                agenticDryRun["plan_gripped"] = bool(
+                    result.get("summary", {}).get("plan_gripped")
+                    or contract.get("_simulation_mode") == "plan_validation"
+                )
+                agenticDryRun["simulation_mode"] = result.get("summary", {}).get(
+                    "simulation_mode", contract.get("_simulation_mode", "full")
+                )
+                agenticDryRun["plan_id"] = result.get("summary", {}).get("plan_id")
+                agenticDryRun["plan_built_at"] = result.get("summary", {}).get("plan_built_at")
+                agenticDryRun["steps_simulated"] = result.get("summary", {}).get("steps_simulated", len(result.get("trace", [])))
                 # Write into project's data JSON
                 if isinstance(project_record.data, str):
                     updated_data = json.loads(project_record.data)
@@ -7878,6 +8134,10 @@ def register_agentic_dry_run_routes(execution_bp):
             project_data.pop('simulationResult', None)
             project_data.pop('agenticTrace', None)
             project_data.pop('lastSimulation', None)
+            # Also clear plan-generated artifacts — stale dry-run data must not linger
+            # when the user rebuilds the plan (fixes stale runbook/AGENTIC dry-run)
+            project_data.pop('agenticDryRun', None)
+            project_data.pop('runbook', None)
             project_record.data = json.dumps(project_data)
             db.session.commit()
             return jsonify({"success": True, "message": "Simulation results cleared"}), 200
